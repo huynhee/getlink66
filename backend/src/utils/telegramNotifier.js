@@ -1,0 +1,133 @@
+import logger from "./logger.js";
+
+const TELEGRAM_API = "https://api.telegram.org";
+
+function isEnabled() {
+  return process.env.TELEGRAM_NOTIFICATIONS_ENABLED !== "false";
+}
+
+function chatIds() {
+  return String(process.env.TELEGRAM_CHAT_ID || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function money(value) {
+  const number = Number(value || 0);
+  return `${new Intl.NumberFormat("vi-VN").format(number)} VND`;
+}
+
+function shortId(value = "") {
+  return String(value || "").slice(-8) || "-";
+}
+
+export async function sendTelegramNotification(message) {
+  const token = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  const targets = chatIds();
+  if (!isEnabled() || !token || !targets.length) return;
+
+  await Promise.allSettled(
+    targets.map(async (chatId) => {
+      const response = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message,
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`Telegram send failed: ${response.status} ${body.slice(0, 200)}`);
+      }
+    }),
+  ).then((results) => {
+    const rejected = results.filter((item) => item.status === "rejected");
+    if (rejected.length) {
+      logger.warn({ count: rejected.length }, "Telegram notification failed");
+    }
+  });
+}
+
+export function notifyTopupCreated({ topup, user, pack } = {}) {
+  const lines = [
+    "<b>New VietQR top-up</b>",
+    `User: ${escapeHtml(user?.email || user?.name || String(topup?.userId || "-"))}`,
+    `Package: ${escapeHtml(pack?.name || "-")}`,
+    `Amount: ${money(topup?.amount)}`,
+    `Credit: ${Number(topup?.credit || 0)}`,
+    `Payment code: <code>${escapeHtml(topup?.paymentCode || "-")}</code>`,
+    `Topup: <code>${escapeHtml(shortId(topup?._id))}</code>`,
+  ];
+
+  sendTelegramNotification(lines.join("\n")).catch(() => {});
+}
+
+export function notifyTopupApproved({ topup, user, source = "System" } = {}) {
+  const lines = [
+    "<b>Top-up approved</b>",
+    `Source: ${escapeHtml(source)}`,
+    `User: ${escapeHtml(user?.email || user?.name || String(topup?.userId || "-"))}`,
+    `Amount: ${money(topup?.amount)}`,
+    `Credit added: ${Number(topup?.credit || 0)}`,
+    `User credit: ${Number(user?.credit || 0)}`,
+    `Payment code: <code>${escapeHtml(topup?.paymentCode || "-")}</code>`,
+  ];
+
+  sendTelegramNotification(lines.join("\n")).catch(() => {});
+}
+
+export function notifyTopupRejected({ topup, actor } = {}) {
+  const lines = [
+    "<b>Top-up rejected</b>",
+    `Actor: ${escapeHtml(actor?.email || actor?.name || "Admin")}`,
+    `Amount: ${money(topup?.amount)}`,
+    `Credit: ${Number(topup?.credit || 0)}`,
+    `Payment code: <code>${escapeHtml(topup?.paymentCode || "-")}</code>`,
+    `Topup: <code>${escapeHtml(shortId(topup?._id))}</code>`,
+  ];
+
+  sendTelegramNotification(lines.join("\n")).catch(() => {});
+}
+
+export function notifyServerError({ error, req, status } = {}) {
+  const lines = [
+    "<b>Server error</b>",
+    `Status: ${Number(status || 500)}`,
+    `Path: <code>${escapeHtml(`${req?.method || ""} ${req?.originalUrl || req?.url || ""}`.trim())}</code>`,
+    `Message: ${escapeHtml(error?.message || "Unknown error")}`,
+    `IP: ${escapeHtml(req?.ip || "-")}`,
+  ];
+
+  sendTelegramNotification(lines.join("\n")).catch(() => {});
+}
+
+export function notify3D66CookiesUnavailable({ reason, error, stats } = {}) {
+  const lines = [
+    "<b>3D66 cookies unavailable</b>",
+    `Reason: ${escapeHtml(reason || "All cookies failed or are cooling down")}`,
+    `Total: ${Number(stats?.total || 0)}`,
+    `Active: ${Number(stats?.active || 0)}`,
+    `Warning: ${Number(stats?.warning || 0)}`,
+    `Cooldown: ${Number(stats?.cooldown || 0)}`,
+    `Disabled: ${Number(stats?.disabled || 0)}`,
+    `Invalid/missing keys: ${Number(stats?.invalid || 0)}`,
+  ];
+
+  if (error?.message) {
+    lines.push(`Last error: ${escapeHtml(error.message).slice(0, 500)}`);
+  }
+
+  sendTelegramNotification(lines.join("\n")).catch(() => {});
+}
