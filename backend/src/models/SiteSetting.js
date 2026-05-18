@@ -6,7 +6,7 @@ const siteSettingSchema = new mongoose.Schema(
     key: { type: String, required: true, unique: true, default: "homepage" },
     heroText: {
       type: String,
-      default: "SIÊU RẺ\nTẢI 3D66\nCHỈ 8K VND"
+      default: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ"
     },
     heroSubtitle: {
       type: String,

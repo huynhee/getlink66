@@ -14,4 +14,7 @@ const productCacheSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+productCacheSchema.index({ updatedAt: -1 });
+productCacheSchema.index({ isPurchased: 1, updatedAt: -1 });
+
 export default isMemoryDb() ? createMemoryModel("ProductCache") : mongoose.model("ProductCache", productCacheSchema);

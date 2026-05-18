@@ -1,6 +1,8 @@
 import Cookie from "../models/Cookie.js";
 import { decryptSecret } from "./secretBox.js";
 import { notify3D66CookiesUnavailable } from "./telegramNotifier.js";
+import { get3D66GetlinkQueueStatus } from "./3d66Queue.js";
+import { writeSystemLog } from "./systemLog.js";
 
 const REQUIRED_COOKIE_KEYS = ["PHPSESSID", "login_token", "login_sign"];
 const DEFAULT_REQUEST_INTERVAL_MS = 2500;
@@ -98,6 +100,51 @@ function cookieStats(cookies = []) {
     },
     { total: 0, active: 0, warning: 0, cooldown: 0, disabled: 0, invalid: 0 },
   );
+}
+
+export async function get3D66CookiePoolStatus() {
+  const cookies = await Cookie.find().sort({ updatedAt: -1 }).limit(100);
+  const plainCookies = cookies.map((cookie) => {
+    const plain = typeof cookie.toObject === "function" ? cookie.toObject() : cookie;
+    return { ...plain, value: decryptSecret(plain.value || "") };
+  });
+
+  return {
+    stats: cookieStats(plainCookies),
+    queue: get3D66GetlinkQueueStatus(),
+    cookies: plainCookies.map((cookie) => {
+      const keys = cookieKeys(cookie.value || "");
+      const missingKeys = REQUIRED_COOKIE_KEYS.filter((key) => !keys.has(key));
+      const cooldownUntil = cookie.cooldownUntil ? new Date(cookie.cooldownUntil) : null;
+      return {
+        _id: cookie._id,
+        label: cookie.label || "",
+        isActive: cookie.isActive !== false,
+        status: cookie.status || "active",
+        health:
+          cookie.isActive === false || cookie.status === "disabled"
+            ? "disabled"
+            : cooldownUntil && cooldownUntil.getTime() > Date.now()
+              ? "cooldown"
+              : missingKeys.length
+                ? "invalid"
+                : cookie.status || "active",
+        failureCount: Number(cookie.failureCount || 0),
+        useCount: Number(cookie.useCount || 0),
+        lastUsedAt: cookie.lastUsedAt,
+        lastErrorAt: cookie.lastErrorAt,
+        lastErrorMessage: cookie.lastErrorMessage || "",
+        cooldownUntil: cookie.cooldownUntil,
+        lastTestAt: cookie.lastTestAt,
+        lastTestOk: cookie.lastTestOk,
+        lastTestMessage: cookie.lastTestMessage || "",
+        keyCount: keys.size,
+        hasRequiredKeys: missingKeys.length === 0,
+        missingKeys,
+        updatedAt: cookie.updatedAt,
+      };
+    }),
+  };
 }
 
 async function alert3D66CookiesUnavailable(reason, error) {
@@ -200,6 +247,17 @@ export async function mark3D66CookieFailure(cookie, error) {
     },
     $inc: { failureCount: 1 }
   }).catch(() => {});
+  await writeSystemLog({
+    type: "cookie",
+    level: shouldCooldown ? "error" : "warn",
+    message: error?.message || "3D66 cookie failed",
+    status: error?.status,
+    details: {
+      cookieId: String(cookie._id),
+      nextFailureCount,
+      status: shouldCooldown ? "cooldown" : "warning",
+    },
+  });
 }
 
 export async function with3D66Cookie(task) {

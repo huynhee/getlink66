@@ -10,7 +10,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   const [packages, setPackages] = useState([]);
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
   const [siteSettings, setSiteSettings] = useState({
-    heroText: "SIÊU RẺ\nTẢI 3D66\nCHỈ 8K VND",
+    heroText: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ",
     heroSubtitle:
       "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp.",
     saleText: "",
@@ -341,18 +341,18 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
             </div>
             <nav>
               <h3>{t.product}</h3>
-              <a href="#features">{t.features}</a>
+              <a href="#">{t.features}</a>
               <a href="#pricing">{t.pricing}</a>
               <a href="/guide">{t.docs}</a>
             </nav>
             <nav>
               <h3>{t.support}</h3>
-              <a href="#discord">Discord</a>
+              <a href="https://discord.com/invite/DGhWGHhf" target="_blank">Discord</a>
             </nav>
             <nav>
               <h3>{t.legal}</h3>
-              <a href="#privacy">{t.privacy}</a>
-              <a href="#terms">{t.terms}</a>
+              <a href="/privacy">{t.privacy}</a>
+              <a href="/terms">{t.terms}</a>
             </nav>
           </footer>
         </>

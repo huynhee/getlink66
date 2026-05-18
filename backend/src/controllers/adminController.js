@@ -5,9 +5,11 @@ import Topup from "../models/Topup.js";
 import TopupPackage from "../models/TopupPackage.js";
 import Getlink from "../models/Getlink.js";
 import ProductCache from "../models/ProductCache.js";
+import SystemLog from "../models/SystemLog.js";
 import { addCredit } from "../utils/creditService.js";
 import { approvePendingTopup } from "../utils/topupApprovalService.js";
 import { validate3D66Cookie } from "../utils/3d66Service.js";
+import { get3D66CookiePoolStatus } from "../utils/3d66CookiePool.js";
 import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
 import { notifyTopupRejected } from "../utils/telegramNotifier.js";
 import {
@@ -397,6 +399,28 @@ export async function listCookies(_req, res, next) {
   }
 }
 
+export async function cookiePoolStatus(_req, res, next) {
+  try {
+    const pool = await get3D66CookiePoolStatus();
+    res.json({ pool });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listSystemLogs(req, res, next) {
+  try {
+    const type = String(req.query.type || "").trim();
+    const query = ["getlink", "download", "cookie", "payment", "security", "system"].includes(type)
+      ? { type }
+      : {};
+    const logs = await SystemLog.find(query).sort({ createdAt: -1 }).limit(100);
+    res.json({ logs });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function deleteCookie(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) {
@@ -510,6 +534,8 @@ export async function createVoucher(req, res, next) {
       "creditBonus",
       "discountPercent",
       "usageLimit",
+      "perUserLimit",
+      "applicablePackageIds",
       "expireAt",
       "description",
     ]);
@@ -522,6 +548,8 @@ export async function createVoucher(req, res, next) {
       creditBonus = 0,
       discountPercent = 0,
       usageLimit,
+      perUserLimit,
+      applicablePackageIds = [],
       expireAt,
       description = "",
     } = req.body;
@@ -533,12 +561,23 @@ export async function createVoucher(req, res, next) {
       MAX_VOUCHER_DISCOUNT_PERCENT,
     );
     const limit = integerInRange(usageLimit, 1, 100000);
+    const rawAccountLimit = perUserLimit === undefined || perUserLimit === null || perUserLimit === ""
+      ? limit
+      : perUserLimit;
+    const accountLimit = integerInRange(rawAccountLimit, 0, 100000);
+    const packageIds = Array.isArray(applicablePackageIds)
+      ? applicablePackageIds.filter(Boolean)
+      : [];
+    if (packageIds.length > 100 || packageIds.some((id) => !isSafeId(id))) {
+      return res.status(400).json({ message: "Invalid voucher package list" });
+    }
     const expiresAt = new Date(expireAt);
     if (
       !isVoucherCode(normalizedCode) ||
       bonus === null ||
       discount === null ||
       limit === null ||
+      accountLimit === null ||
       Number.isNaN(expiresAt.valueOf()) ||
       expiresAt <= new Date()
     ) {
@@ -554,6 +593,8 @@ export async function createVoucher(req, res, next) {
       creditBonus: bonus,
       discountPercent: discount,
       usageLimit: limit,
+      perUserLimit: accountLimit,
+      applicablePackageIds: packageIds,
       expireAt: expiresAt,
       description: limitedString(description, 500),
     });
@@ -565,7 +606,10 @@ export async function createVoucher(req, res, next) {
 
 export async function listVouchers(_req, res, next) {
   try {
-    const vouchers = await Voucher.find().sort({ createdAt: -1 }).limit(200);
+    const vouchers = await Voucher.find()
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .populate("applicablePackageIds", "name price");
     res.json({ vouchers });
   } catch (error) {
     next(error);

@@ -1,7 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Loader2, ArrowDownToLine, Copy, Check, ClipboardPaste, Search } from "lucide-react";
 import { api } from "../api.js";
 import { translations } from "../i18n.js";
+import {
+  completeFaviconProgress,
+  failFaviconProgress,
+  resetFaviconProgress,
+  setFaviconProgress,
+} from "../utils/faviconProgress.js";
 
 export default function GetlinkBox({ onCreditChange, initialUrl = "", language = "vi" }) {
   const t = translations[language] || translations.vi;
@@ -14,6 +20,10 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   const [confirming, setConfirming] = useState(false);
   const [copied, setCopied] = useState(false);
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState("");
+  const progressTimerRef = useRef(null);
+  const resetTimerRef = useRef(null);
   const cursorText = url || t.getlinkPlaceholder;
   const cursorX = Math.min(cursorText.length * 8.4, 520);
 
@@ -27,6 +37,60 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
       .catch(() => setSystemStatus({ online: false, message: t.systemOfflineMessage }));
   }, [t.systemOfflineMessage]);
 
+  useEffect(() => () => {
+    if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetFaviconProgress();
+  }, []);
+
+  function stopProgressTimer() {
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+  }
+
+  function clearProgressLater(delay = 1600) {
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => {
+      setProgress(0);
+      setProgressLabel("");
+      resetFaviconProgress();
+    }, delay);
+  }
+
+  function beginProgress(label, start = 8, target = 85) {
+    stopProgressTimer();
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+
+    let current = start;
+    setProgress(current);
+    setProgressLabel(label);
+    setFaviconProgress(current);
+
+    progressTimerRef.current = setInterval(() => {
+      current = Math.min(target, current + Math.max(1, Math.round((target - current) * 0.18)));
+      setProgress(current);
+      setFaviconProgress(current);
+    }, 550);
+  }
+
+  function finishProgress(label) {
+    stopProgressTimer();
+    setProgress(100);
+    setProgressLabel(label);
+    completeFaviconProgress();
+    clearProgressLater();
+  }
+
+  function errorProgress(label) {
+    stopProgressTimer();
+    setProgress(0);
+    setProgressLabel(label);
+    failFaviconProgress();
+    clearProgressLater(2200);
+  }
+
   async function submit(event) {
     event.preventDefault();
     setError("");
@@ -39,6 +103,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     }
     setLoading(true);
     setCopied(false);
+    beginProgress(language === "vi" ? "Đang kiểm tra model..." : "Checking model...", 8, 78);
     try {
       const data = await api("/api/getlink/preview", {
         method: "POST",
@@ -46,8 +111,10 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
       });
       setPreview(data);
       setPreviewUrl(url);
+      finishProgress(language === "vi" ? "Đã lấy thông tin model" : "Model info loaded");
     } catch (err) {
       setError(err.message);
+      errorProgress(language === "vi" ? "Kiểm tra thất bại" : "Check failed");
     } finally {
       setLoading(false);
     }
@@ -58,6 +125,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     setResult("");
     setConfirming(true);
     setCopied(false);
+    beginProgress(language === "vi" ? "Đang lấy link tải..." : "Getting download link...", 12, 92);
     try {
       const data = await api("/api/getlink", {
         method: "POST",
@@ -72,8 +140,10 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
         creditCost: data.creditUsed || preview?.creditCost
       });
       onCreditChange(data.credit);
+      finishProgress(language === "vi" ? "Đã sẵn sàng tải file" : "Download is ready");
     } catch (err) {
       setError(err.message);
+      errorProgress(language === "vi" ? "Lấy link thất bại" : "Getlink failed");
     } finally {
       setConfirming(false);
     }
@@ -110,6 +180,9 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
       setUrl(pasted);
       setPreview(null);
       setResult("");
+      setProgress(0);
+      setProgressLabel("");
+      resetFaviconProgress();
     } catch {
       setError(t.clipboardDenied);
     }
@@ -130,6 +203,9 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
                 setUrl(event.target.value);
                 setPreview(null);
                 setResult("");
+                setProgress(0);
+                setProgressLabel("");
+                resetFaviconProgress();
               }}
               placeholder={t.getlinkPlaceholder}
             />
@@ -144,6 +220,17 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
           </button>
         </div>
       </form>
+      {(loading || confirming || progress > 0) && (
+        <div className="getlinkProgress" aria-live="polite">
+          <div>
+            <span>{progressLabel || t.processing}</span>
+            <strong>{Math.round(progress)}%</strong>
+          </div>
+          <div className="getlinkProgressTrack">
+            <i style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+          </div>
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
       {preview && (
         <div className="result">

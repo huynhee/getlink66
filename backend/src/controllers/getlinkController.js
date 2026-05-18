@@ -10,6 +10,7 @@ import {
   request3D66File,
 } from "../utils/3d66Service.js";
 import { with3D66Cookie } from "../utils/3d66CookiePool.js";
+import { queue3D66Getlink } from "../utils/3d66Queue.js";
 import { deductCredit } from "../utils/creditService.js";
 import { extractProductId } from "../utils/parse3d66.js";
 import { normalizeDownloadCreditCost } from "../utils/pricingService.js";
@@ -19,10 +20,16 @@ import {
   verifyDownloadToken,
 } from "../utils/downloadToken.js";
 import { securityEvent } from "../utils/logger.js";
+import { writeSystemLog } from "../utils/systemLog.js";
 
 const productLocks = new Map();
 const MAX_PRODUCT_LOCKS = 500;
 const REDOWNLOAD_WINDOW_DAYS = Number(process.env.GETLINK_REDOWNLOAD_DAYS || 3);
+const downloadCounters = {
+  global: 0,
+  user: new Map(),
+  ip: new Map(),
+};
 
 // Per-user-per-product in-flight set: chong race condition double-charge credit
 // JS event loop la single-threaded → Set.has()/add()/delete() la atomic giua cac await.
@@ -40,6 +47,70 @@ function redownloadWindowMs() {
   return days * 24 * 60 * 60 * 1000;
 }
 
+function redownloadLimit() {
+  const limit = Number(process.env.GETLINK_REDOWNLOAD_LIMIT || 5);
+  return Number.isFinite(limit) && limit > 0 ? limit : 5;
+}
+
+function downloadLimit(name, fallback) {
+  const limit = Number(process.env[name] || fallback);
+  return Number.isFinite(limit) && limit > 0 ? limit : fallback;
+}
+
+function mapCount(map, key) {
+  return Number(map.get(String(key)) || 0);
+}
+
+function decrementMap(map, key) {
+  const normalized = String(key);
+  const next = Math.max(0, mapCount(map, normalized) - 1);
+  if (next <= 0) map.delete(normalized);
+  else map.set(normalized, next);
+}
+
+function acquireDownloadSlot(req) {
+  const userId = String(req.user?._id || "anonymous");
+  const ip = String(req.ip || "unknown");
+  const maxGlobal = downloadLimit("MAX_GLOBAL_DOWNLOADS", 20);
+  const maxUser = downloadLimit("MAX_DOWNLOADS_PER_USER", 2);
+  const maxIp = downloadLimit("MAX_DOWNLOADS_PER_IP", 4);
+
+  if (downloadCounters.global >= maxGlobal) {
+    return {
+      ok: false,
+      status: 429,
+      message: "He thong dang co nhieu file dang tai. Vui long thu lai sau.",
+    };
+  }
+  if (mapCount(downloadCounters.user, userId) >= maxUser) {
+    return {
+      ok: false,
+      status: 429,
+      message: `Tai khoan chi duoc tai toi da ${maxUser} file cung luc.`,
+    };
+  }
+  if (mapCount(downloadCounters.ip, ip) >= maxIp) {
+    return {
+      ok: false,
+      status: 429,
+      message: `IP chi duoc tai toi da ${maxIp} file cung luc.`,
+    };
+  }
+
+  downloadCounters.global += 1;
+  downloadCounters.user.set(userId, mapCount(downloadCounters.user, userId) + 1);
+  downloadCounters.ip.set(ip, mapCount(downloadCounters.ip, ip) + 1);
+
+  return {
+    ok: true,
+    release() {
+      downloadCounters.global = Math.max(0, downloadCounters.global - 1);
+      decrementMap(downloadCounters.user, userId);
+      decrementMap(downloadCounters.ip, ip);
+    },
+  };
+}
+
 function redownloadExpiresAt(history) {
   const createdAt = history?.createdAt
     ? new Date(history.createdAt).getTime()
@@ -50,7 +121,11 @@ function redownloadExpiresAt(history) {
 
 function canRedownload(history) {
   const expiresAt = redownloadExpiresAt(history);
-  return Boolean(expiresAt && expiresAt.getTime() > Date.now());
+  return Boolean(
+    expiresAt &&
+      expiresAt.getTime() > Date.now() &&
+      Number(history?.redownloadCount || 0) < redownloadLimit(),
+  );
 }
 
 function readUrlRequest(req, res) {
@@ -75,6 +150,10 @@ async function findActiveRedownload(userId, productId) {
     userId,
     productId,
     createdAt: { $gte: new Date(Date.now() - redownloadWindowMs()) },
+    $or: [
+      { redownloadCount: { $exists: false } },
+      { redownloadCount: { $lt: redownloadLimit() } },
+    ],
   }).sort({ createdAt: -1 });
 }
 
@@ -122,6 +201,12 @@ function publicHistoryItem(req, item) {
       Number.isFinite(REDOWNLOAD_WINDOW_DAYS) && REDOWNLOAD_WINDOW_DAYS > 0
         ? REDOWNLOAD_WINDOW_DAYS
         : 3,
+    redownloadCount: Number(doc.redownloadCount || 0),
+    redownloadLimit: redownloadLimit(),
+    redownloadRemaining: Math.max(
+      0,
+      redownloadLimit() - Number(doc.redownloadCount || 0),
+    ),
   };
 }
 
@@ -139,6 +224,12 @@ function sendFreeRedownload(req, res, history) {
     freeRedownload: true,
     canRedownload: true,
     redownloadExpiresAt: redownloadExpiresAt(history),
+    redownloadCount: Number(history.redownloadCount || 0),
+    redownloadLimit: redownloadLimit(),
+    redownloadRemaining: Math.max(
+      0,
+      redownloadLimit() - Number(history.redownloadCount || 0),
+    ),
   });
 }
 
@@ -227,7 +318,7 @@ async function resolveProductCache(productId, url) {
         if (isCacheFresh(cached)) return cached;
 
         const download = await with3D66Cookie((cookieValue) =>
-          fetchFrom3D66(url, cookieValue),
+          queue3D66Getlink(() => fetchFrom3D66(url, cookieValue)),
         );
         const fileUrl =
           typeof download === "string" ? download : download.fileUrl;
@@ -312,7 +403,7 @@ export async function previewGetlink(req, res, next) {
     }
 
     const preview = await with3D66Cookie((cookieValue) =>
-      fetch3D66Preview(url, cookieValue),
+      queue3D66Getlink(() => fetch3D66Preview(url, cookieValue)),
     );
     const previewPayload = {
       productId: preview.productId || productId,
@@ -346,6 +437,16 @@ export async function previewGetlink(req, res, next) {
       ),
     });
   } catch (error) {
+    await writeSystemLog({
+      type: "getlink",
+      level: "error",
+      message: error.message,
+      userId: req.user?._id,
+      ip: req.ip,
+      path: req.path,
+      status: error.status,
+      details: { stage: "preview" },
+    });
     next(error);
   }
 }
@@ -356,21 +457,33 @@ export async function inspectGetlink(req, res, next) {
     if (!url) return;
 
     const inspection = await with3D66Cookie((cookieValue) =>
-      inspect3D66Page(url, cookieValue),
+      queue3D66Getlink(() => inspect3D66Page(url, cookieValue)),
     );
     res.json(inspection);
   } catch (error) {
+    await writeSystemLog({
+      type: "getlink",
+      level: "error",
+      message: error.message,
+      userId: req.user?._id,
+      ip: req.ip,
+      path: req.path,
+      status: error.status,
+      details: { stage: "inspect" },
+    });
     next(error);
   }
 }
 
 export async function getLink(req, res, next) {
   let acquiredLockKey = null;
+  let logProductId = "";
   try {
     const url = readUrlRequest(req, res);
     if (!url) return;
 
     const productId = extractProductId(url);
+    logProductId = productId;
 
     // Acquire per-user-per-product mutex de chan 2 request dong thoi cung product
     // bi tru credit 2 lan (race condition giua findActiveRedownload va deductCredit).
@@ -410,7 +523,7 @@ export async function getLink(req, res, next) {
       isFallbackMetadata(cachePreview || {}, productId)
     ) {
       const preview = await with3D66Cookie((cookieValue) =>
-        fetch3D66Preview(url, cookieValue),
+        queue3D66Getlink(() => fetch3D66Preview(url, cookieValue)),
       );
       if (
         process.env.THREED66_MOCK === "false" &&
@@ -507,6 +620,17 @@ export async function getLink(req, res, next) {
       creditUsed: creditCost,
     });
   } catch (error) {
+    await writeSystemLog({
+      type: "getlink",
+      level: "error",
+      message: error.message,
+      userId: req.user?._id,
+      productId: logProductId,
+      ip: req.ip,
+      path: req.path,
+      status: error.status,
+      details: { stage: "create" },
+    });
     next(error);
   } finally {
     if (acquiredLockKey) userProductLocks.delete(acquiredLockKey);
@@ -516,7 +640,9 @@ export async function getLink(req, res, next) {
 async function refreshHistoryDownload(history, cookieValue) {
   if (!history.sourceUrl) return history;
 
-  const download = await fetchFrom3D66(history.sourceUrl, cookieValue);
+  const download = await queue3D66Getlink(() =>
+    fetchFrom3D66(history.sourceUrl, cookieValue),
+  );
   const updatedFields = {
     fileUrl: typeof download === "string" ? download : download.fileUrl,
     sourceUrl:
@@ -591,6 +717,9 @@ async function openDownloadResponse(history, req, signal) {
 
 export async function downloadGetlink(req, res, next) {
   const controller = new AbortController();
+  let downloadSlot = null;
+  let reservedDownloadCount = false;
+  let reservedHistoryId = "";
   res.on("close", () => {
     if (!res.writableEnded) controller.abort();
   });
@@ -618,6 +747,18 @@ export async function downloadGetlink(req, res, next) {
       });
     }
 
+    downloadSlot = acquireDownloadSlot(req);
+    if (!downloadSlot.ok) {
+      securityEvent("DOWNLOAD_CONCURRENCY_LIMIT", {
+        userId: String(req.user._id),
+        historyId: String(req.params.id),
+        ip: req.ip,
+      });
+      return res
+        .status(downloadSlot.status)
+        .json({ message: downloadSlot.message, retryable: true });
+    }
+
     const history = await Getlink.findOne({
       _id: req.params.id,
       userId: req.user._id,
@@ -634,19 +775,57 @@ export async function downloadGetlink(req, res, next) {
       });
     }
 
+    const reservedHistory = await Getlink.findOneAndUpdate(
+      {
+        _id: history._id,
+        userId: req.user._id,
+        $or: [
+          { redownloadCount: { $exists: false } },
+          { redownloadCount: { $lt: redownloadLimit() } },
+        ],
+      },
+      {
+        $inc: { redownloadCount: 1 },
+        $set: { lastRedownloadAt: new Date() },
+      },
+      { new: true },
+    );
+
+    if (!reservedHistory) {
+      return res.status(429).json({
+        message: `Download limit reached. You can download this file ${redownloadLimit()} times within ${REDOWNLOAD_WINDOW_DAYS || 3} days.`,
+        canRedownload: false,
+        redownloadLimit: redownloadLimit(),
+      });
+    }
+    reservedDownloadCount = true;
+    reservedHistoryId = String(history._id);
+
     const { history: activeHistory, upstream } = await openDownloadResponse(
-      history,
+      reservedHistory,
       req,
       controller.signal,
     );
 
     if (!upstream.ok && upstream.status !== 206) {
+      if (reservedDownloadCount && reservedHistoryId) {
+        await Getlink.findByIdAndUpdate(reservedHistoryId, {
+          $inc: { redownloadCount: -1 },
+        }).catch(() => {});
+        reservedDownloadCount = false;
+      }
       return res
         .status(upstream.status || 502)
         .json({ message: `3D66 download failed: HTTP ${upstream.status}` });
     }
 
     if (!looksLikeDownloadFile(upstream)) {
+      if (reservedDownloadCount && reservedHistoryId) {
+        await Getlink.findByIdAndUpdate(reservedHistoryId, {
+          $inc: { redownloadCount: -1 },
+        }).catch(() => {});
+        reservedDownloadCount = false;
+      }
       return res.status(502).json({
         message: "3D66 did not return a file stream. Please try again later.",
       });
@@ -661,13 +840,33 @@ export async function downloadGetlink(req, res, next) {
 
     res.flushHeaders();
     await pipeline(Readable.fromWeb(upstream.body), res);
+    reservedDownloadCount = false;
   } catch (error) {
+    if (reservedDownloadCount && reservedHistoryId) {
+      await Getlink.findByIdAndUpdate(reservedHistoryId, {
+        $inc: { redownloadCount: -1 },
+      }).catch(() => {});
+      reservedDownloadCount = false;
+    }
     if (error.name === "AbortError") return;
+    await writeSystemLog({
+      type: "download",
+      level: "error",
+      message: error.message,
+      userId: req.user?._id,
+      historyId: req.params?.id,
+      ip: req.ip,
+      path: req.path,
+      status: error.status,
+      details: { stage: "stream" },
+    });
     if (res.headersSent) {
       console.error("Download stream failed after headers were sent:", error);
       return;
     }
     next(error);
+  } finally {
+    if (downloadSlot?.release) downloadSlot.release();
   }
 }
 

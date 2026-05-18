@@ -19,7 +19,7 @@ const topupSchema = new mongoose.Schema(
     credit: { type: Number, required: true },
     type: {
       type: String,
-      enum: ["manual", "auto", "fake", "vnpay", "vietqr"],
+      enum: ["manual", "auto", "fake", "vnpay", "vietqr", "sepay"],
       default: "auto",
     },
     status: {
@@ -29,6 +29,8 @@ const topupSchema = new mongoose.Schema(
     },
     paymentCode: { type: String, index: true },
     qrUrl: String,
+    checkoutUrl: String,
+    gatewayProvider: String,
     bankId: String,
     accountNo: String,
     accountName: String,
@@ -53,21 +55,25 @@ topupSchema.index(
     name: "unique_pending_paymentCode",
   },
 );
+topupSchema.index({ userId: 1, createdAt: -1 });
+topupSchema.index({ status: 1, createdAt: -1 });
+topupSchema.index({ status: 1, paidAt: -1 });
+topupSchema.index({ voucherCode: 1, status: 1 });
 
-// Chong race condition "1 user 1 voucher 1 luot": nhieu request dong thoi cung user+voucher
-// se bypass countDocuments check. Partial unique index force atomic at DB level.
-topupSchema.index(
-  { userId: 1, voucherCode: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      voucherCode: { $exists: true, $type: "string" },
-      status: { $in: ["pending", "approved"] },
-    },
-    name: "unique_user_voucher_active",
-  },
-);
-
-export default isMemoryDb()
+const TopupModel = isMemoryDb()
   ? createMemoryModel("Topup")
   : mongoose.model("Topup", topupSchema);
+
+export async function ensureTopupIndexes() {
+  if (isMemoryDb() || !TopupModel.collection?.indexes) return;
+  try {
+    const indexes = await TopupModel.collection.indexes();
+    if (indexes.some((index) => index.name === "unique_user_voucher_active")) {
+      await TopupModel.collection.dropIndex("unique_user_voucher_active");
+    }
+  } catch {
+    // Non-fatal: old deployments may not have the obsolete index yet.
+  }
+}
+
+export default TopupModel;

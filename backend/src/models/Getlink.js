@@ -9,12 +9,16 @@ const getlinkSchema = new mongoose.Schema(
     sourceUrl: String,
     title: String,
     imageUrl: String,
-    creditUsed: { type: Number, default: 1 }
+    creditUsed: { type: Number, default: 1 },
+    redownloadCount: { type: Number, default: 0, min: 0 },
+    lastRedownloadAt: Date,
   },
   { timestamps: true }
 );
 
 getlinkSchema.index({ userId: 1, productId: 1, createdAt: -1 });
 getlinkSchema.index({ userId: 1, createdAt: -1 });
+getlinkSchema.index({ productId: 1, createdAt: -1 });
+getlinkSchema.index({ createdAt: -1 });
 
 export default isMemoryDb() ? createMemoryModel("Getlink") : mongoose.model("Getlink", getlinkSchema);

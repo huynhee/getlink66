@@ -4,7 +4,8 @@ import { securityEvent } from "../utils/logger.js";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const CSRF_SKIP_PATHS = new Set([
   "/api/auth/csrf",
-  "/api/payments/vietqr/webhook"
+  "/api/payments/vietqr/webhook",
+  "/api/payments/sepay/ipn"
 ]);
 
 function ensureToken(req, res) {

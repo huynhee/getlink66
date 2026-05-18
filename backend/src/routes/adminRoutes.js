@@ -8,8 +8,10 @@ import {
   deleteVoucher,
   listUsers, 
   saveCookie,
+  cookiePoolStatus,
   testCookie,
   listCookies,
+  listSystemLogs,
   deleteCookie,
   testSavedCookie,
   listTopupPackages,
@@ -21,6 +23,11 @@ import {
   approveTopup,
   rejectTopup
 } from "../controllers/adminController.js";
+import {
+  adminCreateNotification,
+  adminDeleteNotification,
+  adminListNotifications
+} from "../controllers/notificationController.js";
 import {
   createAdminArticle,
   deleteAdminArticle,
@@ -39,9 +46,11 @@ router.use(requireAuth, adminOnly);
 router.get("/overview", getOverview);
 router.get("/users", listUsers);
 router.get("/audit-logs", listAuditLogs);
+router.get("/system-logs", listSystemLogs);
 router.post("/add-credit", adminWriteLimit, auditAdmin("ADD_CREDIT"), adminAddCredit);
 router.post("/set-credit", adminWriteLimit, auditAdmin("SET_CREDIT"), adminSetCredit);
 router.get("/cookies", listCookies);
+router.get("/cookies/status", cookiePoolStatus);
 router.post("/cookie", adminWriteLimit, auditAdmin("SAVE_COOKIE"), saveCookie);
 router.post("/cookie/test", adminWriteLimit, testCookie);
 router.post("/cookies/:id/test", adminWriteLimit, testSavedCookie);
@@ -49,6 +58,10 @@ router.delete("/cookies/:id", adminWriteLimit, auditAdmin("DELETE_COOKIE"), dele
 router.post("/voucher", adminWriteLimit, auditAdmin("CREATE_VOUCHER"), createVoucher);
 router.get("/vouchers", listVouchers);
 router.delete("/vouchers/:id", adminWriteLimit, auditAdmin("DELETE_VOUCHER"), deleteVoucher);
+
+router.get("/notifications", adminListNotifications);
+router.post("/notifications", adminWriteLimit, auditAdmin("CREATE_NOTIFICATION"), adminCreateNotification);
+router.delete("/notifications/:id", adminWriteLimit, auditAdmin("DELETE_NOTIFICATION"), adminDeleteNotification);
 
 router.get("/topup-packages", listTopupPackages);
 router.post("/topup-packages", adminWriteLimit, auditAdmin("CREATE_PACKAGE"), createTopupPackage);

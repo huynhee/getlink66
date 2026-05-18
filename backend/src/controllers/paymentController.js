@@ -31,6 +31,22 @@ function assertWebhookSecret(req) {
   }
 }
 
+function assertSepaySecret(req) {
+  const expected = String(process.env.SEPAY_SECRET_KEY || "").trim();
+  if (!expected) {
+    const error = new Error("SEPAY_SECRET_KEY chua duoc cau hinh.");
+    error.status = 500;
+    throw error;
+  }
+
+  const received = String(req.get("x-secret-key") || "").trim();
+  if (!safeEqual(received, expected)) {
+    const error = new Error("Invalid Sepay secret");
+    error.status = 401;
+    throw error;
+  }
+}
+
 function pickText(transaction) {
   return String(
     transaction.description ||
@@ -199,6 +215,111 @@ export async function vietQrWebhook(req, res, next) {
       ok: true,
       approved: results.filter((item) => item.ok).length,
       results,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+function sepayAmount(payload) {
+  const value =
+    payload?.transaction?.transaction_amount ??
+    payload?.order?.order_amount ??
+    payload?.amount;
+  const normalized = Number(String(value || "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(normalized) ? normalized : 0;
+}
+
+function sepayTransactionId(payload) {
+  return String(
+    payload?.transaction?.transaction_id ||
+      payload?.transaction?.id ||
+      payload?.order?.id ||
+      "",
+  );
+}
+
+export async function sepayIpn(req, res, next) {
+  try {
+    const contentType = String(req.get("content-type") || "").toLowerCase();
+    if (!contentType.includes("application/json")) {
+      return res
+        .status(415)
+        .json({ message: "Content-Type must be application/json" });
+    }
+
+    assertSepaySecret(req);
+
+    if (req.body?.notification_type !== "ORDER_PAID") {
+      return res.json({ ok: true, ignored: true });
+    }
+
+    const paymentCode = String(req.body?.order?.order_invoice_number || "")
+      .trim()
+      .toUpperCase();
+    const transactionStatus = String(
+      req.body?.transaction?.transaction_status || "",
+    ).toUpperCase();
+    const amount = sepayAmount(req.body);
+    const transactionId = sepayTransactionId(req.body);
+
+    if (!paymentCode || transactionStatus !== "APPROVED" || amount <= 0) {
+      return res.status(400).json({
+        ok: false,
+        reason: "invalid_sepay_payload",
+      });
+    }
+
+    if (transactionId) {
+      const duplicate = await Topup.findOne({
+        gatewayTransactionId: transactionId,
+        status: "approved",
+      });
+      if (duplicate) {
+        return res.json({
+          ok: true,
+          duplicate: true,
+          paymentCode,
+        });
+      }
+    }
+
+    const topup = await Topup.findOne({ paymentCode, status: "pending" });
+    if (!topup) {
+      return res.json({
+        ok: false,
+        paymentCode,
+        reason: "topup_not_found_or_already_handled",
+      });
+    }
+
+    if (amount < topup.amount) {
+      return res.status(409).json({
+        ok: false,
+        paymentCode,
+        reason: "amount_not_enough",
+        expected: topup.amount,
+        received: amount,
+      });
+    }
+
+    const approved = await approvePendingTopup(topup, {
+      gatewayProvider: "sepay",
+      gatewayTransactionId:
+        transactionId || `sepay-${paymentCode}-${amount}-${Date.now()}`,
+      gatewayPayload: req.body,
+    });
+
+    if (!approved) {
+      return res.json({ ok: false, paymentCode, reason: "already_handled" });
+    }
+
+    return res.json({
+      ok: true,
+      paymentCode,
+      topupId: approved.topup._id,
+      creditAdded: approved.topup.credit,
+      userCredit: approved.user.credit,
     });
   } catch (error) {
     next(error);

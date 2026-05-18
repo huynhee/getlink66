@@ -3,11 +3,11 @@ import { limitedString, rejectUnknownKeys, sanitizeHtml } from "../utils/validat
 
 const defaultSettings = {
   key: "homepage",
-  heroText: "SIÊU RẺ\nTẢI 3D66\nCHỈ 8K VND",
+  heroText: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ",
   heroSubtitle:
     "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp.",
   saleText: "Khuyến mãi gói PRO trong tháng này",
-  pricingNote: "Nạp credit tự động, tỉ lệ chuyển đổi VD: 50.000 VNĐ = 12.8 tệ = 128 credit."
+  pricingNote: "Nạp credit tự động, tỉ lệ 1:1 như 3D66 VD: 50.000 VNĐ = 12.8 tệ = 128 credit."
 };
 
 async function loadSettings() {
@@ -15,8 +15,10 @@ async function loadSettings() {
   if (!settings) {
     settings = await SiteSetting.create(defaultSettings);
   } else if (
+    settings.heroText === "SIÊU RẺ\nTẢI 3D66\nCHỈ 8K VND" ||
     settings.heroText === "> SIÊU RẺ\nTẢI MODEL\nCHỈ 8K VND" ||
-    settings.heroText === "SIÊU NHANH\nTẢI 3D66\nCHỈ 8K VND"
+    settings.heroText === "> SIÊU RẺ\nTẢI MODEL\nTỐC ĐỘ" ||
+    settings.heroText === "SIÊU RẺ\nTẢI 3D66\nTỐC Đ"
   ) {
     settings = await SiteSetting.findOneAndUpdate(
       { key: "homepage" },

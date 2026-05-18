@@ -3,7 +3,8 @@ import TopupPackage from "../models/TopupPackage.js";
 import Voucher from "../models/Voucher.js";
 import { addCredit } from "../utils/creditService.js";
 import { notifyTopupCreated } from "../utils/telegramNotifier.js";
-import { buildVietQrUrl, createPaymentCode } from "../utils/vietqr.js";
+import { createPaymentCode } from "../utils/vietqr.js";
+import { assertSepayConfigured, createSepayCheckout } from "../utils/sepay.js";
 import {
   finiteNumber,
   isSafeId,
@@ -166,7 +167,7 @@ export async function createTopup(req, res, next) {
       return res.status(400).json({ message: "Invalid voucher code" });
     }
 
-    const type = "vietqr";
+    const type = "sepay";
     const pack = packageId
       ? await TopupPackage.findById(packageId)
       : await TopupPackage.findOne({ price, isActive: true });
@@ -176,8 +177,9 @@ export async function createTopup(req, res, next) {
     }
 
     const isAuto = type === "auto" || type === "fake";
-    const isVietQr = type === "vietqr";
+    const isSepay = type === "sepay";
     const status = isAuto ? "approved" : "pending";
+    if (isSepay) assertSepayConfigured();
     const originalAmount = Math.round(
       (Number(pack.price || 0) * (100 - Number(pack.salePercent || 0))) / 100,
     );
@@ -195,15 +197,29 @@ export async function createTopup(req, res, next) {
           message: "Voucher không hợp lệ, đã hết hạn hoặc hết lượt dùng",
         });
       }
-      const userVoucherUsed = await Topup.countDocuments({
-        userId: req.user._id,
-        voucherCode: normalizedVoucherCode,
-        status: { $in: ["pending", "approved"] },
-      });
-      if (userVoucherUsed > 0) {
-        return res
-          .status(400)
-          .json({ message: "Bạn đã sử dụng voucher này rồi" });
+      const applicablePackageIds = Array.isArray(voucher.applicablePackageIds)
+        ? voucher.applicablePackageIds.map((id) => String(id?._id || id))
+        : [];
+      if (
+        applicablePackageIds.length > 0 &&
+        !applicablePackageIds.includes(String(pack._id))
+      ) {
+        return res.status(400).json({
+          message: "Voucher khong ap dung cho goi nap nay.",
+        });
+      }
+      const perUserLimit = Number(voucher.perUserLimit ?? 1);
+      if (perUserLimit > 0) {
+        const userVoucherUsed = await Topup.countDocuments({
+          userId: req.user._id,
+          voucherCode: normalizedVoucherCode,
+          status: "approved",
+        });
+        if (userVoucherUsed >= perUserLimit) {
+          return res.status(400).json({
+            message: "Ban da dat gioi han su dung voucher nay.",
+          });
+        }
       }
       discountAmount = Math.min(
         originalAmount,
@@ -234,7 +250,8 @@ export async function createTopup(req, res, next) {
       credit,
       type,
       status,
-      expiresAt: isVietQr ? new Date(Date.now() + 30 * 60 * 1000) : undefined,
+      gatewayProvider: isSepay ? "sepay" : undefined,
+      expiresAt: isSepay ? new Date(Date.now() + 30 * 60 * 1000) : undefined,
     };
 
     // Retry tao Topup neu paymentCode collision (CSPRNG da rat hiem nhung partial unique
@@ -243,23 +260,13 @@ export async function createTopup(req, res, next) {
     let attempt = 0;
     while (attempt < 3) {
       attempt += 1;
-      const payment = isVietQr
-        ? buildVietQrUrl({ amount, paymentCode: createPaymentCode() })
-        : {};
+      const paymentCode = isSepay ? createPaymentCode() : undefined;
       try {
-        topup = await Topup.create({ ...baseTopupPayload, ...payment });
+        topup = await Topup.create({ ...baseTopupPayload, paymentCode });
         break;
       } catch (error) {
         if (error?.code === 11000) {
-          // Duplicate key: phan biet voucherCode collision vs paymentCode collision.
-          if (
-            error.keyPattern?.voucherCode ||
-            error.message?.includes("unique_user_voucher_active")
-          ) {
-            return res
-              .status(400)
-              .json({ message: "Bạn đã sử dụng voucher này rồi" });
-          }
+          // Duplicate key: paymentCode collision.
           if (
             error.keyPattern?.paymentCode ||
             error.message?.includes("unique_pending_paymentCode")
@@ -283,11 +290,18 @@ export async function createTopup(req, res, next) {
       userCredit = user.credit;
     }
 
-    if (isVietQr && status === "pending") {
+    let payment = null;
+    if (isSepay && status === "pending") {
+      payment = createSepayCheckout({ topup, user: req.user, pack });
+      topup = await Topup.findByIdAndUpdate(
+        topup._id,
+        { checkoutUrl: payment.checkoutUrl, gatewayProvider: "sepay" },
+        { new: true },
+      );
       notifyTopupCreated({ topup, user: req.user, pack });
     }
 
-    res.json({ topup, credit: userCredit, status });
+    res.json({ topup, payment, credit: userCredit, status });
   } catch (error) {
     next(error);
   }

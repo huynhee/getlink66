@@ -20,12 +20,20 @@ function getByPath(document, path) {
 function matches(document, query = {}) {
   return Object.entries(query).every(([key, expected]) => {
     if (key === "$expr") return true;
+    if (key === "$or") return expected.some((item) => matches(document, item));
+    if (key === "$and") return expected.every((item) => matches(document, item));
     const actual = getByPath(document, key);
     if (expected && typeof expected === "object" && !Array.isArray(expected)) {
       if ("$gte" in expected && !(actual >= expected.$gte)) return false;
       if ("$gt" in expected && !(new Date(actual) > new Date(expected.$gt))) return false;
+      if ("$lte" in expected && !(actual <= expected.$lte)) return false;
+      if ("$lt" in expected && !(new Date(actual) < new Date(expected.$lt))) return false;
+      if ("$ne" in expected && String(actual) === String(expected.$ne)) return false;
+      if ("$in" in expected && !expected.$in.map(String).includes(String(actual))) return false;
+      if ("$exists" in expected && (actual !== undefined) !== Boolean(expected.$exists)) return false;
       return true;
     }
+    if (Array.isArray(actual)) return actual.map(String).includes(String(expected));
     return String(actual) === String(expected);
   });
 }
@@ -41,6 +49,14 @@ function applyUpdate(document, update = {}, query = {}) {
   if (update.$inc) {
     Object.entries(update.$inc).forEach(([key, value]) => {
       document[key] = (document[key] || 0) + value;
+    });
+  }
+  if (update.$addToSet) {
+    Object.entries(update.$addToSet).forEach(([key, value]) => {
+      if (!Array.isArray(document[key])) document[key] = [];
+      if (!document[key].map(String).includes(String(value))) {
+        document[key].push(value);
+      }
     });
   }
   Object.entries(update).forEach(([key, value]) => {
@@ -65,13 +81,25 @@ function chain(result, isArray = true) {
     populate(field, props) {
       const collectionMap = {
         userId: "User",
-        packageId: "TopupPackage"
+        packageId: "TopupPackage",
+        applicablePackageIds: "TopupPackage",
+        createdBy: "User",
       };
       const targetName = collectionMap[field];
       if (targetName) {
         const targetCol = getCollection(targetName);
         result.forEach((doc) => {
-          if (doc[field] && typeof doc[field] === "string" || typeof doc[field] === "object") {
+          if (Array.isArray(doc[field])) {
+            doc[field] = doc[field].map((value) => {
+              const idToFind = value?._id || value;
+              const rel = targetCol.find((r) => String(r._id) === String(idToFind));
+              if (!rel) return value;
+              if (!props) return rel;
+              const picked = { _id: rel._id };
+              props.split(" ").forEach((p) => { picked[p] = rel[p]; });
+              return picked;
+            });
+          } else if (doc[field] && (typeof doc[field] === "string" || typeof doc[field] === "object")) {
             const idToFind = doc[field]?._id || doc[field];
             const rel = targetCol.find((r) => String(r._id) === String(idToFind));
             if (rel) {
@@ -144,6 +172,15 @@ export function createMemoryModel(name) {
       if (index === -1) return null;
       const [document] = collection.splice(index, 1);
       return clone(document);
+    },
+    async findOneAndDelete(query = {}) {
+      const index = collection.findIndex((item) => matches(item, query));
+      if (index === -1) return null;
+      const [document] = collection.splice(index, 1);
+      return clone(document);
+    },
+    async countDocuments(query = {}) {
+      return collection.filter((document) => matches(document, query)).length;
     },
     async exists(query = {}) {
       const document = collection.find((item) => matches(item, query));

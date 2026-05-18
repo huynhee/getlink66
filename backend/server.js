@@ -56,6 +56,10 @@ const { default: adminRoutes } = await import("./src/routes/adminRoutes.js");
 const { default: settingsRoutes } = await import("./src/routes/settingsRoutes.js");
 const { default: systemRoutes } = await import("./src/routes/systemRoutes.js");
 const { default: guideRoutes } = await import("./src/routes/guideRoutes.js");
+const { default: notificationRoutes } = await import("./src/routes/notificationRoutes.js");
+const { ensureTopupIndexes } = await import("./src/models/Topup.js");
+
+await ensureTopupIndexes();
 
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "true") app.set("trust proxy", 1);
@@ -64,10 +68,11 @@ app.use(helmet({
   contentSecurityPolicy: process.env.NODE_ENV === "production" ? {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://cdnjs.cloudflare.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "https://respic.3d66.com", "https://api.vietqr.io", "data:"],
       connectSrc: ["'self'"],
+      formAction: ["'self'", "https://pay.sepay.vn", "https://pay-sandbox.sepay.vn"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"]
     }
@@ -151,6 +156,7 @@ app.use("/api", settingsRoutes);
 app.use("/api", paymentRoutes);
 app.use("/api", systemRoutes);
 app.use("/api", guideRoutes);
+app.use("/api", notificationRoutes);
 app.use("/api/admin", adminRoutes);
 
 app.use((error, _req, res, _next) => {

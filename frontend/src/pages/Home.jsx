@@ -4,6 +4,25 @@ import { Coins, FileDown, Download, Lock, ArrowRightLeft } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
 
+function compactRemainingLabel(expiresAt, language) {
+  const diff = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(diff) || diff <= 0) return language === "vi" ? "hết hạn" : "expired";
+  const totalMinutes = Math.ceil(diff / (60 * 1000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const formatted = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  return language === "vi" ? `còn ${formatted} giờ` : `${formatted}h left`;
+}
+
+function redownloadUsageLabel(item) {
+  const used = Number(item.redownloadCount || 0);
+  const limit = Number(item.redownloadLimit || 5);
+  const remaining = Number.isFinite(Number(item.redownloadRemaining))
+    ? Number(item.redownloadRemaining)
+    : Math.max(0, limit - used);
+  return language === "vi" ? `${remaining}/${limit} lượt` : `${remaining}/${limit} times`;
+}
+
 export default function Home({ user, onUserChange, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const [getlinkHistory, setGetlinkHistory] = useState([]);
@@ -20,15 +39,11 @@ export default function Home({ user, onUserChange, language = "vi" }) {
     return `${t.packagePrefix} ${item.packageId?.name || "Credit"}`;
   }
 
-  function remainingLabel(expiresAt) {
-    const diff = new Date(expiresAt).getTime() - Date.now();
-    if (!Number.isFinite(diff) || diff <= 0) return t.redownloadExpired || "Expired";
-    const days = Math.floor(diff / (24 * 60 * 60 * 1000));
-    const hours = Math.ceil((diff % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-    if (language === "vi") {
-      return days > 0 ? `Còn ${days} ngày ${hours} giờ` : `Còn ${hours} giờ`;
+  function redownloadMeta(item) {
+    if (item.canRedownload) {
+      return `${compactRemainingLabel(item.redownloadExpiresAt, language)} - ${redownloadUsageLabel(item)}`;
     }
-    return days > 0 ? `${days}d ${hours}h left` : `${hours}h left`;
+    return `${language === "vi" ? "hết hạn" : "expired"} - ${redownloadUsageLabel(item)}`;
   }
 
   useEffect(() => {
@@ -59,13 +74,13 @@ export default function Home({ user, onUserChange, language = "vi" }) {
 
       <GetlinkBox onCreditChange={updateCredit} initialUrl={initialUrl} language={language} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "var(--space-16)", marginTop: "var(--space-16)" }}>
+      <div className="dashboardHistoryGrid">
         <section className="panel">
           <h2 style={{ fontSize: 18 }}>
             <FileDown size={18} color="var(--neon-magenta)" />
             {t.getlinkHistory}
           </h2>
-          <div className="table" style={{ maxHeight: 400, overflowY: "auto" }}>
+          <div className="table compactHistoryTable">
             {getlinkHistory.map((item) => (
               <div className="tableRow" key={item._id}>
                 <span style={{ color: "var(--text-primary)" }}>{item.productId}</span>
@@ -82,7 +97,7 @@ export default function Home({ user, onUserChange, language = "vi" }) {
                     </span>
                   )}
                   <small className={item.canRedownload ? "historyMeta" : "historyMeta expired"}>
-                    {item.canRedownload ? remainingLabel(item.redownloadExpiresAt) : (t.redownloadExpired || "Redownload expired")}
+                    {redownloadMeta(item)}
                   </small>
                 </div>
                 <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
@@ -101,7 +116,7 @@ export default function Home({ user, onUserChange, language = "vi" }) {
             <ArrowRightLeft size={18} color="var(--neon-cyan)" />
             {t.topupHistory}
           </h2>
-          <div className="table" style={{ maxHeight: 400, overflowY: "auto" }}>
+          <div className="table compactHistoryTable">
             {topupHistory.map((item) => (
               <div className="tableRow" key={item._id}>
                 <span style={{ color: "var(--text-primary)" }}>{topupTitle(item)}</span>

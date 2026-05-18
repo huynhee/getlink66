@@ -1,60 +1,171 @@
-import React, { useEffect, useState } from "react";
-import { FileDown, Download, Lock } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { ArrowRightLeft, Download, FileDown, Lock } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
 
+function compactRemainingLabel(expiresAt, language) {
+  const diff = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(diff) || diff <= 0) return language === "vi" ? "hết hạn" : "expired";
+  const totalMinutes = Math.ceil(diff / (60 * 1000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const formatted = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  return language === "vi" ? `còn ${formatted} giờ` : `${formatted}h left`;
+}
+
+function redownloadUsageLabel(item, language) {
+  const used = Number(item.redownloadCount || 0);
+  const limit = Number(item.redownloadLimit || 5);
+  const remaining = Number.isFinite(Number(item.redownloadRemaining))
+    ? Number(item.redownloadRemaining)
+    : Math.max(0, limit - used);
+  return language === "vi" ? `${remaining}/${limit} lượt` : `${remaining}/${limit} times`;
+}
+
+function topupTitle(item, t) {
+  if (item.type === "manual" && !item.packageId) return t.adminCredit || "Admin cộng credit";
+  return `${t.packagePrefix || "Gói"} ${item.packageId?.name || "Credit"}`;
+}
+
+function topupStatusLabel(item, t) {
+  if (item.status === "approved") return { className: "success", label: t.success || "Thành công" };
+  if (item.status === "pending") return { className: "pending", label: t.pending || "Chờ duyệt" };
+  return { className: "error", label: t.canceled || "Đã huỷ" };
+}
+
 export default function History({ language = "vi" }) {
   const t = translations[language] || translations.vi;
-  const [history, setHistory] = useState([]);
+  const [downloadHistory, setDownloadHistory] = useState([]);
+  const [topupHistory, setTopupHistory] = useState([]);
+  const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
   const redownloadText = language === "vi" ? "Tải lại" : "Redownload";
 
   useEffect(() => {
-    api("/api/getlink/history").then((data) => setHistory(data.history || []));
+    Promise.all([
+      api("/api/getlink/history"),
+      api("/api/topup/history"),
+    ])
+      .then(([downloads, topups]) => {
+        setDownloadHistory(downloads.history || []);
+        setTopupHistory(topups.history || []);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
-  function remainingLabel(expiresAt) {
-    const diff = new Date(expiresAt).getTime() - Date.now();
-    if (!Number.isFinite(diff) || diff <= 0) return t.redownloadExpired || "Expired";
-    const days = Math.floor(diff / (24 * 60 * 60 * 1000));
-    const hours = Math.ceil((diff % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-    if (language === "vi") {
-      return days > 0 ? `Còn ${days} ngày ${hours} giờ` : `Còn ${hours} giờ`;
+  const rows = useMemo(() => {
+    const downloads = downloadHistory.map((item) => ({
+      kind: "download",
+      id: `download-${item._id}`,
+      date: item.createdAt,
+      item,
+    }));
+    const topups = topupHistory.map((item) => ({
+      kind: "topup",
+      id: `topup-${item._id}`,
+      date: item.createdAt,
+      item,
+    }));
+    return [...downloads, ...topups]
+      .filter((row) => filter === "all" || row.kind === filter)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [downloadHistory, topupHistory, filter]);
+
+  function redownloadMeta(item) {
+    if (item.canRedownload) {
+      return `${compactRemainingLabel(item.redownloadExpiresAt, language)} - ${redownloadUsageLabel(item, language)}`;
     }
-    return days > 0 ? `${days}d ${hours}h left` : `${hours}h left`;
+    return `${language === "vi" ? "hết hạn" : "expired"} - ${redownloadUsageLabel(item, language)}`;
+  }
+
+  function renderDownloadRow(item) {
+    return (
+      <>
+        <span className="historyType">
+          <FileDown size={14} />
+          {item.productId}
+        </span>
+        <div className="historyDownloadCell">
+          {item.canRedownload ? (
+            <a href={item.downloadUrl || buildApiUrl(`/api/getlink/download/${item._id}`)} target="_blank" rel="noreferrer">
+              {redownloadText}
+              <Download size={12} style={{ marginLeft: 6, verticalAlign: "-1px", opacity: 0.6 }} />
+            </a>
+          ) : (
+            <span className="historyExpired">
+              <Lock size={12} />
+              {redownloadText}
+            </span>
+          )}
+          <small className={item.canRedownload ? "historyMeta" : "historyMeta expired"}>
+            {redownloadMeta(item)}
+          </small>
+        </div>
+        <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
+      </>
+    );
+  }
+
+  function renderTopupRow(item) {
+    const status = topupStatusLabel(item, t);
+    return (
+      <>
+        <span className="historyType">
+          <ArrowRightLeft size={14} />
+          {topupTitle(item, t)}
+        </span>
+        <div className="historyDownloadCell">
+          <strong>+{item.credit} credit</strong>
+          <small className="historyMeta">
+            {Number(item.amount || 0).toLocaleString("vi-VN")}đ
+          </small>
+        </div>
+        <div className="historyStatusTime">
+          <span className={`badge ${status.className}`}>{status.label}</span>
+          <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
+        </div>
+      </>
+    );
   }
 
   return (
     <section className="panel">
-      <h2>{t.getlinkHistory}</h2>
-      <div className="table">
-        {history.map((item) => (
-          <div className="tableRow" key={item._id}>
-            <span>
-              <FileDown size={14} style={{ verticalAlign: "-2px", marginRight: 6 }} />
-              {item.productId}
-            </span>
-            <div className="historyDownloadCell">
-              {item.canRedownload ? (
-                <a href={item.downloadUrl || buildApiUrl(`/api/getlink/download/${item._id}`)} target="_blank" rel="noreferrer">
-                  {redownloadText}
-                  <Download size={12} style={{ marginLeft: 6, verticalAlign: "-1px", opacity: 0.6 }} />
-                </a>
-              ) : (
-                <span className="historyExpired">
-                  <Lock size={12} />
-                  {redownloadText}
-                </span>
-              )}
-              <small className={item.canRedownload ? "historyMeta" : "historyMeta expired"}>
-                {item.canRedownload ? `${t.freeRedownload || "Free redownload"} · ${remainingLabel(item.redownloadExpiresAt)}` : (t.redownloadExpired || "Redownload expired")}
-              </small>
-            </div>
-            <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
+      <div className="historyHeader">
+        <h2>{language === "vi" ? "Lịch sử" : "History"}</h2>
+        <div className="historyFilterBar" role="tablist" aria-label="History filter">
+          {[
+            ["all", language === "vi" ? "Tất cả" : "All"],
+            ["download", language === "vi" ? "Tải model" : "Downloads"],
+            ["topup", language === "vi" ? "Nạp credit" : "Top-ups"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={filter === value ? "active" : ""}
+              onClick={() => setFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="table compactHistoryTable unifiedHistoryTable">
+        {rows.map((row) => (
+          <div className={`tableRow ${row.kind === "topup" ? "topupHistoryRow" : ""}`} key={row.id}>
+            {row.kind === "download"
+              ? renderDownloadRow(row.item)
+              : renderTopupRow(row.item)}
           </div>
         ))}
-        {!history.length && (
+        {!loading && !rows.length && (
           <p className="muted" style={{ textAlign: "center", padding: "32px 0" }}>
-            {t.noDownloadHistory}
+            {language === "vi" ? "Chưa có lịch sử phù hợp." : "No matching history yet."}
+          </p>
+        )}
+        {loading && (
+          <p className="muted" style={{ textAlign: "center", padding: "32px 0" }}>
+            {t.loading || "Loading..."}
           </p>
         )}
       </div>

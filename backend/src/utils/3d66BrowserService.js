@@ -42,6 +42,20 @@ function timeoutMs() {
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_TIMEOUT_MS;
 }
 
+function navigationWaitUntil() {
+  const value = String(process.env.THREED66_BROWSER_WAIT_UNTIL || "commit")
+    .trim()
+    .toLowerCase();
+  return ["commit", "domcontentloaded", "load", "networkidle"].includes(value)
+    ? value
+    : "commit";
+}
+
+function postCommitWaitMs() {
+  const value = Number(process.env.THREED66_BROWSER_POST_COMMIT_WAIT_MS || 1200);
+  return Number.isFinite(value) && value >= 0 ? value : 1200;
+}
+
 function shouldBlockAssets() {
   return process.env.THREED66_BROWSER_BLOCK_ASSETS !== "false";
 }
@@ -177,6 +191,10 @@ async function installFastRoutes(context) {
 }
 
 async function waitForModelReady(page, includeDownloadButton = false) {
+  if (navigationWaitUntil() === "commit" && postCommitWaitMs() > 0) {
+    await page.waitForTimeout(postCommitWaitMs()).catch(() => {});
+  }
+
   const selector = includeDownloadButton
     ? "h1.model-name, #detail_data, .j_download"
     : "h1.model-name, #detail_data, meta[property='og:image'], .llimgs, .orginal-price";
@@ -504,7 +522,7 @@ export async function fetch3D66PageWithBrowser(url, cookieValue) {
   assertSafe3D66Url(url);
   return withBrowserContext(url, cookieValue, async ({ context, page }) => {
     await page.goto(url, {
-      waitUntil: "domcontentloaded",
+      waitUntil: navigationWaitUntil(),
       timeout: timeoutMs(),
     });
 
@@ -528,7 +546,7 @@ export async function download3D66WithBrowser(url, cookieValue) {
   assertSafe3D66Url(url);
   return withBrowserContext(url, cookieValue, async ({ context, page }) => {
     await page.goto(url, {
-      waitUntil: "domcontentloaded",
+      waitUntil: navigationWaitUntil(),
       timeout: timeoutMs(),
     });
     await waitForModelReady(page, true);

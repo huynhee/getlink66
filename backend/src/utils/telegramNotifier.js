@@ -62,7 +62,7 @@ export async function sendTelegramNotification(message) {
 
 export function notifyTopupCreated({ topup, user, pack } = {}) {
   const lines = [
-    "<b>New VietQR top-up</b>",
+    "<b>New Sepay top-up</b>",
     `User: ${escapeHtml(user?.email || user?.name || String(topup?.userId || "-"))}`,
     `Package: ${escapeHtml(pack?.name || "-")}`,
     `Amount: ${money(topup?.amount)}`,

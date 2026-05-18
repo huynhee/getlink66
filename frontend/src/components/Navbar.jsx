@@ -1,7 +1,8 @@
-import React, { useState } from "react";
-import { Chrome, LogOut, Menu, UserCircle, X } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Bell, Chrome, LogOut, Menu, UserCircle, X } from "lucide-react";
 import { api } from "../api.js";
 import { translations } from "../i18n.js";
+import { setFaviconNotificationCount } from "../utils/faviconProgress.js";
 
 function LanguageToggle({ language, onLanguageChange }) {
   return (
@@ -33,6 +34,38 @@ export default function Navbar({
   const t = translations[language] || translations.vi;
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const unreadCount = notifications.filter((item) => !item.isRead).length;
+  const fullscreenNotification = notifications.find(
+    (item) => item.displayType === "fullscreen" && !item.isRead
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadNotifications() {
+      if (!user) {
+        setNotifications([]);
+        return;
+      }
+      try {
+        const data = await api("/api/notifications");
+        if (!cancelled) setNotifications(data.notifications || []);
+      } catch {
+        if (!cancelled) setNotifications([]);
+      }
+    }
+    loadNotifications();
+    const timer = user ? window.setInterval(loadNotifications, 60_000) : null;
+    return () => {
+      cancelled = true;
+      if (timer) window.clearInterval(timer);
+    };
+  }, [user?._id]);
+
+  useEffect(() => {
+    setFaviconNotificationCount(unreadCount);
+  }, [unreadCount]);
 
   async function logout() {
     await api("/api/auth/logout", { method: "POST" });
@@ -55,6 +88,7 @@ export default function Navbar({
   function closeMenu() {
     setMenuOpen(false);
     setAccountOpen(false);
+    setNotificationOpen(false);
   }
 
   function goHome() {
@@ -74,9 +108,35 @@ export default function Navbar({
 
   function toggleAccountMenu() {
     setAccountOpen((current) => !current);
+    setNotificationOpen(false);
+  }
+
+  async function markNotificationRead(id) {
+    setNotifications((items) =>
+      items.map((item) => (item._id === id ? { ...item, isRead: true } : item))
+    );
+    try {
+      await api(`/api/notifications/${id}/read`, { method: "POST" });
+    } catch {
+      // UI can stay read locally; next poll will correct it if the request failed.
+    }
+  }
+
+  function goNotificationAction(item) {
+    if (!item) return;
+    markNotificationRead(item._id);
+    const actionUrl = String(item.actionUrl || "").trim();
+    if (!actionUrl) return;
+    if (actionUrl.startsWith("/")) {
+      closeMenu();
+      onNavigate?.(actionUrl);
+      return;
+    }
+    window.location.href = actionUrl;
   }
 
   return (
+    <>
     <header className="topbar">
       <button className="brandButton" onClick={goHome}>
         3DiPL
@@ -119,6 +179,37 @@ export default function Navbar({
         
         {user ? (
           <div className={`account ${accountOpen ? "open" : ""}`}>
+            <div className={`notificationMenu ${notificationOpen ? "open" : ""}`}>
+              <button
+                type="button"
+                className="notificationButton"
+                onClick={() => {
+                  setNotificationOpen((current) => !current);
+                  setAccountOpen(false);
+                }}
+                aria-label="Thông báo"
+                aria-expanded={notificationOpen}
+              >
+                <Bell size={16} />
+                {unreadCount > 0 && <span>{unreadCount}</span>}
+              </button>
+              <div className="notificationDropdown">
+                <strong>Thông báo</strong>
+                {notifications.slice(0, 8).map((item) => (
+                  <button
+                    key={item._id}
+                    type="button"
+                    className={item.isRead ? "read" : ""}
+                    onClick={() => markNotificationRead(item._id)}
+                  >
+                    <b>{item.title}</b>
+                    <span>{item.body}</span>
+                    <time>{new Date(item.createdAt).toLocaleString("vi-VN")}</time>
+                  </button>
+                ))}
+                {!notifications.length && <p>Chưa có thông báo.</p>}
+              </div>
+            </div>
             <button type="button" className="tabletAccountButton" onClick={toggleAccountMenu} aria-label="Account" aria-expanded={accountOpen}>
               <UserCircle size={16} />
               <strong>{user.credit}</strong>
@@ -148,5 +239,40 @@ export default function Navbar({
         )}
       </div>
     </header>
+    {fullscreenNotification && (
+      <div className="fullscreenNoticeOverlay" role="dialog" aria-modal="true" aria-labelledby="fullscreenNoticeTitle">
+        <div className="fullscreenNotice">
+          <button
+            type="button"
+            className="fullscreenNoticeClose"
+            onClick={() => markNotificationRead(fullscreenNotification._id)}
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
+          {fullscreenNotification.imageUrl && (
+            <div className="fullscreenNoticeImage">
+              <img src={fullscreenNotification.imageUrl} alt={fullscreenNotification.title} loading="eager" referrerPolicy="no-referrer" />
+            </div>
+          )}
+          <div className="fullscreenNoticeContent">
+            <span>{fullscreenNotification.expiresAt ? `Đến ${new Date(fullscreenNotification.expiresAt).toLocaleString("vi-VN")}` : "Thông báo"}</span>
+            <h2 id="fullscreenNoticeTitle">{fullscreenNotification.title}</h2>
+            <p>{fullscreenNotification.body}</p>
+            <div className="fullscreenNoticeActions">
+              {fullscreenNotification.actionUrl && (
+                <button type="button" className="primaryButton" onClick={() => goNotificationAction(fullscreenNotification)}>
+                  {fullscreenNotification.actionLabel || "Xem ngay"}
+                </button>
+              )}
+              <button type="button" className="smallButton" onClick={() => markNotificationRead(fullscreenNotification._id)}>
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
