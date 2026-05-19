@@ -67,10 +67,11 @@ export async function updateSettings(req, res, next) {
       update[field] = sanitizeHtml(limitedString(req.body[field], 1000));
     });
 
+    await loadSettings();
     const settings = await SiteSetting.findOneAndUpdate(
       { key: "homepage" },
-      { $setOnInsert: defaultSettings, $set: update },
-      { upsert: true, new: true },
+      { $set: update },
+      { new: true },
     );
 
     res.json({ settings });
