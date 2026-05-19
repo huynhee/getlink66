@@ -12,7 +12,7 @@ const downloadLimit = createRateLimit({ keyPrefix: "getlink-download", windowMs:
 router.post("/getlink/preview", requireAuth, previewLimit, previewGetlink);
 router.post("/getlink/inspect", requireAuth, adminOnly, previewLimit, inspectGetlink);
 router.post("/getlink", requireAuth, getlinkLimit, getLink);
-router.get("/getlink/download/:id", requireAuth, downloadLimit, downloadGetlink);
+router.get("/getlink/download/:id", downloadLimit, downloadGetlink);
 router.get("/getlink/history", requireAuth, getlinkHistory);
 
 export default router;

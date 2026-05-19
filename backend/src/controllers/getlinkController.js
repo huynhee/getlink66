@@ -68,8 +68,8 @@ function decrementMap(map, key) {
   else map.set(normalized, next);
 }
 
-function acquireDownloadSlot(req) {
-  const userId = String(req.user?._id || "anonymous");
+function acquireDownloadSlot(req, ownerUserId = "") {
+  const userId = String(ownerUserId || req.user?._id || "anonymous");
   const ip = String(req.ip || "unknown");
   const maxGlobal = downloadLimit("MAX_GLOBAL_DOWNLOADS", 20);
   const maxUser = downloadLimit("MAX_DOWNLOADS_PER_USER", 2);
@@ -237,16 +237,47 @@ function isRefreshableStatus(status) {
   return [401, 403, 404, 410, 419].includes(Number(status));
 }
 
-function fileNameFromUrl(fileUrl = "", productId = "model") {
+function fileExtensionFromUrl(fileUrl = "") {
   try {
     const parsed = new URL(fileUrl);
     const name = decodeURIComponent(
       parsed.pathname.split("/").filter(Boolean).pop() || "",
     );
-    return name || `${productId}.rar`;
+    const match = name.match(/\.(rar|zip|7z|tar|gz|dwg|skp|max|fbx|obj)$/i);
+    return match ? match[0].toLowerCase() : ".rar";
   } catch {
-    return `${productId}.rar`;
+    return ".rar";
   }
+}
+
+function safeFileNamePart(value = "") {
+  return String(value)
+    .replace(/[\u0000-\u001f<>:"/\\|?*]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function downloadFileName(history) {
+  const extension = fileExtensionFromUrl(history.fileUrl);
+  const productId = safeFileNamePart(history.productId || "3d66-model");
+  const title = safeFileNamePart(history.title || "");
+  const base = title
+    ? `${title.slice(0, 120)}_${productId}`.slice(0, 170)
+    : productId;
+  return `${base || "3d66-model"}${extension}`;
+}
+
+function contentDispositionFileName(history) {
+  const filename = downloadFileName(history);
+  const extension = fileExtensionFromUrl(history.fileUrl);
+  const fallbackBase = safeFileNamePart(history.productId || "3d66-model")
+    .replace(/[^\w.-]+/g, "_")
+    .slice(0, 120) || "3d66-model";
+  const fallback = `${fallbackBase}${extension}`.replace(/"/g, "");
+  const encoded = encodeURIComponent(filename).replace(/['()]/g, (char) =>
+    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 function isFallbackMetadata(metadata = {}, inputProductId = "") {
@@ -277,12 +308,7 @@ function setProxyHeaders(res, upstream, history) {
     res.setHeader("content-type", "application/octet-stream");
   }
 
-  const upstreamDisposition = upstream.headers.get("content-disposition");
-  res.setHeader(
-    "content-disposition",
-    upstreamDisposition ||
-      `attachment; filename="${fileNameFromUrl(history.fileUrl, history.productId).replace(/"/g, "")}"`,
-  );
+  res.setHeader("content-disposition", contentDispositionFileName(history));
   res.setHeader("cache-control", "no-store");
   res.setHeader("x-accel-buffering", "no");
 }
@@ -720,6 +746,7 @@ export async function downloadGetlink(req, res, next) {
   let downloadSlot = null;
   let reservedDownloadCount = false;
   let reservedHistoryId = "";
+  let activeLogUserId = req.user?._id;
   res.on("close", () => {
     if (!res.writableEnded) controller.abort();
   });
@@ -729,14 +756,30 @@ export async function downloadGetlink(req, res, next) {
       return res.status(400).json({ message: "Invalid download id" });
     }
 
-    // Verify HMAC download token (chong CSRF/bandwidth abuse va leak qua <img>/<iframe>).
-    // Token bind voi historyId + userId + exp 15 phut.
+    const history = await Getlink.findById(req.params.id);
+    if (!history) {
+      return res.status(404).json({ message: "Download not found" });
+    }
+    activeLogUserId = history.userId;
+
+    // Link tai co token HMAC de IDM co the tai ma khong can cookie trinh duyet.
+    // Neu dang nhap tren web, van yeu cau dung chu so huu history.
     const token = String(req.query?.t || "");
-    if (
-      !verifyDownloadToken(token, String(req.params.id), String(req.user._id))
-    ) {
+    const ownerUserId = String(history.userId);
+    const authenticatedOwner =
+      req.isAuthenticated?.() &&
+      req.user &&
+      String(req.user._id) === ownerUserId;
+    const tokenValid = verifyDownloadToken(
+      token,
+      String(req.params.id),
+      ownerUserId,
+    );
+
+    if (!authenticatedOwner && !tokenValid) {
       securityEvent("DOWNLOAD_TOKEN_INVALID", {
-        userId: String(req.user._id),
+        userId: ownerUserId,
+        requesterId: req.user?._id ? String(req.user._id) : "",
         historyId: String(req.params.id),
         ip: req.ip,
         path: req.path,
@@ -747,24 +790,16 @@ export async function downloadGetlink(req, res, next) {
       });
     }
 
-    downloadSlot = acquireDownloadSlot(req);
+    downloadSlot = acquireDownloadSlot(req, ownerUserId);
     if (!downloadSlot.ok) {
       securityEvent("DOWNLOAD_CONCURRENCY_LIMIT", {
-        userId: String(req.user._id),
+        userId: ownerUserId,
         historyId: String(req.params.id),
         ip: req.ip,
       });
       return res
         .status(downloadSlot.status)
         .json({ message: downloadSlot.message, retryable: true });
-    }
-
-    const history = await Getlink.findOne({
-      _id: req.params.id,
-      userId: req.user._id,
-    });
-    if (!history) {
-      return res.status(404).json({ message: "Download not found" });
     }
 
     if (!canRedownload(history)) {
@@ -778,7 +813,7 @@ export async function downloadGetlink(req, res, next) {
     const reservedHistory = await Getlink.findOneAndUpdate(
       {
         _id: history._id,
-        userId: req.user._id,
+        userId: history.userId,
         $or: [
           { redownloadCount: { $exists: false } },
           { redownloadCount: { $lt: redownloadLimit() } },
@@ -853,7 +888,7 @@ export async function downloadGetlink(req, res, next) {
       type: "download",
       level: "error",
       message: error.message,
-      userId: req.user?._id,
+      userId: activeLogUserId,
       historyId: req.params?.id,
       ip: req.ip,
       path: req.path,
