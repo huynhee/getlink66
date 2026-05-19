@@ -268,7 +268,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
             {user && referral?.referralUrl && (
               <div className="referralInvite">
                 <div className="referralInviteHeader">
-                  <strong>{t.referralTitle || "Giới thiệu bạn bè, cả hai đều có quà"}</strong>
+                  <strong>{t.referralTitle || "Giới thiệu bạn bè, cả hai đều có quà +1 lượt tải"}</strong>
                   <span>{referral.referralCode}</span>
                 </div>
                 <div className="referralUrlRow">
@@ -348,7 +348,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                   <div className="priceBlock">
                     {hasSale(pkg) && (
                       <div className="priceOriginal">
-                      {Number(pkg.price).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span>đ</span>
+                        {Number(pkg.price).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span>đ</span>
                       </div>
                     )}
                     <div className="price hl-green">
