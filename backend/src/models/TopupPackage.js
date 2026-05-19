@@ -7,6 +7,7 @@ const topupPackageSchema = new mongoose.Schema(
     price: { type: Number, required: true },
     credit: { type: Number, required: true },
     salePercent: { type: Number, default: 0, min: 0, max: 100 },
+    maxTopupsPerUser: { type: Number, default: 0, min: 0 },
     badge: { type: String, default: "" },
     features: { type: [String], default: [] },
     isActive: { type: Boolean, default: true },

@@ -363,6 +363,13 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                     </div>
                   )}
                   <div className="credits">{pkg.credit} CREDIT</div>
+                  {Number(pkg.maxTopupsPerUser || 0) > 0 && (
+                    <div className="credits" style={{ color: "var(--text-muted)", fontWeight: 500 }}>
+                      {language === "vi"
+                        ? `Tối đa ${pkg.maxTopupsPerUser} lần/tài khoản`
+                        : `Max ${pkg.maxTopupsPerUser} times/account`}
+                    </div>
+                  )}
                   <ul>
                     {((pkg.features && pkg.features.length > 0)
                       ? pkg.features

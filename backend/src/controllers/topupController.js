@@ -75,6 +75,28 @@ function packageCredit(pack) {
   return Number(pack.credit || 0);
 }
 
+async function userApprovedPackageCount(userId, packageId) {
+  return Topup.countDocuments({
+    userId,
+    packageId,
+    status: "approved",
+  });
+}
+
+async function ensurePackageTopupLimit(pack, userId) {
+  const limit = Number(pack?.maxTopupsPerUser || 0);
+  if (!Number.isFinite(limit) || limit <= 0) return;
+
+  const used = await userApprovedPackageCount(userId, pack._id);
+  if (used >= limit) {
+    const error = new Error(
+      `Ban da dat gioi han nap goi nay (${limit} lan).`,
+    );
+    error.status = 409;
+    throw error;
+  }
+}
+
 function defaultPackageKey(name = "") {
   const normalized = String(name).toUpperCase();
   return ["STARTER", "BASIC", "PRO", "TEAM"].find((key) =>
@@ -175,6 +197,7 @@ export async function createTopup(req, res, next) {
     if (!pack || pack.isActive === false) {
       return res.status(400).json({ message: "Invalid topup package" });
     }
+    await ensurePackageTopupLimit(pack, req.user._id);
 
     const isAuto = type === "auto" || type === "fake";
     const isSepay = type === "sepay";

@@ -278,6 +278,13 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 </span>
               )}
               <strong>{finalCredit(item)} credit</strong>
+              {Number(item.maxTopupsPerUser || 0) > 0 && (
+                <span className="muted">
+                  {language === "vi"
+                    ? `Mỗi tài khoản nạp tối đa ${item.maxTopupsPerUser} lần`
+                    : `Max ${item.maxTopupsPerUser} top-ups per account`}
+                </span>
+              )}
               {Number(appliedVoucher?.creditBonus || 0) > 0 && voucherAppliesToPackage(appliedVoucher, item) && (
                 <span>Bonus voucher {appliedVoucher.code}: +{appliedVoucher.creditBonus} credit</span>
               )}

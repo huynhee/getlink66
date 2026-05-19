@@ -9,6 +9,7 @@ const emptyPackage = {
   price: "",
   credit: "",
   salePercent: "",
+  maxTopupsPerUser: "",
   badge: "",
   features: "5 lượt tải model\nLưu lịch sử tải\nHỗ trợ cơ bản"
 };
@@ -123,6 +124,7 @@ export default function Admin({ user, language = "vi" }) {
       price: pack.price || "",
       credit: pack.credit || "",
       salePercent: pack.salePercent || "",
+      maxTopupsPerUser: Number(pack.maxTopupsPerUser || 0) > 0 ? pack.maxTopupsPerUser : "",
       badge: pack.badge || "",
       features: Array.isArray(pack.features) ? pack.features.join("\n") : ""
     });
@@ -518,6 +520,15 @@ export default function Admin({ user, language = "vi" }) {
             </div>
             <div className="inputRow">
               <input type="number" value={packageForm.salePercent} onChange={(e) => setPackageForm({ ...packageForm, salePercent: e.target.value })} placeholder={l("Sale %, ví dụ 20", "Sale %, e.g. 20")} />
+              <input
+                type="number"
+                min="0"
+                value={packageForm.maxTopupsPerUser}
+                onChange={(e) => setPackageForm({ ...packageForm, maxTopupsPerUser: e.target.value })}
+                placeholder={l("Giới hạn mỗi tài khoản, bỏ trống = không giới hạn", "Per-account limit, blank = unlimited")}
+              />
+            </div>
+            <div className="inputRow">
               <input value={packageForm.badge} onChange={(e) => setPackageForm({ ...packageForm, badge: e.target.value })} placeholder={l("Nhãn: SALE, POPULAR...", "Badge: SALE, POPULAR...")} />
             </div>
             <textarea
@@ -580,6 +591,11 @@ export default function Admin({ user, language = "vi" }) {
                   </span>
                 )}
                 <span>{pkg.credit} CREDIT</span>
+                <span className="muted">
+                  {Number(pkg.maxTopupsPerUser || 0) > 0
+                    ? l(`Giới hạn ${pkg.maxTopupsPerUser} lần/tài khoản`, `Limit ${pkg.maxTopupsPerUser} times/account`)
+                    : l("Không giới hạn số lần nạp/tài khoản", "Unlimited per account")}
+                </span>
                 <ul style={{ marginTop: 10, paddingLeft: 18 }}>
                   {((pkg.features && pkg.features.length > 0)
                     ? pkg.features

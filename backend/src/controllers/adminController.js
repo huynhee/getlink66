@@ -42,6 +42,10 @@ function normalizePackagePayload(body = {}) {
     price: Number(body.price),
     credit: Number(body.credit),
     salePercent: Number(body.salePercent) || 0,
+    maxTopupsPerUser:
+      body.maxTopupsPerUser === "" || body.maxTopupsPerUser === undefined
+        ? 0
+        : Number(body.maxTopupsPerUser),
     badge: body.badge || "",
     features: normalizedFeatures,
     isActive: body.isActive !== false,
@@ -81,6 +85,13 @@ function validatePackagePayload(payload) {
     payload.salePercent > MAX_VOUCHER_DISCOUNT_PERCENT
   ) {
     return "Sale percent is too high";
+  }
+  if (
+    !Number.isInteger(payload.maxTopupsPerUser) ||
+    payload.maxTopupsPerUser < 0 ||
+    payload.maxTopupsPerUser > 100000
+  ) {
+    return "Valid per-user top-up limit is required";
   }
   return "";
 }
@@ -658,6 +669,7 @@ export async function createTopupPackage(req, res, next) {
       "price",
       "credit",
       "salePercent",
+      "maxTopupsPerUser",
       "badge",
       "features",
       "isActive",
@@ -693,6 +705,7 @@ export async function updateTopupPackage(req, res, next) {
       "price",
       "credit",
       "salePercent",
+      "maxTopupsPerUser",
       "badge",
       "features",
       "isActive",

@@ -1,4 +1,5 @@
 import Topup from "../models/Topup.js";
+import TopupPackage from "../models/TopupPackage.js";
 import Voucher from "../models/Voucher.js";
 import VoucherRedemption from "../models/VoucherRedemption.js";
 import { addCredit } from "./creditService.js";
@@ -98,10 +99,35 @@ async function releaseVoucherUsage(topup) {
   await releaseVoucherCounter(code);
 }
 
+async function assertPackageTopupLimit(topup) {
+  const packageId = topup.packageId?._id || topup.packageId;
+  if (!packageId) return;
+
+  const pack = await TopupPackage.findById(packageId).lean();
+  const limit = Number(pack?.maxTopupsPerUser || 0);
+  if (!Number.isFinite(limit) || limit <= 0) return;
+
+  const userId = topup.userId?._id || topup.userId;
+  const used = await Topup.countDocuments({
+    userId,
+    packageId,
+    status: "approved",
+  });
+  if (used >= limit) {
+    const error = new Error(
+      `Tai khoan nay da dat gioi han nap goi ${pack.name || ""} (${limit} lan).`,
+    );
+    error.status = 409;
+    throw error;
+  }
+}
+
 export async function approvePendingTopup(topup, approvalFields = {}) {
   let voucherClaimed = false;
 
   try {
+    await assertPackageTopupLimit(topup);
+
     if (topup.voucherCode) {
       await claimVoucherUsage(topup);
       voucherClaimed = true;
