@@ -4,6 +4,7 @@ import {
   adminSetCredit,
   getOverview,
   createVoucher, 
+  updateVoucher,
   listVouchers,
   deleteVoucher,
   listUsers, 
@@ -59,6 +60,7 @@ router.post("/cookies/:id/test", adminWriteLimit, testSavedCookie);
 router.delete("/cookies/:id", adminWriteLimit, auditAdmin("DELETE_COOKIE"), deleteCookie);
 router.post("/voucher", adminWriteLimit, auditAdmin("CREATE_VOUCHER"), createVoucher);
 router.get("/vouchers", listVouchers);
+router.put("/vouchers/:id", adminWriteLimit, auditAdmin("UPDATE_VOUCHER"), updateVoucher);
 router.delete("/vouchers/:id", adminWriteLimit, auditAdmin("DELETE_VOUCHER"), deleteVoucher);
 
 router.get("/notifications", adminListNotifications);

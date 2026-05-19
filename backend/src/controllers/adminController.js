@@ -96,6 +96,73 @@ function validatePackagePayload(payload) {
   return "";
 }
 
+function normalizeVoucherPayload(body = {}, currentVoucher = null) {
+  const {
+    code,
+    creditBonus = 0,
+    discountPercent = 0,
+    usageLimit,
+    perUserLimit,
+    applicablePackageIds = [],
+    expireAt,
+    description = "",
+  } = body;
+  const normalizedCode = normalizeVoucherCode(code);
+  const bonus = integerInRange(creditBonus, 0, MAX_STORED_CREDIT);
+  const discount = numberInRange(
+    discountPercent,
+    0,
+    MAX_VOUCHER_DISCOUNT_PERCENT,
+  );
+  const limit = integerInRange(usageLimit, 1, 100000);
+  const rawAccountLimit =
+    perUserLimit === undefined || perUserLimit === null || perUserLimit === ""
+      ? limit
+      : perUserLimit;
+  const accountLimit = integerInRange(rawAccountLimit, 0, 100000);
+  const packageIds = Array.isArray(applicablePackageIds)
+    ? applicablePackageIds.filter(Boolean).map((id) => String(id?._id || id))
+    : [];
+  const expiresAt = new Date(expireAt);
+
+  if (packageIds.length > 100 || packageIds.some((id) => !isSafeId(id))) {
+    return { error: "Invalid voucher package list" };
+  }
+
+  if (
+    !isVoucherCode(normalizedCode) ||
+    bonus === null ||
+    discount === null ||
+    limit === null ||
+    accountLimit === null ||
+    Number.isNaN(expiresAt.valueOf()) ||
+    expiresAt <= new Date()
+  ) {
+    return { error: "Invalid voucher data" };
+  }
+
+  if (bonus <= 0 && discount <= 0) {
+    return { error: "Voucher must add credit or discount percent" };
+  }
+
+  if (currentVoucher && limit < Number(currentVoucher.usedCount || 0)) {
+    return { error: "Usage limit cannot be lower than current used count" };
+  }
+
+  return {
+    payload: {
+      code: normalizedCode,
+      creditBonus: bonus,
+      discountPercent: discount,
+      usageLimit: limit,
+      perUserLimit: accountLimit,
+      applicablePackageIds: packageIds,
+      expireAt: expiresAt,
+      description: limitedString(description, 500),
+    },
+  };
+}
+
 function sortPackages(packages = []) {
   return [...packages].sort((a, b) => {
     const aOrder = Number.isFinite(Number(a.sortOrder))
@@ -568,63 +635,54 @@ export async function createVoucher(req, res, next) {
       return res.status(400).json({ message: "Invalid voucher request" });
     }
 
-    const {
-      code,
-      creditBonus = 0,
-      discountPercent = 0,
-      usageLimit,
-      perUserLimit,
-      applicablePackageIds = [],
-      expireAt,
-      description = "",
-    } = req.body;
-    const normalizedCode = normalizeVoucherCode(code);
-    const bonus = integerInRange(creditBonus, 0, MAX_STORED_CREDIT);
-    const discount = numberInRange(
-      discountPercent,
-      0,
-      MAX_VOUCHER_DISCOUNT_PERCENT,
-    );
-    const limit = integerInRange(usageLimit, 1, 100000);
-    const rawAccountLimit = perUserLimit === undefined || perUserLimit === null || perUserLimit === ""
-      ? limit
-      : perUserLimit;
-    const accountLimit = integerInRange(rawAccountLimit, 0, 100000);
-    const packageIds = Array.isArray(applicablePackageIds)
-      ? applicablePackageIds.filter(Boolean)
-      : [];
-    if (packageIds.length > 100 || packageIds.some((id) => !isSafeId(id))) {
-      return res.status(400).json({ message: "Invalid voucher package list" });
-    }
-    const expiresAt = new Date(expireAt);
-    if (
-      !isVoucherCode(normalizedCode) ||
-      bonus === null ||
-      discount === null ||
-      limit === null ||
-      accountLimit === null ||
-      Number.isNaN(expiresAt.valueOf()) ||
-      expiresAt <= new Date()
-    ) {
-      return res.status(400).json({ message: "Invalid voucher data" });
-    }
-    if (bonus <= 0 && discount <= 0) {
-      return res
-        .status(400)
-        .json({ message: "Voucher must add credit or discount percent" });
-    }
-    const voucher = await Voucher.create({
-      code: normalizedCode,
-      creditBonus: bonus,
-      discountPercent: discount,
-      usageLimit: limit,
-      perUserLimit: accountLimit,
-      applicablePackageIds: packageIds,
-      expireAt: expiresAt,
-      description: limitedString(description, 500),
-    });
+    const { payload, error } = normalizeVoucherPayload(req.body);
+    if (error) return res.status(400).json({ message: error });
+
+    const voucher = await Voucher.create(payload);
     res.json({ voucher });
   } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ message: "Voucher code already exists" });
+    }
+    next(error);
+  }
+}
+
+export async function updateVoucher(req, res, next) {
+  try {
+    const unknownKey = rejectUnknownKeys(req.body, [
+      "code",
+      "creditBonus",
+      "discountPercent",
+      "usageLimit",
+      "perUserLimit",
+      "applicablePackageIds",
+      "expireAt",
+      "description",
+    ]);
+    if (unknownKey) {
+      return res.status(400).json({ message: "Invalid voucher request" });
+    }
+    if (!isSafeId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid voucher id" });
+    }
+
+    const currentVoucher = await Voucher.findById(req.params.id);
+    if (!currentVoucher) {
+      return res.status(404).json({ message: "Voucher not found" });
+    }
+
+    const { payload, error } = normalizeVoucherPayload(req.body, currentVoucher);
+    if (error) return res.status(400).json({ message: error });
+
+    const voucher = await Voucher.findByIdAndUpdate(req.params.id, payload, {
+      new: true,
+    }).populate("applicablePackageIds", "name price");
+    res.json({ voucher });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ message: "Voucher code already exists" });
+    }
     next(error);
   }
 }

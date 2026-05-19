@@ -46,6 +46,14 @@ function formatMoney(value) {
   return `${Number(value || 0).toLocaleString("vi-VN")}đ`;
 }
 
+function toDatetimeLocal(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
 export default function Admin({ user, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const l = (vi, en) => text(language, vi, en);
@@ -75,6 +83,7 @@ export default function Admin({ user, language = "vi" }) {
   const [editUser, setEditUser] = useState(null);
   const [editCredit, setEditCredit] = useState("");
   const [editingPackageId, setEditingPackageId] = useState("");
+  const [editingVoucherId, setEditingVoucherId] = useState("");
   const [dragPackageId, setDragPackageId] = useState("");
   const [twoFactorQr, setTwoFactorQr] = useState("");
   const [twoFactorSecret, setTwoFactorSecret] = useState("");
@@ -170,24 +179,53 @@ export default function Admin({ user, language = "vi" }) {
     await loadData();
   }
 
-  async function createVoucher(event) {
+  function fillVoucherForm(voucher) {
+    setEditingVoucherId(voucher?._id || "");
+    if (!voucher) {
+      setVoucherForm(emptyVoucher);
+      setVoucherMsg("");
+      return;
+    }
+
+    setVoucherForm({
+      code: voucher.code || "",
+      description: voucher.description || "",
+      creditBonus: voucher.creditBonus || "",
+      discountPercent: voucher.discountPercent || "",
+      usageLimit: voucher.usageLimit || "",
+      perUserLimit: Number(voucher.perUserLimit ?? 1) === Number(voucher.usageLimit || 0)
+        ? ""
+        : voucher.perUserLimit ?? "",
+      applicablePackageIds: Array.isArray(voucher.applicablePackageIds)
+        ? voucher.applicablePackageIds.map((pkg) => String(pkg?._id || pkg)).filter(Boolean)
+        : [],
+      expireAt: toDatetimeLocal(voucher.expireAt)
+    });
+    setVoucherMsg("");
+  }
+
+  async function saveVoucher(event) {
     event.preventDefault();
     try {
-      await api("/api/admin/voucher", {
-        method: "POST",
-        body: JSON.stringify({
-          ...voucherForm,
-          creditBonus: Number(voucherForm.creditBonus || 0),
-          discountPercent: Number(voucherForm.discountPercent || 0),
-          usageLimit: Number(voucherForm.usageLimit),
-          perUserLimit:
-            voucherForm.perUserLimit === "" ? undefined : Number(voucherForm.perUserLimit),
-          applicablePackageIds: voucherForm.applicablePackageIds,
-          expireAt: new Date(voucherForm.expireAt).toISOString()
-        })
+      const payload = {
+        ...voucherForm,
+        creditBonus: Number(voucherForm.creditBonus || 0),
+        discountPercent: Number(voucherForm.discountPercent || 0),
+        usageLimit: Number(voucherForm.usageLimit),
+        perUserLimit:
+          voucherForm.perUserLimit === "" ? undefined : Number(voucherForm.perUserLimit),
+        applicablePackageIds: voucherForm.applicablePackageIds,
+        expireAt: new Date(voucherForm.expireAt).toISOString()
+      };
+      await api(editingVoucherId ? `/api/admin/vouchers/${editingVoucherId}` : "/api/admin/voucher", {
+        method: editingVoucherId ? "PUT" : "POST",
+        body: JSON.stringify(payload)
       });
       setVoucherForm(emptyVoucher);
-      setVoucherMsg(l("Voucher đã tạo thành công.", "Voucher created successfully."));
+      setEditingVoucherId("");
+      setVoucherMsg(editingVoucherId
+        ? l("Voucher đã cập nhật thành công.", "Voucher updated successfully.")
+        : l("Voucher đã tạo thành công.", "Voucher created successfully."));
       await loadData();
     } catch (err) {
       setVoucherMsg(err.message);
@@ -196,6 +234,10 @@ export default function Admin({ user, language = "vi" }) {
 
   async function deleteVoucher(id) {
     await api(`/api/admin/vouchers/${id}`, { method: "DELETE" });
+    if (editingVoucherId === id) {
+      setEditingVoucherId("");
+      setVoucherForm(emptyVoucher);
+    }
     await loadData();
   }
 
@@ -617,7 +659,26 @@ export default function Admin({ user, language = "vi" }) {
       {activeSection === "vouchers" && (
         <section className="panel">
           <h2><Gift size={20} /> {l("Quản lý voucher", "Manage vouchers")}</h2>
-          <form onSubmit={createVoucher} style={{ display: "grid", gap: 10, marginTop: 14 }}>
+          <form onSubmit={saveVoucher} style={{ display: "grid", gap: 10, marginTop: 14 }}>
+            <div className="inputRow">
+              <select
+                value={editingVoucherId}
+                onChange={(event) => {
+                  const selected = vouchers.find((item) => item._id === event.target.value);
+                  fillVoucherForm(selected);
+                }}
+              >
+                <option value="">{l("Tạo voucher mới", "Create new voucher")}</option>
+                {vouchers.map((voucher) => (
+                  <option key={voucher._id} value={voucher._id}>{voucher.code}</option>
+                ))}
+              </select>
+              {editingVoucherId && (
+                <button type="button" className="smallButton" onClick={() => fillVoucherForm(null)}>
+                  <RotateCcw size={14} /> {l("Hủy sửa", "Cancel edit")}
+                </button>
+              )}
+            </div>
             <div className="inputRow">
               <input value={voucherForm.code} onChange={(e) => setVoucherForm({ ...voucherForm, code: e.target.value.toUpperCase() })} placeholder={l("Mã voucher", "Voucher code")} />
               <input value={voucherForm.description} onChange={(e) => setVoucherForm({ ...voucherForm, description: e.target.value })} placeholder={l("Mô tả", "Description")} />
@@ -665,7 +726,8 @@ export default function Admin({ user, language = "vi" }) {
               }
               style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}
             >
-              <Gift size={16} /> {l("Tạo voucher", "Create voucher")}
+              {editingVoucherId ? <Save size={16} /> : <Gift size={16} />}
+              {editingVoucherId ? l("Lưu chỉnh sửa", "Save changes") : l("Tạo voucher", "Create voucher")}
             </button>
           </form>
           {voucherMsg && <p className={voucherMsg.includes("thành công") || voucherMsg.includes("successfully") ? "success" : "error"}>{voucherMsg}</p>}
@@ -717,9 +779,14 @@ export default function Admin({ user, language = "vi" }) {
                       : t.allTopupPackages}
                   </strong>
                 </div>
-                <button className="smallButton voucherDeleteButton" onClick={() => deleteVoucher(voucher._id)}>
-                  <X size={14} /> {l("Xóa voucher", "Delete voucher")}
-                </button>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="smallButton" type="button" onClick={() => fillVoucherForm(voucher)}>
+                    <Pencil size={14} /> {l("Sửa voucher", "Edit voucher")}
+                  </button>
+                  <button className="smallButton voucherDeleteButton" type="button" onClick={() => deleteVoucher(voucher._id)}>
+                    <X size={14} /> {l("Xóa voucher", "Delete voucher")}
+                  </button>
+                </div>
               </div>
             ))}
             {!vouchers.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Chưa có voucher.", "No vouchers yet.")}</p>}
