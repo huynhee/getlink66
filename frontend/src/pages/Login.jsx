@@ -316,12 +316,15 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
               <p style={{ maxWidth: 600, margin: "0 auto" }}>{siteSettings.pricingNote}</p>
             </div>
 
-            <div className="pricingGrid">
+            <div
+              className="pricingGrid"
+              style={{ "--package-count": Math.min(pricingPackages.length || 1, 5) }}
+            >
               {pricingPackages.map((pkg, index) => (
                 <div
                   className="pricingCard"
                   key={pkg._id || pkg.name || index}
-                  style={pkg.badge ? { borderColor: "var(--neon-green)", transform: index === 1 ? "scale(1.05)" : undefined, zIndex: 10 } : undefined}
+                  style={pkg.badge ? { borderColor: "var(--neon-green)", zIndex: 10 } : undefined}
                 >
                   {pkg.badge && (
                     <div
