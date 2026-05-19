@@ -78,7 +78,8 @@ export default function Home({ user, onUserChange, language = "vi" }) {
         target="_blank"
         rel="noreferrer"
       >
-        hướng dẫn tải tốc độ bàn thờ - bấm vào đây để xem
+        <strong>hướng dẫn đổi dns google để tải tốc độ cao</strong>
+        <span>bấm vào đây để xem</span>
       </a>
 
       <GetlinkBox onCreditChange={updateCredit} initialUrl={initialUrl} language={language} />
