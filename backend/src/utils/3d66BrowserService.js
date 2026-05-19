@@ -56,6 +56,17 @@ function postCommitWaitMs() {
   return Number.isFinite(value) && value >= 0 ? value : 1200;
 }
 
+function navigationRetries() {
+  const value = Number(process.env.THREED66_BROWSER_NAV_RETRIES || 2);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 2;
+}
+
+function retryDelayMs(attempt) {
+  const base = Number(process.env.THREED66_BROWSER_RETRY_DELAY_MS || 1200);
+  const safeBase = Number.isFinite(base) && base >= 0 ? base : 1200;
+  return safeBase * attempt;
+}
+
 function shouldBlockAssets() {
   return process.env.THREED66_BROWSER_BLOCK_ASSETS !== "false";
 }
@@ -210,6 +221,31 @@ async function waitForModelReady(page, includeDownloadButton = false) {
       .waitForLoadState("networkidle", { timeout: 5000 })
       .catch(() => {});
   }
+}
+
+async function goto3D66Page(page, url) {
+  let lastError;
+  const attempts = navigationRetries();
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await page.goto(url, {
+        waitUntil: navigationWaitUntil(),
+        timeout: timeoutMs(),
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts) break;
+      await page.waitForTimeout(retryDelayMs(attempt)).catch(() => {});
+    }
+  }
+
+  const error = new Error(
+    `3D66 browser navigation timed out after ${attempts} attempts. 3D66 may be slow, blocking this server, or the cookie/session needs refresh. ${lastError?.message || ""}`.trim(),
+  );
+  error.status = lastError?.status || 504;
+  error.cause = lastError;
+  throw error;
 }
 
 function parseCookieHeader(cookieValue = "") {
@@ -521,10 +557,7 @@ async function confirmPaymentPopup(page) {
 export async function fetch3D66PageWithBrowser(url, cookieValue) {
   assertSafe3D66Url(url);
   return withBrowserContext(url, cookieValue, async ({ context, page }) => {
-    await page.goto(url, {
-      waitUntil: navigationWaitUntil(),
-      timeout: timeoutMs(),
-    });
+    await goto3D66Page(page, url);
 
     await waitForModelReady(page);
 
@@ -545,10 +578,7 @@ export async function fetch3D66PageWithBrowser(url, cookieValue) {
 export async function download3D66WithBrowser(url, cookieValue) {
   assertSafe3D66Url(url);
   return withBrowserContext(url, cookieValue, async ({ context, page }) => {
-    await page.goto(url, {
-      waitUntil: navigationWaitUntil(),
-      timeout: timeoutMs(),
-    });
+    await goto3D66Page(page, url);
     await waitForModelReady(page, true);
 
     const metadata = await page.evaluate(evaluateMetadata);
