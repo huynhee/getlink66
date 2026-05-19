@@ -72,6 +72,15 @@ export default function Home({ user, onUserChange, language = "vi" }) {
         </div>
       </section>
 
+      <a
+        className="downloadGuideBanner"
+        href="https://www.youtube.com/watch?v=0KfSasds-2I"
+        target="_blank"
+        rel="noreferrer"
+      >
+        hướng dẫn tải tốc độ bàn thờ - bấm vào đây để xem
+      </a>
+
       <GetlinkBox onCreditChange={updateCredit} initialUrl={initialUrl} language={language} />
 
       <div className="dashboardHistoryGrid">
