@@ -249,6 +249,47 @@ function fileNameFromUrl(fileUrl = "", productId = "model") {
   }
 }
 
+function fileExtensionFromUrl(fileUrl = "") {
+  const name = fileNameFromUrl(fileUrl, "");
+  const match = name.match(/\.(rar|zip|7z|tar|gz|dwg|skp|max|fbx|obj)$/i);
+  return match ? match[0].toLowerCase() : ".rar";
+}
+
+function dispositionFileName(disposition = "") {
+  const utf8 = String(disposition).match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1];
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8.trim().replace(/^["']|["']$/g, ""));
+    } catch {
+      return utf8.trim().replace(/^["']|["']$/g, "");
+    }
+  }
+
+  return (
+    String(disposition)
+      .match(/filename\s*=\s*(?:"([^"]+)"|([^;]+))/i)?.slice(1)
+      .find(Boolean)
+      ?.trim() || ""
+  );
+}
+
+function hasKnownExtension(name = "") {
+  return /\.(rar|zip|7z|tar|gz|dwg|skp|max|fbx|obj)$/i.test(String(name));
+}
+
+function contentDispositionFrom3D66(upstreamDisposition = "", history) {
+  const upstreamName = dispositionFileName(upstreamDisposition);
+  if (!upstreamName) return "";
+  if (hasKnownExtension(upstreamName)) return upstreamDisposition;
+
+  const extension = fileExtensionFromUrl(history.fileUrl);
+  const fixedName = `${upstreamName}${extension}`.replace(/"/g, "");
+  const encoded = encodeURIComponent(fixedName).replace(/['()]/g, (char) =>
+    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${fixedName}"; filename*=UTF-8''${encoded}`;
+}
+
 function isFallbackMetadata(metadata = {}, inputProductId = "") {
   const title = String(metadata.title || "").trim();
   return Boolean(
@@ -280,7 +321,7 @@ function setProxyHeaders(res, upstream, history) {
   const upstreamDisposition = upstream.headers.get("content-disposition");
   res.setHeader(
     "content-disposition",
-    upstreamDisposition ||
+    contentDispositionFrom3D66(upstreamDisposition, history) ||
       `attachment; filename="${fileNameFromUrl(history.fileUrl, history.productId).replace(/"/g, "")}"`,
   );
   res.setHeader("cache-control", "no-store");
