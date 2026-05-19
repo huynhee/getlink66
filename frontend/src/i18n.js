@@ -34,7 +34,7 @@ export const translations = {
     readyTitle: "Sẵn sàng bắt đầu?",
     readyUser: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
     readyGuest: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
-    referralTitle: "Giới thiệu bạn bè, cả hai đều có quà +1 lượt tải.",
+    referralTitle: "Giới thiệu bạn bè, cả hai +1 lượt tải.",
     support247: "Hỗ trợ 24/7",
     product: "Sản phẩm",
     features: "Tính năng",

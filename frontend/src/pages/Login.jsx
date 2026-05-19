@@ -268,7 +268,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
             {user && referral?.referralUrl && (
               <div className="referralInvite">
                 <div className="referralInviteHeader">
-                  <strong>{t.referralTitle || "Giới thiệu bạn bè, cả hai đều có quà +1 lượt tải"}</strong>
+                  <strong>{t.referralTitle || "Giới thiệu bạn bè, cả hai +1 lượt tải"}</strong>
                   <span>{referral.referralCode}</span>
                 </div>
                 <div className="referralUrlRow">
@@ -413,7 +413,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
             </nav>
             <nav>
               <h3>{t.support}</h3>
-              <a href="https://discord.com/invite/DGhWGHhf" target="_blank">Discord</a>
+              <a href="https://discord.com/invite/vcx9YbEx3c" target="_blank">Discord</a>
             </nav>
             <nav>
               <h3>{t.legal}</h3>
