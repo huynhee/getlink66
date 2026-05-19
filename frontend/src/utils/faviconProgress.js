@@ -41,11 +41,29 @@ function stopProgressAnimation() {
   }
 }
 
+function roundedRectPath(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(x, y, width, height, r);
+    return;
+  }
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+}
+
 function drawProgress(value, phase = 0) {
   const canvas = document.createElement("canvas");
   canvas.width = 32;
   canvas.height = 32;
   const ctx = canvas.getContext("2d");
+  if (!ctx) return originalHref || "";
   const progress = Math.max(0, Math.min(100, Number(value || 0)));
   const fillHeight = Math.max(2, progress * 0.2);
   const waterTop = 26 - fillHeight;
@@ -57,7 +75,7 @@ function drawProgress(value, phase = 0) {
 
   ctx.save();
   ctx.beginPath();
-  ctx.roundRect(6, 5, 20, 22, 4);
+  roundedRectPath(ctx, 6, 5, 20, 22, 4);
   ctx.clip();
 
   ctx.fillStyle = "rgba(0, 255, 136, 0.08)";
@@ -98,7 +116,7 @@ function drawProgress(value, phase = 0) {
   ctx.strokeStyle = "rgba(0,255,136,0.38)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(5, 4, 22, 24, 4);
+  roundedRectPath(ctx, 5, 4, 22, 24, 4);
   ctx.stroke();
 
   ctx.strokeStyle = "rgba(0,255,136,0.12)";
@@ -113,6 +131,7 @@ function drawBadge(count) {
   canvas.width = 32;
   canvas.height = 32;
   const ctx = canvas.getContext("2d");
+  if (!ctx) return originalHref || "";
   const text = count > 99 ? "99+" : String(count);
 
   ctx.fillStyle = "#070908";
@@ -123,7 +142,7 @@ function drawBadge(count) {
 
   ctx.fillStyle = "#00c853";
   ctx.beginPath();
-  ctx.roundRect(14, 16, 17, 14, 4);
+  roundedRectPath(ctx, 14, 16, 17, 14, 4);
   ctx.fill();
 
   ctx.fillStyle = "#ffffff";
@@ -154,20 +173,28 @@ function applyNotificationBadge() {
 
 export function setFaviconProgress(value) {
   if (typeof document === "undefined") return;
-  const progress = Math.max(0, Math.min(100, Math.round(Number(value || 0))));
-  progressActive = true;
-  progressValue = progress;
+  try {
+    const progress = Math.max(0, Math.min(100, Math.round(Number(value || 0))));
+    progressActive = true;
+    progressValue = progress;
 
-  if (favico) favico.reset();
+    if (favico) favico.reset();
 
-  const link = faviconLink();
-  if (!progressTimer) {
-    progressTimer = window.setInterval(() => {
-      wavePhase += 0.42;
-      link.href = drawProgress(progressValue, wavePhase);
-    }, 90);
+    const link = faviconLink();
+    if (!progressTimer) {
+      progressTimer = window.setInterval(() => {
+        try {
+          wavePhase += 0.42;
+          link.href = drawProgress(progressValue, wavePhase);
+        } catch {
+          stopProgressAnimation();
+        }
+      }, 90);
+    }
+    link.href = drawProgress(progressValue, wavePhase);
+  } catch {
+    stopProgressAnimation();
   }
-  link.href = drawProgress(progressValue, wavePhase);
 }
 
 export function completeFaviconProgress() {
@@ -178,24 +205,29 @@ export function completeFaviconProgress() {
 
 export function failFaviconProgress() {
   if (typeof document === "undefined") return;
-  progressActive = true;
-  stopProgressAnimation();
-  const link = faviconLink();
-  const canvas = document.createElement("canvas");
-  canvas.width = 32;
-  canvas.height = 32;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#070908";
-  ctx.fillRect(0, 0, 32, 32);
-  ctx.strokeStyle = "#ff4569";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(9, 9);
-  ctx.lineTo(23, 23);
-  ctx.moveTo(23, 9);
-  ctx.lineTo(9, 23);
-  ctx.stroke();
-  link.href = canvas.toDataURL("image/png");
+  try {
+    progressActive = true;
+    stopProgressAnimation();
+    const link = faviconLink();
+    const canvas = document.createElement("canvas");
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#070908";
+    ctx.fillRect(0, 0, 32, 32);
+    ctx.strokeStyle = "#ff4569";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(9, 9);
+    ctx.lineTo(23, 23);
+    ctx.moveTo(23, 9);
+    ctx.lineTo(9, 23);
+    ctx.stroke();
+    link.href = canvas.toDataURL("image/png");
+  } catch {
+    stopProgressAnimation();
+  }
 }
 
 export function resetFaviconProgress() {

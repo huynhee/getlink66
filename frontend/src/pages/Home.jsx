@@ -14,7 +14,7 @@ function compactRemainingLabel(expiresAt, language) {
   return language === "vi" ? `còn ${formatted} giờ` : `${formatted}h left`;
 }
 
-function redownloadUsageLabel(item) {
+function redownloadUsageLabel(item, language = "vi") {
   const used = Number(item.redownloadCount || 0);
   const limit = Number(item.redownloadLimit || 5);
   const remaining = Number.isFinite(Number(item.redownloadRemaining))
@@ -41,7 +41,7 @@ export default function Home({ user, onUserChange, language = "vi" }) {
 
   function redownloadMeta(item) {
     if (item.canRedownload) {
-      return `${compactRemainingLabel(item.redownloadExpiresAt, language)} - ${redownloadUsageLabel(item)}`;
+      return `${compactRemainingLabel(item.redownloadExpiresAt, language)} - ${redownloadUsageLabel(item, language)}`;
     }
     return `${language === "vi" ? "hết hạn" : "expired"} - ${redownloadUsageLabel(item)}`;
   }
