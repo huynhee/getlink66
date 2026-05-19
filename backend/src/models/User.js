@@ -8,6 +8,9 @@ const userSchema = new mongoose.Schema(
     avatar: { type: String, default: "" },
     role: { type: String, enum: ["user", "admin"], default: "user" },
     credit: { type: Number, default: 0, min: 0 },
+    referralCode: { type: String, unique: true, sparse: true, trim: true, uppercase: true, index: true },
+    referredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
+    referralRewardedAt: Date,
     twoFactorSecret: { type: String, default: "" },
     isTwoFactorEnabled: { type: Boolean, default: false }
   },

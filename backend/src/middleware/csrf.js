@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { csrfHmacSecret } from "../config/secrets.js";
 import { securityEvent } from "../utils/logger.js";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -16,7 +17,7 @@ function ensureToken(req, res) {
       res.cookie("csrfSecret", secret, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" });
     }
   }
-  return crypto.createHmac("sha256", process.env.SESSION_SECRET || "dev-secret").update(secret).digest("base64url");
+  return crypto.createHmac("sha256", csrfHmacSecret()).update(secret).digest("base64url");
 }
 
 function safeEqual(a = "", b = "") {

@@ -2,6 +2,9 @@ let originalHref = "";
 let favico = null;
 let notificationCount = 0;
 let progressActive = false;
+let progressTimer = null;
+let progressValue = 0;
+let wavePhase = 0;
 
 function faviconLink() {
   let link =
@@ -31,21 +34,76 @@ function favicoInstance() {
   return favico;
 }
 
-function drawProgress(value) {
+function stopProgressAnimation() {
+  if (progressTimer) {
+    window.clearInterval(progressTimer);
+    progressTimer = null;
+  }
+}
+
+function drawProgress(value, phase = 0) {
   const canvas = document.createElement("canvas");
   canvas.width = 32;
   canvas.height = 32;
   const ctx = canvas.getContext("2d");
   const progress = Math.max(0, Math.min(100, Number(value || 0)));
+  const fillHeight = Math.max(2, progress * 0.2);
+  const waterTop = 26 - fillHeight;
+  const waveAmp = progress > 3 && progress < 98 ? 1.6 : 0.6;
+  const slosh = Math.sin(phase * 0.72) * 1.1;
 
   ctx.fillStyle = "#070908";
   ctx.fillRect(0, 0, 32, 32);
-  ctx.strokeStyle = "rgba(0,255,136,0.34)";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(2, 2, 28, 28);
 
-  ctx.fillStyle = "#00ff88";
-  ctx.fillRect(6, 24 - Math.round(progress * 0.18), 20, Math.max(2, Math.round(progress * 0.18)));
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(6, 5, 20, 22, 4);
+  ctx.clip();
+
+  ctx.fillStyle = "rgba(0, 255, 136, 0.08)";
+  ctx.fillRect(6, 5, 20, 22);
+
+  ctx.beginPath();
+  ctx.moveTo(6, 28);
+  ctx.lineTo(6, waterTop + slosh);
+  for (let x = 6; x <= 26; x += 1) {
+    const y =
+      waterTop +
+      slosh +
+      Math.sin((x - 6) * 0.72 + phase) * waveAmp +
+      Math.sin((x - 6) * 0.28 + phase * 1.7) * 0.55;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(26, 28);
+  ctx.closePath();
+  const gradient = ctx.createLinearGradient(0, waterTop, 0, 28);
+  gradient.addColorStop(0, "#8dffd0");
+  gradient.addColorStop(0.34, "#00ff88");
+  gradient.addColorStop(1, "#00b86b");
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  ctx.beginPath();
+  for (let x = 6; x <= 26; x += 1) {
+    const y = waterTop + slosh + Math.sin((x - 6) * 0.72 + phase) * waveAmp;
+    if (x === 6) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = "rgba(244,255,249,0.72)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.restore();
+
+  ctx.strokeStyle = "rgba(0,255,136,0.38)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(5, 4, 22, 24, 4);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(0,255,136,0.12)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(2.5, 2.5, 27, 27);
 
   return canvas.toDataURL("image/png");
 }
@@ -98,43 +156,30 @@ export function setFaviconProgress(value) {
   if (typeof document === "undefined") return;
   const progress = Math.max(0, Math.min(100, Math.round(Number(value || 0))));
   progressActive = true;
+  progressValue = progress;
 
   if (favico) favico.reset();
 
-  if (window.FavIconX?.setValue) {
-    window.FavIconX.config?.({
-      shape: "square",
-      animated: true,
-      animationSpeed: 500,
-      updateTitle: false,
-      borderColor: "#00ff88",
-      fillColor: "#00ff88",
-      shadowColor: "rgba(0,255,136,0.35)",
-    });
-    window.FavIconX.setValue(progress);
-    return;
+  const link = faviconLink();
+  if (!progressTimer) {
+    progressTimer = window.setInterval(() => {
+      wavePhase += 0.42;
+      link.href = drawProgress(progressValue, wavePhase);
+    }, 90);
   }
-
-  faviconLink().href = drawProgress(progress);
+  link.href = drawProgress(progressValue, wavePhase);
 }
 
 export function completeFaviconProgress() {
   if (typeof document === "undefined") return;
   progressActive = true;
-  if (window.FavIconX?.complete) {
-    window.FavIconX.complete();
-    return;
-  }
   setFaviconProgress(100);
 }
 
 export function failFaviconProgress() {
   if (typeof document === "undefined") return;
   progressActive = true;
-  if (window.FavIconX?.fail) {
-    window.FavIconX.fail();
-    return;
-  }
+  stopProgressAnimation();
   const link = faviconLink();
   const canvas = document.createElement("canvas");
   canvas.width = 32;
@@ -156,6 +201,7 @@ export function failFaviconProgress() {
 export function resetFaviconProgress() {
   if (typeof document === "undefined") return;
   progressActive = false;
+  stopProgressAnimation();
   if (window.FavIconX?.reset) {
     window.FavIconX.reset();
     applyNotificationBadge();

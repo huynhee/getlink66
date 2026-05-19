@@ -30,7 +30,7 @@ const DEFAULT_TOPUP_PACKAGES = [
     name: "GÓI BASIC",
     price: 100000,
     credit: 280,
-    salePercent: 10,
+    salePercent: 5,
     badge: "SALE",
     features: ["10 lượt tải model", "Giá tốt hơn gói nhỏ", "Lưu lịch sử tải"],
     isActive: true,
@@ -40,7 +40,7 @@ const DEFAULT_TOPUP_PACKAGES = [
     name: "GÓI PRO",
     price: 200000,
     credit: 560,
-    salePercent: 15,
+    salePercent: 10,
     badge: "POPULAR",
     features: ["20 lượt tải model", "Ưu tiên cache model", "Hỗ trợ ưu tiên"],
     isActive: true,
@@ -50,7 +50,7 @@ const DEFAULT_TOPUP_PACKAGES = [
     name: "GÓI TEAM",
     price: 500000,
     credit: 1400,
-    salePercent: 20,
+    salePercent: 15,
     badge: "BEST VALUE",
     features: ["50 lượt tải model", "Tối ưu cho team thiết kế", "Hỗ trợ nhanh"],
     isActive: true,
@@ -123,7 +123,7 @@ export function getCredit(req, res) {
 
 export async function getPackages(_req, res, next) {
   try {
-    let packages = sortPackages(await TopupPackage.find({ isActive: true }));
+    let packages = await TopupPackage.find({ isActive: true });
     if (packages.length === 0) {
       if (TopupPackage.insertMany) {
         await TopupPackage.insertMany(DEFAULT_TOPUP_PACKAGES);
@@ -132,10 +132,10 @@ export async function getPackages(_req, res, next) {
           DEFAULT_TOPUP_PACKAGES.map((pack) => TopupPackage.create(pack)),
         );
       }
-      packages = sortPackages(await TopupPackage.find({ isActive: true }));
     } else {
-      packages = sortPackages(await syncDefaultTopupPackages(packages));
+      await syncDefaultTopupPackages(packages);
     }
+    packages = sortPackages(await TopupPackage.find({ isActive: true }).lean());
     res.json({ packages });
   } catch (error) {
     next(error);
@@ -312,8 +312,37 @@ export async function topupHistory(req, res, next) {
     const history = await Topup.find({ userId: req.user._id })
       .populate("packageId", "name")
       .sort({ createdAt: -1 })
-      .limit(50);
+      .limit(50)
+      .lean();
     res.json({ history });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function topupStatus(req, res, next) {
+  try {
+    if (!isSafeId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid topup id" });
+    }
+
+    const topup = await Topup.findOne({
+      _id: req.params.id,
+      userId: req.user._id,
+    })
+      .select("status credit amount paymentCode paidAt createdAt updatedAt")
+      .lean();
+
+    if (!topup) {
+      return res.status(404).json({ message: "Topup not found" });
+    }
+
+    res.json({
+      topup,
+      status: topup.status,
+      credit: topup.credit,
+      userCredit: req.user.credit,
+    });
   } catch (error) {
     next(error);
   }

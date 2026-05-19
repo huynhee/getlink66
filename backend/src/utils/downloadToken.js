@@ -1,14 +1,11 @@
 import crypto from "node:crypto";
+import { downloadTokenSecret } from "../config/secrets.js";
 
 const DEFAULT_TTL_MS = 15 * 60 * 1000;
 
-function getSecret() {
-  return process.env.SESSION_SECRET || "dev-secret";
-}
-
 function computeSignature(historyId, userId, exp) {
   return crypto
-    .createHmac("sha256", getSecret())
+    .createHmac("sha256", downloadTokenSecret())
     .update(`${historyId}|${userId}|${exp}`)
     .digest("base64url");
 }

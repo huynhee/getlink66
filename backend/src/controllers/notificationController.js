@@ -66,7 +66,8 @@ export async function listNotifications(req, res, next) {
       activeNotificationQuery(req.user._id),
     )
       .sort({ createdAt: -1 })
-      .limit(50);
+      .limit(50)
+      .lean();
     const items = notifications.map((item) =>
       serializeNotification(item, req.user._id),
     );
@@ -105,7 +106,8 @@ export async function adminListNotifications(_req, res, next) {
     const notifications = await Notification.find()
       .sort({ createdAt: -1 })
       .limit(100)
-      .populate("createdBy", "email name");
+      .populate("createdBy", "email name")
+      .lean();
     res.json({ notifications });
   } catch (error) {
     next(error);

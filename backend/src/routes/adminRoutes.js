@@ -20,6 +20,7 @@ import {
   reorderTopupPackages,
   deleteTopupPackage,
   listPendingTopups,
+  listReferrals,
   approveTopup,
   rejectTopup
 } from "../controllers/adminController.js";
@@ -45,6 +46,7 @@ const adminWriteLimit = createRateLimit({ keyPrefix: "admin-write", windowMs: 60
 router.use(requireAuth, adminOnly);
 router.get("/overview", getOverview);
 router.get("/users", listUsers);
+router.get("/referrals", listReferrals);
 router.get("/audit-logs", listAuditLogs);
 router.get("/system-logs", listSystemLogs);
 router.post("/add-credit", adminWriteLimit, auditAdmin("ADD_CREDIT"), adminAddCredit);

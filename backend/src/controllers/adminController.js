@@ -6,6 +6,7 @@ import TopupPackage from "../models/TopupPackage.js";
 import Getlink from "../models/Getlink.js";
 import ProductCache from "../models/ProductCache.js";
 import SystemLog from "../models/SystemLog.js";
+import Referral from "../models/Referral.js";
 import { addCredit } from "../utils/creditService.js";
 import { approvePendingTopup } from "../utils/topupApprovalService.js";
 import { validate3D66Cookie } from "../utils/3d66Service.js";
@@ -210,6 +211,19 @@ export async function listUsers(_req, res, next) {
   try {
     const users = await User.find().sort({ createdAt: -1 }).limit(200);
     res.json({ users });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listReferrals(_req, res, next) {
+  try {
+    const referrals = await Referral.find()
+      .sort({ createdAt: -1 })
+      .populate("referrerId", "name email avatar referralCode")
+      .populate("referredUserId", "name email avatar")
+      .limit(200);
+    res.json({ referrals });
   } catch (error) {
     next(error);
   }

@@ -1222,6 +1222,62 @@ label {
   gap: var(--space-8);
 }
 
+.referralInvite {
+  margin-top: var(--space-8);
+  width: 100%;
+  display: grid;
+  gap: var(--space-8);
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 255, 136, 0.22);
+  background: rgba(0, 255, 136, 0.045);
+  clip-path: var(--cyber-cut-sm);
+}
+
+.heroLeft > .referralInvite {
+  display: none;
+}
+
+.referralInviteHeader {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+}
+
+.referralInvite strong,
+.referralInvite span {
+  font-family: var(--font-mono);
+}
+
+.referralInvite strong {
+  color: var(--neon-green);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.referralInvite span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.referralUrlRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4);
+}
+
+.referralUrlRow input {
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--neon-cyan);
+}
+
 .codeWindow {
   background: #000;
   border: 1px solid var(--border-warm);
@@ -2332,6 +2388,22 @@ label {
   grid-template-columns: auto minmax(220px, 1fr) minmax(120px, auto) auto auto;
 }
 
+.referralTable .tableRow {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto auto auto;
+}
+
+.referralTable .tableRow > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.referralTable .tableRow strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .historyDownloadCell {
   display: grid;
   gap: 4px;
@@ -3133,6 +3205,19 @@ label {
   .heroActions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .referralInvite {
+    align-items: stretch;
+  }
+
+  .referralInviteHeader,
+  .referralUrlRow {
+    grid-template-columns: 1fr;
+  }
+
+  .referralUrlRow .smallButton {
+    width: 100%;
   }
 
   .linkInputWrap {

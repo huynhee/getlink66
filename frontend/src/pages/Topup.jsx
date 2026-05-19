@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { translations } from "../i18n.js";
 
 const CURRENCY = "đ";
+const PENDING_TOPUP_ID_KEY = "pendingSepayTopupId";
 
 function submitPaymentCheckout(payment) {
   if (!payment?.checkoutUrl || !payment?.fields) return false;
@@ -38,6 +39,7 @@ function recentApprovedTopup(history = []) {
 
 export default function Topup({ user, onUserChange, language = "vi" }) {
   const t = translations[language] || translations.vi;
+  const locale = language === "vi" ? "vi-VN" : "en-US";
   const [packages, setPackages] = useState([]);
   const [voucher, setVoucher] = useState("");
   const [appliedVoucher, setAppliedVoucher] = useState(null);
@@ -57,34 +59,50 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     if (!paymentStatus) return undefined;
 
     if (paymentStatus === "error") {
-      setError("Thanh toán bị lỗi hoặc bị từ chối.");
+      window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
+      setError(t.paymentError);
       return undefined;
     }
     if (paymentStatus === "cancel") {
-      setMessage("Bạn đã huỷ thanh toán.");
+      window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
+      setMessage(t.paymentCanceled);
       return undefined;
     }
 
-    setMessage("Đang kiểm tra thanh toán...");
+    const pendingTopupId = window.sessionStorage.getItem(PENDING_TOPUP_ID_KEY);
+    setMessage(t.checkingPayment);
+    if (!pendingTopupId) {
+      api("/api/topup/history")
+        .then((history) => {
+          const latestApproved = recentApprovedTopup(history.history || []);
+          if (!latestApproved) return;
+          setLastPaidPayment(latestApproved);
+          setMessage(language === "vi"
+            ? `Nạp thành công: +${latestApproved.credit} credit.`
+            : `Top-up successful: +${latestApproved.credit} credit.`);
+        })
+        .catch(() => {});
+      return undefined;
+    }
+
     let attempts = 0;
     const timer = window.setInterval(async () => {
       attempts += 1;
       try {
-        const [history, creditData] = await Promise.all([
-          api("/api/topup/history"),
-          api("/api/credit"),
-        ]);
-        const latestApproved = recentApprovedTopup(history.history || []);
-        if (latestApproved) {
-          setLastPaidPayment(latestApproved);
-          onUserChange({ ...user, credit: creditData.credit });
-          setMessage(`Nạp thành công: +${latestApproved.credit} credit. Số dư hiện tại: ${creditData.credit} credit`);
+        const data = await api(`/api/topup/${pendingTopupId}/status`);
+        if (data.status === "approved") {
+          setLastPaidPayment(data.topup);
+          window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
+          onUserChange({ ...user, credit: data.userCredit });
+          setMessage(language === "vi"
+            ? `Nạp thành công: +${data.topup.credit} credit. Số dư hiện tại: ${data.userCredit} credit`
+            : `Top-up successful: +${data.topup.credit} credit. Current balance: ${data.userCredit} credit`);
           window.clearInterval(timer);
         }
       } catch {
         /* keep polling */
       }
-      if (attempts >= 12) window.clearInterval(timer);
+      if (attempts >= 20) window.clearInterval(timer);
     }, 3000);
 
     return () => window.clearInterval(timer);
@@ -95,14 +113,15 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
 
     const timer = window.setInterval(async () => {
       try {
-        const history = await api("/api/topup/history");
-        const latest = (history.history || []).find((item) => item._id === payment._id);
-        if (latest?.status === "approved") {
-          const creditData = await api("/api/credit");
-          setLastPaidPayment(latest);
+        const data = await api(`/api/topup/${payment._id}/status`);
+        if (data.status === "approved") {
+          setLastPaidPayment(data.topup);
           setPayment(null);
-          onUserChange({ ...user, credit: creditData.credit });
-          setMessage(`Nạp thành công: +${latest.credit} credit. Số dư hiện tại: ${creditData.credit} credit`);
+          window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
+          onUserChange({ ...user, credit: data.userCredit });
+          setMessage(language === "vi"
+            ? `Nạp thành công: +${data.topup.credit} credit. Số dư hiện tại: ${data.userCredit} credit`
+            : `Top-up successful: +${data.topup.credit} credit. Current balance: ${data.userCredit} credit`);
           window.clearInterval(timer);
         }
       } catch {
@@ -154,7 +173,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
 
   async function topup() {
     if (!selectedPackage) {
-      setError("Chọn một gói nạp trước khi thanh toán.");
+      setError(t.selectPackageBeforePayment);
       return;
     }
 
@@ -172,9 +191,12 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         }),
       });
       setPayment(data.topup);
-      setMessage("Đang chuyển sang cổng thanh toán...");
+      if (data.topup?._id) {
+        window.sessionStorage.setItem(PENDING_TOPUP_ID_KEY, data.topup._id);
+      }
+      setMessage(t.redirectingPayment);
       if (!submitPaymentCheckout(data.payment)) {
-        setMessage("Đã tạo đơn thanh toán. Nếu trình duyệt không tự chuyển, hãy thử lại.");
+        setMessage(t.paymentOrderCreated);
       }
     } catch (err) {
       setError(err.message);
@@ -204,7 +226,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
       setPayment(null);
       setLastPaidPayment(null);
       setVoucher("");
-      setMessage(data.message || "Voucher đã được áp dụng. Chọn gói nạp rồi bấm nạp ngay.");
+      setMessage(data.message || t.voucherApplied);
     } catch (err) {
       setError(err.message);
     }
@@ -229,25 +251,31 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
             >
               <CreditCard size={20} />
               {item.badge && <span className="badge success">{item.badge}</span>}
-              <h3>{item.name || "GÓI CREDIT"}</h3>
+              <h3>{item.name || t.defaultPackageName}</h3>
               <div className="priceBlock compact">
                 {hasSale(item) && (
                   <div className="priceOriginal">
-                    {Number(item.price).toLocaleString("vi-VN")}<span>{CURRENCY}</span>
+                    {Number(item.price).toLocaleString(locale)}<span>{CURRENCY}</span>
                   </div>
                 )}
-                <strong>{finalPrice(item).toLocaleString("vi-VN")}{CURRENCY}</strong>
+                <strong>{finalPrice(item).toLocaleString(locale)}{CURRENCY}</strong>
               </div>
               {Number(appliedVoucher?.discountPercent || 0) > 0 && voucherAppliesToPackage(appliedVoucher, item) && (
                 <span>
-                  Sau voucher {appliedVoucher.code}: giảm {appliedVoucher.discountPercent}% từ {priceBeforeVoucher(item).toLocaleString("vi-VN")}{CURRENCY}
+                  {language === "vi"
+                    ? `Sau voucher ${appliedVoucher.code}: giảm ${appliedVoucher.discountPercent}% từ ${priceBeforeVoucher(item).toLocaleString(locale)}${CURRENCY}`
+                    : `After voucher ${appliedVoucher.code}: ${appliedVoucher.discountPercent}% off from ${priceBeforeVoucher(item).toLocaleString(locale)}${CURRENCY}`}
                 </span>
               )}
               {appliedVoucher && !voucherAppliesToPackage(appliedVoucher, item) && (
-                <span className="muted">Voucher {appliedVoucher.code} không áp dụng gói này</span>
+                <span className="muted">Voucher {appliedVoucher.code} {t.voucherNotApplicable}</span>
               )}
               {hasSale(item) && (
-                <span className="saleOnly" data-sale={item.salePercent}>Sale {item.salePercent}% từ {Number(item.price).toLocaleString("vi-VN")}{CURRENCY}</span>
+                <span className="saleOnly" data-sale={item.salePercent}>
+                  {language === "vi"
+                    ? `Sale ${item.salePercent}% từ ${Number(item.price).toLocaleString(locale)}${CURRENCY}`
+                    : `Sale ${item.salePercent}% from ${Number(item.price).toLocaleString(locale)}${CURRENCY}`}
+                </span>
               )}
               <strong>{finalCredit(item)} credit</strong>
               {Number(appliedVoucher?.creditBonus || 0) > 0 && voucherAppliesToPackage(appliedVoucher, item) && (
@@ -256,7 +284,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               <ul style={{ marginTop: 8, paddingLeft: 18 }}>
                 {((item.features && item.features.length > 0)
                   ? item.features
-                  : [`${item.credit} lượt tải model`, "Lưu lịch sử tải", "Hỗ trợ cơ bản"]
+                  : t.defaultPackageFeatures
                 ).map((feature, index) => (
                   <li key={index}>{feature}</li>
                 ))}
@@ -267,23 +295,27 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         <div className="topupCheckoutBox">
           {selectedPackage ? (
             <div>
-              <span>Gói đang chọn</span>
-              <strong>{selectedPackage.name || "GÓI CREDIT"}</strong>
+              <span>{t.selectedPackage}</span>
+              <strong>{selectedPackage.name || t.defaultPackageName}</strong>
               <p>
-                Thanh toán {finalPrice(selectedPackage).toLocaleString("vi-VN")}{CURRENCY} để nhận {finalCredit(selectedPackage)} credit
-                {appliedVoucher && voucherAppliesToPackage(appliedVoucher, selectedPackage) ? `, đã áp dụng voucher ${appliedVoucher.code}` : ""}.
+                {language === "vi"
+                  ? `Thanh toán ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} để nhận ${finalCredit(selectedPackage)} credit`
+                  : `Pay ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} to receive ${finalCredit(selectedPackage)} credit`}
+                {appliedVoucher && voucherAppliesToPackage(appliedVoucher, selectedPackage)
+                  ? (language === "vi" ? `, đã áp dụng voucher ${appliedVoucher.code}` : `, voucher ${appliedVoucher.code} applied`)
+                  : ""}.
               </p>
             </div>
           ) : (
             <div>
-              <span>Chưa chọn gói</span>
-              <strong>Chọn gói nạp</strong>
-              <p>Chọn gói nạp và áp dụng voucher nếu có, sau đó bấm nút nạp ngay.</p>
+              <span>{t.noPackageSelected}</span>
+              <strong>{t.selectTopupPackage}</strong>
+              <p>{t.selectPackageHelp}</p>
             </div>
           )}
           <button className="primaryButton" type="button" disabled={!selectedPackage} onClick={topup}>
             <CreditCard size={18} />
-            Nạp ngay
+            {t.topupNow}
           </button>
         </div>
         {message && <p className="success" style={{ marginTop: 14 }}>{message}</p>}
@@ -292,16 +324,20 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           <div className="result" style={{ marginTop: 16, borderColor: "rgba(0, 255, 136, 0.45)" }}>
             <span>{t.paymentDone}</span>
             <strong>+{lastPaidPayment.credit} credit</strong>
-            <p>Mã nạp {lastPaidPayment.paymentCode} đã xác nhận. Bạn có thể tạo lượt nạp mới.</p>
+            <p>
+              {language === "vi"
+                ? `Mã nạp ${lastPaidPayment.paymentCode} đã xác nhận. Bạn có thể tạo lượt nạp mới.`
+                : `Top-up code ${lastPaidPayment.paymentCode} has been confirmed. You can create a new top-up.`}
+            </p>
           </div>
         )}
         {payment && (
           <div className="result" style={{ marginTop: 16 }}>
-            <span>Thông tin thanh toán</span>
+            <span>{t.paymentInfo}</span>
             <div className="table">
               <div className="tableRow">
                 <span>{t.amount}</span>
-                <strong>{Number(payment.amount).toLocaleString("vi-VN")}{CURRENCY}</strong>
+                <strong>{Number(payment.amount).toLocaleString(locale)}{CURRENCY}</strong>
                 <button className="smallButton" type="button" onClick={() => copyText(payment.amount, "amount")}>
                   {copied === "amount" ? <Check size={14} /> : <Copy size={14} />}
                   {t.copy}
@@ -311,7 +347,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 <div className="tableRow">
                   <span>Voucher</span>
                   <strong>{payment.voucherCode}</strong>
-                  <span>-{Number(payment.discountAmount).toLocaleString("vi-VN")}{CURRENCY}</span>
+                  <span>-{Number(payment.discountAmount).toLocaleString(locale)}{CURRENCY}</span>
                 </div>
               )}
               {payment.voucherCode && Number(payment.discountAmount || 0) <= 0 && (
@@ -322,7 +358,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 </div>
               )}
               <div className="tableRow">
-                <span>Mã đơn</span>
+                <span>{t.orderCode}</span>
                 <strong>{payment.paymentCode}</strong>
                 <button className="smallButton" type="button" onClick={() => copyText(payment.paymentCode, "code")}>
                   {copied === "code" ? <Check size={14} /> : <Copy size={14} />}
@@ -331,12 +367,12 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               </div>
               <div className="tableRow">
                 <span>{t.status}</span>
-                <strong>Thanh toán</strong>
+                <strong>{t.paymentLabel}</strong>
                 <span>{payment.status === "approved" ? t.credited : t.waitingPayment}</span>
               </div>
             </div>
             <p className="muted" style={{ marginTop: 12 }}>
-              Credit sẽ tự động cộng sau khi giao dịch được xác nhận.
+              {t.creditAutoAfterConfirm}
             </p>
           </div>
         )}
@@ -347,8 +383,12 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
             {appliedVoucher.description && <p>{appliedVoucher.description}</p>}
             <p>
               {appliedVoucher.discountPercent > 0
-                ? `Giảm ${appliedVoucher.discountPercent}% cho gói nạp. Giá sẽ giảm khi bạn chọn gói.`
-                : `Cộng thêm ${appliedVoucher.creditBonus} credit khi nạp thành công.`}
+                ? (language === "vi"
+                  ? `Giảm ${appliedVoucher.discountPercent}% cho gói nạp. Giá sẽ giảm khi bạn chọn gói.`
+                  : `${appliedVoucher.discountPercent}% off top-up packages. The price will decrease when you select a package.`)
+                : (language === "vi"
+                  ? `Cộng thêm ${appliedVoucher.creditBonus} credit khi nạp thành công.`
+                  : `Add ${appliedVoucher.creditBonus} bonus credit after a successful top-up.`)}
             </p>
           </div>
         )}

@@ -239,6 +239,18 @@ function sepayTransactionId(payload) {
   );
 }
 
+function sepayTransactionDate(payload) {
+  return String(
+    payload?.transaction?.transaction_date ||
+      payload?.transaction?.transactionDate ||
+      payload?.transaction?.approved_at ||
+      payload?.transaction?.created_at ||
+      payload?.order?.paid_at ||
+      payload?.order?.created_at ||
+      "",
+  );
+}
+
 export async function sepayIpn(req, res, next) {
   try {
     const contentType = String(req.get("content-type") || "").toLowerCase();
@@ -270,18 +282,21 @@ export async function sepayIpn(req, res, next) {
       });
     }
 
-    if (transactionId) {
-      const duplicate = await Topup.findOne({
-        gatewayTransactionId: transactionId,
-        status: "approved",
+    const transactionDate =
+      sepayTransactionDate(req.body) || new Date().toISOString().slice(0, 10);
+    const gatewayTransactionId =
+      transactionId || `sepay-${paymentCode}-${amount}-${transactionDate}`;
+
+    const duplicate = await Topup.findOne({
+      gatewayTransactionId,
+      status: "approved",
+    });
+    if (duplicate) {
+      return res.json({
+        ok: true,
+        duplicate: true,
+        paymentCode,
       });
-      if (duplicate) {
-        return res.json({
-          ok: true,
-          duplicate: true,
-          paymentCode,
-        });
-      }
     }
 
     const topup = await Topup.findOne({ paymentCode, status: "pending" });
@@ -305,8 +320,7 @@ export async function sepayIpn(req, res, next) {
 
     const approved = await approvePendingTopup(topup, {
       gatewayProvider: "sepay",
-      gatewayTransactionId:
-        transactionId || `sepay-${paymentCode}-${amount}-${Date.now()}`,
+      gatewayTransactionId,
       gatewayPayload: req.body,
     });
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Bell, Chrome, LogOut, Menu, UserCircle, X } from "lucide-react";
-import { api } from "../api.js";
+import { API_URL, api } from "../api.js";
 import { translations } from "../i18n.js";
 import { setFaviconNotificationCount } from "../utils/faviconProgress.js";
 
@@ -73,9 +73,12 @@ export default function Navbar({
     onNavigate?.("/");
   }
 
-  function googleHref() {
-    const returnTo = window.location.pathname === "/" ? "/getlink" : window.location.pathname;
-    return `http://localhost:5000/api/auth/google?returnTo=${encodeURIComponent(returnTo)}`;
+  function googleHref(returnToOverride = "") {
+    const returnTo = returnToOverride || (window.location.pathname === "/" ? "/getlink" : window.location.pathname);
+    const params = new URLSearchParams({ returnTo });
+    const ref = new URLSearchParams(window.location.search).get("ref");
+    if (ref) params.set("ref", ref);
+    return `${API_URL}/api/auth/google?${params.toString()}`;
   }
 
   const tabs = [
@@ -161,7 +164,7 @@ export default function Navbar({
                   className={page === key ? "active" : ""} 
                   onClick={() => {
                     if (!user && key !== "guide") {
-                      window.location.href = `http://localhost:5000/api/auth/google?returnTo=${encodeURIComponent(targetPath)}`;
+                      window.location.href = googleHref(targetPath);
                     } else if (key === "guide") {
                       goPath("/guide");
                     } else {
@@ -187,14 +190,14 @@ export default function Navbar({
                   setNotificationOpen((current) => !current);
                   setAccountOpen(false);
                 }}
-                aria-label="Thông báo"
+                aria-label={t.notifications}
                 aria-expanded={notificationOpen}
               >
                 <Bell size={16} />
                 {unreadCount > 0 && <span>{unreadCount}</span>}
               </button>
               <div className="notificationDropdown">
-                <strong>Thông báo</strong>
+                <strong>{t.notifications}</strong>
                 {notifications.slice(0, 8).map((item) => (
                   <button
                     key={item._id}
@@ -204,10 +207,10 @@ export default function Navbar({
                   >
                     <b>{item.title}</b>
                     <span>{item.body}</span>
-                    <time>{new Date(item.createdAt).toLocaleString("vi-VN")}</time>
+                    <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
                   </button>
                 ))}
-                {!notifications.length && <p>Chưa có thông báo.</p>}
+                {!notifications.length && <p>{t.noNotifications}</p>}
               </div>
             </div>
             <button type="button" className="tabletAccountButton" onClick={toggleAccountMenu} aria-label="Account" aria-expanded={accountOpen}>
@@ -256,17 +259,21 @@ export default function Navbar({
             </div>
           )}
           <div className="fullscreenNoticeContent">
-            <span>{fullscreenNotification.expiresAt ? `Đến ${new Date(fullscreenNotification.expiresAt).toLocaleString("vi-VN")}` : "Thông báo"}</span>
+            <span>
+              {fullscreenNotification.expiresAt
+                ? `${t.until} ${new Date(fullscreenNotification.expiresAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}`
+                : t.notifications}
+            </span>
             <h2 id="fullscreenNoticeTitle">{fullscreenNotification.title}</h2>
             <p>{fullscreenNotification.body}</p>
             <div className="fullscreenNoticeActions">
               {fullscreenNotification.actionUrl && (
                 <button type="button" className="primaryButton" onClick={() => goNotificationAction(fullscreenNotification)}>
-                  {fullscreenNotification.actionLabel || "Xem ngay"}
+                  {fullscreenNotification.actionLabel || t.viewNow}
                 </button>
               )}
               <button type="button" className="smallButton" onClick={() => markNotificationRead(fullscreenNotification._id)}>
-                Đóng
+                {t.close}
               </button>
             </div>
           </div>

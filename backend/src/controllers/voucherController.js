@@ -27,7 +27,7 @@ export async function applyVoucher(req, res, next) {
       code,
       expireAt: { $gt: new Date() },
       $expr: { $lt: ["$usedCount", "$usageLimit"] },
-    });
+    }).lean();
 
     if (!voucher) {
       return res

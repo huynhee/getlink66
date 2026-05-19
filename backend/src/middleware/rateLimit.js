@@ -1,10 +1,26 @@
 import { securityEvent } from "../utils/logger.js";
 
 const buckets = new Map();
+const MAX_BUCKETS = Number(process.env.RATE_LIMIT_MAX_BUCKETS || 10000);
+
+function maxBuckets() {
+  return Number.isFinite(MAX_BUCKETS) && MAX_BUCKETS > 0
+    ? Math.floor(MAX_BUCKETS)
+    : 10000;
+}
 
 function cleanup(now) {
   for (const [key, value] of buckets.entries()) {
     if (value.resetAt <= now) buckets.delete(key);
+  }
+}
+
+function evictOverflow() {
+  const limit = maxBuckets();
+  while (buckets.size > limit) {
+    const oldestKey = buckets.keys().next().value;
+    if (!oldestKey) return;
+    buckets.delete(oldestKey);
   }
 }
 
@@ -22,7 +38,9 @@ export function createRateLimit({
     const key = `${keyPrefix}:${String(rawKey || "anonymous")}`;
     const bucket = buckets.get(key) || { count: 0, resetAt: now + windowMs };
     bucket.count += 1;
+    if (buckets.has(key)) buckets.delete(key);
     buckets.set(key, bucket);
+    evictOverflow();
 
     const remaining = Math.max(0, max - bucket.count);
     res.setHeader("x-ratelimit-limit", String(max));

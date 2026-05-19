@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { AlertCircle, ArrowRight, Chrome, ClipboardPaste, DownloadCloud, ShieldCheck } from "lucide-react";
-import { api } from "../api.js";
+import { API_URL, api } from "../api.js";
 import { translations } from "../i18n.js";
 
 export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/getlink", language = "vi" }) {
@@ -9,14 +9,19 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   const [demoError, setDemoError] = useState("");
   const [packages, setPackages] = useState([]);
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
+  const [referral, setReferral] = useState(null);
+  const [referralCopied, setReferralCopied] = useState(false);
   const [siteSettings, setSiteSettings] = useState({
-    heroText: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ",
-    heroSubtitle:
-      "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp.",
+    heroText: language === "vi" ? "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ" : "FAST 3D66\nGETLINK\nSERVICE",
+    heroSubtitle: language === "vi"
+      ? "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp."
+      : "An intermediary getlink service that helps you download 3D66 models with a faster credit workflow.",
     saleText: "",
-    pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói. Tỉ lệ chuyển đổi VD: 50.000 VNĐ = 12.8 tệ = 128 credit"
+    pricingNote: language === "vi"
+      ? "Nạp credit tự động, cộng credit ngay sau khi chọn gói. Tỉ lệ chuyển đổi VD: 50.000 VNĐ = 12.8 tệ = 128 credit"
+      : "Automatic credit top-up after selecting a package. Example conversion: 50,000 VND = 12.8 CNY = 128 credits"
   });
-  const demoCursorText = demoLink || "Nhập link tại đây";
+  const demoCursorText = demoLink || t.getlinkPlaceholder;
   const demoCursorX = Math.min(demoCursorText.length * 8.4, 520);
 
   React.useEffect(() => {
@@ -35,16 +40,26 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
     }
   }, [adminMode, t.systemOfflineMessage]);
 
+  React.useEffect(() => {
+    if (!user || adminMode) {
+      setReferral(null);
+      return;
+    }
+    api("/api/referral/me")
+      .then(setReferral)
+      .catch(() => setReferral(null));
+  }, [user?._id, adminMode]);
+
   const pricingPackages = packages.length
     ? packages
     : [
       {
-        name: "GÓI STARTER",
+        name: language === "vi" ? "GÓI STARTER" : "STARTER PACKAGE",
         price: 50000,
         credit: 140,
         salePercent: 0,
         badge: "",
-        features: ["5 lượt tải model", "Lưu lịch sử tải", "Hỗ trợ cơ bản"]
+        features: t.defaultPackageFeatures
       }
     ];
 
@@ -57,7 +72,10 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   }
 
   function googleHref(target = returnTo) {
-    return `http://localhost:5000/api/auth/google?returnTo=${encodeURIComponent(target)}`;
+    const params = new URLSearchParams({ returnTo: target });
+    const ref = new URLSearchParams(window.location.search).get("ref");
+    if (ref) params.set("ref", ref);
+    return `${API_URL}/api/auth/google?${params.toString()}`;
   }
 
   function authAwareHref(target) {
@@ -103,6 +121,17 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
       setDemoLink(pasted);
     } catch {
       setDemoError(t.clipboardDenied);
+    }
+  }
+
+  async function copyReferralLink() {
+    if (!referral?.referralUrl) return;
+    try {
+      await navigator.clipboard.writeText(referral.referralUrl);
+      setReferralCopied(true);
+      window.setTimeout(() => setReferralCopied(false), 1600);
+    } catch {
+      setReferralCopied(false);
     }
   }
 
@@ -166,6 +195,17 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                 {t.viewPricing} <ArrowRight size={16} />
               </a>
             </div>
+            {user && referral?.referralUrl && (
+              <div className="referralInvite">
+                <div>
+                  <strong>{t.referralTitle || "Giới thiệu bạn, cả hai nhận một lượt tải"}</strong>
+                  <span>{referral.referralCode}</span>
+                </div>
+                <button type="button" className="smallButton" onClick={copyReferralLink}>
+                  {referralCopied ? t.copied : t.copy}
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="heroRight">
@@ -182,10 +222,10 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
               </h2>
               <form onSubmit={handleDemoGetlink} className="inputWrapper">
                 <div className="linkInputWrap terminalInput" style={{ "--cursor-x": `${demoCursorX}px` }}>
-                  <span className="terminalInputMirror" aria-hidden="true">{demoLink || "Nhập link tại đây"}</span>
+                  <span className="terminalInputMirror" aria-hidden="true">{demoLink || t.getlinkPlaceholder}</span>
                   <input
                     type="url"
-                    placeholder="Nhập link tại đây"
+                    placeholder={t.getlinkPlaceholder}
                     value={demoLink}
                     onChange={(event) => {
                       setDemoLink(event.target.value);
@@ -225,6 +265,20 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                 </div>
               </div>
             </div>
+            {user && referral?.referralUrl && (
+              <div className="referralInvite">
+                <div className="referralInviteHeader">
+                  <strong>{t.referralTitle || "Giới thiệu bạn bè, cả hai đều có quà"}</strong>
+                  <span>{referral.referralCode}</span>
+                </div>
+                <div className="referralUrlRow">
+                  <input value={referral.referralUrl} readOnly aria-label={t.referralTitle} />
+                  <button type="button" className="smallButton" onClick={copyReferralLink}>
+                    {referralCopied ? t.copied : t.copy}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -287,27 +341,29 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                       {pkg.badge}
                     </div>
                   )}
-                  <h3>{pkg.name || "GÓI CREDIT"}</h3>
+                  <h3>{pkg.name || t.defaultPackageName}</h3>
                   <div className="priceBlock">
                     {hasSale(pkg) && (
                       <div className="priceOriginal">
-                        {Number(pkg.price).toLocaleString("vi-VN")}<span>đ</span>
+                      {Number(pkg.price).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span>đ</span>
                       </div>
                     )}
                     <div className="price hl-green">
-                      {finalPrice(pkg).toLocaleString("vi-VN")}<span style={{ fontSize: 16 }}>đ</span>
+                      {finalPrice(pkg).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span style={{ fontSize: 16 }}>đ</span>
                     </div>
                   </div>
                   {hasSale(pkg) && (
                     <div className="credits saleOnly" data-sale={pkg.salePercent}>
-                      SALE {pkg.salePercent}% từ {Number(pkg.price).toLocaleString("vi-VN")}đ
+                      {language === "vi"
+                        ? `SALE ${pkg.salePercent}% từ ${Number(pkg.price).toLocaleString("vi-VN")}đ`
+                        : `SALE ${pkg.salePercent}% from ${Number(pkg.price).toLocaleString("en-US")}đ`}
                     </div>
                   )}
                   <div className="credits">{pkg.credit} CREDIT</div>
                   <ul>
                     {((pkg.features && pkg.features.length > 0)
                       ? pkg.features
-                      : [`${pkg.credit} lượt tải 3D66`, "Lưu lịch sử tải", "Hỗ trợ cơ bản"]
+                      : t.defaultPackageFeatures
                     ).map((feature, featureIndex) => (
                       <li key={featureIndex}>{feature}</li>
                     ))}

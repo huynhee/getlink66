@@ -874,7 +874,8 @@ export async function getlinkHistory(req, res, next) {
   try {
     const history = await Getlink.find({ userId: req.user._id })
       .sort({ createdAt: -1 })
-      .limit(50);
+      .limit(50)
+      .lean();
     res.json({
       history: history.map((item) => publicHistoryItem(req, item)),
     });

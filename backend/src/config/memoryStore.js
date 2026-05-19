@@ -64,7 +64,30 @@ function applyUpdate(document, update = {}, query = {}) {
   });
 }
 
-function chain(result, isArray = true) {
+function applySelect(doc, fields = "") {
+  if (!fields || !doc) return doc;
+  const names = String(fields)
+    .split(/\s+/)
+    .map((field) => field.trim())
+    .filter(Boolean);
+  if (!names.length) return doc;
+  const include = !names.some((field) => field.startsWith("-"));
+  if (!include) {
+    const copy = { ...doc };
+    names.forEach((field) => {
+      if (field.startsWith("-")) delete copy[field.slice(1)];
+    });
+    return copy;
+  }
+  const picked = {};
+  names.forEach((field) => {
+    if (!field.startsWith("-") && doc[field] !== undefined) picked[field] = doc[field];
+  });
+  if (doc._id !== undefined && picked._id === undefined) picked._id = doc._id;
+  return picked;
+}
+
+function chain(result, isArray = true, projection = "") {
   return {
     sort(sortSpec = {}) {
       const [[field, dir] = []] = Object.entries(sortSpec);
@@ -73,14 +96,22 @@ function chain(result, isArray = true) {
         const bv = new Date(b[field] || 0).valueOf();
         return dir < 0 ? bv - av : av - bv;
       });
-      return chain(sorted, isArray);
+      return chain(sorted, isArray, projection);
     },
     limit(count) {
-      return Promise.resolve(clone(result.slice(0, count)));
+      return chain(result.slice(0, count), isArray, projection);
+    },
+    select(fields = "") {
+      return chain(result, isArray, fields);
+    },
+    lean() {
+      return chain(result, isArray, projection);
     },
     populate(field, props) {
       const collectionMap = {
         userId: "User",
+        referrerId: "User",
+        referredUserId: "User",
         packageId: "TopupPackage",
         applicablePackageIds: "TopupPackage",
         createdBy: "User",
@@ -114,10 +145,13 @@ function chain(result, isArray = true) {
           }
         });
       }
-      return chain(result, isArray);
+      return chain(result, isArray, projection);
     },
     then(resolve, reject) {
-      return Promise.resolve(clone(isArray ? result : (result[0] || null))).then(resolve, reject);
+      const selected = isArray
+        ? result.map((doc) => applySelect(doc, projection))
+        : applySelect(result[0] || null, projection);
+      return Promise.resolve(clone(selected)).then(resolve, reject);
     }
   };
 }

@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import crypto from "node:crypto";
+import { jwtSecret } from "../config/secrets.js";
 import { securityEvent } from "../utils/logger.js";
 
 function buildFingerprint(req) {
@@ -20,9 +21,9 @@ export async function jwtAuth(req, res, next) {
   let payload;
   try {
     if (accessToken) {
-      payload = jwt.verify(accessToken, process.env.SESSION_SECRET);
+      payload = jwt.verify(accessToken, jwtSecret());
     } else {
-      payload = jwt.verify(refreshToken, process.env.SESSION_SECRET);
+      payload = jwt.verify(refreshToken, jwtSecret());
       // Issue new access token. Carry-over `loginAt` tu refresh token de fresh-login check
       // van phan biet duoc thoi diem dang nhap that vs lan refresh access token.
       const newAccessToken = jwt.sign(
@@ -32,7 +33,7 @@ export async function jwtAuth(req, res, next) {
           fp: payload.fp,
           loginAt: payload.loginAt,
         },
-        process.env.SESSION_SECRET,
+        jwtSecret(),
         { expiresIn: "15m" },
       );
       res.cookie("accessToken", newAccessToken, {
@@ -79,10 +80,10 @@ export function generateTokens(req, res, user, is2FAVerified = false) {
   const loginAt = Math.floor(Date.now() / 1000);
   const payload = { id: user._id, is2FAVerified, fp, loginAt };
 
-  const accessToken = jwt.sign(payload, process.env.SESSION_SECRET, {
+  const accessToken = jwt.sign(payload, jwtSecret(), {
     expiresIn: "15m",
   });
-  const refreshToken = jwt.sign(payload, process.env.SESSION_SECRET, {
+  const refreshToken = jwt.sign(payload, jwtSecret(), {
     expiresIn: "7d",
   });
 

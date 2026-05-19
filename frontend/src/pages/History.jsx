@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowRightLeft, Download, FileDown, Lock } from "lucide-react";
+import { ArrowRightLeft, Download, FileDown, Gift, Lock } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
 
@@ -30,13 +30,14 @@ function topupTitle(item, t) {
 function topupStatusLabel(item, t) {
   if (item.status === "approved") return { className: "success", label: t.success || "Thành công" };
   if (item.status === "pending") return { className: "pending", label: t.pending || "Chờ duyệt" };
-  return { className: "error", label: t.canceled || "Đã huỷ" };
+  return { className: "error", label: t.canceled || "Đã hủy" };
 }
 
 export default function History({ language = "vi" }) {
   const t = translations[language] || translations.vi;
   const [downloadHistory, setDownloadHistory] = useState([]);
   const [topupHistory, setTopupHistory] = useState([]);
+  const [referralHistory, setReferralHistory] = useState([]);
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const redownloadText = language === "vi" ? "Tải lại" : "Redownload";
@@ -45,10 +46,12 @@ export default function History({ language = "vi" }) {
     Promise.all([
       api("/api/getlink/history"),
       api("/api/topup/history"),
+      api("/api/referral/history"),
     ])
-      .then(([downloads, topups]) => {
+      .then(([downloads, topups, referrals]) => {
         setDownloadHistory(downloads.history || []);
         setTopupHistory(topups.history || []);
+        setReferralHistory(referrals.history || []);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -66,10 +69,16 @@ export default function History({ language = "vi" }) {
       date: item.createdAt,
       item,
     }));
-    return [...downloads, ...topups]
+    const referrals = referralHistory.map((item) => ({
+      kind: "referral",
+      id: `referral-${item._id}`,
+      date: item.createdAt,
+      item,
+    }));
+    return [...downloads, ...topups, ...referrals]
       .filter((row) => filter === "all" || row.kind === filter)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [downloadHistory, topupHistory, filter]);
+  }, [downloadHistory, topupHistory, referralHistory, filter]);
 
   function redownloadMeta(item) {
     if (item.canRedownload) {
@@ -128,6 +137,29 @@ export default function History({ language = "vi" }) {
     );
   }
 
+  function renderReferralRow(item) {
+    const otherName = item.otherUser?.name || item.otherUser?.email || (language === "vi" ? "bạn bè" : "friend");
+    const label = item.role === "referrer"
+      ? (language === "vi" ? `Mời ${otherName}` : `Invited ${otherName}`)
+      : (language === "vi" ? `Được ${otherName} mời` : `Invited by ${otherName}`);
+    return (
+      <>
+        <span className="historyType">
+          <Gift size={14} />
+          {language === "vi" ? "Mời bạn bè" : "Referral"}
+        </span>
+        <div className="historyDownloadCell">
+          <strong>+{item.credit} credit</strong>
+          <small className="historyMeta">{label}</small>
+        </div>
+        <div className="historyStatusTime">
+          <span className="badge success">{language === "vi" ? "Đã cộng" : "Credited"}</span>
+          <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
+        </div>
+      </>
+    );
+  }
+
   return (
     <section className="panel">
       <div className="historyHeader">
@@ -137,6 +169,7 @@ export default function History({ language = "vi" }) {
             ["all", language === "vi" ? "Tất cả" : "All"],
             ["download", language === "vi" ? "Tải model" : "Downloads"],
             ["topup", language === "vi" ? "Nạp credit" : "Top-ups"],
+            ["referral", language === "vi" ? "Mời bạn" : "Referral"],
           ].map(([value, label]) => (
             <button
               key={value}
@@ -152,10 +185,15 @@ export default function History({ language = "vi" }) {
 
       <div className="table compactHistoryTable unifiedHistoryTable">
         {rows.map((row) => (
-          <div className={`tableRow ${row.kind === "topup" ? "topupHistoryRow" : ""}`} key={row.id}>
+          <div
+            className={`tableRow ${row.kind === "topup" || row.kind === "referral" ? "topupHistoryRow" : ""}`}
+            key={row.id}
+          >
             {row.kind === "download"
               ? renderDownloadRow(row.item)
-              : renderTopupRow(row.item)}
+              : row.kind === "referral"
+                ? renderReferralRow(row.item)
+                : renderTopupRow(row.item)}
           </div>
         ))}
         {!loading && !rows.length && (

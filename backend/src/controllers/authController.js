@@ -7,15 +7,35 @@ import User from "../models/User.js";
 import { securityEvent } from "../utils/logger.js";
 
 const SAFE_RETURN_PATH = /^\/[a-zA-Z0-9\-_/]*$/;
+const SAFE_REFERRAL_CODE = /^[a-zA-Z0-9]{6,24}$/;
+
+function oauthCookieOptions() {
+  return {
+    maxAge: 10 * 60 * 1000,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+  };
+}
+
+function oauthClearCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+  };
+}
 
 export function googleLogin(req, res, next) {
   const returnTo =
     typeof req.query.returnTo === "string" ? req.query.returnTo : "";
   if (returnTo.length <= 200 && SAFE_RETURN_PATH.test(returnTo)) {
-    res.cookie("oauthReturnTo", returnTo, {
-      maxAge: 10 * 60 * 1000,
-      httpOnly: true,
-    });
+    res.cookie("oauthReturnTo", returnTo, oauthCookieOptions());
+  }
+  const referralCode =
+    typeof req.query.ref === "string" ? req.query.ref.trim() : "";
+  if (SAFE_REFERRAL_CODE.test(referralCode)) {
+    res.cookie("oauthReferralCode", referralCode.toUpperCase(), oauthCookieOptions());
   }
 
   passport.authenticate("google", {
@@ -30,7 +50,8 @@ export const googleCallback = [
     generateTokens(req, res, req.user);
     const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
     const returnTo = req.cookies.oauthReturnTo || "/";
-    res.clearCookie("oauthReturnTo");
+    res.clearCookie("oauthReturnTo", oauthClearCookieOptions());
+    res.clearCookie("oauthReferralCode", oauthClearCookieOptions());
     const safePath = SAFE_RETURN_PATH.test(returnTo) ? returnTo : "/";
     res.redirect(`${clientUrl}${safePath}`);
   },

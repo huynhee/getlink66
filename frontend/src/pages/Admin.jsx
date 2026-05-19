@@ -1,8 +1,8 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, BarChart3, Check, Cookie, CreditCard, FileText, Gift, GripVertical, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, ShieldAlert, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, Check, Cookie, CreditCard, FileText, Gift, GripVertical, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, ShieldAlert, UserPlus, Users, X } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import { api } from "../api.js";
-import { translations } from "../i18n.js";
+import { text, translations } from "../i18n.js";
 
 const emptyPackage = {
   name: "",
@@ -47,6 +47,8 @@ function formatMoney(value) {
 
 export default function Admin({ user, language = "vi" }) {
   const t = translations[language] || translations.vi;
+  const l = (vi, en) => text(language, vi, en);
+  const locale = language === "vi" ? "vi-VN" : "en-US";
   const [activeSection, setActiveSection] = useState("overview");
   const [revenuePeriod, setRevenuePeriod] = useState("day");
   const [overview, setOverview] = useState(null);
@@ -55,6 +57,7 @@ export default function Admin({ user, language = "vi" }) {
   const [vouchers, setVouchers] = useState([]);
   const [articles, setArticles] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [referrals, setReferrals] = useState([]);
   const [pendingTopups, setPendingTopups] = useState([]);
   const [cookieRecords, setCookieRecords] = useState([]);
   const [cookiePool, setCookiePool] = useState(null);
@@ -78,7 +81,7 @@ export default function Admin({ user, language = "vi" }) {
   const [twoFactorMsg, setTwoFactorMsg] = useState("");
 
   async function loadData() {
-    const [oRes, uRes, pRes, tRes, vRes, cRes, sRes, lRes, aRes, nRes] = await Promise.all([
+    const [oRes, uRes, pRes, tRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes] = await Promise.all([
       api(`/api/admin/overview?period=${revenuePeriod}`),
       api("/api/admin/users"),
       api("/api/admin/topup-packages"),
@@ -88,7 +91,8 @@ export default function Admin({ user, language = "vi" }) {
       api("/api/admin/cookies/status"),
       api("/api/admin/system-logs"),
       api("/api/admin/articles"),
-      api("/api/admin/notifications")
+      api("/api/admin/notifications"),
+      api("/api/admin/referrals")
     ]);
     setOverview(oRes.overview || null);
     setUsers(uRes.users || []);
@@ -100,6 +104,7 @@ export default function Admin({ user, language = "vi" }) {
     setSystemLogs(lRes.logs || []);
     setArticles(aRes.articles || []);
     setNotifications(nRes.notifications || []);
+    setReferrals(rRes.referrals || []);
   }
 
   useEffect(() => {
@@ -180,7 +185,7 @@ export default function Admin({ user, language = "vi" }) {
         })
       });
       setVoucherForm(emptyVoucher);
-      setVoucherMsg("Voucher đã tạo thành công.");
+      setVoucherMsg(l("Voucher đã tạo thành công.", "Voucher created successfully."));
       await loadData();
     } catch (err) {
       setVoucherMsg(err.message);
@@ -209,7 +214,7 @@ export default function Admin({ user, language = "vi" }) {
         })
       });
       setNotificationForm(emptyNotification);
-      setNotificationMsg("Thông báo đã được gửi.");
+      setNotificationMsg(l("Thông báo đã được gửi.", "Notification sent."));
       await loadData();
     } catch (err) {
       setNotificationMsg(err.message);
@@ -231,7 +236,7 @@ export default function Admin({ user, language = "vi" }) {
       });
       setCookie("");
       await loadData();
-      setMessage("Cookie 3D66 đã được lưu.");
+      setMessage(l("Cookie 3D66 đã được lưu.", "3D66 cookie saved."));
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -249,7 +254,7 @@ export default function Admin({ user, language = "vi" }) {
       const details = data.mode === "model-page"
         ? ` ll_id:${data.hasLlId ? "ok" : "missing"} token:${data.hasToken ? "ok" : "missing"} up_time:${data.hasUpTime ? "ok" : "missing"}`
         : "";
-      setMessage(`Cookie 3D66 hợp lệ.${details}`);
+      setMessage(l(`Cookie 3D66 hợp lệ.${details}`, `3D66 cookie is valid.${details}`));
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -264,7 +269,7 @@ export default function Admin({ user, language = "vi" }) {
       const details = data.mode === "model-page"
         ? ` ll_id:${data.hasLlId ? "ok" : "missing"} token:${data.hasToken ? "ok" : "missing"} up_time:${data.hasUpTime ? "ok" : "missing"}`
         : "";
-      setMessage(`Cookie 3D66 hợp lệ.${details}`);
+      setMessage(l(`Cookie 3D66 hợp lệ.${details}`, `3D66 cookie is valid.${details}`));
       await loadData();
     } catch (err) {
       setMessage(err.message);
@@ -276,7 +281,7 @@ export default function Admin({ user, language = "vi" }) {
 
   async function delete3D66Cookie(id) {
     await api(`/api/admin/cookies/${id}`, { method: "DELETE" });
-    setMessage("Đã xóa cookie 3D66.");
+    setMessage(l("Đã xóa cookie 3D66.", "3D66 cookie deleted."));
     await loadData();
   }
 
@@ -288,7 +293,10 @@ export default function Admin({ user, language = "vi" }) {
       if (data.user?._id) {
         setUsers((items) => items.map((user) => (user._id === data.user._id ? data.user : user)));
       }
-      setTopupMsg(`Đã duyệt +${data.topup?.credit || 0} credit cho ${data.user?.email || "user"}.`);
+      setTopupMsg(l(
+        `Đã duyệt +${data.topup?.credit || 0} credit cho ${data.user?.email || "user"}.`,
+        `Approved +${data.topup?.credit || 0} credit for ${data.user?.email || "user"}.`
+      ));
       await loadData();
     } catch (err) {
       setTopupMsg(err.message);
@@ -300,7 +308,7 @@ export default function Admin({ user, language = "vi" }) {
       setTopupMsg("");
       await api(`/api/admin/topups/${id}/reject`, { method: "POST" });
       setPendingTopups((items) => items.filter((item) => item._id !== id));
-      setTopupMsg("Đã hủy giao dịch nạp.");
+      setTopupMsg(l("Đã hủy giao dịch nạp.", "Top-up transaction canceled."));
       await loadData();
     } catch (err) {
       setTopupMsg(err.message);
@@ -347,7 +355,7 @@ export default function Admin({ user, language = "vi" }) {
         method: "POST",
         body: JSON.stringify({ token: twoFactorToken })
       });
-      setTwoFactorMsg("✅ Bật 2FA thành công! Vui lòng tải lại trang.");
+      setTwoFactorMsg(l("Bật 2FA thành công! Vui lòng tải lại trang.", "2FA enabled successfully. Please reload the page."));
       setTwoFactorQr("");
       setTwoFactorToken("");
     } catch (err) {
@@ -361,27 +369,28 @@ export default function Admin({ user, language = "vi" }) {
   const chartRevenue = revenueChart.reduce((sum, item) => sum + Number(item.revenue || 0), 0);
   const maxRevenue = Math.max(...revenueChart.map((item) => Number(item.revenue || 0)), 1);
   const chartLabels = {
-    day: "14 ngày gần nhất",
-    month: "12 tháng gần nhất",
-    year: "5 năm gần nhất"
+    day: l("14 ngày gần nhất", "Last 14 days"),
+    month: l("12 tháng gần nhất", "Last 12 months"),
+    year: l("5 năm gần nhất", "Last 5 years")
   };
   const sections = [
     { key: "overview", label: t.adminOverview, icon: BarChart3 },
     { key: "packages", label: t.adminPackages, icon: Package, count: packages.length },
     { key: "vouchers", label: t.adminVouchers, icon: Gift, count: vouchers.length },
-    { key: "notifications", label: "Thông báo", icon: Megaphone, count: notifications.length },
-    { key: "articles", label: t.adminArticles || "Bài viết", icon: FileText, count: articles.length },
+    { key: "notifications", label: t.notifications, icon: Megaphone, count: notifications.length },
+    { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
+    { key: "articles", label: t.adminArticles || l("Bài viết", "Articles"), icon: FileText, count: articles.length },
     { key: "topups", label: t.adminVietqr, icon: CreditCard, count: pendingTopups.length },
     { key: "cookie", label: t.adminCookie, icon: Cookie },
-    { key: "logs", label: "Log lỗi", icon: AlertTriangle, count: systemLogs.length },
+    { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
     { key: "users", label: t.adminUsers, icon: Users, count: users.length },
-    { key: "security", label: "Bảo mật", icon: ShieldAlert }
+    { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert }
   ];
 
   return (
     <div className="stack">
       <section className="panel">
-        <h2>Quản trị hệ thống</h2>
+        <h2>{l("Quản trị hệ thống", "System administration")}</h2>
         <nav className="adminSectionNav" aria-label="Admin sections">
           {sections.map((section) => {
             const Icon = section.icon;
@@ -403,52 +412,52 @@ export default function Admin({ user, language = "vi" }) {
 
       {activeSection === "overview" && (
         <section className="panel">
-          <h2><BarChart3 size={20} /> Tổng quan web</h2>
+          <h2><BarChart3 size={20} /> {l("Tổng quan web", "Website overview")}</h2>
           <div className="overviewGrid">
             <div className="overviewCard">
-              <span>Người dùng</span>
+              <span>{l("Người dùng", "Users")}</span>
               <strong>{overview?.totalUsers || 0}</strong>
             </div>
             <div className="overviewCard">
-              <span>Credit đang có</span>
+              <span>{l("Credit đang có", "Current credit")}</span>
               <strong>{overview?.totalCredit || 0}</strong>
             </div>
             <div className="overviewCard">
-              <span>Doanh thu đã duyệt</span>
+              <span>{l("Doanh thu đã duyệt", "Approved revenue")}</span>
               <strong>{formatMoney(overview?.revenue)}</strong>
             </div>
             <div className="overviewCard">
-              <span>Sepay chờ duyệt</span>
+              <span>{l("Sepay chờ duyệt", "Pending Sepay")}</span>
               <strong>{overview?.pendingTopups || 0}</strong>
             </div>
             <div className="overviewCard">
-              <span>Tiền đang chờ</span>
+              <span>{l("Tiền đang chờ", "Pending amount")}</span>
               <strong>{formatMoney(overview?.pendingAmount)}</strong>
             </div>
             <div className="overviewCard">
-              <span>Lượt getlink</span>
+              <span>{l("Lượt getlink", "Getlink requests")}</span>
               <strong>{overview?.totalGetlinks || 0}</strong>
             </div>
             <div className="overviewCard">
-              <span>Model đã cache</span>
+              <span>{l("Model đã cache", "Cached models")}</span>
               <strong>{overview?.cachedProducts || 0}</strong>
             </div>
             <div className="overviewCard">
-              <span>Gói/Voucher active</span>
+              <span>{l("Gói/Voucher active", "Active packages/vouchers")}</span>
               <strong>{overview?.activePackages || 0}/{overview?.activeVouchers || 0}</strong>
             </div>
           </div>
           <div className="revenueChartPanel">
             <div className="chartHeader">
               <div>
-                <h3>Biểu đồ doanh thu</h3>
-                <p>{chartLabels[revenuePeriod]}, tính theo giao dịch đã duyệt.</p>
+                <h3>{l("Biểu đồ doanh thu", "Revenue chart")}</h3>
+                <p>{chartLabels[revenuePeriod]}, {l("tính theo giao dịch đã duyệt.", "based on approved transactions.")}</p>
               </div>
               <div className="chartControls">
                 {[
-                  ["day", "Ngày"],
-                  ["month", "Tháng"],
-                  ["year", "Năm"]
+                  ["day", l("Ngày", "Day")],
+                  ["month", l("Tháng", "Month")],
+                  ["year", l("Năm", "Year")]
                 ].map(([value, label]) => (
                   <button
                     key={value}
@@ -462,12 +471,12 @@ export default function Admin({ user, language = "vi" }) {
               </div>
               <strong>{formatMoney(chartRevenue)}</strong>
             </div>
-            <div className={`revenueChart ${revenuePeriod}`} aria-label="Biểu đồ doanh thu">
+            <div className={`revenueChart ${revenuePeriod}`} aria-label={l("Biểu đồ doanh thu", "Revenue chart")}>
               {revenueChart.map((item) => {
                 const height = Math.max(6, Math.round((Number(item.revenue || 0) / maxRevenue) * 100));
                 return (
                   <div className="chartBarItem" key={item.date}>
-                    <div className="chartBarTrack" title={`${item.label}: ${formatMoney(item.revenue)} (${item.count} giao dịch)`}>
+                    <div className="chartBarTrack" title={`${item.label}: ${formatMoney(item.revenue)} (${item.count} ${l("giao dịch", "transactions")})`}>
                       <div className="chartBarFill" style={{ height: `${height}%` }} />
                     </div>
                     <span>{item.label}</span>
@@ -481,7 +490,7 @@ export default function Admin({ user, language = "vi" }) {
 
       {activeSection === "packages" && (
         <section className="panel">
-          <h2><Package size={20} /> Quản lý gói nạp</h2>
+          <h2><Package size={20} /> {l("Quản lý gói nạp", "Manage top-up packages")}</h2>
           <form onSubmit={savePackage} style={{ display: "grid", gap: 10, marginTop: 14 }}>
             <div className="inputRow">
               <select
@@ -491,41 +500,41 @@ export default function Admin({ user, language = "vi" }) {
                   fillPackageForm(selected);
                 }}
               >
-                <option value="">Tạo gói mới</option>
+                <option value="">{l("Tạo gói mới", "Create new package")}</option>
                 {packages.map((pkg) => (
-                  <option key={pkg._id} value={pkg._id}>{pkg.name || "Gói credit"}</option>
+                  <option key={pkg._id} value={pkg._id}>{pkg.name || t.defaultPackageName}</option>
                 ))}
               </select>
               {editingPackageId && (
                 <button type="button" className="smallButton" onClick={() => fillPackageForm(null)}>
-                  <RotateCcw size={14} /> Hủy sửa
+                  <RotateCcw size={14} /> {l("Hủy sửa", "Cancel edit")}
                 </button>
               )}
             </div>
             <div className="inputRow">
-              <input value={packageForm.name} onChange={(e) => setPackageForm({ ...packageForm, name: e.target.value })} placeholder="Tên gói, ví dụ: GÓI STARTER" />
-              <input type="number" value={packageForm.price} onChange={(e) => setPackageForm({ ...packageForm, price: e.target.value })} placeholder="Giá" />
+              <input value={packageForm.name} onChange={(e) => setPackageForm({ ...packageForm, name: e.target.value })} placeholder={l("Tên gói, ví dụ: GÓI STARTER", "Package name, e.g. STARTER PACKAGE")} />
+              <input type="number" value={packageForm.price} onChange={(e) => setPackageForm({ ...packageForm, price: e.target.value })} placeholder={t.price} />
               <input type="number" value={packageForm.credit} onChange={(e) => setPackageForm({ ...packageForm, credit: e.target.value })} placeholder="Credit" />
             </div>
             <div className="inputRow">
-              <input type="number" value={packageForm.salePercent} onChange={(e) => setPackageForm({ ...packageForm, salePercent: e.target.value })} placeholder="Sale %, ví dụ 20" />
-              <input value={packageForm.badge} onChange={(e) => setPackageForm({ ...packageForm, badge: e.target.value })} placeholder="Nhãn: SALE, POPULAR..." />
+              <input type="number" value={packageForm.salePercent} onChange={(e) => setPackageForm({ ...packageForm, salePercent: e.target.value })} placeholder={l("Sale %, ví dụ 20", "Sale %, e.g. 20")} />
+              <input value={packageForm.badge} onChange={(e) => setPackageForm({ ...packageForm, badge: e.target.value })} placeholder={l("Nhãn: SALE, POPULAR...", "Badge: SALE, POPULAR...")} />
             </div>
             <textarea
               value={packageForm.features}
               onChange={(e) => setPackageForm({ ...packageForm, features: e.target.value })}
               rows={4}
               style={{ height: "auto", minHeight: 110 }}
-              placeholder="Mỗi dòng là một quyền lợi của gói"
+              placeholder={l("Mỗi dòng là một quyền lợi của gói", "Each line is one package benefit")}
             />
             <button className="smallButton" disabled={!packageForm.name || !packageForm.price || !packageForm.credit} style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}>
               {editingPackageId ? <Save size={16} /> : <Plus size={16} />}
-              {editingPackageId ? "Lưu chỉnh sửa" : "Thêm gói"}
+              {editingPackageId ? l("Lưu chỉnh sửa", "Save changes") : l("Thêm gói", "Add package")}
             </button>
           </form>
 
           <p className="muted" style={{ marginTop: 14, marginBottom: 0, fontSize: 13 }}>
-            Kéo thả gói để đổi thứ tự hiển thị ngoài trang nạp.
+            {l("Kéo thả gói để đổi thứ tự hiển thị ngoài trang nạp.", "Drag packages to change their order on the top-up page.")}
           </p>
           <div className="packageGrid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
             {packages.map((pkg) => (
@@ -540,39 +549,41 @@ export default function Admin({ user, language = "vi" }) {
                 style={{ alignItems: "stretch", padding: 16, position: "relative", textAlign: "left" }}
               >
                 <div className="packageActions">
-                  <span title="Kéo để sắp xếp">
+                  <span title={l("Kéo để sắp xếp", "Drag to sort")}>
                     <GripVertical size={16} />
                   </span>
-                  <button type="button" onClick={() => fillPackageForm(pkg)} title="Sửa gói">
+                  <button type="button" onClick={() => fillPackageForm(pkg)} title={l("Sửa gói", "Edit package")}>
                     <Pencil size={15} />
                   </button>
-                  <button type="button" onClick={() => deletePackage(pkg._id)} title="Xóa gói" style={{ color: "var(--error)" }}>
+                  <button type="button" onClick={() => deletePackage(pkg._id)} title={l("Xóa gói", "Delete package")} style={{ color: "var(--error)" }}>
                     <X size={16} />
                   </button>
                 </div>
-                <button onClick={() => deletePackage(pkg._id)} title="Xóa gói" style={{ position: "absolute", top: 8, right: 8, color: "var(--error)" }}>
+                <button onClick={() => deletePackage(pkg._id)} title={l("Xóa gói", "Delete package")} style={{ position: "absolute", top: 8, right: 8, color: "var(--error)" }}>
                   <X size={16} />
                 </button>
                 {pkg.badge && <span className="badge success" style={{ alignSelf: "start" }}>{pkg.badge}</span>}
-                <h3 style={{ marginTop: 8 }}>{pkg.name || "GÓI CREDIT"}</h3>
+                <h3 style={{ marginTop: 8 }}>{pkg.name || t.defaultPackageName}</h3>
                 <div className="priceBlock compact" style={{ alignItems: "flex-start" }}>
                   {Number(pkg.salePercent || 0) > 0 && (
                     <div className="priceOriginal">
-                      {Number(pkg.price).toLocaleString("vi-VN")}<span>đ</span>
+                      {Number(pkg.price).toLocaleString(locale)}<span>đ</span>
                     </div>
                   )}
-                  <strong>{Number(discountedPrice(pkg)).toLocaleString("vi-VN")}đ</strong>
+                  <strong>{Number(discountedPrice(pkg)).toLocaleString(locale)}đ</strong>
                 </div>
                 {Number(pkg.salePercent || 0) > 0 && (
                   <span className="saleOnly" data-sale={pkg.salePercent}>
-                    Sale {pkg.salePercent}% từ {Number(pkg.price).toLocaleString("vi-VN")}đ
+                    {language === "vi"
+                      ? `Sale ${pkg.salePercent}% từ ${Number(pkg.price).toLocaleString(locale)}đ`
+                      : `Sale ${pkg.salePercent}% from ${Number(pkg.price).toLocaleString(locale)}đ`}
                   </span>
                 )}
                 <span>{pkg.credit} CREDIT</span>
                 <ul style={{ marginTop: 10, paddingLeft: 18 }}>
                   {((pkg.features && pkg.features.length > 0)
                     ? pkg.features
-                    : [`${pkg.credit} lượt tải model`, "Lưu lịch sử tải", "Hỗ trợ cơ bản"]
+                    : t.defaultPackageFeatures
                   ).map((feature, index) => (
                     <li key={index}>{feature}</li>
                   ))}
@@ -584,28 +595,28 @@ export default function Admin({ user, language = "vi" }) {
       )}
 
       {activeSection === "articles" && (
-        <AdminArticles articles={articles} onChanged={loadData} />
+        <AdminArticles articles={articles} onChanged={loadData} language={language} />
       )}
 
       {activeSection === "vouchers" && (
         <section className="panel">
-          <h2><Gift size={20} /> Quản lý voucher</h2>
+          <h2><Gift size={20} /> {l("Quản lý voucher", "Manage vouchers")}</h2>
           <form onSubmit={createVoucher} style={{ display: "grid", gap: 10, marginTop: 14 }}>
             <div className="inputRow">
-              <input value={voucherForm.code} onChange={(e) => setVoucherForm({ ...voucherForm, code: e.target.value.toUpperCase() })} placeholder="Mã voucher" />
-              <input value={voucherForm.description} onChange={(e) => setVoucherForm({ ...voucherForm, description: e.target.value })} placeholder="Mô tả" />
+              <input value={voucherForm.code} onChange={(e) => setVoucherForm({ ...voucherForm, code: e.target.value.toUpperCase() })} placeholder={l("Mã voucher", "Voucher code")} />
+              <input value={voucherForm.description} onChange={(e) => setVoucherForm({ ...voucherForm, description: e.target.value })} placeholder={l("Mô tả", "Description")} />
             </div>
             <div className="inputRow">
-              <input type="number" value={voucherForm.discountPercent} onChange={(e) => setVoucherForm({ ...voucherForm, discountPercent: e.target.value })} placeholder="Giảm giá %" />
-              <input type="number" value={voucherForm.creditBonus} onChange={(e) => setVoucherForm({ ...voucherForm, creditBonus: e.target.value })} placeholder="Thêm credit" />
-              <input type="number" value={voucherForm.usageLimit} onChange={(e) => setVoucherForm({ ...voucherForm, usageLimit: e.target.value })} placeholder="Tổng lượt dùng" />
-              <input type="number" min="0" value={voucherForm.perUserLimit} onChange={(e) => setVoucherForm({ ...voucherForm, perUserLimit: e.target.value })} placeholder="Lượt / tài khoản" />
+              <input type="number" value={voucherForm.discountPercent} onChange={(e) => setVoucherForm({ ...voucherForm, discountPercent: e.target.value })} placeholder={l("Giảm giá %", "Discount %")} />
+              <input type="number" value={voucherForm.creditBonus} onChange={(e) => setVoucherForm({ ...voucherForm, creditBonus: e.target.value })} placeholder={l("Thêm credit", "Bonus credit")} />
+              <input type="number" value={voucherForm.usageLimit} onChange={(e) => setVoucherForm({ ...voucherForm, usageLimit: e.target.value })} placeholder={l("Tổng lượt dùng", "Total uses")} />
+              <input type="number" min="0" value={voucherForm.perUserLimit} onChange={(e) => setVoucherForm({ ...voucherForm, perUserLimit: e.target.value })} placeholder={l("Lượt / tài khoản", "Uses / account")} />
               <input type="datetime-local" value={voucherForm.expireAt} onChange={(e) => setVoucherForm({ ...voucherForm, expireAt: e.target.value })} />
             </div>
             <div className="voucherPackagePicker">
               <div>
-                <strong>Áp dụng cho gói</strong>
-                <span>Bỏ trống là áp dụng cho tất cả gói nạp.</span>
+                <strong>{l("Áp dụng cho gói", "Apply to packages")}</strong>
+                <span>{l("Bỏ trống là áp dụng cho tất cả gói nạp.", "Leave empty to apply to all top-up packages.")}</span>
               </div>
               <div>
                 {packages.map((pkg) => {
@@ -622,7 +633,7 @@ export default function Admin({ user, language = "vi" }) {
                           setVoucherForm({ ...voucherForm, applicablePackageIds: nextIds });
                         }}
                       />
-                      <span>{pkg.name || "Gói credit"}</span>
+                      <span>{pkg.name || t.defaultPackageName}</span>
                     </label>
                   );
                 })}
@@ -638,10 +649,10 @@ export default function Admin({ user, language = "vi" }) {
               }
               style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}
             >
-              <Gift size={16} /> Tạo voucher
+              <Gift size={16} /> {l("Tạo voucher", "Create voucher")}
             </button>
           </form>
-          {voucherMsg && <p className={voucherMsg.includes("thành công") ? "success" : "error"}>{voucherMsg}</p>}
+          {voucherMsg && <p className={voucherMsg.includes("thành công") || voucherMsg.includes("successfully") ? "success" : "error"}>{voucherMsg}</p>}
 
           <div className="voucherList">
             {vouchers.map((voucher) => (
@@ -649,7 +660,7 @@ export default function Admin({ user, language = "vi" }) {
                 <div className="voucherCardHeader">
                   <div>
                     <strong>{voucher.code}</strong>
-                    <p>{voucher.description || "Không có mô tả"}</p>
+                    <p>{voucher.description || t.noDescription}</p>
                   </div>
                   <span className={new Date(voucher.expireAt) > new Date() ? "badge success" : "badge error"}>
                     {new Date(voucher.expireAt) > new Date() ? "Active" : "Expired"}
@@ -658,73 +669,73 @@ export default function Admin({ user, language = "vi" }) {
                 <div className="voucherValue">
                   {voucher.discountPercent > 0 ? (
                     <>
-                      <span>Giảm giá</span>
+                      <span>{t.discount}</span>
                       <strong>{voucher.discountPercent}%</strong>
                     </>
                   ) : (
                     <>
-                      <span>Tặng credit</span>
+                      <span>{t.creditBonus}</span>
                       <strong>+{voucher.creditBonus}</strong>
                     </>
                   )}
                 </div>
                 <div className="voucherMetaGrid">
                   <div>
-                    <span>Đã dùng</span>
+                    <span>{t.used}</span>
                     <strong>{voucher.usedCount}/{voucher.usageLimit}</strong>
                   </div>
                   <div>
-                    <span>Mỗi tài khoản</span>
-                    <strong>{Number(voucher.perUserLimit ?? 1) === 0 ? "Không giới hạn" : `${voucher.perUserLimit || 1} lượt`}</strong>
+                    <span>{t.perAccount}</span>
+                    <strong>{Number(voucher.perUserLimit ?? 1) === 0 ? t.unlimited : `${voucher.perUserLimit || 1} ${l("lượt", "uses")}`}</strong>
                   </div>
                   <div>
-                    <span>Hết hạn</span>
-                    <strong>{new Date(voucher.expireAt).toLocaleDateString("vi-VN")}</strong>
+                    <span>{t.expires}</span>
+                    <strong>{new Date(voucher.expireAt).toLocaleDateString(locale)}</strong>
                   </div>
                 </div>
                 <div className="voucherApplies">
-                  <span>Áp dụng</span>
+                  <span>{t.appliesTo}</span>
                   <strong>
                     {Array.isArray(voucher.applicablePackageIds) && voucher.applicablePackageIds.length > 0
-                      ? voucher.applicablePackageIds.map((pkg) => pkg?.name || "Gói nạp").join(", ")
-                      : "Tất cả gói nạp"}
+                      ? voucher.applicablePackageIds.map((pkg) => pkg?.name || t.defaultPackageName).join(", ")
+                      : t.allTopupPackages}
                   </strong>
                 </div>
                 <button className="smallButton voucherDeleteButton" onClick={() => deleteVoucher(voucher._id)}>
-                  <X size={14} /> Xóa voucher
+                  <X size={14} /> {l("Xóa voucher", "Delete voucher")}
                 </button>
               </div>
             ))}
-            {!vouchers.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>Chưa có voucher.</p>}
+            {!vouchers.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Chưa có voucher.", "No vouchers yet.")}</p>}
           </div>
         </section>
       )}
 
       {activeSection === "notifications" && (
         <section className="panel">
-          <h2><Megaphone size={20} /> Gửi thông báo</h2>
+          <h2><Megaphone size={20} /> {l("Gửi thông báo", "Send notification")}</h2>
           <form className="notificationEditor" onSubmit={createNotification} style={{ display: "grid", gap: 10, marginTop: 14 }}>
             <textarea
               className="notificationTitleInput"
               value={notificationForm.title}
               onChange={(e) => setNotificationForm({ ...notificationForm, title: e.target.value })}
               rows={2}
-              placeholder="Tiêu đề thông báo"
+              placeholder={l("Tiêu đề thông báo", "Notification title")}
             />
             <div className="inputRow">
               <select
                 value={notificationForm.targetType}
                 onChange={(e) => setNotificationForm({ ...notificationForm, targetType: e.target.value })}
               >
-                <option value="all">Tất cả người dùng</option>
-                <option value="users">Theo email cụ thể</option>
+                <option value="all">{l("Tất cả người dùng", "All users")}</option>
+                <option value="users">{l("Theo email cụ thể", "Specific emails")}</option>
               </select>
               <select
                 value={notificationForm.displayType}
                 onChange={(e) => setNotificationForm({ ...notificationForm, displayType: e.target.value })}
               >
-                <option value="dropdown">Thông báo chuông</option>
-                <option value="fullscreen">Popup phủ toàn màn hình</option>
+                <option value="dropdown">{l("Thông báo chuông", "Bell notification")}</option>
+                <option value="fullscreen">{l("Popup phủ toàn màn hình", "Fullscreen popup")}</option>
               </select>
             </div>
             <div className="inputRow">
@@ -732,13 +743,13 @@ export default function Admin({ user, language = "vi" }) {
                 type="datetime-local"
                 value={notificationForm.startsAt}
                 onChange={(e) => setNotificationForm({ ...notificationForm, startsAt: e.target.value })}
-                title="Thời gian bắt đầu, có thể bỏ trống"
+                title={l("Thời gian bắt đầu, có thể bỏ trống", "Start time, optional")}
               />
               <input
                 type="datetime-local"
                 value={notificationForm.expiresAt}
                 onChange={(e) => setNotificationForm({ ...notificationForm, expiresAt: e.target.value })}
-                title="Thời gian hết hạn, có thể bỏ trống"
+                title={l("Thời gian hết hạn, có thể bỏ trống", "Expiration time, optional")}
               />
             </div>
             {notificationForm.displayType === "fullscreen" && (
@@ -746,18 +757,18 @@ export default function Admin({ user, language = "vi" }) {
                 <input
                   value={notificationForm.imageUrl}
                   onChange={(e) => setNotificationForm({ ...notificationForm, imageUrl: e.target.value })}
-                  placeholder="URL ảnh khuyến mại / banner"
+                  placeholder={l("URL ảnh khuyến mại / banner", "Promotion/banner image URL")}
                 />
                 <div className="inputRow">
                   <input
                     value={notificationForm.actionLabel}
                     onChange={(e) => setNotificationForm({ ...notificationForm, actionLabel: e.target.value })}
-                    placeholder="Chữ nút, ví dụ: Nạp ngay"
+                    placeholder={l("Chữ nút, ví dụ: Nạp ngay", "Button text, e.g. Top up now")}
                   />
                   <input
                     value={notificationForm.actionUrl}
                     onChange={(e) => setNotificationForm({ ...notificationForm, actionUrl: e.target.value })}
-                    placeholder="Link nút, ví dụ: /topup"
+                    placeholder={l("Link nút, ví dụ: /topup", "Button link, e.g. /topup")}
                   />
                 </div>
               </>
@@ -768,7 +779,7 @@ export default function Admin({ user, language = "vi" }) {
                 onChange={(e) => setNotificationForm({ ...notificationForm, emails: e.target.value })}
                 rows={3}
                 style={{ height: "auto", minHeight: 88 }}
-                placeholder="Nhập email người nhận, mỗi dòng hoặc cách nhau bằng dấu phẩy"
+                placeholder={l("Nhập email người nhận, mỗi dòng hoặc cách nhau bằng dấu phẩy", "Enter recipient emails, one per line or separated by commas")}
               />
             )}
             <textarea
@@ -776,57 +787,92 @@ export default function Admin({ user, language = "vi" }) {
               onChange={(e) => setNotificationForm({ ...notificationForm, body: e.target.value })}
               rows={5}
               style={{ height: "auto", minHeight: 130 }}
-              placeholder="Nội dung thông báo..."
+              placeholder={l("Nội dung thông báo...", "Notification content...")}
             />
             <button
               className="smallButton"
               disabled={!notificationForm.title || !notificationForm.body}
               style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}
             >
-              <Megaphone size={16} /> Gửi thông báo
+              <Megaphone size={16} /> {l("Gửi thông báo", "Send notification")}
             </button>
           </form>
-          {notificationMsg && <p className={notificationMsg.includes("được gửi") ? "success" : "error"}>{notificationMsg}</p>}
+          {notificationMsg && <p className={notificationMsg.includes("được gửi") || notificationMsg.includes("sent") ? "success" : "error"}>{notificationMsg}</p>}
           <div className="table">
             {notifications.map((item) => (
               <div className="tableRow" key={item._id}>
                 <strong>{item.title}</strong>
-                <span>{item.displayType === "fullscreen" ? "Popup" : "Chuông"} - {item.targetType === "users" ? `${item.userIds?.length || 0} người nhận` : "Tất cả người dùng"}</span>
+                <span>
+                  {item.displayType === "fullscreen" ? "Popup" : l("Chuông", "Bell")} - {item.targetType === "users"
+                    ? `${item.userIds?.length || 0} ${l("người nhận", "recipients")}`
+                    : l("Tất cả người dùng", "All users")}
+                </span>
                 <span>{item.body}</span>
                 <time>{new Date(item.createdAt).toLocaleString("vi-VN")}</time>
                 <button className="smallButton" onClick={() => deleteNotification(item._id)} style={{ color: "var(--error)" }}>
-                  <X size={14} /> Xóa
+                  <X size={14} /> {l("Xóa", "Delete")}
                 </button>
               </div>
             ))}
-            {!notifications.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>Chưa có thông báo.</p>}
+            {!notifications.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{t.noNotifications}</p>}
+          </div>
+        </section>
+      )}
+
+      {activeSection === "referrals" && (
+        <section className="panel">
+          <h2><UserPlus size={20} /> {l("Ai đã mời ai", "Who invited whom")}</h2>
+          <p className="muted" style={{ marginTop: 8 }}>
+            {l("Danh sách người dùng đăng ký qua link giới thiệu và credit đã thưởng cho hai bên.", "Users who signed up through referral links and the credit rewarded to both sides.")}
+          </p>
+          <div className="table referralTable" style={{ marginTop: 16 }}>
+            {referrals.map((item) => (
+              <div className="tableRow" key={item._id}>
+                <div>
+                  <span className="muted">{l("Người mời", "Referrer")}</span>
+                  <strong>{item.referrerId?.email || item.referrerId?.name || "unknown"}</strong>
+                </div>
+                <div>
+                  <span className="muted">{l("Người được mời", "Invited user")}</span>
+                  <strong>{item.referredUserId?.email || item.referredUserId?.name || "unknown"}</strong>
+                </div>
+                <code>{item.referralCode}</code>
+                <span>+{item.rewardCredit || 28} credit</span>
+                <time>{new Date(item.rewardedAt || item.createdAt).toLocaleString(locale)}</time>
+              </div>
+            ))}
+            {!referrals.length && (
+              <p className="muted" style={{ textAlign: "center", padding: 16 }}>
+                {l("Chưa có lượt giới thiệu nào.", "No referrals yet.")}
+              </p>
+            )}
           </div>
         </section>
       )}
 
       {activeSection === "topups" && (
         <section className="panel" style={{ borderColor: pendingTopups.length > 0 ? "rgba(251, 191, 36, 0.4)" : undefined }}>
-          <h2><CreditCard size={20} /> Duyệt nạp Sepay thủ công ({pendingTopups.length})</h2>
-          {topupMsg && <p className={topupMsg.startsWith("Đã") ? "success" : "error"}>{topupMsg}</p>}
+          <h2><CreditCard size={20} /> {l("Duyệt nạp Sepay thủ công", "Manual Sepay top-up approval")} ({pendingTopups.length})</h2>
+          {topupMsg && <p className={topupMsg.startsWith("Đã") || topupMsg.startsWith("Approved") || topupMsg.includes("canceled") ? "success" : "error"}>{topupMsg}</p>}
           <div className="table">
             {pendingTopups.map((topup) => (
               <div className="tableRow" key={topup._id}>
                 <span>{topup.userId?.email}</span>
-                <span>{topup.packageId?.name || "Gói credit"}</span>
+                <span>{topup.packageId?.name || t.defaultPackageName}</span>
                 <strong>{topup.credit} credit</strong>
-                <span>{topup.amount.toLocaleString("vi-VN")}đ</span>
+                <span>{topup.amount.toLocaleString(locale)}đ</span>
                 <code>{topup.paymentCode || topup.type}</code>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button className="smallButton" onClick={() => approveTopup(topup._id)}>
-                    <Check size={14} /> Duyệt
+                    <Check size={14} /> {l("Duyệt", "Approve")}
                   </button>
                   <button className="smallButton" onClick={() => rejectTopup(topup._id)} style={{ color: "var(--error)" }}>
-                    <X size={14} /> Hủy
+                    <X size={14} /> {l("Hủy", "Cancel")}
                   </button>
                 </div>
               </div>
             ))}
-            {!pendingTopups.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>Không có yêu cầu nạp Sepay cần xử lý thủ công.</p>}
+            {!pendingTopups.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Không có yêu cầu nạp Sepay cần xử lý thủ công.", "No Sepay top-up requests need manual processing.")}</p>}
           </div>
         </section>
       )}
@@ -835,14 +881,14 @@ export default function Admin({ user, language = "vi" }) {
         <section className="panel">
           <h2><Cookie size={20} /> Cookie 3D66</h2>
           <form className="inputRow" onSubmit={saveCookie} style={{ marginTop: 14 }}>
-            <input value={cookie} onChange={(event) => setCookie(event.target.value)} placeholder="Dán cookie 3D66 VIP vào đây..." />
+            <input value={cookie} onChange={(event) => setCookie(event.target.value)} placeholder={l("Dán cookie 3D66 VIP vào đây...", "Paste 3D66 VIP cookie here...")} />
             <button disabled={!cookie || loading}>
               {loading ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />}
-              Lưu
+              {l("Lưu", "Save")}
             </button>
             <button type="button" className="smallButton" onClick={test3D66Cookie} disabled={loading}>
               <Check size={14} />
-              Kiểm tra
+              {l("Kiểm tra", "Check")}
             </button>
           </form>
           {message && <p className="success">{message}</p>}
@@ -857,36 +903,36 @@ export default function Admin({ user, language = "vi" }) {
                 <strong>{cookiePool.stats?.warning || 0}</strong>
               </div>
               <div className="cookiePoolCard error">
-                <span>Cooldown / lỗi</span>
+                <span>{l("Cooldown / lỗi", "Cooldown / errors")}</span>
                 <strong>{(cookiePool.stats?.cooldown || 0) + (cookiePool.stats?.invalid || 0)}</strong>
               </div>
               <div className="cookiePoolCard">
                 <span>Queue getlink</span>
                 <strong>{cookiePool.queue?.active || 0}/{cookiePool.queue?.queued || 0}</strong>
-                <small>đang chạy / đang chờ</small>
+                <small>{l("đang chạy / đang chờ", "running / queued")}</small>
               </div>
             </div>
           )}
           <div className="table" style={{ marginTop: 16 }}>
             {cookieRecords.map((item, index) => (
               <div className="tableRow" key={item._id}>
-                <span>{item.status === "cooldown" ? "Tạm nghỉ" : index === 0 ? "Ưu tiên" : "Dự phòng"}</span>
+                <span>{item.status === "cooldown" ? l("Tạm nghỉ", "Cooldown") : index === 0 ? l("Ưu tiên", "Primary") : l("Dự phòng", "Backup")}</span>
                 <code>{item.preview || "cookie"}</code>
                 <span>{item.keyCount || 0} keys</span>
                 <span className={item.hasRequiredKeys ? "success" : "error"}>
-                  {item.hasRequiredKeys ? "Đủ key" : `Thiếu: ${(item.missingKeys || []).join(", ")}`}
+                  {item.hasRequiredKeys ? l("Đủ key", "Keys OK") : `${l("Thiếu", "Missing")}: ${(item.missingKeys || []).join(", ")}`}
                 </span>
                 <span className={item.status === "cooldown" ? "error" : item.status === "warning" ? "muted" : "success"}>
-                  {item.status || "active"} · lỗi {item.failureCount || 0} · dùng {item.useCount || 0}
+                  {item.status || "active"} · {l("lỗi", "errors")} {item.failureCount || 0} · {l("dùng", "uses")} {item.useCount || 0}
                 </span>
                 <span>
                   {item.lastTestAt
-                    ? `${item.lastTestOk ? "OK" : "Lỗi"} - ${new Date(item.lastTestAt).toLocaleString("vi-VN")}`
-                    : "Chưa test"}
+                    ? `${item.lastTestOk ? "OK" : l("Lỗi", "Error")} - ${new Date(item.lastTestAt).toLocaleString(locale)}`
+                    : l("Chưa test", "Not tested")}
                 </span>
                 {item.cooldownUntil && (
                   <span className="muted">
-                    nghỉ tới {new Date(item.cooldownUntil).toLocaleString("vi-VN")}
+                    {l("nghỉ tới", "cooldown until")} {new Date(item.cooldownUntil).toLocaleString(locale)}
                   </span>
                 )}
                 <div style={{ display: "flex", gap: 8 }}>
@@ -894,14 +940,14 @@ export default function Admin({ user, language = "vi" }) {
                     <Check size={14} /> Test
                   </button>
                   <button type="button" className="smallButton" onClick={() => delete3D66Cookie(item._id)} style={{ color: "var(--error)" }}>
-                    <X size={14} /> Xóa
+                    <X size={14} /> {l("Xóa", "Delete")}
                   </button>
                 </div>
               </div>
             ))}
             {!cookieRecords.length && (
               <p className="muted" style={{ textAlign: "center", padding: 16 }}>
-                Chưa lưu cookie 3D66 nào.
+                {l("Chưa lưu cookie 3D66 nào.", "No 3D66 cookies saved yet.")}
               </p>
             )}
           </div>
@@ -910,9 +956,9 @@ export default function Admin({ user, language = "vi" }) {
 
       {activeSection === "logs" && (
         <section className="panel">
-          <h2><AlertTriangle size={20} /> Log lỗi getlink / tải file</h2>
+          <h2><AlertTriangle size={20} /> {l("Log lỗi getlink / tải file", "Getlink / download error logs")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
-            Hiển thị 100 lỗi mới nhất để kiểm tra cookie, queue, tải file và request getlink.
+            {l("Hiển thị 100 lỗi mới nhất để kiểm tra cookie, queue, tải file và request getlink.", "Shows the latest 100 errors for checking cookies, queue, downloads, and getlink requests.")}
           </p>
           <div className="table logTable" style={{ marginTop: 16 }}>
             {systemLogs.map((item) => (
@@ -923,12 +969,12 @@ export default function Admin({ user, language = "vi" }) {
                 <strong>{item.message}</strong>
                 <span>{item.productId || item.historyId || "system"}</span>
                 <span>{item.status ? `HTTP ${item.status}` : item.level}</span>
-                <time>{new Date(item.createdAt).toLocaleString("vi-VN")}</time>
+                <time>{new Date(item.createdAt).toLocaleString(locale)}</time>
               </div>
             ))}
             {!systemLogs.length && (
               <p className="muted" style={{ textAlign: "center", padding: 16 }}>
-                Chưa có log lỗi.
+                {l("Chưa có log lỗi.", "No error logs yet.")}
               </p>
             )}
           </div>
@@ -937,7 +983,7 @@ export default function Admin({ user, language = "vi" }) {
 
       {activeSection === "users" && (
         <section className="panel">
-          <h2><Users size={20} /> Quản lý người dùng</h2>
+          <h2><Users size={20} /> {l("Quản lý người dùng", "Manage users")}</h2>
           <div className="table">
             {users.map((user) => (
               <div className="tableRow" key={user._id}>
@@ -945,8 +991,8 @@ export default function Admin({ user, language = "vi" }) {
                 {editUser === user._id ? (
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <input type="number" value={editCredit} onChange={(e) => setEditCredit(e.target.value)} style={{ minHeight: 34, width: 90, padding: "0 8px" }} />
-                    <button className="smallButton" onClick={() => saveUserCredit(user._id)}>Lưu</button>
-                    <button className="smallButton" onClick={() => setEditUser(null)}>Hủy</button>
+                    <button className="smallButton" onClick={() => saveUserCredit(user._id)}>{l("Lưu", "Save")}</button>
+                    <button className="smallButton" onClick={() => setEditUser(null)}>{l("Hủy", "Cancel")}</button>
                   </div>
                 ) : (
                   <>
@@ -960,29 +1006,29 @@ export default function Admin({ user, language = "vi" }) {
                 )}
               </div>
             ))}
-            {!users.length && <p className="muted" style={{ textAlign: "center", padding: 24 }}>Chưa có người dùng.</p>}
+            {!users.length && <p className="muted" style={{ textAlign: "center", padding: 24 }}>{l("Chưa có người dùng.", "No users yet.")}</p>}
           </div>
         </section>
       )}
 
       {activeSection === "security" && (
         <section className="panel">
-          <h2><ShieldAlert size={20} /> Cài đặt bảo mật (2FA)</h2>
+          <h2><ShieldAlert size={20} /> {l("Cài đặt bảo mật (2FA)", "Security settings (2FA)")}</h2>
 
           {user?.isTwoFactorEnabled ? (
             <div className="emptyState" style={{ marginTop: 20 }}>
-              <div className="badge success" style={{ marginBottom: 16 }}>Đã kích hoạt 2FA</div>
-              <p>Tài khoản của bạn đã được bảo vệ bằng mã xác thực 2 lớp (Google Authenticator).</p>
+              <div className="badge success" style={{ marginBottom: 16 }}>{l("Đã kích hoạt 2FA", "2FA enabled")}</div>
+              <p>{l("Tài khoản của bạn đã được bảo vệ bằng mã xác thực 2 lớp (Google Authenticator).", "Your account is protected with two-factor authentication (Google Authenticator).")}</p>
             </div>
           ) : (
             <div style={{ marginTop: 20 }}>
               <p className="muted" style={{ marginBottom: 20 }}>
-                Kích hoạt Xác minh 2 Bước để bảo vệ tài khoản quản trị. Khi đăng nhập, bạn sẽ cần nhập mã gồm 6 chữ số từ ứng dụng trên điện thoại.
+                {l("Kích hoạt Xác minh 2 Bước để bảo vệ tài khoản quản trị. Khi đăng nhập, bạn sẽ cần nhập mã gồm 6 chữ số từ ứng dụng trên điện thoại.", "Enable two-step verification to protect the admin account. When signing in, you will need to enter a 6-digit code from the phone app.")}
               </p>
 
               {!twoFactorQr ? (
                 <button onClick={handleGenerate2FA} disabled={loading}>
-                  {loading ? <Loader2 className="spin" size={16} /> : <ShieldAlert size={16} />} Bắt đầu thiết lập 2FA
+                  {loading ? <Loader2 className="spin" size={16} /> : <ShieldAlert size={16} />} {l("Bắt đầu thiết lập 2FA", "Start 2FA setup")}
                 </button>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 400 }}>
@@ -990,9 +1036,9 @@ export default function Admin({ user, language = "vi" }) {
                     <img src={twoFactorQr} alt="QR Code" style={{ width: 200, height: 200, display: "block" }} />
                   </div>
                   <div className="muted">
-                    <p>1. Mở ứng dụng Google Authenticator hoặc Authy.</p>
-                    <p>2. Quét mã QR bên trên, hoặc nhập tay mã bảo mật: <code>{twoFactorSecret}</code></p>
-                    <p>3. Nhập mã 6 chữ số xuất hiện trên ứng dụng vào ô dưới đây để hoàn tất.</p>
+                    <p>{l("1. Mở ứng dụng Google Authenticator hoặc Authy.", "1. Open Google Authenticator or Authy.")}</p>
+                    <p>{l("2. Quét mã QR bên trên, hoặc nhập tay mã bảo mật:", "2. Scan the QR code above, or manually enter the secret:")} <code>{twoFactorSecret}</code></p>
+                    <p>{l("3. Nhập mã 6 chữ số xuất hiện trên ứng dụng vào ô dưới đây để hoàn tất.", "3. Enter the 6-digit code shown in the app below to finish.")}</p>
                   </div>
                   <form onSubmit={handleEnable2FA} style={{ display: "flex", gap: 8 }}>
                     <input
@@ -1005,12 +1051,12 @@ export default function Admin({ user, language = "vi" }) {
                       style={{ fontSize: 18, letterSpacing: 4, width: 150, textAlign: "center" }}
                     />
                     <button disabled={loading || twoFactorToken.length < 6}>
-                      Xác nhận bật
+                      {l("Xác nhận bật", "Confirm enable")}
                     </button>
                   </form>
                 </div>
               )}
-              {twoFactorMsg && <p className={twoFactorMsg.includes("thành công") ? "success" : "error"} style={{ marginTop: 16 }}>{twoFactorMsg}</p>}
+              {twoFactorMsg && <p className={twoFactorMsg.includes("thành công") || twoFactorMsg.includes("successfully") ? "success" : "error"} style={{ marginTop: 16 }}>{twoFactorMsg}</p>}
             </div>
           )}
         </section>

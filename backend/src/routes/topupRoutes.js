@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createTopup, getCredit, getPackages, topupHistory } from "../controllers/topupController.js";
+import { createTopup, getCredit, getPackages, topupHistory, topupStatus } from "../controllers/topupController.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
 
@@ -10,5 +10,6 @@ router.get("/credit", requireAuth, getCredit);
 router.get("/topup/packages", getPackages);
 router.post("/topup", requireAuth, topupLimit, createTopup);
 router.get("/topup/history", requireAuth, topupHistory);
+router.get("/topup/:id/status", requireAuth, topupStatus);
 
 export default router;
