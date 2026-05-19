@@ -237,47 +237,16 @@ function isRefreshableStatus(status) {
   return [401, 403, 404, 410, 419].includes(Number(status));
 }
 
-function fileExtensionFromUrl(fileUrl = "") {
+function fileNameFromUrl(fileUrl = "", productId = "model") {
   try {
     const parsed = new URL(fileUrl);
     const name = decodeURIComponent(
       parsed.pathname.split("/").filter(Boolean).pop() || "",
     );
-    const match = name.match(/\.(rar|zip|7z|tar|gz|dwg|skp|max|fbx|obj)$/i);
-    return match ? match[0].toLowerCase() : ".rar";
+    return name || `${productId}.rar`;
   } catch {
-    return ".rar";
+    return `${productId}.rar`;
   }
-}
-
-function safeFileNamePart(value = "") {
-  return String(value)
-    .replace(/[\u0000-\u001f<>:"/\\|?*]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function downloadFileName(history) {
-  const extension = fileExtensionFromUrl(history.fileUrl);
-  const productId = safeFileNamePart(history.productId || "3d66-model");
-  const title = safeFileNamePart(history.title || "");
-  const base = title
-    ? `${title.slice(0, 120)}_${productId}`.slice(0, 170)
-    : productId;
-  return `${base || "3d66-model"}${extension}`;
-}
-
-function contentDispositionFileName(history) {
-  const filename = downloadFileName(history);
-  const extension = fileExtensionFromUrl(history.fileUrl);
-  const fallbackBase = safeFileNamePart(history.productId || "3d66-model")
-    .replace(/[^\w.-]+/g, "_")
-    .slice(0, 120) || "3d66-model";
-  const fallback = `${fallbackBase}${extension}`.replace(/"/g, "");
-  const encoded = encodeURIComponent(filename).replace(/['()]/g, (char) =>
-    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
-  );
-  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 function isFallbackMetadata(metadata = {}, inputProductId = "") {
@@ -308,7 +277,12 @@ function setProxyHeaders(res, upstream, history) {
     res.setHeader("content-type", "application/octet-stream");
   }
 
-  res.setHeader("content-disposition", contentDispositionFileName(history));
+  const upstreamDisposition = upstream.headers.get("content-disposition");
+  res.setHeader(
+    "content-disposition",
+    upstreamDisposition ||
+      `attachment; filename="${fileNameFromUrl(history.fileUrl, history.productId).replace(/"/g, "")}"`,
+  );
   res.setHeader("cache-control", "no-store");
   res.setHeader("x-accel-buffering", "no");
 }
