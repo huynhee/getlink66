@@ -7,6 +7,14 @@ const referralSchema = new mongoose.Schema(
     referredUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, unique: true, index: true },
     referralCode: { type: String, required: true, trim: true, uppercase: true, index: true },
     rewardCredit: { type: Number, default: 28, min: 0 },
+    referrerRewardCredit: { type: Number, default: 28, min: 0 },
+    referredRewardCredit: { type: Number, default: 28, min: 0 },
+    rewardMode: {
+      type: String,
+      enum: ["both", "referrer_only"],
+      default: "both",
+      index: true,
+    },
     status: {
       type: String,
       enum: ["rewarded", "ignored"],

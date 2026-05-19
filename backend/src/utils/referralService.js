@@ -1,9 +1,11 @@
 import crypto from "node:crypto";
 import Notification from "../models/Notification.js";
 import Referral from "../models/Referral.js";
+import SiteSetting from "../models/SiteSetting.js";
 import User from "../models/User.js";
 
 const REFERRAL_CODE_RE = /^[A-Z0-9]{6,24}$/;
+const REFERRAL_MODES = new Set(["both", "referrer_only", "off"]);
 
 function maxStoredCredit() {
   const value = Number(process.env.MAX_STORED_CREDIT || 10000000);
@@ -13,6 +15,12 @@ function maxStoredCredit() {
 function rewardCredit() {
   const value = Number(process.env.REFERRAL_REWARD_CREDIT || 28);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 28;
+}
+
+async function referralMode() {
+  const settings = await SiteSetting.findOne({ key: "homepage" }).select("referralMode").lean();
+  const mode = String(settings?.referralMode || "both");
+  return REFERRAL_MODES.has(mode) ? mode : "both";
 }
 
 export function normalizeReferralCode(value = "") {
@@ -48,30 +56,38 @@ export async function ensureReferralCode(user) {
   return updated?.referralCode || fallback;
 }
 
-async function notifyReferralReward({ referrer, referredUser, credit }) {
-  await Notification.insertMany([
+async function notifyReferralReward({ referrer, referredUser, referrerCredit, referredCredit }) {
+  const notifications = [
     {
-      title: `+${credit} credit giới thiệu`,
-      body: `${referredUser.name || referredUser.email} đã đăng ký bằng link của bạn. Bạn nhận thêm ${credit} credit.`,
+      title: `+${referrerCredit} credit gioi thieu`,
+      body: `${referredUser.name || referredUser.email} da dang ky bang link cua ban. Ban nhan them ${referrerCredit} credit.`,
       targetType: "users",
       userIds: [referrer._id],
       displayType: "dropdown",
-      actionLabel: "Xem lịch sử",
+      actionLabel: "Xem lich su",
       actionUrl: "/history",
     },
-    {
-      title: `+${credit} credit chào mừng`,
-      body: `Bạn đã đăng ký bằng link giới thiệu và nhận ${credit} credit miễn phí.`,
+  ];
+
+  if (referredCredit > 0) {
+    notifications.push({
+      title: `+${referredCredit} credit chao mung`,
+      body: `Ban da dang ky bang link gioi thieu va nhan ${referredCredit} credit mien phi.`,
       targetType: "users",
       userIds: [referredUser._id],
       displayType: "dropdown",
-      actionLabel: "Bắt đầu tải",
+      actionLabel: "Bat dau tai",
       actionUrl: "/getlink",
-    },
-  ]);
+    });
+  }
+
+  await Notification.insertMany(notifications);
 }
 
 export async function awardReferralSignup(referredUser, rawCode) {
+  const mode = await referralMode();
+  if (mode === "off") return null;
+
   const referralCode = normalizeReferralCode(rawCode);
   if (!referredUser?._id || !referralCode) return null;
   if (referredUser.referralRewardedAt || referredUser.referredBy) return null;
@@ -80,8 +96,10 @@ export async function awardReferralSignup(referredUser, rawCode) {
   if (!referrer || String(referrer._id) === String(referredUser._id)) return null;
 
   const credit = rewardCredit();
+  const referrerCredit = credit;
+  const referredCredit = mode === "both" ? credit : 0;
   const creditLimit = maxStoredCredit();
-  if (credit > creditLimit) return null;
+  if (referrerCredit > creditLimit || referredCredit > creditLimit) return null;
 
   try {
     await Referral.create({
@@ -89,6 +107,9 @@ export async function awardReferralSignup(referredUser, rawCode) {
       referredUserId: referredUser._id,
       referralCode,
       rewardCredit: credit,
+      referrerRewardCredit: referrerCredit,
+      referredRewardCredit: referredCredit,
+      rewardMode: mode,
       status: "rewarded",
       rewardedAt: new Date(),
     });
@@ -101,7 +122,7 @@ export async function awardReferralSignup(referredUser, rawCode) {
   const updatedReferredUser = await User.findOneAndUpdate(
     {
       _id: referredUser._id,
-      credit: { $lte: creditLimit - credit },
+      ...(referredCredit > 0 ? { credit: { $lte: creditLimit - referredCredit } } : {}),
       $or: [
         { referralRewardedAt: { $exists: false } },
         { referralRewardedAt: null },
@@ -109,7 +130,7 @@ export async function awardReferralSignup(referredUser, rawCode) {
     },
     {
       $set: { referredBy: referrer._id, referralRewardedAt: now },
-      $inc: { credit },
+      ...(referredCredit > 0 ? { $inc: { credit: referredCredit } } : {}),
     },
     { new: true },
   );
@@ -120,8 +141,8 @@ export async function awardReferralSignup(referredUser, rawCode) {
   }
 
   const updatedReferrer = await User.findOneAndUpdate(
-    { _id: referrer._id, credit: { $lte: creditLimit - credit } },
-    { $inc: { credit } },
+    { _id: referrer._id, credit: { $lte: creditLimit - referrerCredit } },
+    { $inc: { credit: referrerCredit } },
     { new: true },
   );
 
@@ -129,7 +150,7 @@ export async function awardReferralSignup(referredUser, rawCode) {
     await User.findOneAndUpdate(
       { _id: referredUser._id, referredBy: referrer._id, referralRewardedAt: now },
       {
-        $inc: { credit: -credit },
+        ...(referredCredit > 0 ? { $inc: { credit: -referredCredit } } : {}),
         $unset: { referredBy: "", referralRewardedAt: "" },
       },
     ).catch(() => {});
@@ -140,17 +161,34 @@ export async function awardReferralSignup(referredUser, rawCode) {
   await notifyReferralReward({
     referrer: updatedReferrer,
     referredUser: updatedReferredUser,
-    credit,
+    referrerCredit,
+    referredCredit,
   });
 
   return {
     referrer: updatedReferrer,
     referredUser: updatedReferredUser,
-    credit,
+    credit: referrerCredit,
+    referrerCredit,
+    referredCredit,
+    mode,
   };
 }
 
 export async function getReferralSummary(user, clientUrl) {
+  const mode = await referralMode();
+  if (mode === "off") {
+    return {
+      enabled: false,
+      mode,
+      referralCode: "",
+      rewardCredit: rewardCredit(),
+      referralUrl: "",
+      invitedCount: 0,
+      invitedUsers: [],
+    };
+  }
+
   const referralCode = await ensureReferralCode(user);
   const referrals = await Referral.find({ referrerId: user._id, status: "rewarded" })
     .sort({ createdAt: -1 })
@@ -159,6 +197,8 @@ export async function getReferralSummary(user, clientUrl) {
     .lean();
 
   return {
+    enabled: true,
+    mode,
     referralCode,
     rewardCredit: rewardCredit(),
     referralUrl: `${String(clientUrl || "").replace(/\/$/, "")}/?ref=${encodeURIComponent(referralCode)}`,
@@ -168,7 +208,7 @@ export async function getReferralSummary(user, clientUrl) {
       name: item.referredUserId?.name || "",
       email: item.referredUserId?.email || "",
       avatar: item.referredUserId?.avatar || "",
-      rewardCredit: item.rewardCredit,
+      rewardCredit: item.referrerRewardCredit ?? item.rewardCredit,
       createdAt: item.createdAt,
       rewardedAt: item.rewardedAt,
     })),

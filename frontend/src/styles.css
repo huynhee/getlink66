@@ -1129,6 +1129,32 @@ label {
     0 0 36px rgba(0, 229, 255, 0.14);
 }
 
+.segmentedControl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segmentedControl button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--border-warm);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  clip-path: var(--cyber-cut-sm);
+}
+
+.segmentedControl button.active {
+  border-color: var(--neon-green);
+  color: var(--neon-green);
+  background: rgba(0, 255, 136, 0.08);
+  box-shadow: 0 0 18px rgba(0, 255, 136, 0.12);
+}
+
 /* Window Controls (Fake MacOS dots for cyber vibe) */
 .window-controls {
   display: flex;

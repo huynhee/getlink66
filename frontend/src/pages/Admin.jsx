@@ -38,6 +38,24 @@ const emptyNotification = {
   expiresAt: ""
 };
 
+const referralModeOptions = [
+  {
+    value: "both",
+    vi: "Cả hai cùng nhận credit",
+    en: "Both users receive credit",
+  },
+  {
+    value: "referrer_only",
+    vi: "Chỉ người giới thiệu nhận",
+    en: "Only referrer receives credit",
+  },
+  {
+    value: "off",
+    vi: "Tắt giới thiệu",
+    en: "Disable referral",
+  },
+];
+
 function discountedPrice(pkg) {
   return Math.round(Number(pkg.price || 0) * (100 - Number(pkg.salePercent || 0)) / 100);
 }
@@ -67,6 +85,8 @@ export default function Admin({ user, language = "vi" }) {
   const [articles, setArticles] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [referrals, setReferrals] = useState([]);
+  const [siteSettings, setSiteSettings] = useState({ referralMode: "both" });
+  const [referralMsg, setReferralMsg] = useState("");
   const [pendingTopups, setPendingTopups] = useState([]);
   const [cookieRecords, setCookieRecords] = useState([]);
   const [cookiePool, setCookiePool] = useState(null);
@@ -91,7 +111,7 @@ export default function Admin({ user, language = "vi" }) {
   const [twoFactorMsg, setTwoFactorMsg] = useState("");
 
   async function loadData() {
-    const [oRes, uRes, pRes, tRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes] = await Promise.all([
+    const [oRes, uRes, pRes, tRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
       api(`/api/admin/overview?period=${revenuePeriod}`),
       api("/api/admin/users"),
       api("/api/admin/topup-packages"),
@@ -102,7 +122,8 @@ export default function Admin({ user, language = "vi" }) {
       api("/api/admin/system-logs"),
       api("/api/admin/articles"),
       api("/api/admin/notifications"),
-      api("/api/admin/referrals")
+      api("/api/admin/referrals"),
+      api("/api/settings")
     ]);
     setOverview(oRes.overview || null);
     setUsers(uRes.users || []);
@@ -115,6 +136,7 @@ export default function Admin({ user, language = "vi" }) {
     setArticles(aRes.articles || []);
     setNotifications(nRes.notifications || []);
     setReferrals(rRes.referrals || []);
+    setSiteSettings({ referralMode: "both", ...(settingRes.settings || {}) });
   }
 
   useEffect(() => {
@@ -268,6 +290,20 @@ export default function Admin({ user, language = "vi" }) {
   async function deleteNotification(id) {
     await api(`/api/admin/notifications/${id}`, { method: "DELETE" });
     await loadData();
+  }
+
+  async function saveReferralMode(mode) {
+    try {
+      setReferralMsg("");
+      const data = await api("/api/settings", {
+        method: "POST",
+        body: JSON.stringify({ referralMode: mode })
+      });
+      setSiteSettings(data.settings || { ...siteSettings, referralMode: mode });
+      setReferralMsg(l("Đã cập nhật chế độ giới thiệu.", "Referral mode updated."));
+    } catch (err) {
+      setReferralMsg(err.message);
+    }
   }
 
   async function saveCookie(event) {
@@ -908,6 +944,30 @@ export default function Admin({ user, language = "vi" }) {
           <p className="muted" style={{ marginTop: 8 }}>
             {l("Danh sách người dùng đăng ký qua link giới thiệu và credit đã thưởng cho hai bên.", "Users who signed up through referral links and the credit rewarded to both sides.")}
           </p>
+          <div className="segmentedControl" style={{ marginTop: 16 }}>
+            {referralModeOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={siteSettings.referralMode === option.value ? "active" : ""}
+                onClick={() => saveReferralMode(option.value)}
+              >
+                {l(option.vi, option.en)}
+              </button>
+            ))}
+          </div>
+          <p className="muted" style={{ marginTop: 10 }}>
+            {siteSettings.referralMode === "both"
+              ? l("Người mời và người được mời đều nhận credit.", "Both referrer and invited user receive credit.")
+              : siteSettings.referralMode === "referrer_only"
+                ? l("Chỉ người giới thiệu nhận credit; trang chủ đổi nội dung lời mời.", "Only the referrer receives credit; homepage invite text changes.")
+                : l("Ẩn thanh giới thiệu trên trang chủ và không thưởng referral mới.", "Referral invite is hidden and new referral rewards are disabled.")}
+          </p>
+          {referralMsg && (
+            <p className={referralMsg.includes("cập nhật") || referralMsg.includes("updated") ? "success" : "error"}>
+              {referralMsg}
+            </p>
+          )}
           <div className="table referralTable" style={{ marginTop: 16 }}>
             {referrals.map((item) => (
               <div className="tableRow" key={item._id}>
@@ -920,7 +980,12 @@ export default function Admin({ user, language = "vi" }) {
                   <strong>{item.referredUserId?.email || item.referredUserId?.name || "unknown"}</strong>
                 </div>
                 <code>{item.referralCode}</code>
-                <span>+{item.rewardCredit || 28} credit</span>
+                <span>
+                  +{item.referrerRewardCredit ?? item.rewardCredit ?? 28}
+                  {Number(item.referredRewardCredit ?? item.rewardCredit ?? 28) > 0
+                    ? ` / +${item.referredRewardCredit ?? item.rewardCredit ?? 28}`
+                    : " / +0"} credit
+                </span>
                 <time>{new Date(item.rewardedAt || item.createdAt).toLocaleString(locale)}</time>
               </div>
             ))}

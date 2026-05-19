@@ -4,7 +4,7 @@ import { API_URL, api } from "../api.js";
 import { translations } from "../i18n.js";
 
 export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/getlink", language = "vi" }) {
-  const t = translations[language] || translations.vi;
+  const t = { ...(translations[language] || translations.vi) };
   const [demoLink, setDemoLink] = useState("");
   const [demoError, setDemoError] = useState("");
   const [packages, setPackages] = useState([]);
@@ -23,6 +23,11 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   });
   const demoCursorText = demoLink || t.getlinkPlaceholder;
   const demoCursorX = Math.min(demoCursorText.length * 8.4, 520);
+  if (referral?.mode === "referrer_only") {
+    t.referralTitle = language === "vi"
+      ? "Giới thiệu bạn bè để +1 lượt tải."
+      : "Invite friends to get +1 download.";
+  }
 
   React.useEffect(() => {
     if (!adminMode) {
@@ -133,6 +138,17 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
     } catch {
       setReferralCopied(false);
     }
+  }
+
+  function referralTitle() {
+    if (referral?.mode === "referrer_only") {
+      return language === "vi"
+        ? "Giới thiệu bạn bè để +1 lượt tải."
+        : "Invite friends to get +1 download.";
+    }
+    return t.referralTitle || (language === "vi"
+      ? "Giới thiệu bạn bè, cả hai đều có quà"
+      : "Invite friends, both get rewards");
   }
 
   return (

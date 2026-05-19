@@ -21,25 +21,31 @@ export async function referralHistory(req, res, next) {
       .populate("referredUserId", "name email avatar")
       .limit(100);
 
-    const history = referrals.map((item) => {
-      const isReferrer = String(item.referrerId?._id || item.referrerId) === String(req.user._id);
-      const otherUser = isReferrer ? item.referredUserId : item.referrerId;
-      return {
-        _id: item._id,
-        role: isReferrer ? "referrer" : "referred",
-        referralCode: item.referralCode,
-        credit: Number(item.rewardCredit || 0),
-        otherUser: otherUser
-          ? {
-              _id: otherUser._id,
-              name: otherUser.name || "",
-              email: otherUser.email || "",
-              avatar: otherUser.avatar || "",
-            }
-          : null,
-        createdAt: item.rewardedAt || item.createdAt,
-      };
-    });
+    const history = referrals
+      .map((item) => {
+        const isReferrer = String(item.referrerId?._id || item.referrerId) === String(req.user._id);
+        const credit = isReferrer
+          ? Number(item.referrerRewardCredit ?? item.rewardCredit ?? 0)
+          : Number(item.referredRewardCredit ?? item.rewardCredit ?? 0);
+        if (credit <= 0) return null;
+        const otherUser = isReferrer ? item.referredUserId : item.referrerId;
+        return {
+          _id: item._id,
+          role: isReferrer ? "referrer" : "referred",
+          referralCode: item.referralCode,
+          credit,
+          otherUser: otherUser
+            ? {
+                _id: otherUser._id,
+                name: otherUser.name || "",
+                email: otherUser.email || "",
+                avatar: otherUser.avatar || "",
+              }
+            : null,
+          createdAt: item.rewardedAt || item.createdAt,
+        };
+      })
+      .filter(Boolean);
 
     res.json({ history });
   } catch (error) {
