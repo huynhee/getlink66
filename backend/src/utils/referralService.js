@@ -59,24 +59,24 @@ export async function ensureReferralCode(user) {
 async function notifyReferralReward({ referrer, referredUser, referrerCredit, referredCredit }) {
   const notifications = [
     {
-      title: `+${referrerCredit} credit gioi thieu`,
-      body: `${referredUser.name || referredUser.email} da dang ky bang link cua ban. Ban nhan them ${referrerCredit} credit.`,
+      title: `+${referrerCredit} credit giới thiệu`,
+      body: `${referredUser.name || referredUser.email} đã đăng ký bằng link của bạn. Bạn nhận thêm ${referrerCredit} credit.`,
       targetType: "users",
       userIds: [referrer._id],
       displayType: "dropdown",
-      actionLabel: "Xem lich su",
+      actionLabel: "Xem lịch sử",
       actionUrl: "/history",
     },
   ];
 
   if (referredCredit > 0) {
     notifications.push({
-      title: `+${referredCredit} credit chao mung`,
-      body: `Ban da dang ky bang link gioi thieu va nhan ${referredCredit} credit mien phi.`,
+      title: `+${referredCredit} credit chào mừng`,
+      body: `Bạn đã đăng ký bằng link giới thiệu và nhận ${referredCredit} credit miễn phí.`,
       targetType: "users",
       userIds: [referredUser._id],
       displayType: "dropdown",
-      actionLabel: "Bat dau tai",
+      actionLabel: "Bắt đầu tải",
       actionUrl: "/getlink",
     });
   }
