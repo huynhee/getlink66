@@ -107,6 +107,7 @@ export default function AdminArticles({ articles = [], onChanged, language = "vi
             <option value="en">English</option>
           </select>
           <input
+            className="articleSortInput"
             type="number"
             value={form.sortOrder}
             onChange={(event) => setForm({ ...form, sortOrder: event.target.value })}
@@ -133,6 +134,9 @@ export default function AdminArticles({ articles = [], onChanged, language = "vi
         />
         <p className="muted" style={{ margin: 0, fontSize: 12 }}>
           {l("Chèn ảnh chỉ dẫn trong nội dung bằng cú pháp: ![Mô tả bước](https://link-anh.png)", "Insert guide images with this syntax: ![Step description](https://image-link.png)")}
+        </p>
+        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+          {l("Chen video YouTube bang cu phap: @[youtube](https://youtu.be/VIDEO_ID)", "Insert YouTube video with this syntax: @[youtube](https://youtu.be/VIDEO_ID)")}
         </p>
         <textarea
           value={form.content}
@@ -163,6 +167,7 @@ export default function AdminArticles({ articles = [], onChanged, language = "vi
               <strong>{article.title}</strong>
               <small>{article.slug}</small>
             </div>
+            <span className="articleSortBadge">#{article.sortOrder ?? 0}</span>
             <span>{article.language?.toUpperCase()}</span>
             <span className={article.isPublished ? "badge success" : "badge pending"}>
               {article.isPublished ? l("Hiển thị", "Published") : l("Ẩn", "Hidden")}

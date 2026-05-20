@@ -144,7 +144,7 @@ app.use(helmet({
       formAction: ["'self'", "https://pay.sepay.vn", "https://pay-sandbox.sepay.vn"],
       baseUri: ["'self'"],
       frameAncestors: ["'none'"],
-      frameSrc: ["'none'"],
+      frameSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
       objectSrc: ["'none'"]
     }
   } : false,
