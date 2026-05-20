@@ -1,6 +1,6 @@
 export const translations = {
   vi: {
-    topupVoucherHelp: "Nạp credit tự động, tỉ lệ 1:1 như 3D66 VD: 50.000 VNĐ = 12.8 tệ = 128 credit.",
+    topupVoucherHelp: "Nạp credit tự động, tỉ lệ 1:1 như Web VD: 50.000 VNĐ = 12.8 tệ = 128 credit.",
     loading: "Đang tải...",
     getlink: "Getlink",
     freeRedownload: "Tải lại miễn phí",
@@ -137,7 +137,7 @@ export const translations = {
     home: "Trang chủ"
   },
   en: {
-    topupVoucherHelp: "Automatic credit top-up at a 1:1 ratio like 3D66. Example: 50,000 VND = 12.8 CNY = 128 credits.",
+    topupVoucherHelp: "Automatic credit top-up at a 1:1 ratio like Web. Example: 50,000 VND = 12.8 CNY = 128 credits.",
     loading: "Loading...",
     getlink: "Getlink",
     freeRedownload: "Free redownload",
