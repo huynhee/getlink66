@@ -95,7 +95,6 @@ function BannedOverlay({ user, onClose, language = "vi" }) {
         <button type="button" className="banOverlayClose" onClick={onClose} aria-label="Close">×</button>
         <h2>{title}</h2>
         <p>{body}</p>
-        <span>{language === "vi" ? "Bạn vẫn có thể xem web, nhưng không thể getlink." : "You can still browse the site, but getlink is disabled."}</span>
       </div>
     </div>
   );
