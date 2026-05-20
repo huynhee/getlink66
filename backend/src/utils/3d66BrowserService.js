@@ -223,6 +223,27 @@ async function waitForModelReady(page, includeDownloadButton = false) {
   }
 }
 
+async function evaluateMetadataWithRetry(page, includeDownloadButton = false) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await waitForModelReady(page, includeDownloadButton);
+      return await page.evaluate(evaluateMetadata);
+    } catch (error) {
+      lastError = error;
+      const message = String(error?.message || "");
+      const canRetry =
+        /Execution context was destroyed|Cannot find context|Target closed|Frame was detached/i.test(message);
+      if (!canRetry || attempt === 3) break;
+      await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(retryDelayMs(attempt)).catch(() => {});
+    }
+  }
+
+  throw lastError;
+}
+
 async function goto3D66Page(page, url) {
   let lastError;
   const attempts = navigationRetries();
@@ -559,9 +580,7 @@ export async function fetch3D66PageWithBrowser(url, cookieValue) {
   return withBrowserContext(url, cookieValue, async ({ context, page }) => {
     await goto3D66Page(page, url);
 
-    await waitForModelReady(page);
-
-    const metadata = await page.evaluate(evaluateMetadata);
+    const metadata = await evaluateMetadataWithRetry(page);
     const html = await page.content();
     const browserCookies = await context.cookies();
 
@@ -579,9 +598,8 @@ export async function download3D66WithBrowser(url, cookieValue) {
   assertSafe3D66Url(url);
   return withBrowserContext(url, cookieValue, async ({ context, page }) => {
     await goto3D66Page(page, url);
-    await waitForModelReady(page, true);
 
-    const metadata = await page.evaluate(evaluateMetadata);
+    const metadata = await evaluateMetadataWithRetry(page, true);
     const downloadButton = page.locator(".j_download").last();
     await downloadButton.click({
       timeout: Math.min(timeoutMs(), 15000),
