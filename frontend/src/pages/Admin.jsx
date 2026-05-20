@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, BarChart3, Check, Cookie, CreditCard, FileText, Gift, GripVertical, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, ShieldAlert, UserPlus, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, Ban, BarChart3, Check, Cookie, CreditCard, FileText, Gift, GripVertical, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, ShieldAlert, UserPlus, Users, X } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
@@ -9,6 +9,7 @@ const emptyPackage = {
   price: "",
   credit: "",
   salePercent: "",
+  salePrice: "",
   maxTopupsPerUser: "",
   badge: "",
   features: "5 lượt tải model\nLưu lịch sử tải\nHỗ trợ cơ bản"
@@ -57,6 +58,7 @@ const referralModeOptions = [
 ];
 
 function discountedPrice(pkg) {
+  if (Number(pkg.salePrice || 0) > 0) return Number(pkg.salePrice || 0);
   return Math.round(Number(pkg.price || 0) * (100 - Number(pkg.salePercent || 0)) / 100);
 }
 
@@ -102,6 +104,7 @@ export default function Admin({ user, language = "vi" }) {
   const [notificationMsg, setNotificationMsg] = useState("");
   const [editUser, setEditUser] = useState(null);
   const [editCredit, setEditCredit] = useState("");
+  const [banReasonByUser, setBanReasonByUser] = useState({});
   const [editingPackageId, setEditingPackageId] = useState("");
   const [editingVoucherId, setEditingVoucherId] = useState("");
   const [dragPackageId, setDragPackageId] = useState("");
@@ -155,6 +158,7 @@ export default function Admin({ user, language = "vi" }) {
       price: pack.price || "",
       credit: pack.credit || "",
       salePercent: pack.salePercent || "",
+      salePrice: Number(pack.salePrice || 0) > 0 ? pack.salePrice : "",
       maxTopupsPerUser: Number(pack.maxTopupsPerUser || 0) > 0 ? pack.maxTopupsPerUser : "",
       badge: pack.badge || "",
       features: Array.isArray(pack.features) ? pack.features.join("\n") : ""
@@ -412,6 +416,26 @@ export default function Admin({ user, language = "vi" }) {
     await loadData();
   }
 
+  async function toggleBanUser(targetUser) {
+    const isBanned = Boolean(targetUser.isBanned);
+    const endpoint = isBanned
+      ? `/api/admin/users/${targetUser._id}/unban`
+      : `/api/admin/users/${targetUser._id}/ban`;
+    const options = isBanned
+      ? { method: "POST" }
+      : {
+          method: "POST",
+          body: JSON.stringify({
+            reason:
+              banReasonByUser[targetUser._id] ||
+              "Tài khoản của bạn đã bị khóa quyền getlink.",
+          }),
+        };
+    await api(endpoint, options);
+    setBanReasonByUser((items) => ({ ...items, [targetUser._id]: "" }));
+    await loadData();
+  }
+
   async function handleGenerate2FA() {
     try {
       setLoading(true);
@@ -601,6 +625,13 @@ export default function Admin({ user, language = "vi" }) {
               <input
                 type="number"
                 min="0"
+                value={packageForm.salePrice}
+                onChange={(e) => setPackageForm({ ...packageForm, salePrice: e.target.value })}
+                placeholder={l("Giá thực sau sale, bỏ trống = tự tính", "Final price after sale, blank = auto")}
+              />
+              <input
+                type="number"
+                min="0"
                 value={packageForm.maxTopupsPerUser}
                 onChange={(e) => setPackageForm({ ...packageForm, maxTopupsPerUser: e.target.value })}
                 placeholder={l("Giới hạn mỗi tài khoản, bỏ trống = không giới hạn", "Per-account limit, blank = unlimited")}
@@ -654,18 +685,27 @@ export default function Admin({ user, language = "vi" }) {
                 {pkg.badge && <span className="badge success" style={{ alignSelf: "start" }}>{pkg.badge}</span>}
                 <h3 style={{ marginTop: 8 }}>{pkg.name || t.defaultPackageName}</h3>
                 <div className="priceBlock compact" style={{ alignItems: "flex-start" }}>
-                  {Number(pkg.salePercent || 0) > 0 && (
+                  {(Number(pkg.salePercent || 0) > 0 || (Number(pkg.salePrice || 0) > 0 && Number(pkg.salePrice || 0) < Number(pkg.price || 0))) && (
                     <div className="priceOriginal">
                       {Number(pkg.price).toLocaleString(locale)}<span>đ</span>
                     </div>
                   )}
                   <strong>{Number(discountedPrice(pkg)).toLocaleString(locale)}đ</strong>
                 </div>
-                {Number(pkg.salePercent || 0) > 0 && (
+                {(Number(pkg.salePercent || 0) > 0 || (Number(pkg.salePrice || 0) > 0 && Number(pkg.salePrice || 0) < Number(pkg.price || 0))) && (
                   <span className="saleOnly" data-sale={pkg.salePercent}>
-                    {language === "vi"
-                      ? `Sale ${pkg.salePercent}% từ ${Number(pkg.price).toLocaleString(locale)}đ`
-                      : `Sale ${pkg.salePercent}% from ${Number(pkg.price).toLocaleString(locale)}đ`}
+                    {Number(pkg.salePercent || 0) > 0
+                      ? (language === "vi"
+                        ? `Sale ${pkg.salePercent}% từ ${Number(pkg.price).toLocaleString(locale)}đ`
+                        : `Sale ${pkg.salePercent}% from ${Number(pkg.price).toLocaleString(locale)}đ`)
+                      : (language === "vi"
+                        ? `Giá sale từ ${Number(pkg.price).toLocaleString(locale)}đ`
+                        : `Sale price from ${Number(pkg.price).toLocaleString(locale)}đ`)}
+                  </span>
+                )}
+                {Number(pkg.salePrice || 0) > 0 && (
+                  <span className="muted">
+                    {l("Giá nhập tay sau sale", "Manual final sale price")}: {Number(pkg.salePrice).toLocaleString(locale)}đ
                   </span>
                 )}
                 <span>{pkg.credit} CREDIT</span>
@@ -1135,7 +1175,14 @@ export default function Admin({ user, language = "vi" }) {
           <div className="table">
             {users.map((user) => (
               <div className="tableRow" key={user._id}>
-                <span>{user.email}</span>
+                <div>
+                  <span>{user.email}</span>
+                  {user.isBanned && (
+                    <p className="error" style={{ margin: "4px 0 0", fontSize: 12 }}>
+                      {l("Đang bị ban", "Banned")}: {user.banReason || l("Không có lý do", "No reason")}
+                    </p>
+                  )}
+                </div>
                 {editUser === user._id ? (
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <input type="number" value={editCredit} onChange={(e) => setEditCredit(e.target.value)} style={{ minHeight: 34, width: 90, padding: "0 8px" }} />
@@ -1151,6 +1198,30 @@ export default function Admin({ user, language = "vi" }) {
                       <Plus size={14} /> +1 credit
                     </button>
                   </>
+                )}
+                {user.role !== "admin" && (
+                  <div className="banUserControls">
+                    {!user.isBanned && (
+                      <input
+                        value={banReasonByUser[user._id] || ""}
+                        onChange={(event) =>
+                          setBanReasonByUser({
+                            ...banReasonByUser,
+                            [user._id]: event.target.value,
+                          })
+                        }
+                        placeholder={l("Lý do ban", "Ban reason")}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className={`smallButton ${user.isBanned ? "" : "dangerButton"}`}
+                      onClick={() => toggleBanUser(user)}
+                    >
+                      {user.isBanned ? <Check size={14} /> : <Ban size={14} />}
+                      {user.isBanned ? l("Gỡ ban", "Unban") : l("Ban getlink", "Ban getlink")}
+                    </button>
+                  </div>
                 )}
               </div>
             ))}

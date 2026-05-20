@@ -3516,3 +3516,73 @@ label {
 .discordBanner:hover .arrow {
   transform: translateX(3px);
 }
+
+.banOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: var(--space-16);
+  background: rgba(5, 8, 16, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.banOverlayCard {
+  position: relative;
+  width: min(520px, 100%);
+  padding: 28px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: 8px;
+  background: rgba(18, 24, 38, 0.96);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.banOverlayCard h2 {
+  margin: 0 0 12px;
+  color: #fecaca;
+  font-size: 30px;
+}
+
+.banOverlayCard p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.banOverlayCard span {
+  display: block;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.banOverlayClose {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.banUserControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.banUserControls input {
+  width: min(280px, 100%);
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.dangerButton {
+  color: var(--error);
+  border-color: rgba(248, 113, 113, 0.35);
+}

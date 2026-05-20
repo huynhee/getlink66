@@ -82,7 +82,12 @@ export default function Home({ user, onUserChange, language = "vi" }) {
         <span>bấm vào đây để xem</span>
       </a>
 
-      <GetlinkBox onCreditChange={updateCredit} initialUrl={initialUrl} language={language} />
+      <GetlinkBox
+        onCreditChange={updateCredit}
+        initialUrl={initialUrl}
+        language={language}
+        disabledReason={user.isBanned ? (user.banReason || "Tài khoản của bạn đã bị ban getlink.") : ""}
+      />
 
       <div className="dashboardHistoryGrid">
         <section className="panel">

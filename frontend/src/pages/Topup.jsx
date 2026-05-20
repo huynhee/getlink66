@@ -133,6 +133,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   }, [payment, onUserChange, user]);
 
   function priceBeforeVoucher(item) {
+    if (Number(item.salePrice || 0) > 0) return Number(item.salePrice || 0);
     return Math.round(Number(item.price || 0) * (100 - Number(item.salePercent || 0)) / 100);
   }
 
@@ -154,7 +155,11 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   }
 
   function hasSale(item) {
-    return Number(item.salePercent || 0) > 0;
+    return (
+      Number(item.salePercent || 0) > 0 ||
+      (Number(item.salePrice || 0) > 0 &&
+        Number(item.salePrice || 0) < Number(item.price || 0))
+    );
   }
 
   function finalCredit(item) {
@@ -272,9 +277,13 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               )}
               {hasSale(item) && (
                 <span className="saleOnly" data-sale={item.salePercent}>
-                  {language === "vi"
-                    ? `Sale ${item.salePercent}% từ ${Number(item.price).toLocaleString(locale)}${CURRENCY}`
-                    : `Sale ${item.salePercent}% from ${Number(item.price).toLocaleString(locale)}${CURRENCY}`}
+                  {Number(item.salePercent || 0) > 0
+                    ? (language === "vi"
+                      ? `Sale ${item.salePercent}% từ ${Number(item.price).toLocaleString(locale)}${CURRENCY}`
+                      : `Sale ${item.salePercent}% from ${Number(item.price).toLocaleString(locale)}${CURRENCY}`)
+                    : (language === "vi"
+                      ? `Giá sale từ ${Number(item.price).toLocaleString(locale)}${CURRENCY}`
+                      : `Sale price from ${Number(item.price).toLocaleString(locale)}${CURRENCY}`)}
                 </span>
               )}
               <strong>{finalCredit(item)} credit</strong>

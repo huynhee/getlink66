@@ -12,7 +12,11 @@ const userSchema = new mongoose.Schema(
     referredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
     referralRewardedAt: Date,
     twoFactorSecret: { type: String, default: "" },
-    isTwoFactorEnabled: { type: Boolean, default: false }
+    isTwoFactorEnabled: { type: Boolean, default: false },
+    isBanned: { type: Boolean, default: false, index: true },
+    banReason: { type: String, default: "" },
+    bannedAt: Date,
+    bannedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }
   },
   { timestamps: true }
 );

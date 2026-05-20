@@ -2,6 +2,7 @@ import { Router } from "express";
 import { 
   adminAddCredit, 
   adminSetCredit,
+  banUser,
   getOverview,
   createVoucher, 
   updateVoucher,
@@ -9,6 +10,7 @@ import {
   deleteVoucher,
   listUsers, 
   saveCookie,
+  unbanUser,
   cookiePoolStatus,
   testCookie,
   listCookies,
@@ -47,6 +49,8 @@ const adminWriteLimit = createRateLimit({ keyPrefix: "admin-write", windowMs: 60
 router.use(requireAuth, adminOnly);
 router.get("/overview", getOverview);
 router.get("/users", listUsers);
+router.post("/users/:id/ban", adminWriteLimit, auditAdmin("BAN_USER"), banUser);
+router.post("/users/:id/unban", adminWriteLimit, auditAdmin("UNBAN_USER"), unbanUser);
 router.get("/referrals", listReferrals);
 router.get("/audit-logs", listAuditLogs);
 router.get("/system-logs", listSystemLogs);

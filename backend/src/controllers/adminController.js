@@ -42,6 +42,10 @@ function normalizePackagePayload(body = {}) {
     price: Number(body.price),
     credit: Number(body.credit),
     salePercent: Number(body.salePercent) || 0,
+    salePrice:
+      body.salePrice === "" || body.salePrice === undefined
+        ? 0
+        : Number(body.salePrice),
     maxTopupsPerUser:
       body.maxTopupsPerUser === "" || body.maxTopupsPerUser === undefined
         ? 0
@@ -85,6 +89,13 @@ function validatePackagePayload(payload) {
     payload.salePercent > MAX_VOUCHER_DISCOUNT_PERCENT
   ) {
     return "Sale percent is too high";
+  }
+  if (
+    !Number.isInteger(payload.salePrice) ||
+    payload.salePrice < 0 ||
+    payload.salePrice > payload.price
+  ) {
+    return "Valid sale price is required";
   }
   if (
     !Number.isInteger(payload.maxTopupsPerUser) ||
@@ -289,6 +300,67 @@ export async function listUsers(_req, res, next) {
   try {
     const users = await User.find().sort({ createdAt: -1 }).limit(200);
     res.json({ users });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function banUser(req, res, next) {
+  try {
+    const unknownKey = rejectUnknownKeys(req.body, ["reason"]);
+    if (unknownKey) {
+      return res.status(400).json({ message: "Invalid ban request" });
+    }
+    if (!isSafeId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
+    if (String(req.params.id) === String(req.user._id)) {
+      return res.status(400).json({ message: "You cannot ban yourself" });
+    }
+
+    const target = await User.findById(req.params.id);
+    if (!target) return res.status(404).json({ message: "User not found" });
+    if (target.role === "admin") {
+      return res.status(400).json({ message: "Cannot ban admin user" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      {
+        isBanned: true,
+        banReason: limitedString(
+          req.body.reason || "Tai khoan cua ban da bi khoa.",
+          500,
+        ),
+        bannedAt: new Date(),
+        bannedBy: req.user._id,
+      },
+      { new: true },
+    );
+    res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function unbanUser(req, res, next) {
+  try {
+    if (!isSafeId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      {
+        isBanned: false,
+        banReason: "",
+        bannedAt: null,
+        bannedBy: null,
+      },
+      { new: true },
+    );
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ user });
   } catch (error) {
     next(error);
   }
@@ -727,6 +799,7 @@ export async function createTopupPackage(req, res, next) {
       "price",
       "credit",
       "salePercent",
+      "salePrice",
       "maxTopupsPerUser",
       "badge",
       "features",
@@ -763,6 +836,7 @@ export async function updateTopupPackage(req, res, next) {
       "price",
       "credit",
       "salePercent",
+      "salePrice",
       "maxTopupsPerUser",
       "badge",
       "features",

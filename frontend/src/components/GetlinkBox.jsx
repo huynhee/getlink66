@@ -9,7 +9,7 @@ import {
   setFaviconProgress,
 } from "../utils/faviconProgress.js";
 
-export default function GetlinkBox({ onCreditChange, initialUrl = "", language = "vi" }) {
+export default function GetlinkBox({ onCreditChange, initialUrl = "", language = "vi", disabledReason = "" }) {
   const t = translations[language] || translations.vi;
   const [url, setUrl] = useState(initialUrl);
   const [result, setResult] = useState("");
@@ -97,6 +97,10 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     setResult("");
     setPreview(null);
     setPreviewUrl("");
+    if (disabledReason) {
+      setError(disabledReason);
+      return;
+    }
     if (!systemStatus.online) {
       setError(t.systemOfflineMessage);
       return;
@@ -123,6 +127,10 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   async function confirmDownload() {
     setError("");
     setResult("");
+    if (disabledReason) {
+      setError(disabledReason);
+      return;
+    }
     setConfirming(true);
     setCopied(false);
     beginProgress(language === "vi" ? "Đang lấy link tải..." : "Getting download link...", 12, 92);
@@ -214,7 +222,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               {t.paste}
             </button>
           </div>
-          <button type="submit" disabled={loading || !url}>
+          <button type="submit" disabled={loading || !url || Boolean(disabledReason)}>
             {loading ? <Loader2 size={18} className="spin" /> : <Search size={18} />}
             {loading ? t.processing : t.checkLink}
           </button>
@@ -231,7 +239,8 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
           </div>
         </div>
       )}
-      {error && <p className="error">{error}</p>}
+      {disabledReason && <p className="error">{disabledReason}</p>}
+      {error && !disabledReason && <p className="error">{error}</p>}
       {preview && (
         <div className="result">
           <span>{t.modelInfo}</span>
@@ -252,7 +261,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
             </div>
           </div>
           {!result && (
-            <button type="button" onClick={confirmDownload} disabled={confirming} style={{ marginTop: 14 }}>
+            <button type="button" onClick={confirmDownload} disabled={confirming || Boolean(disabledReason)} style={{ marginTop: 14 }}>
               {confirming ? <Loader2 size={18} className="spin" /> : <ArrowDownToLine size={18} />}
               {confirming ? t.processing : `${t.confirmDownload} - ${preview.creditCost || 1} credit`}
             </button>

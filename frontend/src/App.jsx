@@ -81,6 +81,26 @@ function TwoFactorModal({ onVerify, language = "vi" }) {
   );
 }
 
+function BannedOverlay({ user, onClose, language = "vi" }) {
+  const title = language === "vi" ? "Tài khoản đã bị ban" : "Account banned";
+  const body =
+    user?.banReason ||
+    (language === "vi"
+      ? "Tài khoản của bạn đã bị khóa quyền getlink."
+      : "Your account can no longer use getlink.");
+
+  return (
+    <div className="banOverlay" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="banOverlayCard">
+        <button type="button" className="banOverlayClose" onClick={onClose} aria-label="Close">×</button>
+        <h2>{title}</h2>
+        <p>{body}</p>
+        <span>{language === "vi" ? "Bạn vẫn có thể xem web, nhưng không thể getlink." : "You can still browse the site, but getlink is disabled."}</span>
+      </div>
+    </div>
+  );
+}
+
 function pageFromPath(pathname) {
   if (pathname === "/topup") return "topup";
   if (pathname === "/history") return "history";
@@ -97,6 +117,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [path, setPath] = useState(window.location.pathname);
   const [language, setLanguage] = useState(getInitialLanguage);
+  const [banOverlayClosed, setBanOverlayClosed] = useState(false);
   const isAdminPath = path === "/admin";
   const isPublicHome = path === "/";
   const t = translations[language];
@@ -132,6 +153,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    setBanOverlayClosed(false);
+  }, [user?._id, user?.isBanned]);
+
+  useEffect(() => {
     const onPopState = () => {
       setPath(window.location.pathname);
       setPage(pageFromPath(window.location.pathname));
@@ -157,6 +182,9 @@ function App() {
             </section>
           )}
         </main>
+        {user?.isBanned && !banOverlayClosed && (
+          <BannedOverlay user={user} language={language} onClose={() => setBanOverlayClosed(true)} />
+        )}
       </div>
     );
   }
@@ -169,6 +197,9 @@ function App() {
         <main className="shell">
           <Login user={user} onLogin={refreshUser} returnTo="/getlink" language={language} />
         </main>
+        {user?.isBanned && !banOverlayClosed && (
+          <BannedOverlay user={user} language={language} onClose={() => setBanOverlayClosed(true)} />
+        )}
       </div>
     );
   }
@@ -186,6 +217,9 @@ function App() {
         {user && page === "topup" && <Topup user={user} onUserChange={setUser} language={language} />}
         {user && page === "history" && <History language={language} />}
       </main>
+      {user?.isBanned && !banOverlayClosed && (
+        <BannedOverlay user={user} language={language} onClose={() => setBanOverlayClosed(true)} />
+      )}
     </div>
   );
 }

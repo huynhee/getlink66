@@ -79,6 +79,8 @@ export function currentUser(req, res) {
     avatar: req.user.avatar,
     role: req.user.role,
     credit: req.user.credit,
+    isBanned: Boolean(req.user.isBanned),
+    banReason: req.user.banReason || "",
     isTwoFactorEnabled: req.user.isTwoFactorEnabled,
     requires2FA,
   };

@@ -75,6 +75,16 @@ function packageCredit(pack) {
   return Number(pack.credit || 0);
 }
 
+function packagePayAmount(pack) {
+  const salePrice = Number(pack.salePrice || 0);
+  if (Number.isFinite(salePrice) && salePrice > 0) {
+    return Math.round(salePrice);
+  }
+  return Math.round(
+    (Number(pack.price || 0) * (100 - Number(pack.salePercent || 0))) / 100,
+  );
+}
+
 async function userApprovedPackageCount(userId, packageId) {
   return Topup.countDocuments({
     userId,
@@ -203,9 +213,7 @@ export async function createTopup(req, res, next) {
     const isSepay = type === "sepay";
     const status = isAuto ? "approved" : "pending";
     if (isSepay) assertSepayConfigured();
-    const originalAmount = Math.round(
-      (Number(pack.price || 0) * (100 - Number(pack.salePercent || 0))) / 100,
-    );
+    const originalAmount = packagePayAmount(pack);
     let discountAmount = 0;
     let voucherCreditBonus = 0;
     let voucher = null;
