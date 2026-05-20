@@ -282,7 +282,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                 </div>
                 <div className="statusItem">
                   <span>{t.pricePerDownload}</span>
-                  <strong>8K VND</strong>
+                  <strong>10K</strong>
                 </div>
               </div>
             </div>
