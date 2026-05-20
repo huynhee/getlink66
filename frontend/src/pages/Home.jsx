@@ -74,7 +74,7 @@ export default function Home({ user, onUserChange, language = "vi" }) {
 
       <a
         className="downloadGuideBanner"
-        href="https://youtu.be/uioR1Hwg9T0"
+        href="https://youtu.be/A5aKNAPGrBk"
         target="_blank"
         rel="noreferrer"
       >
