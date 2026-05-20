@@ -69,11 +69,16 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
     ];
 
   function finalPrice(pkg) {
+    if (Number(pkg.salePrice || 0) > 0) return Number(pkg.salePrice || 0);
     return Math.round(Number(pkg.price || 0) * (100 - Number(pkg.salePercent || 0)) / 100);
   }
 
   function hasSale(pkg) {
-    return Number(pkg.salePercent || 0) > 0;
+    return (
+      Number(pkg.salePercent || 0) > 0 ||
+      (Number(pkg.salePrice || 0) > 0 &&
+        Number(pkg.salePrice || 0) < Number(pkg.price || 0))
+    );
   }
 
   function googleHref(target = returnTo) {

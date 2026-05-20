@@ -1443,6 +1443,7 @@ label {
   border: 1px solid var(--border-warm);
   padding: clamp(14px, 1.1vw, var(--space-16));
   padding-top: 44px;
+  min-width: 0;
   text-align: center;
   border-radius: 0;
   display: flex;
@@ -1486,15 +1487,23 @@ label {
 }
 
 .pricingCard .price {
+  width: 100%;
+  min-width: 0;
   font-family: var(--font-display);
   font-weight: 900;
-  font-size: clamp(28px, 2.2vw, 40px);
+  font-size: clamp(28px, 1.75vw, 34px);
+  line-height: 1.05;
   color: var(--text-primary);
   margin-bottom: var(--space-8);
+  text-align: center;
+  white-space: nowrap;
 }
 
 .pricingCard .price.hl-green {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1px;
   animation: none;
   transform: none;
   text-shadow: 0 0 18px rgba(0, 255, 136, 0.22);
@@ -1504,6 +1513,8 @@ label {
   display: grid;
   gap: 2px;
   justify-items: center;
+  width: 100%;
+  min-width: 0;
   margin-bottom: var(--space-8);
 }
 
@@ -1545,6 +1556,10 @@ label {
 .package .priceOriginal span {
   font-size: 14px;
   color: inherit;
+}
+
+.pricingCard .price span {
+  flex: 0 0 auto;
 }
 
 .saleOnly {
