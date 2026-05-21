@@ -13,6 +13,25 @@ import Terms from "./pages/Terms.jsx";
 import { getInitialLanguage, setStoredLanguage, translations } from "./i18n.js";
 import "./styles.css";
 
+function FacebookGroupBanner({ language = "vi" }) {
+  const t = translations[language] || translations.vi;
+  return (
+    <a
+      className="facebookGroupBanner"
+      href="https://www.facebook.com/groups/960223243551548"
+      target="_blank"
+      rel="noreferrer"
+    >
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06C2 17.08 5.66 21.25 10.44 22v-7.03H7.9v-2.91h2.54V9.84c0-2.52 1.49-3.91 3.77-3.91 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.78-1.63 1.57v1.9h2.78l-.44 2.91h-2.34V22C18.34 21.25 22 17.08 22 12.06Z" />
+      </svg>
+      <span>
+        {t.facebookGroupBanner} <span className="arrow">»</span>
+      </span>
+    </a>
+  );
+}
+
 function TwoFactorModal({ onVerify, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const [token, setToken] = useState("");
@@ -174,6 +193,7 @@ function App() {
     return (
       <div className="appFrame">
         <Navbar user={user} page="" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} />
+        <FacebookGroupBanner language={language} />
         <main className="shell">
           <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />
         </main>
@@ -187,6 +207,7 @@ function App() {
   return (
     <div className="appFrame">
       <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} />
+      <FacebookGroupBanner language={language} />
       <main className="shell">
         {!user && !["guide", "privacy", "terms"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />}
         {page === "guide" && <Guide language={language} />}
