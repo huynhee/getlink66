@@ -82,6 +82,13 @@ function withTimeout() {
   return { controller, done: () => clearTimeout(timer) };
 }
 
+function shouldFallbackToBrowserPage(error) {
+  return (
+    process.env.THREED66_DISABLE_BROWSER_PAGE_FALLBACK !== "true" &&
+    (error.status === 502 || error.status === 504)
+  );
+}
+
 function cookieMap(cookieValue = "") {
   return String(cookieValue)
     .split(";")
@@ -861,11 +868,21 @@ export async function fetch3D66Preview(url, cookieValue) {
 
   requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
-  let { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue);
+  let browserMetadata = null;
+  let { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
+    if (!shouldFallbackToBrowserPage(error)) throw error;
+    const browserPage = await fetch3D66PageWithBrowser(normalized.toString(), cookieValue);
+    browserMetadata = browserPage.metadata;
+    return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
+  });
   let fields = parseDynamicFields(html, pageUrl);
   let metadata = parseModelMetadata(html, pageUrl, fields);
+  if (browserMetadata) {
+    fields = mergeBrowserFields(fields, browserMetadata);
+    metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);
+  }
 
-  if (shouldUseBrowserPage(html, metadata, fields)) {
+  if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields)) {
     const browserPage = await fetch3D66PageWithBrowser(pageUrl || normalized.toString(), cookieValue);
     html = browserPage.html;
     pageUrl = browserPage.pageUrl;
@@ -879,12 +896,22 @@ export async function fetch3D66Preview(url, cookieValue) {
 export async function inspect3D66Page(url, cookieValue) {
   requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
-  let { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue);
+  let browserMetadata = null;
+  let { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
+    if (!shouldFallbackToBrowserPage(error)) throw error;
+    const browserPage = await fetch3D66PageWithBrowser(normalized.toString(), cookieValue);
+    browserMetadata = browserPage.metadata;
+    return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
+  });
   let fields = parseDynamicFields(html, pageUrl);
   let metadata = parseModelMetadata(html, pageUrl, fields);
-  let usedBrowser = false;
+  let usedBrowser = Boolean(browserMetadata);
+  if (browserMetadata) {
+    fields = mergeBrowserFields(fields, browserMetadata);
+    metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);
+  }
 
-  if (shouldUseBrowserPage(html, metadata, fields)) {
+  if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields)) {
     const browserPage = await fetch3D66PageWithBrowser(pageUrl || normalized.toString(), cookieValue);
     html = browserPage.html;
     pageUrl = browserPage.pageUrl;
@@ -980,11 +1007,22 @@ export async function fetchFrom3D66(url, cookieValue) {
   requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
   let effectiveCookieValue = cookieValue;
-  let { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue);
+  let browserMetadata = null;
+  let { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
+    if (!shouldFallbackToBrowserPage(error)) throw error;
+    const browserPage = await fetch3D66PageWithBrowser(normalized.toString(), cookieValue);
+    browserMetadata = browserPage.metadata;
+    effectiveCookieValue = browserPage.cookieValue || cookieValue;
+    return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
+  });
   let fields = parseDynamicFields(html, pageUrl);
   let metadata = parseModelMetadata(html, pageUrl, fields);
+  if (browserMetadata) {
+    fields = mergeBrowserFields(fields, browserMetadata);
+    metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);
+  }
 
-  if (shouldUseBrowserPage(html, metadata, fields, true)) {
+  if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields, true)) {
     const browserPage = await fetch3D66PageWithBrowser(pageUrl || normalized.toString(), cookieValue);
     html = browserPage.html;
     pageUrl = browserPage.pageUrl;
