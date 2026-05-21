@@ -22,10 +22,7 @@ import {
   updateTopupPackage,
   reorderTopupPackages,
   deleteTopupPackage,
-  listPendingTopups,
   listReferrals,
-  approveTopup,
-  rejectTopup
 } from "../controllers/adminController.js";
 import {
   adminCreateNotification,
@@ -76,10 +73,6 @@ router.post("/topup-packages", adminWriteLimit, auditAdmin("CREATE_PACKAGE"), cr
 router.post("/topup-packages/reorder", adminWriteLimit, auditAdmin("REORDER_PACKAGES"), reorderTopupPackages);
 router.put("/topup-packages/:id", adminWriteLimit, auditAdmin("UPDATE_PACKAGE"), updateTopupPackage);
 router.delete("/topup-packages/:id", adminWriteLimit, auditAdmin("DELETE_PACKAGE"), deleteTopupPackage);
-
-router.get("/topups/pending", listPendingTopups);
-router.post("/topups/:id/approve", adminWriteLimit, auditAdmin("APPROVE_TOPUP"), approveTopup);
-router.post("/topups/:id/reject", adminWriteLimit, auditAdmin("REJECT_TOPUP"), rejectTopup);
 
 router.get("/articles", listAdminArticles);
 router.post("/articles", adminWriteLimit, auditAdmin("CREATE_ARTICLE"), createAdminArticle);

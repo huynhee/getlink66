@@ -29,7 +29,7 @@ function topupTitle(item, t) {
 
 function topupStatusLabel(item, t) {
   if (item.status === "approved") return { className: "success", label: t.success || "Thành công" };
-  if (item.status === "pending") return { className: "pending", label: t.pending || "Chờ duyệt" };
+  if (item.status === "pending") return { className: "pending", label: t.pending || "Chờ thanh toán" };
   return { className: "error", label: t.canceled || "Đã hủy" };
 }
 

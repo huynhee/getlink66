@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Ban, BarChart3, Check, Cookie, CreditCard, FileText, Gift, GripVertical, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, ShieldAlert, UserPlus, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, Ban, BarChart3, Check, Cookie, FileText, Gift, GripVertical, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, ShieldAlert, UserPlus, Users, X } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
@@ -89,13 +89,11 @@ export default function Admin({ user, language = "vi" }) {
   const [referrals, setReferrals] = useState([]);
   const [siteSettings, setSiteSettings] = useState({ referralMode: "both" });
   const [referralMsg, setReferralMsg] = useState("");
-  const [pendingTopups, setPendingTopups] = useState([]);
   const [cookieRecords, setCookieRecords] = useState([]);
   const [cookiePool, setCookiePool] = useState(null);
   const [systemLogs, setSystemLogs] = useState([]);
   const [cookie, setCookie] = useState("");
   const [message, setMessage] = useState("");
-  const [topupMsg, setTopupMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [packageForm, setPackageForm] = useState(emptyPackage);
   const [voucherForm, setVoucherForm] = useState(emptyVoucher);
@@ -114,11 +112,10 @@ export default function Admin({ user, language = "vi" }) {
   const [twoFactorMsg, setTwoFactorMsg] = useState("");
 
   async function loadData() {
-    const [oRes, uRes, pRes, tRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
+    const [oRes, uRes, pRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
       api(`/api/admin/overview?period=${revenuePeriod}`),
       api("/api/admin/users"),
       api("/api/admin/topup-packages"),
-      api("/api/admin/topups/pending"),
       api("/api/admin/vouchers"),
       api("/api/admin/cookies"),
       api("/api/admin/cookies/status"),
@@ -131,7 +128,6 @@ export default function Admin({ user, language = "vi" }) {
     setOverview(oRes.overview || null);
     setUsers(uRes.users || []);
     setPackages(pRes.packages || []);
-    setPendingTopups(tRes.topups || []);
     setVouchers(vRes.vouchers || []);
     setCookieRecords(cRes.cookies || []);
     setCookiePool(sRes.pool || null);
@@ -369,36 +365,6 @@ export default function Admin({ user, language = "vi" }) {
     await loadData();
   }
 
-  async function approveTopup(id) {
-    try {
-      setTopupMsg("");
-      const data = await api(`/api/admin/topups/${id}/approve`, { method: "POST" });
-      setPendingTopups((items) => items.filter((item) => item._id !== id));
-      if (data.user?._id) {
-        setUsers((items) => items.map((user) => (user._id === data.user._id ? data.user : user)));
-      }
-      setTopupMsg(l(
-        `Đã duyệt +${data.topup?.credit || 0} credit cho ${data.user?.email || "user"}.`,
-        `Approved +${data.topup?.credit || 0} credit for ${data.user?.email || "user"}.`
-      ));
-      await loadData();
-    } catch (err) {
-      setTopupMsg(err.message);
-    }
-  }
-
-  async function rejectTopup(id) {
-    try {
-      setTopupMsg("");
-      await api(`/api/admin/topups/${id}/reject`, { method: "POST" });
-      setPendingTopups((items) => items.filter((item) => item._id !== id));
-      setTopupMsg(l("Đã hủy giao dịch nạp.", "Top-up transaction canceled."));
-      await loadData();
-    } catch (err) {
-      setTopupMsg(err.message);
-    }
-  }
-
   async function addCredit(userId) {
     await api("/api/admin/add-credit", {
       method: "POST",
@@ -484,7 +450,6 @@ export default function Admin({ user, language = "vi" }) {
     { key: "notifications", label: t.notifications, icon: Megaphone, count: notifications.length },
     { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
     { key: "articles", label: t.adminArticles || l("Bài viết", "Articles"), icon: FileText, count: articles.length },
-    { key: "topups", label: t.adminVietqr, icon: CreditCard, count: pendingTopups.length },
     { key: "cookie", label: t.adminCookie, icon: Cookie },
     { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
     { key: "users", label: t.adminUsers, icon: Users, count: users.length },
@@ -527,15 +492,15 @@ export default function Admin({ user, language = "vi" }) {
               <strong>{overview?.totalCredit || 0}</strong>
             </div>
             <div className="overviewCard">
-              <span>{l("Doanh thu đã duyệt", "Approved revenue")}</span>
+              <span>{l("Doanh thu đã thanh toán", "Paid revenue")}</span>
               <strong>{formatMoney(overview?.revenue)}</strong>
             </div>
             <div className="overviewCard">
-              <span>{l("Sepay chờ duyệt", "Pending Sepay")}</span>
+              <span>{l("Sepay chờ thanh toán", "Sepay awaiting payment")}</span>
               <strong>{overview?.pendingTopups || 0}</strong>
             </div>
             <div className="overviewCard">
-              <span>{l("Tiền đang chờ", "Pending amount")}</span>
+              <span>{l("Tiền chờ thanh toán", "Awaiting payment amount")}</span>
               <strong>{formatMoney(overview?.pendingAmount)}</strong>
             </div>
             <div className="overviewCard">
@@ -555,7 +520,7 @@ export default function Admin({ user, language = "vi" }) {
             <div className="chartHeader">
               <div>
                 <h3>{l("Biểu đồ doanh thu", "Revenue chart")}</h3>
-                <p>{chartLabels[revenuePeriod]}, {l("tính theo giao dịch đã duyệt.", "based on approved transactions.")}</p>
+                <p>{chartLabels[revenuePeriod]}, {l("tính theo giao dịch đã thanh toán.", "based on paid transactions.")}</p>
               </div>
               <div className="chartControls">
                 {[
@@ -1034,33 +999,6 @@ export default function Admin({ user, language = "vi" }) {
                 {l("Chưa có lượt giới thiệu nào.", "No referrals yet.")}
               </p>
             )}
-          </div>
-        </section>
-      )}
-
-      {activeSection === "topups" && (
-        <section className="panel" style={{ borderColor: pendingTopups.length > 0 ? "rgba(251, 191, 36, 0.4)" : undefined }}>
-          <h2><CreditCard size={20} /> {l("Duyệt nạp Sepay thủ công", "Manual Sepay top-up approval")} ({pendingTopups.length})</h2>
-          {topupMsg && <p className={topupMsg.startsWith("Đã") || topupMsg.startsWith("Approved") || topupMsg.includes("canceled") ? "success" : "error"}>{topupMsg}</p>}
-          <div className="table">
-            {pendingTopups.map((topup) => (
-              <div className="tableRow" key={topup._id}>
-                <span>{topup.userId?.email}</span>
-                <span>{topup.packageId?.name || t.defaultPackageName}</span>
-                <strong>{topup.credit} credit</strong>
-                <span>{topup.amount.toLocaleString(locale)}đ</span>
-                <code>{topup.paymentCode || topup.type}</code>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="smallButton" onClick={() => approveTopup(topup._id)}>
-                    <Check size={14} /> {l("Duyệt", "Approve")}
-                  </button>
-                  <button className="smallButton" onClick={() => rejectTopup(topup._id)} style={{ color: "var(--error)" }}>
-                    <X size={14} /> {l("Hủy", "Cancel")}
-                  </button>
-                </div>
-              </div>
-            ))}
-            {!pendingTopups.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Không có yêu cầu nạp Sepay cần xử lý thủ công.", "No Sepay top-up requests need manual processing.")}</p>}
           </div>
         </section>
       )}

@@ -8,11 +8,9 @@ import ProductCache from "../models/ProductCache.js";
 import SystemLog from "../models/SystemLog.js";
 import Referral from "../models/Referral.js";
 import { addCredit } from "../utils/creditService.js";
-import { approvePendingTopup } from "../utils/topupApprovalService.js";
 import { validate3D66Cookie } from "../utils/3d66Service.js";
 import { get3D66CookiePoolStatus } from "../utils/3d66CookiePool.js";
 import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
-import { notifyTopupRejected } from "../utils/telegramNotifier.js";
 import {
   integerInRange,
   isSafeId,
@@ -905,63 +903,6 @@ export async function deleteTopupPackage(req, res, next) {
     }
     await TopupPackage.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function listPendingTopups(req, res, next) {
-  try {
-    const topups = await Topup.find({ status: "pending" })
-      .populate("userId", "email name")
-      .populate("packageId", "name")
-      .sort({ createdAt: -1 });
-    res.json({ topups });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function approveTopup(req, res, next) {
-  try {
-    if (!isSafeId(req.params.id)) {
-      return res.status(400).json({ message: "Invalid topup id" });
-    }
-
-    const topup = await Topup.findById(req.params.id);
-    if (!topup || topup.status !== "pending") {
-      return res
-        .status(404)
-        .json({ message: "Topup not found or not pending" });
-    }
-
-    const approved = await approvePendingTopup(topup);
-    if (!approved) {
-      return res.status(409).json({ message: "Topup was already handled" });
-    }
-
-    res.json({ topup: approved.topup, user: approved.user });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function rejectTopup(req, res, next) {
-  try {
-    if (!isSafeId(req.params.id)) {
-      return res.status(400).json({ message: "Invalid topup id" });
-    }
-
-    const topup = await Topup.findById(req.params.id);
-    if (!topup || topup.status !== "pending") {
-      return res
-        .status(404)
-        .json({ message: "Topup not found or not pending" });
-    }
-    await Topup.findByIdAndUpdate(req.params.id, { status: "rejected" });
-    topup.status = "rejected";
-    notifyTopupRejected({ topup, actor: req.user });
-    res.json({ topup });
   } catch (error) {
     next(error);
   }

@@ -24,7 +24,7 @@ async function claimVoucherUsage(topup) {
   );
 
   if (!voucher) {
-    const error = new Error("Voucher da het han hoac het luot dung, khong the duyet giao dich.");
+    const error = new Error("Voucher da het han hoac het luot dung, khong the hoan tat giao dich.");
     error.status = 409;
     throw error;
   }
