@@ -60,20 +60,6 @@ export async function sendTelegramNotification(message) {
   });
 }
 
-export function notifyTopupCreated({ topup, user, pack } = {}) {
-  const lines = [
-    "<b>New Sepay top-up</b>",
-    `User: ${escapeHtml(user?.email || user?.name || String(topup?.userId || "-"))}`,
-    `Package: ${escapeHtml(pack?.name || "-")}`,
-    `Amount: ${money(topup?.amount)}`,
-    `Credit: ${Number(topup?.credit || 0)}`,
-    `Payment code: <code>${escapeHtml(topup?.paymentCode || "-")}</code>`,
-    `Topup: <code>${escapeHtml(shortId(topup?._id))}</code>`,
-  ];
-
-  sendTelegramNotification(lines.join("\n")).catch(() => {});
-}
-
 export function notifyTopupApproved({ topup, user, source = "System" } = {}) {
   const lines = [
     "<b>Top-up approved</b>",

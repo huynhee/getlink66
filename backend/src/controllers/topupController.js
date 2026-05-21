@@ -2,7 +2,6 @@ import Topup from "../models/Topup.js";
 import TopupPackage from "../models/TopupPackage.js";
 import Voucher from "../models/Voucher.js";
 import { addCredit } from "../utils/creditService.js";
-import { notifyTopupCreated } from "../utils/telegramNotifier.js";
 import { createPaymentCode } from "../utils/vietqr.js";
 import { assertSepayConfigured, createSepayCheckout } from "../utils/sepay.js";
 import {
@@ -329,7 +328,6 @@ export async function createTopup(req, res, next) {
         { checkoutUrl: payment.checkoutUrl, gatewayProvider: "sepay" },
         { new: true },
       );
-      notifyTopupCreated({ topup, user: req.user, pack });
     }
 
     res.json({ topup, payment, credit: userCredit, status });
