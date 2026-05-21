@@ -30,7 +30,7 @@ export function googleLogin(req, res, next) {
   const returnTo =
     typeof req.query.returnTo === "string" ? req.query.returnTo : "";
   if (returnTo.length <= 200 && SAFE_RETURN_PATH.test(returnTo)) {
-    res.cookie("oauthReturnTo", returnTo, oauthCookieOptions());
+    res.cookie("oauthReturnTo", returnTo === "/admin" ? "/admin" : "/", oauthCookieOptions());
   }
   const referralCode =
     typeof req.query.ref === "string" ? req.query.ref.trim() : "";
@@ -68,7 +68,7 @@ export const googleCallback = [
     const returnTo = req.cookies.oauthReturnTo || "/";
     res.clearCookie("oauthReturnTo", oauthClearCookieOptions());
     res.clearCookie("oauthReferralCode", oauthClearCookieOptions());
-    const safePath = SAFE_RETURN_PATH.test(returnTo) ? returnTo : "/";
+    const safePath = returnTo === "/admin" ? "/admin" : "/";
     res.redirect(`${clientUrl}${safePath}`);
   },
 ];
