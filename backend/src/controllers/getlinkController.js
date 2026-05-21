@@ -144,6 +144,17 @@ function readUrlRequest(req, res) {
   return url;
 }
 
+function shouldWriteSystemError(error) {
+  return !error.status || Number(error.status) >= 500;
+}
+
+function isClientDownloadAbort(error) {
+  return (
+    error?.code === "ERR_STREAM_PREMATURE_CLOSE" ||
+    /premature close/i.test(error?.message || "")
+  );
+}
+
 async function findActiveRedownload(userId, productId) {
   if (!productId) return null;
   return Getlink.findOne({
@@ -478,16 +489,18 @@ export async function previewGetlink(req, res, next) {
       ),
     });
   } catch (error) {
-    await writeSystemLog({
-      type: "getlink",
-      level: "error",
-      message: error.message,
-      userId: req.user?._id,
-      ip: req.ip,
-      path: req.path,
-      status: error.status,
-      details: { stage: "preview" },
-    });
+    if (shouldWriteSystemError(error)) {
+      await writeSystemLog({
+        type: "getlink",
+        level: "error",
+        message: error.message,
+        userId: req.user?._id,
+        ip: req.ip,
+        path: req.path,
+        status: error.status,
+        details: { stage: "preview" },
+      });
+    }
     next(error);
   }
 }
@@ -502,16 +515,18 @@ export async function inspectGetlink(req, res, next) {
     );
     res.json(inspection);
   } catch (error) {
-    await writeSystemLog({
-      type: "getlink",
-      level: "error",
-      message: error.message,
-      userId: req.user?._id,
-      ip: req.ip,
-      path: req.path,
-      status: error.status,
-      details: { stage: "inspect" },
-    });
+    if (shouldWriteSystemError(error)) {
+      await writeSystemLog({
+        type: "getlink",
+        level: "error",
+        message: error.message,
+        userId: req.user?._id,
+        ip: req.ip,
+        path: req.path,
+        status: error.status,
+        details: { stage: "inspect" },
+      });
+    }
     next(error);
   }
 }
@@ -661,17 +676,19 @@ export async function getLink(req, res, next) {
       creditUsed: creditCost,
     });
   } catch (error) {
-    await writeSystemLog({
-      type: "getlink",
-      level: "error",
-      message: error.message,
-      userId: req.user?._id,
-      productId: logProductId,
-      ip: req.ip,
-      path: req.path,
-      status: error.status,
-      details: { stage: "create" },
-    });
+    if (shouldWriteSystemError(error)) {
+      await writeSystemLog({
+        type: "getlink",
+        level: "error",
+        message: error.message,
+        userId: req.user?._id,
+        productId: logProductId,
+        ip: req.ip,
+        path: req.path,
+        status: error.status,
+        details: { stage: "create" },
+      });
+    }
     next(error);
   } finally {
     if (acquiredLockKey) userProductLocks.delete(acquiredLockKey);
@@ -899,6 +916,7 @@ export async function downloadGetlink(req, res, next) {
       reservedDownloadCount = false;
     }
     if (error.name === "AbortError") return;
+    if (isClientDownloadAbort(error)) return;
     await writeSystemLog({
       type: "download",
       level: "error",
