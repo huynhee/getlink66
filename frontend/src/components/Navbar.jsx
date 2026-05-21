@@ -74,7 +74,7 @@ export default function Navbar({
   }
 
   function googleHref(returnToOverride = "") {
-    const returnTo = returnToOverride || (window.location.pathname === "/" ? "/getlink" : window.location.pathname);
+    const returnTo = returnToOverride || (window.location.pathname === "/" ? "/" : window.location.pathname);
     const params = new URLSearchParams({ returnTo });
     const ref = new URLSearchParams(window.location.search).get("ref");
     if (ref) params.set("ref", ref);
@@ -164,7 +164,7 @@ export default function Navbar({
                   className={page === key ? "active" : ""} 
                   onClick={() => {
                     if (!user && key !== "guide") {
-                      window.location.href = googleHref(targetPath);
+                      window.location.href = googleHref("/");
                     } else if (key === "guide") {
                       goPath("/guide");
                     } else {

@@ -19,7 +19,7 @@ const siteSettingSchema = new mongoose.Schema(
     },
     pricingNote: {
       type: String,
-      default: "Nạp credit tự động, cộng credit ngay sau khi chọn gói. Tỉ lệ chuyển đổi VD: 50.000 VNĐ = 12.8 tệ = 128 credit"
+      default: "Nạp credit tự động, cộng credit ngay sau khi chọn gói."
     },
     referralMode: {
       type: String,

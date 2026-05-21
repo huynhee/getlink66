@@ -9,8 +9,7 @@ const defaultSettings = {
   heroSubtitle:
     "Dich vu getlink trung gian giup ban tai model tu 3D66 voi gia re hon mua truc tiep.",
   saleText: "Khuyen mai goi PRO trong thang nay",
-  pricingNote:
-    "Nap credit tu dong, ti le 1:1 nhu web VD: 50.000 VND = 12.8 te = 128 credit.",
+  pricingNote: "Nap credit tu dong, cong credit ngay sau khi chon goi.",
   referralMode: "both",
 };
 
@@ -38,9 +37,12 @@ async function loadSettings() {
     );
   }
   const pricingNote = settings.pricingNote || "";
-  const nextPricingNote = pricingNote
+  let nextPricingNote = pricingNote
     .replace(/nhu 3D66/gi, "nhu web")
     .replace(/nh\u01b0 3D66/gi, "nh\u01b0 web");
+  if (/50[.,]000\s*VN[DĐ]/i.test(nextPricingNote) && /128\s*credit/i.test(nextPricingNote)) {
+    nextPricingNote = defaultSettings.pricingNote;
+  }
   if (nextPricingNote !== pricingNote) {
     settings = await SiteSetting.findOneAndUpdate(
       { key: "homepage" },

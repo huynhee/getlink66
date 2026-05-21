@@ -3,7 +3,7 @@ import { AlertCircle, ArrowRight, Chrome, ClipboardPaste, DownloadCloud, ShieldC
 import { API_URL, api } from "../api.js";
 import { translations } from "../i18n.js";
 
-export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/getlink", language = "vi" }) {
+export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/", language = "vi" }) {
   const t = { ...(translations[language] || translations.vi) };
   const [demoLink, setDemoLink] = useState("");
   const [demoError, setDemoError] = useState("");
@@ -18,8 +18,8 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
       : "An intermediary getlink service that helps you download 3D66 models with a faster credit workflow.",
     saleText: "",
     pricingNote: language === "vi"
-      ? "Nạp credit tự động, cộng credit ngay sau khi chọn gói. Tỉ lệ chuyển đổi VD: 50.000 VNĐ = 12.8 tệ = 128 credit"
-      : "Automatic credit top-up after selecting a package. Example conversion: 50,000 VND = 12.8 CNY = 128 credits"
+      ? "Nạp credit tự động, cộng credit ngay sau khi chọn gói."
+      : "Automatic credit top-up after selecting a package."
   });
   const demoCursorText = demoLink || t.getlinkPlaceholder;
   const demoCursorX = Math.min(demoCursorText.length * 8.4, 520);
@@ -89,7 +89,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   }
 
   function authAwareHref(target) {
-    return user ? target : googleHref(target);
+    return user ? target : googleHref("/");
   }
 
   function getlinkTarget() {

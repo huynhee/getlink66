@@ -107,6 +107,7 @@ function pageFromPath(pathname) {
   if (pathname === "/guide") return "guide";
   if (pathname === "/privacy" || pathname === "/chinh-sach-bao-mat") return "privacy";
   if (pathname === "/terms" || pathname === "/dieu-khoan-su-dung") return "terms";
+  if (pathname === "/") return "";
   return "getlink";
 }
 
@@ -194,7 +195,7 @@ function App() {
         <Navbar user={user} page="" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} />
         <DiscordBanner language={language} />
         <main className="shell">
-          <Login user={user} onLogin={refreshUser} returnTo="/getlink" language={language} />
+          <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />
         </main>
         {user?.isBanned && !banOverlayClosed && (
           <BannedOverlay user={user} language={language} onClose={() => setBanOverlayClosed(true)} />
@@ -208,7 +209,7 @@ function App() {
       <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} />
       <DiscordBanner language={language} />
       <main className="shell">
-        {!user && !["guide", "privacy", "terms"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo={path} language={language} />}
+        {!user && !["guide", "privacy", "terms"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />}
         {page === "guide" && <Guide language={language} />}
         {page === "privacy" && <Privacy language={language} />}
         {page === "terms" && <Terms language={language} />}
