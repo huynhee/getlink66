@@ -45,7 +45,23 @@ export function googleLogin(req, res, next) {
 }
 
 export const googleCallback = [
-  passport.authenticate("google", { session: false, failureRedirect: "/" }),
+  (req, res, next) => {
+    passport.authenticate("google", { session: false }, (error, user) => {
+      if (error || !user) {
+        securityEvent("GOOGLE_OAUTH_CALLBACK_FAILED", {
+          message: error?.message || "Google OAuth failed",
+          ip: req.ip,
+          path: req.path,
+        });
+        const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+        res.clearCookie("oauthReturnTo", oauthClearCookieOptions());
+        res.clearCookie("oauthReferralCode", oauthClearCookieOptions());
+        return res.redirect(`${clientUrl}/`);
+      }
+      req.user = user;
+      return next();
+    })(req, res, next);
+  },
   (req, res) => {
     generateTokens(req, res, req.user);
     const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
