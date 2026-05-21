@@ -3470,9 +3470,15 @@ label {
   }
 }
 
-/* Discord Community Banner */
-.discordBanner {
-  background: linear-gradient(90deg, #5865F2 0%, #404eed 100%);
+.communityBannerStack {
+  position: sticky;
+  top: 64px;
+  z-index: 99;
+  width: 100%;
+}
+
+/* Community Banners */
+.communityBanner {
   color: #ffffff !important;
   height: 28px;
   padding: 0 var(--space-16);
@@ -3487,11 +3493,12 @@ label {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   text-decoration: none;
-  position: sticky;
-  top: 64px;
-  z-index: 99;
   width: 100%;
   box-sizing: border-box;
+}
+
+.discordBanner {
+  background: linear-gradient(90deg, #5865F2 0%, #404eed 100%);
 }
 
 .discordBanner:hover {
@@ -3499,12 +3506,21 @@ label {
   box-shadow: 0 0 15px rgba(88, 101, 242, 0.4);
 }
 
-.discordBanner svg {
-  animation: discordBounce 2s infinite ease-in-out;
+.facebookGroupBanner {
+  background: linear-gradient(90deg, #1877F2 0%, #0A5BD3 100%);
+}
+
+.facebookGroupBanner:hover {
+  background: linear-gradient(90deg, #166FE5 0%, #084CAB 100%);
+  box-shadow: 0 0 15px rgba(24, 119, 242, 0.4);
+}
+
+.communityBanner svg {
+  animation: communityBannerBounce 2s infinite ease-in-out;
   flex-shrink: 0;
 }
 
-@keyframes discordBounce {
+@keyframes communityBannerBounce {
 
   0%,
   100% {
@@ -3516,19 +3532,19 @@ label {
   }
 }
 
-.discordBanner span {
+.communityBanner span {
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.discordBanner .arrow {
+.communityBanner .arrow {
   transition: transform 0.2s ease;
   display: inline-block;
   margin-left: 4px;
 }
 
-.discordBanner:hover .arrow {
+.communityBanner:hover .arrow {
   transform: translateX(3px);
 }
 
