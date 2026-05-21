@@ -10,7 +10,7 @@ const defaultSettings = {
     "Dich vu getlink trung gian giup ban tai model tu 3D66 voi gia re hon mua truc tiep.",
   saleText: "Khuyen mai goi PRO trong thang nay",
   pricingNote:
-    "Nap credit tu dong, ti le 1:1 nhu 3D66 VD: 50.000 VND = 12.8 te = 128 credit.",
+    "Nap credit tu dong, ti le 1:1 nhu web VD: 50.000 VND = 12.8 te = 128 credit.",
   referralMode: "both",
 };
 
@@ -34,6 +34,17 @@ async function loadSettings() {
     settings = await SiteSetting.findOneAndUpdate(
       { key: "homepage" },
       { $set: { referralMode: defaultSettings.referralMode } },
+      { new: true },
+    );
+  }
+  const pricingNote = settings.pricingNote || "";
+  const nextPricingNote = pricingNote
+    .replace(/nhu 3D66/gi, "nhu web")
+    .replace(/nh\u01b0 3D66/gi, "nh\u01b0 web");
+  if (nextPricingNote !== pricingNote) {
+    settings = await SiteSetting.findOneAndUpdate(
+      { key: "homepage" },
+      { $set: { pricingNote: nextPricingNote } },
       { new: true },
     );
   }
