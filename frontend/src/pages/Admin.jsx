@@ -496,8 +496,8 @@ export default function Admin({ user, language = "vi" }) {
               <strong>{formatMoney(overview?.revenue)}</strong>
             </div>
             <div className="overviewCard">
-              <span>{l("Sepay chờ thanh toán", "Sepay awaiting payment")}</span>
-              <strong>{overview?.pendingTopups || 0}</strong>
+              <span>{l("Số giao dịch thành công", "Successful top-up transactions")}</span>
+              <strong>{overview?.approvedTopups || 0}</strong>
             </div>
             <div className="overviewCard">
               <span>{l("Tiền chờ thanh toán", "Awaiting payment amount")}</span>

@@ -13,53 +13,6 @@ import Terms from "./pages/Terms.jsx";
 import { getInitialLanguage, setStoredLanguage, translations } from "./i18n.js";
 import "./styles.css";
 
-function DiscordBanner({ language = "vi" }) {
-  const t = translations[language] || translations.vi;
-  return (
-    <a
-      className="communityBanner discordBanner"
-      href="https://discord.com/invite/vcx9YbEx3c"
-      target="_blank"
-      rel="noreferrer"
-    >
-      <svg viewBox="0 0 127.14 96.36" fill="currentColor" style={{ width: 12, height: 12, marginRight: 6, display: "inline-block", verticalAlign: "middle" }}>
-        <path d="M107.7,8.07A105.15,105.15,0,0,0,77.26,0a77.19,77.19,0,0,0-3.3,6.83A96.67,96.67,0,0,0,53.22,6.83,77.19,77.19,0,0,0,49.88,0,105.15,105.15,0,0,0,19.44,8.07C3.66,31.58-1.86,54.65,1,77.53A105.73,105.73,0,0,0,32,96.36a77.7,77.7,0,0,0,6.63-10.85,68.43,68.43,0,0,1-10.5-5A52,52,0,0,0,31.42,78,75.6,75.6,0,0,0,95.74,78a52,52,0,0,0,3.3,2.48,68.43,68.43,0,0,1-10.5,5,77.7,77.7,0,0,0,6.63,10.85,105.73,105.73,0,0,0,31.06-18.83C129.68,48.24,123.06,25.42,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53S36.18,40.36,42.45,40.36,53.83,46,53.83,53,48.72,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.24,60,73.24,53S78.41,40.36,84.69,40.36,96.07,46,96.07,53,91,65.69,84.69,65.69Z" />
-      </svg>
-      <span>
-        {t.discordBanner} <span className="arrow">»</span>
-      </span>
-    </a>
-  );
-}
-
-function FacebookGroupBanner({ language = "vi" }) {
-  const t = translations[language] || translations.vi;
-  return (
-    <a
-      className="communityBanner facebookGroupBanner"
-      href="https://www.facebook.com/groups/960223243551548"
-      target="_blank"
-      rel="noreferrer"
-    >
-      <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 12, height: 12, marginRight: 6, display: "inline-block", verticalAlign: "middle" }}>
-        <path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06C2 17.08 5.66 21.25 10.44 22v-7.03H7.9v-2.91h2.54V9.84c0-2.52 1.49-3.91 3.77-3.91 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.78-1.63 1.57v1.9h2.78l-.44 2.91h-2.34V22C18.34 21.25 22 17.08 22 12.06Z" />
-      </svg>
-      <span>
-        {t.facebookGroupBanner} <span className="arrow">»</span>
-      </span>
-    </a>
-  );
-}
-
-function CommunityBanners({ language = "vi" }) {
-  return (
-    <div className="communityBannerStack">
-      <DiscordBanner language={language} />
-      <FacebookGroupBanner language={language} />
-    </div>
-  );
-}
-
 function TwoFactorModal({ onVerify, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const [token, setToken] = useState("");
@@ -221,7 +174,6 @@ function App() {
     return (
       <div className="appFrame">
         <Navbar user={user} page="" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} />
-        <CommunityBanners language={language} />
         <main className="shell">
           <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />
         </main>
@@ -235,7 +187,6 @@ function App() {
   return (
     <div className="appFrame">
       <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} />
-      <CommunityBanners language={language} />
       <main className="shell">
         {!user && !["guide", "privacy", "terms"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />}
         {page === "guide" && <Guide language={language} />}
