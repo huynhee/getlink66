@@ -434,7 +434,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
             </nav>
             <nav>
               <h3>{t.support}</h3>
-              <a href="https://discord.com/invite/vcx9YbEx3c" target="_blank" rel="noreferrer">Discord</a>
+              <a href="https://discord.gg/azu9mX6GhB" target="_blank" rel="noreferrer">Discord</a>
               <a href="https://www.facebook.com/groups/960223243551548" target="_blank" rel="noreferrer">Facebook Group</a>
             </nav>
             <nav>
