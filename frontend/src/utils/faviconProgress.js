@@ -1,20 +1,33 @@
 let originalHref = "";
-let favico = null;
+let originalIconLinks = [];
 let notificationCount = 0;
 let progressActive = false;
 let progressTimer = null;
 let progressValue = 0;
 let wavePhase = 0;
 
+function rememberOriginalIcons() {
+  if (originalIconLinks.length) return;
+  originalIconLinks = Array.from(
+    document.querySelectorAll("link[rel='icon'], link[rel='shortcut icon']"),
+  )
+    .filter((link) => link.dataset.dynamicFavicon !== "true")
+    .map((link) => ({
+      link,
+      href: link.href || "",
+      type: link.type || "",
+      sizes: link.getAttribute("sizes") || "",
+    }));
+  const pngIcon =
+    originalIconLinks.find((item) => /png/i.test(item.type) || /\.png(?:\?|$)/i.test(item.href)) ||
+    originalIconLinks[0];
+  if (!originalHref) originalHref = pngIcon?.href || "";
+}
+
 function faviconLink() {
+  rememberOriginalIcons();
   let link = document.querySelector("link[data-dynamic-favicon='true']");
   if (!link) {
-    const existingLinks = Array.from(
-      document.querySelectorAll("link[rel='icon'], link[rel='shortcut icon']"),
-    );
-    const originalLink = existingLinks[existingLinks.length - 1];
-    if (!originalHref) originalHref = originalLink?.href || "";
-
     link = document.createElement("link");
     link.rel = "icon";
     link.type = "image/png";
@@ -27,19 +40,32 @@ function faviconLink() {
   return link;
 }
 
-function favicoInstance() {
-  if (typeof window === "undefined" || !window.Favico) return null;
-  if (!favico) {
-    faviconLink();
-    favico = new window.Favico({
-      animation: "popFade",
-      bgColor: "#00c853",
-      textColor: "#ffffff",
-      type: "rectangle",
-      position: "down",
-    });
+function faviconLinks() {
+  const dynamic = faviconLink();
+  return Array.from(
+    document.querySelectorAll("link[rel='icon'], link[rel='shortcut icon']"),
+  ).concat(dynamic);
+}
+
+function setFaviconHref(href) {
+  if (!href) return;
+  for (const link of new Set(faviconLinks())) {
+    link.rel = "icon";
+    link.type = "image/png";
+    link.href = href;
   }
-  return favico;
+}
+
+function restoreOriginalFavicon() {
+  rememberOriginalIcons();
+  for (const item of originalIconLinks) {
+    item.link.href = item.href;
+    item.link.type = item.type;
+    if (item.sizes) item.link.setAttribute("sizes", item.sizes);
+    else item.link.removeAttribute("sizes");
+  }
+  const dynamic = document.querySelector("link[data-dynamic-favicon='true']");
+  if (dynamic && originalHref) dynamic.href = originalHref;
 }
 
 function stopProgressAnimation() {
@@ -169,14 +195,8 @@ function drawBadge(count) {
 function applyNotificationBadge() {
   if (typeof document === "undefined" || progressActive) return;
   const count = Math.max(0, Number(notificationCount || 0));
-  const favicoApi = favicoInstance();
-  if (favicoApi) {
-    if (count > 0) favicoApi.badge(count);
-    else favicoApi.reset();
-    return;
-  }
-  if (count > 0) faviconLink().href = drawBadge(count);
-  else if (originalHref) faviconLink().href = originalHref;
+  if (count > 0) setFaviconHref(drawBadge(count));
+  else restoreOriginalFavicon();
 }
 
 export function setFaviconProgress(value) {
@@ -186,20 +206,18 @@ export function setFaviconProgress(value) {
     progressActive = true;
     progressValue = progress;
 
-    if (favico) favico.reset();
-
-    const link = faviconLink();
+    faviconLink();
     if (!progressTimer) {
       progressTimer = window.setInterval(() => {
         try {
           wavePhase += 0.42;
-          link.href = drawProgress(progressValue, wavePhase);
+          setFaviconHref(drawProgress(progressValue, wavePhase));
         } catch {
           stopProgressAnimation();
         }
       }, 90);
     }
-    link.href = drawProgress(progressValue, wavePhase);
+    setFaviconHref(drawProgress(progressValue, wavePhase));
   } catch {
     stopProgressAnimation();
   }
@@ -216,7 +234,6 @@ export function failFaviconProgress() {
   try {
     progressActive = true;
     stopProgressAnimation();
-    const link = faviconLink();
     const canvas = document.createElement("canvas");
     canvas.width = 32;
     canvas.height = 32;
@@ -232,7 +249,7 @@ export function failFaviconProgress() {
     ctx.moveTo(23, 9);
     ctx.lineTo(9, 23);
     ctx.stroke();
-    link.href = canvas.toDataURL("image/png");
+    setFaviconHref(canvas.toDataURL("image/png"));
   } catch {
     stopProgressAnimation();
   }
@@ -242,17 +259,6 @@ export function resetFaviconProgress() {
   if (typeof document === "undefined") return;
   progressActive = false;
   stopProgressAnimation();
-  if (window.FavIconX?.reset) {
-    window.FavIconX.reset();
-    applyNotificationBadge();
-    return;
-  }
-  const favicoApi = favicoInstance();
-  if (favicoApi) {
-    if (notificationCount > 0) favicoApi.badge(notificationCount);
-    else favicoApi.reset();
-    return;
-  }
   applyNotificationBadge();
 }
 
