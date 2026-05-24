@@ -204,7 +204,16 @@ function applyFieldsToContext(context, fields = {}) {
   if (fields.fileFormat) {
     context.fileFormat = String(fields.fileFormat);
   }
+  if (fields.accessSourceSite) context.accessSourceSite = String(fields.accessSourceSite);
+  if (fields.accessSourcePage) context.accessSourcePage = String(fields.accessSourcePage);
+  if (fields.formatVersion) context.formatVersion = String(fields.formatVersion);
+  if (fields.rendererType) context.rendererType = String(fields.rendererType);
   return context;
+}
+
+function configuredPaytypeValue() {
+  const value = String(process.env.THREED66_PAYTYPE_VALUE || "4").trim();
+  return /^[\w-]{1,20}$/.test(value) ? value : "4";
 }
 
 function firstMatch(text, patterns) {
@@ -544,6 +553,16 @@ function parseDynamicFields(html, pageUrl) {
   const parsed = new URL(pageUrl);
   const source = `${pageUrl}\n${html}`;
   const detailRes = parseDetailData(html)?.data?.res || {};
+  const param = (...names) => {
+    for (const name of names) {
+      const value = parsed.searchParams.get(name);
+      if (value) return value;
+    }
+    return "";
+  };
+  const firstFileFormat = Array.isArray(detailRes.down_file_format)
+    ? detailRes.down_file_format[0] || {}
+    : {};
 
   return {
     llId:
@@ -575,7 +594,32 @@ function parseDynamicFields(html, pageUrl) {
       /["']upTime["']\s*:\s*["']?(\d{8,})["']?/i
     ]),
     site: firstMatch(source, [/<input\b(?=[^>]*\bid=["']site["'])[^>]*\bvalue=["']([^"']+)["']/i]),
-    pageType: firstMatch(source, [/<input\b(?=[^>]*\bid=["']page_type["'])[^>]*\bvalue=["']([^"']+)["']/i])
+    pageType: firstMatch(source, [/<input\b(?=[^>]*\bid=["']page_type["'])[^>]*\bvalue=["']([^"']+)["']/i]),
+    actionId:
+      detailRes.actionId ||
+      param("action_id", "actid") ||
+      firstMatch(source, [
+        /["']action_id["']\s*:\s*["']([^"']+)["']/i,
+        /["']actionId["']\s*:\s*["']([^"']+)["']/i,
+        /(?:action_id|actionId)\s*=\s*["']([^"']+)["']/i
+      ]),
+    requestId: param("r_id", "request_id"),
+    sourceAlg: param("s_alg", "source_alg"),
+    llwSourceScene: param("lss", "llw_source_scene"),
+    listLayoutType: param("llt", "list_layout_type"),
+    ab: param("ab_f", "ab"),
+    algorithmType: param("algorithm_type", "gp"),
+    algorithmVersion: param("algorithm_version", "a_v"),
+    accessSourceSite: param("access_source_site"),
+    accessSourcePage: param("access_source_page"),
+    fileFormat: firstFileFormat.file_format ? String(firstFileFormat.file_format) : "",
+    rendererType: firstFileFormat.renderer_type ? String(firstFileFormat.renderer_type) : "",
+    formatVersion:
+      firstFileFormat.format_version ||
+      firstMatch(source, [
+        /["']format_version["']\s*:\s*["']([^"']+)["']/i,
+        /format_version\s*=\s*["']([^"']+)["']/i
+      ])
   };
 }
 
@@ -642,9 +686,9 @@ function buildDownloadPayload(fields, urls, cookies, context) {
     action: "user_pay_download",
     rartype: "1",
     ll_id: fields.llId,
-    needtype: "1",
-    actid: "",
-    action_id: "",
+    needtype: fields.needtype || "1",
+    actid: fields.actionId || "",
+    action_id: fields.actionId || "",
     token: fields.token,
     sotu_action_id: "",
     kw: "",
@@ -658,13 +702,13 @@ function buildDownloadPayload(fields, urls, cookies, context) {
     uid: cookies.get("Hm_lvt_bh_ud") || "",
     uid_front: cookies.get("Hm_lvt_bh_ud_uid_front") || "",
     up_time: fields.upTime,
-    coupon_id: "",
-    source_alg: "",
+    coupon_id: fields.couponId || "",
+    source_alg: fields.sourceAlg || "",
     model_num: "1",
     resUrl: urls.resUrl,
     referrer: urls.referrer,
     position: "1",
-    llw_source_scene: "0",
+    llw_source_scene: fields.llwSourceScene || "0",
     site: context.site,
     page_type: context.pageType,
     access_source_site: context.accessSourceSite,
@@ -672,19 +716,19 @@ function buildDownloadPayload(fields, urls, cookies, context) {
     experimental_grouping: "2",
     browser: DEFAULT_USER_AGENT,
     search_word: "",
-    package_id: "",
-    list_layout_type: "",
+    package_id: fields.packageId || "",
+    list_layout_type: fields.listLayoutType || "",
     is_business: "0",
     down_type: "0",
     is_commercial: "false",
-    voucher_id: "",
+    voucher_id: fields.voucherId || "",
     file_format: context.fileFormat,
     renderer_type: process.env.THREED66_RENDERER_TYPE || context.rendererType || "4",
-    format_version: process.env.THREED66_FORMAT_VERSION || context.formatVersion || "max2018",
-    ab: "",
-    algorithm_type: "",
-    algorithm_version: "",
-    request_id: ""
+    format_version: process.env.THREED66_FORMAT_VERSION || context.formatVersion || fields.formatVersion || "max2018",
+    ab: fields.ab || "",
+    algorithm_type: fields.algorithmType || "",
+    algorithm_version: fields.algorithmVersion || "",
+    request_id: fields.requestId || ""
   });
 
   if (!context.fileFormat) payload.delete("file_format");
@@ -760,7 +804,18 @@ function mergeBrowserFields(fields = {}, browserMetadata = {}) {
     actionId: browserFields.actionId || fields.actionId,
     fileFormat: browserFields.fileFormat || fields.fileFormat,
     site: browserFields.site || fields.site,
-    pageType: browserFields.pageType || fields.pageType
+    pageType: browserFields.pageType || fields.pageType,
+    requestId: browserFields.requestId || fields.requestId,
+    sourceAlg: browserFields.sourceAlg || fields.sourceAlg,
+    llwSourceScene: browserFields.llwSourceScene || fields.llwSourceScene,
+    listLayoutType: browserFields.listLayoutType || fields.listLayoutType,
+    ab: browserFields.ab || fields.ab,
+    algorithmType: browserFields.algorithmType || fields.algorithmType,
+    algorithmVersion: browserFields.algorithmVersion || fields.algorithmVersion,
+    accessSourceSite: browserFields.accessSourceSite || fields.accessSourceSite,
+    accessSourcePage: browserFields.accessSourcePage || fields.accessSourcePage,
+    rendererType: browserFields.rendererType || fields.rendererType,
+    formatVersion: browserFields.formatVersion || fields.formatVersion
   };
 }
 
@@ -828,12 +883,21 @@ async function requestDownloadPop(fields, cookieValue, context) {
 
 function mergeDownloadPopFields(fields = {}, popData = {}) {
   const resInfo = popData.resInfo || {};
+  const priceInfo = popData.user?.priceInfo || {};
+  const discount = priceInfo.discount_arr || {};
+  const isDirectDownload =
+    Number(popData.is_direct_download || 0) === 1 ||
+    [3, 4].includes(Number(popData.download_status || 0));
   return {
     ...fields,
     llId: fields.llId || resInfo.sof || "",
     token: fields.token || popData.token || "",
     upTime: fields.upTime || currentUnixSeconds(),
-    site: fields.site || resInfo.res_type || ""
+    site: fields.site || resInfo.res_type || "",
+    needtype: fields.needtype || (isDirectDownload ? "1" : configuredPaytypeValue()),
+    couponId: fields.couponId || discount.coupon_id || "",
+    voucherId: fields.voucherId || discount.voucher_id || "",
+    packageId: fields.packageId || (discount.package_id ? String(discount.package_id) : "")
   };
 }
 
@@ -1185,7 +1249,10 @@ export async function fetchFrom3D66(url, cookieValue) {
   try {
     download = await requestDownloadUrl(payload, effectiveCookieValue, context.origin);
   } catch (error) {
-    if (process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK !== "true") {
+    if (
+      process.env.THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK === "true" &&
+      process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK !== "true"
+    ) {
       return download3D66WithBrowser(pageUrl || normalized.toString(), effectiveCookieValue);
     }
     throw error;
