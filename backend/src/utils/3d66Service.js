@@ -601,7 +601,7 @@ function parseDynamicFields(html, pageUrl) {
     pageType: firstMatch(source, [/<input\b(?=[^>]*\bid=["']page_type["'])[^>]*\bvalue=["']([^"']+)["']/i]),
     actionId:
       detailRes.actionId ||
-      param("action_id", "actid") ||
+      param("action_id", "actid", "searchActionId") ||
       firstMatch(source, [
         /["']action_id["']\s*:\s*["']([^"']+)["']/i,
         /["']actionId["']\s*:\s*["']([^"']+)["']/i,
@@ -609,6 +609,7 @@ function parseDynamicFields(html, pageUrl) {
       ]),
     requestId: param("r_id", "request_id"),
     sourceAlg: param("s_alg", "source_alg"),
+    position: param("position"),
     llwSourceScene: param("lss", "llw_source_scene"),
     listLayoutType: param("llt", "list_layout_type"),
     ab: param("ab_f", "ab"),
@@ -711,7 +712,7 @@ function buildDownloadPayload(fields, urls, cookies, context) {
     model_num: "1",
     resUrl: urls.resUrl,
     referrer: urls.referrer,
-    position: "1",
+    position: fields.position || "1",
     llw_source_scene: fields.llwSourceScene || "0",
     site: context.site,
     page_type: context.pageType,
@@ -836,6 +837,7 @@ function mergeBrowserFields(fields = {}, browserMetadata = {}) {
     pageType: browserFields.pageType || fields.pageType,
     requestId: browserFields.requestId || fields.requestId,
     sourceAlg: browserFields.sourceAlg || fields.sourceAlg,
+    position: browserFields.position || fields.position,
     llwSourceScene: browserFields.llwSourceScene || fields.llwSourceScene,
     listLayoutType: browserFields.listLayoutType || fields.listLayoutType,
     ab: browserFields.ab || fields.ab,
