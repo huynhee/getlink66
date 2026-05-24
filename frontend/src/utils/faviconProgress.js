@@ -7,12 +7,20 @@ let progressValue = 0;
 let wavePhase = 0;
 
 function faviconLink() {
-  let link =
-    document.querySelector("link[rel='icon']") ||
-    document.querySelector("link[rel='shortcut icon']");
+  let link = document.querySelector("link[data-dynamic-favicon='true']");
   if (!link) {
+    const existingLinks = Array.from(
+      document.querySelectorAll("link[rel='icon'], link[rel='shortcut icon']"),
+    );
+    const originalLink = existingLinks[existingLinks.length - 1];
+    if (!originalHref) originalHref = originalLink?.href || "";
+
     link = document.createElement("link");
     link.rel = "icon";
+    link.type = "image/png";
+    link.sizes = "32x32";
+    link.dataset.dynamicFavicon = "true";
+    if (originalHref) link.href = originalHref;
     document.head.appendChild(link);
   }
   if (!originalHref) originalHref = link.href || "";
