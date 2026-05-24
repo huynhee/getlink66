@@ -27,7 +27,8 @@ import {
 import {
   adminCreateNotification,
   adminDeleteNotification,
-  adminListNotifications
+  adminListNotifications,
+  adminUpdateNotification
 } from "../controllers/notificationController.js";
 import {
   createAdminArticle,
@@ -66,6 +67,7 @@ router.delete("/vouchers/:id", adminWriteLimit, auditAdmin("DELETE_VOUCHER"), de
 
 router.get("/notifications", adminListNotifications);
 router.post("/notifications", adminWriteLimit, auditAdmin("CREATE_NOTIFICATION"), adminCreateNotification);
+router.put("/notifications/:id", adminWriteLimit, auditAdmin("UPDATE_NOTIFICATION"), adminUpdateNotification);
 router.delete("/notifications/:id", adminWriteLimit, auditAdmin("DELETE_NOTIFICATION"), adminDeleteNotification);
 
 router.get("/topup-packages", listTopupPackages);

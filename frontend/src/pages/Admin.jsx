@@ -33,6 +33,7 @@ const emptyNotification = {
   imageUrl: "",
   actionLabel: "",
   actionUrl: "",
+  showAgainOnRefresh: false,
   targetType: "all",
   emails: "",
   startsAt: "",
@@ -123,6 +124,7 @@ export default function Admin({ user, language = "vi" }) {
   const [voucherMsg, setVoucherMsg] = useState("");
   const [notificationForm, setNotificationForm] = useState(emptyNotification);
   const [notificationMsg, setNotificationMsg] = useState("");
+  const [editingNotificationId, setEditingNotificationId] = useState("");
   const [editUser, setEditUser] = useState(null);
   const [editCredit, setEditCredit] = useState("");
   const [banReasonByUser, setBanReasonByUser] = useState({});
@@ -286,12 +288,12 @@ export default function Admin({ user, language = "vi" }) {
     await loadData();
   }
 
-  async function createNotification(event) {
+  async function saveNotification(event) {
     event.preventDefault();
     try {
       setNotificationMsg("");
-      await api("/api/admin/notifications", {
-        method: "POST",
+      await api(editingNotificationId ? `/api/admin/notifications/${editingNotificationId}` : "/api/admin/notifications", {
+        method: editingNotificationId ? "PUT" : "POST",
         body: JSON.stringify({
           ...notificationForm,
           startsAt: notificationForm.startsAt
@@ -303,15 +305,47 @@ export default function Admin({ user, language = "vi" }) {
         })
       });
       setNotificationForm(emptyNotification);
-      setNotificationMsg(l("Thông báo đã được gửi.", "Notification sent."));
+      setEditingNotificationId("");
+      setNotificationMsg(editingNotificationId
+        ? l("Thông báo đã được cập nhật.", "Notification updated.")
+        : l("Thông báo đã được gửi.", "Notification sent."));
       await loadData();
     } catch (err) {
       setNotificationMsg(err.message);
     }
   }
 
+  function editNotification(item) {
+    setEditingNotificationId(item._id);
+    setNotificationMsg("");
+    setNotificationForm({
+      title: item.title || "",
+      body: item.body || "",
+      displayType: item.displayType || "dropdown",
+      imageUrl: item.imageUrl || "",
+      actionLabel: item.actionLabel || "",
+      actionUrl: item.actionUrl || "",
+      showAgainOnRefresh: Boolean(item.showAgainOnRefresh),
+      targetType: item.targetType || "all",
+      emails: Array.isArray(item.userIds)
+        ? item.userIds.map((target) => target?.email).filter(Boolean).join("\n")
+        : "",
+      startsAt: toDatetimeLocal(item.startsAt),
+      expiresAt: toDatetimeLocal(item.expiresAt),
+    });
+  }
+
+  function cancelNotificationEdit() {
+    setEditingNotificationId("");
+    setNotificationForm(emptyNotification);
+    setNotificationMsg("");
+  }
+
   async function deleteNotification(id) {
     await api(`/api/admin/notifications/${id}`, { method: "DELETE" });
+    if (editingNotificationId === id) {
+      cancelNotificationEdit();
+    }
     await loadData();
   }
 
@@ -1059,8 +1093,8 @@ export default function Admin({ user, language = "vi" }) {
 
       {activeSection === "notifications" && (
         <section className="panel">
-          <h2><Megaphone size={20} /> {l("Gửi thông báo", "Send notification")}</h2>
-          <form className="notificationEditor" onSubmit={createNotification} style={{ display: "grid", gap: 10, marginTop: 14 }}>
+          <h2><Megaphone size={20} /> {editingNotificationId ? l("Sửa thông báo", "Edit notification") : l("Gửi thông báo", "Send notification")}</h2>
+          <form className="notificationEditor" onSubmit={saveNotification} style={{ display: "grid", gap: 10, marginTop: 14 }}>
             <textarea
               className="notificationTitleInput"
               value={notificationForm.title}
@@ -1117,6 +1151,19 @@ export default function Admin({ user, language = "vi" }) {
                     placeholder={l("Link nút, ví dụ: /topup", "Button link, e.g. /topup")}
                   />
                 </div>
+                <label className="adminCheckboxRow">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(notificationForm.showAgainOnRefresh)}
+                    onChange={(e) => setNotificationForm({ ...notificationForm, showAgainOnRefresh: e.target.checked })}
+                  />
+                  <span>
+                    {l(
+                      "Mặc định tích “F5 sẽ hiện lại thông báo này” trên popup.",
+                      "Check “show again after refresh” by default on the popup."
+                    )}
+                  </span>
+                </label>
               </>
             )}
             {notificationForm.targetType === "users" && (
@@ -1135,15 +1182,22 @@ export default function Admin({ user, language = "vi" }) {
               style={{ height: "auto", minHeight: 130 }}
               placeholder={l("Nội dung thông báo...", "Notification content...")}
             />
-            <button
-              className="smallButton"
-              disabled={!notificationForm.title || !notificationForm.body}
-              style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}
-            >
-              <Megaphone size={16} /> {l("Gửi thông báo", "Send notification")}
-            </button>
+            <div className="inputRow" style={{ justifyContent: "start" }}>
+              <button
+                className="smallButton"
+                disabled={!notificationForm.title || !notificationForm.body}
+                style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}
+              >
+                <Megaphone size={16} /> {editingNotificationId ? l("Cập nhật thông báo", "Update notification") : l("Gửi thông báo", "Send notification")}
+              </button>
+              {editingNotificationId && (
+                <button className="smallButton" type="button" onClick={cancelNotificationEdit}>
+                  <X size={14} /> {l("Hủy sửa", "Cancel edit")}
+                </button>
+              )}
+            </div>
           </form>
-          {notificationMsg && <p className={notificationMsg.includes("được gửi") || notificationMsg.includes("sent") ? "success" : "error"}>{notificationMsg}</p>}
+          {notificationMsg && <p className={/được gửi|cập nhật|sent|updated/i.test(notificationMsg) ? "success" : "error"}>{notificationMsg}</p>}
           <div className="table">
             {notifications.map((item) => (
               <div className="tableRow" key={item._id}>
@@ -1154,10 +1208,18 @@ export default function Admin({ user, language = "vi" }) {
                     : l("Tất cả người dùng", "All users")}
                 </span>
                 <span>{item.body}</span>
+                {item.displayType === "fullscreen" && item.showAgainOnRefresh && (
+                  <span>{l("F5 hiện lại mặc định", "Refresh repeat by default")}</span>
+                )}
                 <time>{new Date(item.createdAt).toLocaleString("vi-VN")}</time>
-                <button className="smallButton" onClick={() => deleteNotification(item._id)} style={{ color: "var(--error)" }}>
-                  <X size={14} /> {l("Xóa", "Delete")}
-                </button>
+                <div className="inputRow" style={{ justifyContent: "start" }}>
+                  <button className="smallButton" onClick={() => editNotification(item)}>
+                    <Pencil size={14} /> {l("Sửa", "Edit")}
+                  </button>
+                  <button className="smallButton" onClick={() => deleteNotification(item._id)} style={{ color: "var(--error)" }}>
+                    <X size={14} /> {l("Xóa", "Delete")}
+                  </button>
+                </div>
               </div>
             ))}
             {!notifications.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{t.noNotifications}</p>}

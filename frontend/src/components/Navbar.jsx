@@ -73,7 +73,7 @@ export default function Navbar({
   }, [unreadCount]);
 
   useEffect(() => {
-    setShowFullscreenAgainOnRefresh(false);
+    setShowFullscreenAgainOnRefresh(Boolean(fullscreenNotification?.showAgainOnRefresh));
   }, [fullscreenNotification?._id]);
 
   async function logout() {

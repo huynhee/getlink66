@@ -40,6 +40,7 @@ function serializeNotification(item, userId) {
     imageUrl: item.imageUrl || "",
     actionLabel: item.actionLabel || "",
     actionUrl: item.actionUrl || "",
+    showAgainOnRefresh: Boolean(item.showAgainOnRefresh),
     targetType: item.targetType,
     isRead: readBy.some((id) => String(id) === String(userId)),
     createdAt: item.createdAt,
@@ -107,6 +108,7 @@ export async function adminListNotifications(_req, res, next) {
       .sort({ createdAt: -1 })
       .limit(100)
       .populate("createdBy", "email name")
+      .populate("userIds", "email name")
       .lean();
     res.json({ notifications });
   } catch (error) {
@@ -123,6 +125,7 @@ export async function adminCreateNotification(req, res, next) {
       "imageUrl",
       "actionLabel",
       "actionUrl",
+      "showAgainOnRefresh",
       "targetType",
       "emails",
       "startsAt",
@@ -138,6 +141,7 @@ export async function adminCreateNotification(req, res, next) {
     const imageUrl = safeNotificationUrl(req.body.imageUrl, { allowRelative: false });
     const actionLabel = limitedString(req.body.actionLabel, 80);
     const actionUrl = safeNotificationUrl(req.body.actionUrl, { allowRelative: true });
+    const showAgainOnRefresh = displayType === "fullscreen" && req.body.showAgainOnRefresh === true;
     const targetType = req.body.targetType === "users" ? "users" : "all";
     if (!title || !body) {
       return res.status(400).json({ message: "Title and content are required" });
@@ -186,12 +190,113 @@ export async function adminCreateNotification(req, res, next) {
       imageUrl,
       actionLabel,
       actionUrl,
+      showAgainOnRefresh,
       targetType,
       userIds,
       startsAt,
       expiresAt,
       createdBy: req.user._id,
     });
+    res.json({ notification });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function adminUpdateNotification(req, res, next) {
+  try {
+    if (!isSafeId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid notification id" });
+    }
+    const unknownKey = rejectUnknownKeys(req.body, [
+      "title",
+      "body",
+      "displayType",
+      "imageUrl",
+      "actionLabel",
+      "actionUrl",
+      "showAgainOnRefresh",
+      "targetType",
+      "emails",
+      "startsAt",
+      "expiresAt",
+    ]);
+    if (unknownKey) {
+      return res.status(400).json({ message: "Invalid notification request" });
+    }
+
+    const title = limitedString(req.body.title, 120);
+    const body = limitedString(req.body.body, 2000);
+    const displayType = req.body.displayType === "fullscreen" ? "fullscreen" : "dropdown";
+    const imageUrl = safeNotificationUrl(req.body.imageUrl, { allowRelative: false });
+    const actionLabel = limitedString(req.body.actionLabel, 80);
+    const actionUrl = safeNotificationUrl(req.body.actionUrl, { allowRelative: true });
+    const showAgainOnRefresh = displayType === "fullscreen" && req.body.showAgainOnRefresh === true;
+    const targetType = req.body.targetType === "users" ? "users" : "all";
+    if (!title || !body) {
+      return res.status(400).json({ message: "Title and content are required" });
+    }
+
+    let userIds = [];
+    if (targetType === "users") {
+      const emails = String(req.body.emails || "")
+        .split(/[\n,;]/)
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean)
+        .slice(0, 200);
+      if (!emails.length) {
+        return res.status(400).json({ message: "Target emails are required" });
+      }
+      const users = await User.find({ email: { $in: emails } });
+      userIds = users.map((user) => user._id);
+      if (!userIds.length) {
+        return res.status(400).json({ message: "No matching users found" });
+      }
+    }
+
+    let startsAt;
+    if (req.body.startsAt) {
+      startsAt = new Date(req.body.startsAt);
+      if (Number.isNaN(startsAt.valueOf())) {
+        return res.status(400).json({ message: "Invalid start time" });
+      }
+    }
+
+    let expiresAt;
+    if (req.body.expiresAt) {
+      expiresAt = new Date(req.body.expiresAt);
+      if (Number.isNaN(expiresAt.valueOf()) || expiresAt <= new Date()) {
+        return res.status(400).json({ message: "Invalid expiration time" });
+      }
+    }
+    if (startsAt && expiresAt && startsAt >= expiresAt) {
+      return res.status(400).json({ message: "Expiration time must be after start time" });
+    }
+
+    const notification = await Notification.findByIdAndUpdate(
+      req.params.id,
+      {
+        $set: {
+          title,
+          body,
+          displayType,
+          imageUrl,
+          actionLabel,
+          actionUrl,
+          showAgainOnRefresh,
+          targetType,
+          userIds,
+          startsAt,
+          expiresAt,
+          isActive: true,
+          readBy: [],
+        },
+      },
+      { new: true },
+    );
+    if (!notification) {
+      return res.status(404).json({ message: "Notification not found" });
+    }
     res.json({ notification });
   } catch (error) {
     next(error);
