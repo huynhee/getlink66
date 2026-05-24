@@ -125,10 +125,12 @@ const { default: systemRoutes } = await import("./src/routes/systemRoutes.js");
 const { default: guideRoutes } = await import("./src/routes/guideRoutes.js");
 const { default: notificationRoutes } = await import("./src/routes/notificationRoutes.js");
 const { default: referralRoutes } = await import("./src/routes/referralRoutes.js");
+const { initializeSettings } = await import("./src/controllers/settingsController.js");
 const { ensureTopupIndexes } = await import("./src/models/Topup.js");
 const { awardReferralSignup, ensureReferralCode } = await import("./src/utils/referralService.js");
 
 await ensureTopupIndexes();
+await initializeSettings();
 
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "true") app.set("trust proxy", 1);

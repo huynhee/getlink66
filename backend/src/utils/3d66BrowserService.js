@@ -528,10 +528,14 @@ async function waitForDownloadOrPaymentPopup(page) {
 }
 
 async function selectGiftPointWallet(page) {
-  const byValue = page.locator('.paytype-item[value="4"]').first();
+  const configuredPaytype = String(process.env.THREED66_PAYTYPE_VALUE || "4").trim();
+  const paytypeValue = /^[\w-]{1,20}$/.test(configuredPaytype)
+    ? configuredPaytype
+    : "4";
+  const byValue = page.locator(`.paytype-item[value="${paytypeValue}"]`).first();
   if ((await byValue.count()) > 0) {
     await byValue.click({ timeout: Math.min(timeoutMs(), 10000), force: true });
-    return "value=4";
+    return `value=${paytypeValue}`;
   }
 
   const byText = page.locator(".paytype-item", { hasText: "赠点" }).first();

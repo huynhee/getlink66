@@ -57,6 +57,14 @@ const referralModeOptions = [
   },
 ];
 
+const defaultSiteSettings = {
+  referralMode: "both",
+  threed66GetlinkConcurrency: 1,
+  threed66PreviewConcurrency: 1,
+  threed66RefreshConcurrency: 1,
+  threed66PaytypeValue: "4",
+};
+
 function discountedPrice(pkg) {
   if (Number(pkg.salePrice || 0) > 0) return Number(pkg.salePrice || 0);
   return Math.round(Number(pkg.price || 0) * (100 - Number(pkg.salePercent || 0)) / 100);
@@ -87,8 +95,9 @@ export default function Admin({ user, language = "vi" }) {
   const [articles, setArticles] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [referrals, setReferrals] = useState([]);
-  const [siteSettings, setSiteSettings] = useState({ referralMode: "both" });
+  const [siteSettings, setSiteSettings] = useState(defaultSiteSettings);
   const [referralMsg, setReferralMsg] = useState("");
+  const [runtimeSettingsMsg, setRuntimeSettingsMsg] = useState("");
   const [cookieRecords, setCookieRecords] = useState([]);
   const [cookiePool, setCookiePool] = useState(null);
   const [systemLogs, setSystemLogs] = useState([]);
@@ -135,7 +144,7 @@ export default function Admin({ user, language = "vi" }) {
     setArticles(aRes.articles || []);
     setNotifications(nRes.notifications || []);
     setReferrals(rRes.referrals || []);
-    setSiteSettings({ referralMode: "both", ...(settingRes.settings || {}) });
+    setSiteSettings({ ...defaultSiteSettings, ...(settingRes.settings || {}) });
   }
 
   useEffect(() => {
@@ -299,10 +308,35 @@ export default function Admin({ user, language = "vi" }) {
         method: "POST",
         body: JSON.stringify({ referralMode: mode })
       });
-      setSiteSettings(data.settings || { ...siteSettings, referralMode: mode });
+      setSiteSettings({ ...defaultSiteSettings, ...(data.settings || { ...siteSettings, referralMode: mode }) });
       setReferralMsg(l("Đã cập nhật chế độ giới thiệu.", "Referral mode updated."));
     } catch (err) {
       setReferralMsg(err.message);
+    }
+  }
+
+  function updateRuntimeSetting(field, value) {
+    setSiteSettings((settings) => ({ ...settings, [field]: value }));
+  }
+
+  async function saveRuntimeSettings(event) {
+    event.preventDefault();
+    try {
+      setRuntimeSettingsMsg("");
+      const data = await api("/api/settings", {
+        method: "POST",
+        body: JSON.stringify({
+          threed66GetlinkConcurrency: Number(siteSettings.threed66GetlinkConcurrency || 1),
+          threed66PreviewConcurrency: Number(siteSettings.threed66PreviewConcurrency || 1),
+          threed66RefreshConcurrency: Number(siteSettings.threed66RefreshConcurrency || 1),
+          threed66PaytypeValue: String(siteSettings.threed66PaytypeValue || "4").trim(),
+        })
+      });
+      setSiteSettings({ ...defaultSiteSettings, ...(data.settings || {}) });
+      setRuntimeSettingsMsg(l("Đã cập nhật thông số 3D66.", "3D66 runtime settings updated."));
+      await loadData();
+    } catch (err) {
+      setRuntimeSettingsMsg(err.message);
     }
   }
 
@@ -1006,6 +1040,62 @@ export default function Admin({ user, language = "vi" }) {
       {activeSection === "cookie" && (
         <section className="panel">
           <h2><Cookie size={20} /> Cookie 3D66</h2>
+          <form className="stack" onSubmit={saveRuntimeSettings} style={{ marginTop: 14 }}>
+            <div className="formGrid">
+              <label>
+                {l("Getlink chạy cùng lúc", "Concurrent getlink tasks")}
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={siteSettings.threed66GetlinkConcurrency ?? 1}
+                  onChange={(event) => updateRuntimeSetting("threed66GetlinkConcurrency", event.target.value)}
+                />
+              </label>
+              <label>
+                {l("Preview chạy cùng lúc", "Concurrent preview tasks")}
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={siteSettings.threed66PreviewConcurrency ?? 1}
+                  onChange={(event) => updateRuntimeSetting("threed66PreviewConcurrency", event.target.value)}
+                />
+              </label>
+              <label>
+                {l("Refresh chạy cùng lúc", "Concurrent refresh tasks")}
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={siteSettings.threed66RefreshConcurrency ?? 1}
+                  onChange={(event) => updateRuntimeSetting("threed66RefreshConcurrency", event.target.value)}
+                />
+              </label>
+              <label>
+                {l("Paytype value 3D66", "3D66 paytype value")}
+                <input
+                  value={siteSettings.threed66PaytypeValue ?? "4"}
+                  onChange={(event) => updateRuntimeSetting("threed66PaytypeValue", event.target.value)}
+                  placeholder='4'
+                />
+              </label>
+            </div>
+            <p className="muted" style={{ margin: 0 }}>
+              {l(
+                "Các giá trị này áp dụng ngay sau khi lưu. Paytype value dùng để chọn ví thanh toán 3D66, ví dụ value=\"4\" là 赠点.",
+                "These values apply immediately after saving. Paytype value selects the 3D66 payment wallet, for example value=\"4\" is 赠点."
+              )}
+            </p>
+            {runtimeSettingsMsg && (
+              <p className={runtimeSettingsMsg.includes("cập nhật") || runtimeSettingsMsg.includes("updated") ? "success" : "error"}>
+                {runtimeSettingsMsg}
+              </p>
+            )}
+            <button className="smallButton" type="submit" style={{ alignSelf: "flex-start" }}>
+              <Save size={14} /> {l("Lưu thông số 3D66", "Save 3D66 settings")}
+            </button>
+          </form>
           <form className="inputRow" onSubmit={saveCookie} style={{ marginTop: 14 }}>
             <input value={cookie} onChange={(event) => setCookie(event.target.value)} placeholder={l("Dán cookie 3D66 VIP vào đây...", "Paste 3D66 VIP cookie here...")} />
             <button disabled={!cookie || loading}>
@@ -1034,7 +1124,17 @@ export default function Admin({ user, language = "vi" }) {
               </div>
               <div className="cookiePoolCard">
                 <span>Queue getlink</span>
-                <strong>{cookiePool.queue?.active || 0}/{cookiePool.queue?.queued || 0}</strong>
+                <strong>{cookiePool.queue?.getlink?.active || 0}/{cookiePool.queue?.getlink?.queued || 0}</strong>
+                <small>{l("đang chạy / đang chờ", "running / queued")}</small>
+              </div>
+              <div className="cookiePoolCard">
+                <span>Queue preview</span>
+                <strong>{cookiePool.queue?.preview?.active || 0}/{cookiePool.queue?.preview?.queued || 0}</strong>
+                <small>{l("đang chạy / đang chờ", "running / queued")}</small>
+              </div>
+              <div className="cookiePoolCard">
+                <span>Queue refresh</span>
+                <strong>{cookiePool.queue?.refresh?.active || 0}/{cookiePool.queue?.refresh?.queued || 0}</strong>
                 <small>{l("đang chạy / đang chờ", "running / queued")}</small>
               </div>
             </div>

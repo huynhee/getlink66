@@ -2,6 +2,26 @@ import SiteSetting from "../models/SiteSetting.js";
 import { limitedString, rejectUnknownKeys, sanitizeHtml } from "../utils/validators.js";
 
 const REFERRAL_MODES = ["both", "referrer_only", "off"];
+const RUNTIME_NUMBER_FIELDS = {
+  threed66GetlinkConcurrency: {
+    env: "THREED66_GETLINK_CONCURRENCY",
+    min: 1,
+    max: 10,
+    fallback: 1,
+  },
+  threed66PreviewConcurrency: {
+    env: "THREED66_PREVIEW_CONCURRENCY",
+    min: 1,
+    max: 10,
+    fallback: 1,
+  },
+  threed66RefreshConcurrency: {
+    env: "THREED66_REFRESH_CONCURRENCY",
+    min: 1,
+    max: 10,
+    fallback: 1,
+  },
+};
 
 const defaultSettings = {
   key: "homepage",
@@ -11,7 +31,33 @@ const defaultSettings = {
   saleText: "Khuyen mai goi PRO trong thang nay",
   pricingNote: "Nap credit tu dong, cong credit ngay sau khi chon goi.",
   referralMode: "both",
+  threed66GetlinkConcurrency: Number(process.env.THREED66_GETLINK_CONCURRENCY || 1),
+  threed66PreviewConcurrency: Number(process.env.THREED66_PREVIEW_CONCURRENCY || 1),
+  threed66RefreshConcurrency: Number(process.env.THREED66_REFRESH_CONCURRENCY || 1),
+  threed66PaytypeValue: String(process.env.THREED66_PAYTYPE_VALUE || "4"),
 };
+
+function clampInteger(value, { min, max, fallback }) {
+  const number = Number(value);
+  if (!Number.isInteger(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
+
+function normalizePaytypeValue(value) {
+  const text = String(value || "").trim();
+  return /^[\w-]{1,20}$/.test(text) ? text : "4";
+}
+
+function applyRuntimeSettings(settings = {}) {
+  Object.entries(RUNTIME_NUMBER_FIELDS).forEach(([field, config]) => {
+    process.env[config.env] = String(
+      clampInteger(settings[field], config),
+    );
+  });
+  process.env.THREED66_PAYTYPE_VALUE = normalizePaytypeValue(
+    settings.threed66PaytypeValue,
+  );
+}
 
 async function loadSettings() {
   let settings = await SiteSetting.findOne({ key: "homepage" });
@@ -36,6 +82,23 @@ async function loadSettings() {
       { new: true },
     );
   }
+  const runtimePatch = {};
+  Object.entries(RUNTIME_NUMBER_FIELDS).forEach(([field, config]) => {
+    const normalized = clampInteger(settings[field], config);
+    if (settings[field] !== normalized) runtimePatch[field] = normalized;
+  });
+  const normalizedPaytypeValue = normalizePaytypeValue(settings.threed66PaytypeValue);
+  if (settings.threed66PaytypeValue !== normalizedPaytypeValue) {
+    runtimePatch.threed66PaytypeValue = normalizedPaytypeValue;
+  }
+  if (Object.keys(runtimePatch).length) {
+    settings = await SiteSetting.findOneAndUpdate(
+      { key: "homepage" },
+      { $set: runtimePatch },
+      { new: true },
+    );
+  }
+  applyRuntimeSettings(settings);
   const pricingNote = settings.pricingNote || "";
   let nextPricingNote = pricingNote
     .replace(/nhu 3D66/gi, "nhu web")
@@ -53,6 +116,10 @@ async function loadSettings() {
   return settings;
 }
 
+export async function initializeSettings() {
+  return loadSettings();
+}
+
 export async function getSettings(_req, res, next) {
   try {
     const settings = await loadSettings();
@@ -64,7 +131,17 @@ export async function getSettings(_req, res, next) {
 
 export async function updateSettings(req, res, next) {
   try {
-    const fields = ["heroText", "heroSubtitle", "saleText", "pricingNote", "referralMode"];
+    const fields = [
+      "heroText",
+      "heroSubtitle",
+      "saleText",
+      "pricingNote",
+      "referralMode",
+      "threed66GetlinkConcurrency",
+      "threed66PreviewConcurrency",
+      "threed66RefreshConcurrency",
+      "threed66PaytypeValue",
+    ];
     const unknownKey = rejectUnknownKeys(req.body, fields);
     if (unknownKey) {
       return res.status(400).json({ message: "Invalid settings request" });
@@ -77,6 +154,14 @@ export async function updateSettings(req, res, next) {
         if (REFERRAL_MODES.includes(req.body[field])) update[field] = req.body[field];
         return;
       }
+      if (RUNTIME_NUMBER_FIELDS[field]) {
+        update[field] = clampInteger(req.body[field], RUNTIME_NUMBER_FIELDS[field]);
+        return;
+      }
+      if (field === "threed66PaytypeValue") {
+        update[field] = normalizePaytypeValue(req.body[field]);
+        return;
+      }
       update[field] = sanitizeHtml(limitedString(req.body[field], 1000));
     });
 
@@ -86,6 +171,7 @@ export async function updateSettings(req, res, next) {
       { $set: update },
       { new: true },
     );
+    applyRuntimeSettings(settings);
 
     res.json({ settings });
   } catch (error) {

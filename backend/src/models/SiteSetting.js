@@ -25,7 +25,11 @@ const siteSettingSchema = new mongoose.Schema(
       type: String,
       enum: ["both", "referrer_only", "off"],
       default: "both"
-    }
+    },
+    threed66GetlinkConcurrency: { type: Number, default: 1 },
+    threed66PreviewConcurrency: { type: Number, default: 1 },
+    threed66RefreshConcurrency: { type: Number, default: 1 },
+    threed66PaytypeValue: { type: String, default: "4" }
   },
   { timestamps: true }
 );

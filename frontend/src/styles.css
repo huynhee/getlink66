@@ -691,6 +691,22 @@ button:disabled {
   margin-top: var(--space-12);
 }
 
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-12);
+}
+
+.formGrid label {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.formGrid input {
+  text-transform: none;
+}
+
 .cookiePoolCard {
   display: grid;
   gap: 4px;

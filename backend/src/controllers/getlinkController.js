@@ -10,7 +10,11 @@ import {
   request3D66File,
 } from "../utils/3d66Service.js";
 import { with3D66Cookie } from "../utils/3d66CookiePool.js";
-import { queue3D66Getlink } from "../utils/3d66Queue.js";
+import {
+  queue3D66Getlink,
+  queue3D66Preview,
+  queue3D66Refresh,
+} from "../utils/3d66Queue.js";
 import { deductCredit } from "../utils/creditService.js";
 import { extractProductId } from "../utils/parse3d66.js";
 import { normalizeDownloadCreditCost } from "../utils/pricingService.js";
@@ -455,7 +459,7 @@ export async function previewGetlink(req, res, next) {
     }
 
     const preview = await with3D66Cookie((cookieValue) =>
-      queue3D66Getlink(() => fetch3D66Preview(url, cookieValue)),
+      queue3D66Preview(() => fetch3D66Preview(url, cookieValue)),
     );
     const previewPayload = {
       productId: preview.productId || productId,
@@ -579,7 +583,7 @@ export async function getLink(req, res, next) {
       isFallbackMetadata(cachePreview || {}, productId)
     ) {
       const preview = await with3D66Cookie((cookieValue) =>
-        queue3D66Getlink(() => fetch3D66Preview(url, cookieValue)),
+        queue3D66Preview(() => fetch3D66Preview(url, cookieValue)),
       );
       if (
         process.env.THREED66_MOCK === "false" &&
@@ -698,7 +702,7 @@ export async function getLink(req, res, next) {
 async function refreshHistoryDownload(history, cookieValue) {
   if (!history.sourceUrl) return history;
 
-  const download = await queue3D66Getlink(() =>
+  const download = await queue3D66Refresh(() =>
     fetchFrom3D66(history.sourceUrl, cookieValue),
   );
   const updatedFields = {
