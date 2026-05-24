@@ -89,6 +89,7 @@ async function importChromium() {
       "Playwright is not installed. Run `cd backend && npm install playwright && npx playwright install chromium`.",
     );
     error.status = 500;
+    error.code = "PLAYWRIGHT_NOT_INSTALLED";
     throw error;
   }
 }
