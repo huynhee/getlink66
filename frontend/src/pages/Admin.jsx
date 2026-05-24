@@ -65,6 +65,10 @@ const defaultSiteSettings = {
   threed66PaytypeValue: "4",
   threed66RequestIntervalMs: 2500,
   threed66BrowserConcurrency: 1,
+  threed66BrowserAlways: false,
+  threed66DisableBrowserPageFallback: false,
+  threed66DisableBrowserDownloadFallback: false,
+  threed66DownloadHandleBrowserFallback: false,
   threed66TimeoutMs: 30000,
   threed66CookieMaxFailures: 2,
   threed66CookieCooldownMinutes: 30,
@@ -329,6 +333,10 @@ export default function Admin({ user, language = "vi" }) {
     setSiteSettings((settings) => ({ ...settings, [field]: value }));
   }
 
+  function updateRuntimeToggle(field, checked) {
+    setSiteSettings((settings) => ({ ...settings, [field]: checked }));
+  }
+
   async function saveRuntimeSettings(event) {
     event.preventDefault();
     try {
@@ -342,6 +350,10 @@ export default function Admin({ user, language = "vi" }) {
           threed66PaytypeValue: String(siteSettings.threed66PaytypeValue || "4").trim(),
           threed66RequestIntervalMs: Number(siteSettings.threed66RequestIntervalMs || 2500),
           threed66BrowserConcurrency: Number(siteSettings.threed66BrowserConcurrency || 1),
+          threed66BrowserAlways: Boolean(siteSettings.threed66BrowserAlways),
+          threed66DisableBrowserPageFallback: Boolean(siteSettings.threed66DisableBrowserPageFallback),
+          threed66DisableBrowserDownloadFallback: Boolean(siteSettings.threed66DisableBrowserDownloadFallback),
+          threed66DownloadHandleBrowserFallback: Boolean(siteSettings.threed66DownloadHandleBrowserFallback),
           threed66TimeoutMs: Number(siteSettings.threed66TimeoutMs || 30000),
           threed66CookieMaxFailures: Number(siteSettings.threed66CookieMaxFailures || 2),
           threed66CookieCooldownMinutes: Number(siteSettings.threed66CookieCooldownMinutes || 30),
@@ -637,6 +649,32 @@ export default function Admin({ user, language = "vi" }) {
       min: 1,
       max: 100,
       fallback: 5,
+    },
+  ];
+  const browserRuntimeSettings = [
+    {
+      field: "threed66BrowserAlways",
+      label: l("Luôn dùng Playwright", "Always use Playwright"),
+      help: l("Bật sẽ ép mọi preview/getlink đi qua browser. Nên tắt để giảm tải VPS.", "Forces all preview/getlink work through the browser. Keep off to reduce VPS load."),
+      fallback: false,
+    },
+    {
+      field: "threed66DisableBrowserPageFallback",
+      label: l("Tắt fallback đọc trang", "Disable page browser fallback"),
+      help: l("Bật để không dùng Playwright khi HTTP đọc trang 3D66 bị fail/challenge.", "When enabled, Playwright is not used if HTTP page loading fails or hits a challenge."),
+      fallback: false,
+    },
+    {
+      field: "threed66DisableBrowserDownloadFallback",
+      label: l("Tắt fallback tải", "Disable download browser fallback"),
+      help: l("Bật để không dùng Playwright khi thiếu dữ liệu tạo link tải.", "When enabled, Playwright is not used when download-link fields are missing."),
+      fallback: false,
+    },
+    {
+      field: "threed66DownloadHandleBrowserFallback",
+      label: l("Fallback sau lỗi download/handle", "Fallback after download/handle error"),
+      help: l("Bật mới cho phép nhảy sang Playwright nếu HTTP download/handle lỗi. Nên tắt để tránh báo sai lỗi ví.", "Only enable to use Playwright after HTTP download/handle fails. Keep off to avoid misleading wallet errors."),
+      fallback: false,
     },
   ];
 
@@ -1227,6 +1265,24 @@ export default function Admin({ user, language = "vi" }) {
                       max={setting.max}
                       value={siteSettings[setting.field] ?? setting.fallback}
                       onChange={(event) => updateRuntimeSetting(setting.field, event.target.value)}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="runtimeSettingGroup">
+              <h3>{l("Playwright fallback", "Playwright fallback")}</h3>
+              <div className="runtimeSettingList">
+                {browserRuntimeSettings.map((setting) => (
+                  <label className="runtimeSettingRow runtimeToggleRow" key={setting.field}>
+                    <span className="runtimeSettingText">
+                      <strong>{setting.label}</strong>
+                      <small>{setting.help}</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(siteSettings[setting.field] ?? setting.fallback)}
+                      onChange={(event) => updateRuntimeToggle(setting.field, event.target.checked)}
                     />
                   </label>
                 ))}

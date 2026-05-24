@@ -759,9 +759,20 @@ button:disabled {
   width: 100%;
 }
 
+.runtimeToggleRow input[type="checkbox"] {
+  justify-self: end;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
 @media (max-width: 640px) {
   .runtimeSettingRow {
     grid-template-columns: 1fr;
+  }
+
+  .runtimeToggleRow input[type="checkbox"] {
+    justify-self: start;
   }
 }
 

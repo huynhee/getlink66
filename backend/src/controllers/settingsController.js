@@ -2,6 +2,32 @@ import SiteSetting from "../models/SiteSetting.js";
 import { limitedString, rejectUnknownKeys, sanitizeHtml } from "../utils/validators.js";
 
 const REFERRAL_MODES = ["both", "referrer_only", "off"];
+
+function normalizeBoolean(value, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (value === "true" || value === "1" || value === 1) return true;
+  if (value === "false" || value === "0" || value === 0) return false;
+  return fallback;
+}
+
+const RUNTIME_BOOLEAN_FIELDS = {
+  threed66BrowserAlways: {
+    env: "THREED66_BROWSER_ALWAYS",
+    fallback: normalizeBoolean(process.env.THREED66_BROWSER_ALWAYS, false),
+  },
+  threed66DisableBrowserPageFallback: {
+    env: "THREED66_DISABLE_BROWSER_PAGE_FALLBACK",
+    fallback: normalizeBoolean(process.env.THREED66_DISABLE_BROWSER_PAGE_FALLBACK, false),
+  },
+  threed66DisableBrowserDownloadFallback: {
+    env: "THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK",
+    fallback: normalizeBoolean(process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK, false),
+  },
+  threed66DownloadHandleBrowserFallback: {
+    env: "THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK",
+    fallback: normalizeBoolean(process.env.THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK, false),
+  },
+};
 const RUNTIME_NUMBER_FIELDS = {
   threed66GetlinkConcurrency: {
     env: "THREED66_GETLINK_CONCURRENCY",
@@ -98,6 +124,10 @@ const defaultSettings = {
   threed66PaytypeValue: String(process.env.THREED66_PAYTYPE_VALUE || "4"),
   threed66RequestIntervalMs: Number(process.env.THREED66_REQUEST_INTERVAL_MS || 2500),
   threed66BrowserConcurrency: Number(process.env.THREED66_BROWSER_CONCURRENCY || 1),
+  threed66BrowserAlways: RUNTIME_BOOLEAN_FIELDS.threed66BrowserAlways.fallback,
+  threed66DisableBrowserPageFallback: RUNTIME_BOOLEAN_FIELDS.threed66DisableBrowserPageFallback.fallback,
+  threed66DisableBrowserDownloadFallback: RUNTIME_BOOLEAN_FIELDS.threed66DisableBrowserDownloadFallback.fallback,
+  threed66DownloadHandleBrowserFallback: RUNTIME_BOOLEAN_FIELDS.threed66DownloadHandleBrowserFallback.fallback,
   threed66TimeoutMs: Number(process.env.THREED66_TIMEOUT_MS || 30000),
   threed66CookieMaxFailures: Number(process.env.THREED66_COOKIE_MAX_FAILURES || 2),
   threed66CookieCooldownMinutes: Math.round(Number(process.env.THREED66_COOKIE_COOLDOWN_MS || 1800000) / 60000),
@@ -123,6 +153,9 @@ function applyRuntimeSettings(settings = {}) {
   Object.entries(RUNTIME_NUMBER_FIELDS).forEach(([field, config]) => {
     const value = clampInteger(settings[field], config);
     process.env[config.env] = String(config.toEnv ? config.toEnv(value) : value);
+  });
+  Object.entries(RUNTIME_BOOLEAN_FIELDS).forEach(([field, config]) => {
+    process.env[config.env] = String(normalizeBoolean(settings[field], config.fallback));
   });
   process.env.THREED66_PAYTYPE_VALUE = normalizePaytypeValue(
     settings.threed66PaytypeValue,
@@ -161,6 +194,19 @@ async function loadSettings() {
   if (settings.threed66PaytypeValue !== normalizedPaytypeValue) {
     runtimePatch.threed66PaytypeValue = normalizedPaytypeValue;
   }
+  const rawSettings = settings.toObject ? settings.toObject({ defaults: false }) : settings;
+  Object.entries(RUNTIME_BOOLEAN_FIELDS).forEach(([field, config]) => {
+    const isSchemaDefault =
+      typeof settings.$isDefault === "function" && settings.$isDefault(field);
+    const hasStoredValue = rawSettings[field] !== undefined && !isSchemaDefault;
+    const normalized = normalizeBoolean(
+      hasStoredValue ? settings[field] : undefined,
+      config.fallback,
+    );
+    if (!hasStoredValue || settings[field] !== normalized) {
+      runtimePatch[field] = normalized;
+    }
+  });
   if (Object.keys(runtimePatch).length) {
     settings = await SiteSetting.findOneAndUpdate(
       { key: "homepage" },
@@ -213,6 +259,10 @@ export async function updateSettings(req, res, next) {
       "threed66PaytypeValue",
       "threed66RequestIntervalMs",
       "threed66BrowserConcurrency",
+      "threed66BrowserAlways",
+      "threed66DisableBrowserPageFallback",
+      "threed66DisableBrowserDownloadFallback",
+      "threed66DownloadHandleBrowserFallback",
       "threed66TimeoutMs",
       "threed66CookieMaxFailures",
       "threed66CookieCooldownMinutes",
@@ -240,6 +290,10 @@ export async function updateSettings(req, res, next) {
       }
       if (field === "threed66PaytypeValue") {
         update[field] = normalizePaytypeValue(req.body[field]);
+        return;
+      }
+      if (RUNTIME_BOOLEAN_FIELDS[field]) {
+        update[field] = normalizeBoolean(req.body[field], RUNTIME_BOOLEAN_FIELDS[field].fallback);
         return;
       }
       update[field] = sanitizeHtml(limitedString(req.body[field], 1000));
