@@ -36,9 +36,12 @@ export default function Navbar({
   const [accountOpen, setAccountOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const unreadCount = notifications.filter((item) => !item.isRead).length;
+  const [sessionHiddenFullscreenIds, setSessionHiddenFullscreenIds] = useState(() => new Set());
+  const unreadCount = notifications.filter(
+    (item) => item.displayType !== "fullscreen" && !item.isRead
+  ).length;
   const fullscreenNotification = notifications.find(
-    (item) => item.displayType === "fullscreen" && !item.isRead
+    (item) => item.displayType === "fullscreen" && !sessionHiddenFullscreenIds.has(item._id)
   );
 
   useEffect(() => {
@@ -128,6 +131,28 @@ export default function Navbar({
   function goNotificationAction(item) {
     if (!item) return;
     markNotificationRead(item._id);
+    const actionUrl = String(item.actionUrl || "").trim();
+    if (!actionUrl) return;
+    if (actionUrl.startsWith("/")) {
+      closeMenu();
+      onNavigate?.(actionUrl);
+      return;
+    }
+    window.location.href = actionUrl;
+  }
+
+  function closeFullscreenNotification(id) {
+    if (!id) return;
+    setSessionHiddenFullscreenIds((current) => {
+      const next = new Set(current);
+      next.add(id);
+      return next;
+    });
+  }
+
+  function goFullscreenAction(item) {
+    if (!item) return;
+    closeFullscreenNotification(item._id);
     const actionUrl = String(item.actionUrl || "").trim();
     if (!actionUrl) return;
     if (actionUrl.startsWith("/")) {
@@ -248,7 +273,7 @@ export default function Navbar({
           <button
             type="button"
             className="fullscreenNoticeClose"
-            onClick={() => markNotificationRead(fullscreenNotification._id)}
+            onClick={() => closeFullscreenNotification(fullscreenNotification._id)}
             aria-label="Close"
           >
             <X size={20} />
@@ -268,11 +293,11 @@ export default function Navbar({
             <p>{fullscreenNotification.body}</p>
             <div className="fullscreenNoticeActions">
               {fullscreenNotification.actionUrl && (
-                <button type="button" className="primaryButton" onClick={() => goNotificationAction(fullscreenNotification)}>
+                <button type="button" className="primaryButton" onClick={() => goFullscreenAction(fullscreenNotification)}>
                   {fullscreenNotification.actionLabel || t.viewNow}
                 </button>
               )}
-              <button type="button" className="smallButton" onClick={() => markNotificationRead(fullscreenNotification._id)}>
+              <button type="button" className="smallButton" onClick={() => closeFullscreenNotification(fullscreenNotification._id)}>
                 {t.close}
               </button>
             </div>
