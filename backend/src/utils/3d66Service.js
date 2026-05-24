@@ -972,6 +972,21 @@ async function enrichFromDownloadPop(fields, metadata, pageUrl, cookieValue, con
   return { fields: nextFields, metadata: nextMetadata };
 }
 
+async function previewFromDownloadPopOnly(url, cookieValue, cookies) {
+  const fields = parseDynamicFields("", url);
+  if (!fields.llId) return null;
+  const context = applyFieldsToContext(siteContext(url, cookies), fields);
+  const metadata = {
+    productId: fields.llId,
+    title: "3D66 model",
+    imageUrl: "",
+    creditCost: 1,
+    sourceUrl: url
+  };
+  const enriched = await enrichFromDownloadPop(fields, metadata, url, cookieValue, context);
+  return isWeakMetadata(enriched.metadata) ? null : enriched;
+}
+
 async function requestDownloadUrl(payload, cookieValue, origin) {
   const endpoint = process.env.THREED66_DOWNLOAD_ENDPOINT || DEFAULT_DOWNLOAD_ENDPOINT;
   const { controller, done } = withTimeout();
@@ -1092,6 +1107,9 @@ export async function fetch3D66Preview(url, cookieValue) {
 
   const cookies = requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
+  const popPreview = await previewFromDownloadPopOnly(normalized.toString(), cookieValue, cookies);
+  if (popPreview) return popPreview.metadata;
+
   let browserMetadata = null;
   let { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
     if (!shouldFallbackToBrowserPage(error)) throw error;
@@ -1241,15 +1259,22 @@ export async function fetchFrom3D66(url, cookieValue) {
   const normalized = normalizeModelUrl(url);
   let effectiveCookieValue = cookieValue;
   let browserMetadata = null;
-  let { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
-    if (!shouldFallbackToBrowserPage(error)) throw error;
-    const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
-    browserMetadata = browserPage.metadata;
-    effectiveCookieValue = browserPage.cookieValue || cookieValue;
-    return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
-  });
-  let fields = parseDynamicFields(html, pageUrl);
-  let metadata = parseModelMetadata(html, pageUrl, fields);
+  const popPreview = await previewFromDownloadPopOnly(normalized.toString(), effectiveCookieValue, initialCookies);
+  let seedFields = popPreview?.fields || null;
+  let seedMetadata = popPreview?.metadata || null;
+  let html = "";
+  let pageUrl = normalized.toString();
+  if (!seedFields || !seedMetadata) {
+    ({ html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
+      if (!shouldFallbackToBrowserPage(error)) throw error;
+      const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
+      browserMetadata = browserPage.metadata;
+      effectiveCookieValue = browserPage.cookieValue || cookieValue;
+      return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
+    }));
+  }
+  let fields = seedFields || parseDynamicFields(html, pageUrl);
+  let metadata = seedMetadata || parseModelMetadata(html, pageUrl, fields);
   if (browserMetadata) {
     fields = mergeBrowserFields(fields, browserMetadata);
     metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);
