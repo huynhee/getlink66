@@ -63,6 +63,11 @@ const defaultSiteSettings = {
   threed66PreviewConcurrency: 1,
   threed66RefreshConcurrency: 1,
   threed66PaytypeValue: "4",
+  threed66RequestIntervalMs: 2500,
+  threed66BrowserConcurrency: 1,
+  threed66TimeoutMs: 30000,
+  threed66CookieMaxFailures: 2,
+  threed66CookieCooldownMinutes: 30,
 };
 
 function discountedPrice(pkg) {
@@ -330,6 +335,11 @@ export default function Admin({ user, language = "vi" }) {
           threed66PreviewConcurrency: Number(siteSettings.threed66PreviewConcurrency || 1),
           threed66RefreshConcurrency: Number(siteSettings.threed66RefreshConcurrency || 1),
           threed66PaytypeValue: String(siteSettings.threed66PaytypeValue || "4").trim(),
+          threed66RequestIntervalMs: Number(siteSettings.threed66RequestIntervalMs || 2500),
+          threed66BrowserConcurrency: Number(siteSettings.threed66BrowserConcurrency || 1),
+          threed66TimeoutMs: Number(siteSettings.threed66TimeoutMs || 30000),
+          threed66CookieMaxFailures: Number(siteSettings.threed66CookieMaxFailures || 2),
+          threed66CookieCooldownMinutes: Number(siteSettings.threed66CookieCooldownMinutes || 30),
         })
       });
       setSiteSettings({ ...defaultSiteSettings, ...(data.settings || {}) });
@@ -484,6 +494,7 @@ export default function Admin({ user, language = "vi" }) {
     { key: "notifications", label: t.notifications, icon: Megaphone, count: notifications.length },
     { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
     { key: "articles", label: t.adminArticles || l("Bài viết", "Articles"), icon: FileText, count: articles.length },
+    { key: "threed66", label: l("Cài đặt 3D66", "3D66 settings"), icon: Activity },
     { key: "cookie", label: t.adminCookie, icon: Cookie },
     { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
     { key: "users", label: t.adminUsers, icon: Users, count: users.length },
@@ -1037,9 +1048,9 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "cookie" && (
+      {activeSection === "threed66" && (
         <section className="panel">
-          <h2><Cookie size={20} /> Cookie 3D66</h2>
+          <h2><Activity size={20} /> {l("Cài đặt vận hành 3D66", "3D66 runtime settings")}</h2>
           <form className="stack" onSubmit={saveRuntimeSettings} style={{ marginTop: 14 }}>
             <div className="formGrid">
               <label>
@@ -1080,11 +1091,61 @@ export default function Admin({ user, language = "vi" }) {
                   placeholder='4'
                 />
               </label>
+              <label>
+                {l("Khoảng nghỉ request (ms)", "Request interval (ms)")}
+                <input
+                  type="number"
+                  min="0"
+                  max="60000"
+                  value={siteSettings.threed66RequestIntervalMs ?? 2500}
+                  onChange={(event) => updateRuntimeSetting("threed66RequestIntervalMs", event.target.value)}
+                />
+              </label>
+              <label>
+                {l("Browser chạy cùng lúc", "Concurrent browser tasks")}
+                <input
+                  type="number"
+                  min="1"
+                  max="5"
+                  value={siteSettings.threed66BrowserConcurrency ?? 1}
+                  onChange={(event) => updateRuntimeSetting("threed66BrowserConcurrency", event.target.value)}
+                />
+              </label>
+              <label>
+                {l("Timeout 3D66 (ms)", "3D66 timeout (ms)")}
+                <input
+                  type="number"
+                  min="5000"
+                  max="120000"
+                  value={siteSettings.threed66TimeoutMs ?? 30000}
+                  onChange={(event) => updateRuntimeSetting("threed66TimeoutMs", event.target.value)}
+                />
+              </label>
+              <label>
+                {l("Lỗi cookie trước khi nghỉ", "Cookie failures before cooldown")}
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={siteSettings.threed66CookieMaxFailures ?? 2}
+                  onChange={(event) => updateRuntimeSetting("threed66CookieMaxFailures", event.target.value)}
+                />
+              </label>
+              <label>
+                {l("Thời gian nghỉ cookie (phút)", "Cookie cooldown (minutes)")}
+                <input
+                  type="number"
+                  min="1"
+                  max="1440"
+                  value={siteSettings.threed66CookieCooldownMinutes ?? 30}
+                  onChange={(event) => updateRuntimeSetting("threed66CookieCooldownMinutes", event.target.value)}
+                />
+              </label>
             </div>
             <p className="muted" style={{ margin: 0 }}>
               {l(
-                "Các giá trị này áp dụng ngay sau khi lưu. Paytype value dùng để chọn ví thanh toán 3D66, ví dụ value=\"4\" là 赠点.",
-                "These values apply immediately after saving. Paytype value selects the 3D66 payment wallet, for example value=\"4\" is 赠点."
+                "Các giá trị này áp dụng ngay sau khi lưu. Paytype value dùng để chọn ví thanh toán 3D66, ví dụ value=\"4\" là 赠点. Tăng concurrency quá cao có thể làm cookie bị chặn hoặc VPS quá tải.",
+                "These values apply immediately after saving. Paytype value selects the 3D66 payment wallet, for example value=\"4\" is 赠点. Raising concurrency too high can trigger cookie blocks or overload the VPS."
               )}
             </p>
             {runtimeSettingsMsg && (
@@ -1096,6 +1157,31 @@ export default function Admin({ user, language = "vi" }) {
               <Save size={14} /> {l("Lưu thông số 3D66", "Save 3D66 settings")}
             </button>
           </form>
+          {cookiePool && (
+            <div className="cookiePoolGrid">
+              <div className="cookiePoolCard">
+                <span>Queue getlink</span>
+                <strong>{cookiePool.queue?.getlink?.active || 0}/{cookiePool.queue?.getlink?.queued || 0}</strong>
+                <small>{l("đang chạy / đang chờ", "running / queued")}</small>
+              </div>
+              <div className="cookiePoolCard">
+                <span>Queue preview</span>
+                <strong>{cookiePool.queue?.preview?.active || 0}/{cookiePool.queue?.preview?.queued || 0}</strong>
+                <small>{l("đang chạy / đang chờ", "running / queued")}</small>
+              </div>
+              <div className="cookiePoolCard">
+                <span>Queue refresh</span>
+                <strong>{cookiePool.queue?.refresh?.active || 0}/{cookiePool.queue?.refresh?.queued || 0}</strong>
+                <small>{l("đang chạy / đang chờ", "running / queued")}</small>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeSection === "cookie" && (
+        <section className="panel">
+          <h2><Cookie size={20} /> Cookie 3D66</h2>
           <form className="inputRow" onSubmit={saveCookie} style={{ marginTop: 14 }}>
             <input value={cookie} onChange={(event) => setCookie(event.target.value)} placeholder={l("Dán cookie 3D66 VIP vào đây...", "Paste 3D66 VIP cookie here...")} />
             <button disabled={!cookie || loading}>
@@ -1121,21 +1207,6 @@ export default function Admin({ user, language = "vi" }) {
               <div className="cookiePoolCard error">
                 <span>{l("Cooldown / lỗi", "Cooldown / errors")}</span>
                 <strong>{(cookiePool.stats?.cooldown || 0) + (cookiePool.stats?.invalid || 0)}</strong>
-              </div>
-              <div className="cookiePoolCard">
-                <span>Queue getlink</span>
-                <strong>{cookiePool.queue?.getlink?.active || 0}/{cookiePool.queue?.getlink?.queued || 0}</strong>
-                <small>{l("đang chạy / đang chờ", "running / queued")}</small>
-              </div>
-              <div className="cookiePoolCard">
-                <span>Queue preview</span>
-                <strong>{cookiePool.queue?.preview?.active || 0}/{cookiePool.queue?.preview?.queued || 0}</strong>
-                <small>{l("đang chạy / đang chờ", "running / queued")}</small>
-              </div>
-              <div className="cookiePoolCard">
-                <span>Queue refresh</span>
-                <strong>{cookiePool.queue?.refresh?.active || 0}/{cookiePool.queue?.refresh?.queued || 0}</strong>
-                <small>{l("đang chạy / đang chờ", "running / queued")}</small>
               </div>
             </div>
           )}

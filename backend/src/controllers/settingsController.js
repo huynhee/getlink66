@@ -21,6 +21,37 @@ const RUNTIME_NUMBER_FIELDS = {
     max: 10,
     fallback: 1,
   },
+  threed66RequestIntervalMs: {
+    env: "THREED66_REQUEST_INTERVAL_MS",
+    min: 0,
+    max: 60000,
+    fallback: 2500,
+  },
+  threed66BrowserConcurrency: {
+    env: "THREED66_BROWSER_CONCURRENCY",
+    min: 1,
+    max: 5,
+    fallback: 1,
+  },
+  threed66TimeoutMs: {
+    env: "THREED66_TIMEOUT_MS",
+    min: 5000,
+    max: 120000,
+    fallback: 30000,
+  },
+  threed66CookieMaxFailures: {
+    env: "THREED66_COOKIE_MAX_FAILURES",
+    min: 1,
+    max: 20,
+    fallback: 2,
+  },
+  threed66CookieCooldownMinutes: {
+    env: "THREED66_COOKIE_COOLDOWN_MS",
+    min: 1,
+    max: 1440,
+    fallback: 30,
+    toEnv: (minutes) => minutes * 60 * 1000,
+  },
 };
 
 const defaultSettings = {
@@ -35,6 +66,11 @@ const defaultSettings = {
   threed66PreviewConcurrency: Number(process.env.THREED66_PREVIEW_CONCURRENCY || 1),
   threed66RefreshConcurrency: Number(process.env.THREED66_REFRESH_CONCURRENCY || 1),
   threed66PaytypeValue: String(process.env.THREED66_PAYTYPE_VALUE || "4"),
+  threed66RequestIntervalMs: Number(process.env.THREED66_REQUEST_INTERVAL_MS || 2500),
+  threed66BrowserConcurrency: Number(process.env.THREED66_BROWSER_CONCURRENCY || 1),
+  threed66TimeoutMs: Number(process.env.THREED66_TIMEOUT_MS || 30000),
+  threed66CookieMaxFailures: Number(process.env.THREED66_COOKIE_MAX_FAILURES || 2),
+  threed66CookieCooldownMinutes: Math.round(Number(process.env.THREED66_COOKIE_COOLDOWN_MS || 1800000) / 60000),
 };
 
 function clampInteger(value, { min, max, fallback }) {
@@ -50,9 +86,8 @@ function normalizePaytypeValue(value) {
 
 function applyRuntimeSettings(settings = {}) {
   Object.entries(RUNTIME_NUMBER_FIELDS).forEach(([field, config]) => {
-    process.env[config.env] = String(
-      clampInteger(settings[field], config),
-    );
+    const value = clampInteger(settings[field], config);
+    process.env[config.env] = String(config.toEnv ? config.toEnv(value) : value);
   });
   process.env.THREED66_PAYTYPE_VALUE = normalizePaytypeValue(
     settings.threed66PaytypeValue,
@@ -141,6 +176,11 @@ export async function updateSettings(req, res, next) {
       "threed66PreviewConcurrency",
       "threed66RefreshConcurrency",
       "threed66PaytypeValue",
+      "threed66RequestIntervalMs",
+      "threed66BrowserConcurrency",
+      "threed66TimeoutMs",
+      "threed66CookieMaxFailures",
+      "threed66CookieCooldownMinutes",
     ];
     const unknownKey = rejectUnknownKeys(req.body, fields);
     if (unknownKey) {

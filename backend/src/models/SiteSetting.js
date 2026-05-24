@@ -29,7 +29,12 @@ const siteSettingSchema = new mongoose.Schema(
     threed66GetlinkConcurrency: { type: Number, default: 1 },
     threed66PreviewConcurrency: { type: Number, default: 1 },
     threed66RefreshConcurrency: { type: Number, default: 1 },
-    threed66PaytypeValue: { type: String, default: "4" }
+    threed66PaytypeValue: { type: String, default: "4" },
+    threed66RequestIntervalMs: { type: Number, default: 2500 },
+    threed66BrowserConcurrency: { type: Number, default: 1 },
+    threed66TimeoutMs: { type: Number, default: 30000 },
+    threed66CookieMaxFailures: { type: Number, default: 2 },
+    threed66CookieCooldownMinutes: { type: Number, default: 30 }
   },
   { timestamps: true }
 );
