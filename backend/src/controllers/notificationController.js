@@ -40,7 +40,6 @@ function serializeNotification(item, userId) {
     imageUrl: item.imageUrl || "",
     actionLabel: item.actionLabel || "",
     actionUrl: item.actionUrl || "",
-    showAgainOnRefresh: Boolean(item.showAgainOnRefresh),
     targetType: item.targetType,
     isRead: readBy.some((id) => String(id) === String(userId)),
     createdAt: item.createdAt,
@@ -125,7 +124,6 @@ export async function adminCreateNotification(req, res, next) {
       "imageUrl",
       "actionLabel",
       "actionUrl",
-      "showAgainOnRefresh",
       "targetType",
       "emails",
       "startsAt",
@@ -141,7 +139,6 @@ export async function adminCreateNotification(req, res, next) {
     const imageUrl = safeNotificationUrl(req.body.imageUrl, { allowRelative: false });
     const actionLabel = limitedString(req.body.actionLabel, 80);
     const actionUrl = safeNotificationUrl(req.body.actionUrl, { allowRelative: true });
-    const showAgainOnRefresh = displayType === "fullscreen" && req.body.showAgainOnRefresh === true;
     const targetType = req.body.targetType === "users" ? "users" : "all";
     if (!title || !body) {
       return res.status(400).json({ message: "Title and content are required" });
@@ -190,7 +187,6 @@ export async function adminCreateNotification(req, res, next) {
       imageUrl,
       actionLabel,
       actionUrl,
-      showAgainOnRefresh,
       targetType,
       userIds,
       startsAt,
@@ -215,7 +211,6 @@ export async function adminUpdateNotification(req, res, next) {
       "imageUrl",
       "actionLabel",
       "actionUrl",
-      "showAgainOnRefresh",
       "targetType",
       "emails",
       "startsAt",
@@ -231,7 +226,6 @@ export async function adminUpdateNotification(req, res, next) {
     const imageUrl = safeNotificationUrl(req.body.imageUrl, { allowRelative: false });
     const actionLabel = limitedString(req.body.actionLabel, 80);
     const actionUrl = safeNotificationUrl(req.body.actionUrl, { allowRelative: true });
-    const showAgainOnRefresh = displayType === "fullscreen" && req.body.showAgainOnRefresh === true;
     const targetType = req.body.targetType === "users" ? "users" : "all";
     if (!title || !body) {
       return res.status(400).json({ message: "Title and content are required" });
@@ -283,7 +277,6 @@ export async function adminUpdateNotification(req, res, next) {
           imageUrl,
           actionLabel,
           actionUrl,
-          showAgainOnRefresh,
           targetType,
           userIds,
           startsAt,

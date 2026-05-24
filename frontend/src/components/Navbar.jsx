@@ -36,14 +36,9 @@ export default function Navbar({
   const [accountOpen, setAccountOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [sessionHiddenFullscreenIds, setSessionHiddenFullscreenIds] = useState(() => new Set());
-  const [showFullscreenAgainOnRefresh, setShowFullscreenAgainOnRefresh] = useState(false);
   const unreadCount = notifications.filter((item) => !item.isRead).length;
   const fullscreenNotification = notifications.find(
-    (item) =>
-      item.displayType === "fullscreen" &&
-      !item.isRead &&
-      !sessionHiddenFullscreenIds.has(item._id)
+    (item) => item.displayType === "fullscreen" && !item.isRead
   );
 
   useEffect(() => {
@@ -71,10 +66,6 @@ export default function Navbar({
   useEffect(() => {
     setFaviconNotificationCount(unreadCount);
   }, [unreadCount]);
-
-  useEffect(() => {
-    setShowFullscreenAgainOnRefresh(Boolean(fullscreenNotification?.showAgainOnRefresh));
-  }, [fullscreenNotification?._id]);
 
   async function logout() {
     await api("/api/auth/logout", { method: "POST" });
@@ -132,19 +123,6 @@ export default function Navbar({
     } catch {
       // UI can stay read locally; next poll will correct it if the request failed.
     }
-  }
-
-  function closeFullscreenNotification(item) {
-    if (!item?._id) return;
-    if (showFullscreenAgainOnRefresh) {
-      setSessionHiddenFullscreenIds((current) => {
-        const next = new Set(current);
-        next.add(item._id);
-        return next;
-      });
-      return;
-    }
-    markNotificationRead(item._id);
   }
 
   function goNotificationAction(item) {
@@ -270,7 +248,7 @@ export default function Navbar({
           <button
             type="button"
             className="fullscreenNoticeClose"
-            onClick={() => closeFullscreenNotification(fullscreenNotification)}
+            onClick={() => markNotificationRead(fullscreenNotification._id)}
             aria-label="Close"
           >
             <X size={20} />
@@ -288,25 +266,13 @@ export default function Navbar({
             </span>
             <h2 id="fullscreenNoticeTitle">{fullscreenNotification.title}</h2>
             <p>{fullscreenNotification.body}</p>
-            <label className="fullscreenNoticeRepeat">
-              <input
-                type="checkbox"
-                checked={showFullscreenAgainOnRefresh}
-                onChange={(event) => setShowFullscreenAgainOnRefresh(event.target.checked)}
-              />
-              <span>
-                {language === "vi"
-                  ? "F5 sẽ hiện lại thông báo này"
-                  : "Show this notice again after refresh"}
-              </span>
-            </label>
             <div className="fullscreenNoticeActions">
               {fullscreenNotification.actionUrl && (
                 <button type="button" className="primaryButton" onClick={() => goNotificationAction(fullscreenNotification)}>
                   {fullscreenNotification.actionLabel || t.viewNow}
                 </button>
               )}
-              <button type="button" className="smallButton" onClick={() => closeFullscreenNotification(fullscreenNotification)}>
+              <button type="button" className="smallButton" onClick={() => markNotificationRead(fullscreenNotification._id)}>
                 {t.close}
               </button>
             </div>

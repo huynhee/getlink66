@@ -2146,25 +2146,6 @@ label {
   white-space: pre-line;
 }
 
-.fullscreenNoticeRepeat {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-8);
-  width: fit-content;
-  margin-top: var(--space-4);
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: none;
-}
-
-.fullscreenNoticeRepeat input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--neon-green);
-}
-
 .fullscreenNoticeActions {
   display: flex;
   gap: var(--space-6);

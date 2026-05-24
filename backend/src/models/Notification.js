@@ -14,7 +14,6 @@ const notificationSchema = new mongoose.Schema(
     imageUrl: { type: String, default: "" },
     actionLabel: { type: String, default: "" },
     actionUrl: { type: String, default: "" },
-    showAgainOnRefresh: { type: Boolean, default: false },
     targetType: {
       type: String,
       enum: ["all", "users"],

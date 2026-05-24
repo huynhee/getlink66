@@ -33,7 +33,6 @@ const emptyNotification = {
   imageUrl: "",
   actionLabel: "",
   actionUrl: "",
-  showAgainOnRefresh: false,
   targetType: "all",
   emails: "",
   startsAt: "",
@@ -325,7 +324,6 @@ export default function Admin({ user, language = "vi" }) {
       imageUrl: item.imageUrl || "",
       actionLabel: item.actionLabel || "",
       actionUrl: item.actionUrl || "",
-      showAgainOnRefresh: Boolean(item.showAgainOnRefresh),
       targetType: item.targetType || "all",
       emails: Array.isArray(item.userIds)
         ? item.userIds.map((target) => target?.email).filter(Boolean).join("\n")
@@ -1151,19 +1149,6 @@ export default function Admin({ user, language = "vi" }) {
                     placeholder={l("Link nút, ví dụ: /topup", "Button link, e.g. /topup")}
                   />
                 </div>
-                <label className="adminCheckboxRow">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(notificationForm.showAgainOnRefresh)}
-                    onChange={(e) => setNotificationForm({ ...notificationForm, showAgainOnRefresh: e.target.checked })}
-                  />
-                  <span>
-                    {l(
-                      "Mặc định tích “F5 sẽ hiện lại thông báo này” trên popup.",
-                      "Check “show again after refresh” by default on the popup."
-                    )}
-                  </span>
-                </label>
               </>
             )}
             {notificationForm.targetType === "users" && (
@@ -1208,9 +1193,6 @@ export default function Admin({ user, language = "vi" }) {
                     : l("Tất cả người dùng", "All users")}
                 </span>
                 <span>{item.body}</span>
-                {item.displayType === "fullscreen" && item.showAgainOnRefresh && (
-                  <span>{l("F5 hiện lại mặc định", "Refresh repeat by default")}</span>
-                )}
                 <time>{new Date(item.createdAt).toLocaleString("vi-VN")}</time>
                 <div className="inputRow" style={{ justifyContent: "start" }}>
                   <button className="smallButton" onClick={() => editNotification(item)}>
