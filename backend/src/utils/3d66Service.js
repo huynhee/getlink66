@@ -804,7 +804,7 @@ async function fetch3D66PageWithBrowserFallback(url, cookieValue, originalError 
   } catch (error) {
     if (isPlaywrightMissing(error) && originalError) throw originalError;
     if (isPlaywrightMissing(error)) {
-      throw httpError("3D66 browser fallback is unavailable on this server.", 502);
+      return null;
     }
     throw error;
   }
@@ -816,7 +816,7 @@ async function download3D66WithBrowserFallback(url, cookieValue, originalError =
   } catch (error) {
     if (isPlaywrightMissing(error) && originalError) throw originalError;
     if (isPlaywrightMissing(error)) {
-      throw httpError("3D66 browser fallback is unavailable on this server.", 502);
+      return null;
     }
     throw error;
   }
@@ -1111,10 +1111,12 @@ export async function fetch3D66Preview(url, cookieValue) {
 
   if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields)) {
     const browserPage = await fetch3D66PageWithBrowserFallback(pageUrl || normalized.toString(), cookieValue);
-    html = browserPage.html;
-    pageUrl = browserPage.pageUrl;
-    fields = mergeBrowserFields(parseDynamicFields(html, pageUrl), browserPage.metadata);
-    metadata = mergeBrowserMetadata(parseModelMetadata(html, pageUrl, fields), browserPage.metadata, fields);
+    if (browserPage) {
+      html = browserPage.html;
+      pageUrl = browserPage.pageUrl;
+      fields = mergeBrowserFields(parseDynamicFields(html, pageUrl), browserPage.metadata);
+      metadata = mergeBrowserMetadata(parseModelMetadata(html, pageUrl, fields), browserPage.metadata, fields);
+    }
   }
 
   return metadata;
@@ -1140,11 +1142,13 @@ export async function inspect3D66Page(url, cookieValue) {
 
   if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields)) {
     const browserPage = await fetch3D66PageWithBrowserFallback(pageUrl || normalized.toString(), cookieValue);
-    html = browserPage.html;
-    pageUrl = browserPage.pageUrl;
-    fields = mergeBrowserFields(parseDynamicFields(html, pageUrl), browserPage.metadata);
-    metadata = mergeBrowserMetadata(parseModelMetadata(html, pageUrl, fields), browserPage.metadata, fields);
-    usedBrowser = true;
+    if (browserPage) {
+      html = browserPage.html;
+      pageUrl = browserPage.pageUrl;
+      fields = mergeBrowserFields(parseDynamicFields(html, pageUrl), browserPage.metadata);
+      metadata = mergeBrowserMetadata(parseModelMetadata(html, pageUrl, fields), browserPage.metadata, fields);
+      usedBrowser = true;
+    }
   }
 
   const detailData = parseDetailData(html);
@@ -1258,25 +1262,24 @@ export async function fetchFrom3D66(url, cookieValue) {
 
   if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields, true)) {
     const browserPage = await fetch3D66PageWithBrowserFallback(pageUrl || normalized.toString(), cookieValue);
-    html = browserPage.html;
-    pageUrl = browserPage.pageUrl;
-    effectiveCookieValue = browserPage.cookieValue || cookieValue;
-    fields = mergeBrowserFields(parseDynamicFields(html, pageUrl), browserPage.metadata);
-    metadata = mergeBrowserMetadata(parseModelMetadata(html, pageUrl, fields), browserPage.metadata, fields);
-    effectiveCookies = requireCookie(effectiveCookieValue);
-    context = applyFieldsToContext(siteContext(pageUrl, effectiveCookies), fields);
+    if (browserPage) {
+      html = browserPage.html;
+      pageUrl = browserPage.pageUrl;
+      effectiveCookieValue = browserPage.cookieValue || cookieValue;
+      fields = mergeBrowserFields(parseDynamicFields(html, pageUrl), browserPage.metadata);
+      metadata = mergeBrowserMetadata(parseModelMetadata(html, pageUrl, fields), browserPage.metadata, fields);
+      effectiveCookies = requireCookie(effectiveCookieValue);
+      context = applyFieldsToContext(siteContext(pageUrl, effectiveCookies), fields);
+    }
   }
 
   if (!fields.llId || !fields.token || !fields.upTime) {
     if (process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK === "true") {
       validateDynamicFields(fields);
     }
-    try {
-      return await download3D66WithBrowserFallback(pageUrl || normalized.toString(), effectiveCookieValue);
-    } catch (error) {
-      if (isPlaywrightMissing(error)) validateDynamicFields(fields);
-      throw error;
-    }
+    const browserDownload = await download3D66WithBrowserFallback(pageUrl || normalized.toString(), effectiveCookieValue);
+    if (browserDownload) return browserDownload;
+    validateDynamicFields(fields);
   }
 
   const urls = buildModelUrls(pageUrl, fields);
@@ -1290,7 +1293,8 @@ export async function fetchFrom3D66(url, cookieValue) {
       process.env.THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK === "true" &&
       process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK !== "true"
     ) {
-      return download3D66WithBrowserFallback(pageUrl || normalized.toString(), effectiveCookieValue, error);
+      const browserDownload = await download3D66WithBrowserFallback(pageUrl || normalized.toString(), effectiveCookieValue, error);
+      if (browserDownload) return browserDownload;
     }
     throw error;
   }
