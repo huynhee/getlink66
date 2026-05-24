@@ -365,8 +365,14 @@ export default function Admin({ user, language = "vi" }) {
     setSiteSettings((settings) => ({ ...settings, [field]: value }));
   }
 
-  function updateRuntimeToggle(field, checked) {
-    setSiteSettings((settings) => ({ ...settings, [field]: checked }));
+  function setPlaywrightMode(mode) {
+    setSiteSettings((settings) => ({
+      ...settings,
+      threed66BrowserAlways: mode === "always",
+      threed66DisableBrowserPageFallback: mode === "off",
+      threed66DisableBrowserDownloadFallback: mode === "off",
+      threed66DownloadHandleBrowserFallback: mode === "always",
+    }));
   }
 
   async function saveRuntimeSettings(event) {
@@ -683,30 +689,28 @@ export default function Admin({ user, language = "vi" }) {
       fallback: 5,
     },
   ];
-  const browserRuntimeSettings = [
+  const currentPlaywrightMode = Boolean(siteSettings.threed66BrowserAlways)
+    ? "always"
+    : Boolean(siteSettings.threed66DisableBrowserPageFallback) &&
+        Boolean(siteSettings.threed66DisableBrowserDownloadFallback) &&
+        !Boolean(siteSettings.threed66DownloadHandleBrowserFallback)
+      ? "off"
+      : "fallback";
+  const playwrightModes = [
     {
-      field: "threed66BrowserAlways",
-      label: l("Luôn dùng Playwright", "Always use Playwright"),
-      help: l("Bật sẽ ép mọi preview/getlink đi qua browser. Nên tắt để giảm tải VPS.", "Forces all preview/getlink work through the browser. Keep off to reduce VPS load."),
-      fallback: false,
+      value: "off",
+      label: l("Tắt Playwright", "Playwright off"),
+      help: l("Chỉ dùng HTTP. Nhẹ VPS nhất nhưng model bị 3D66 render/challenge có thể không đọc được.", "HTTP-only. Lightest on the VPS, but rendered/challenged 3D66 models may fail."),
     },
     {
-      field: "threed66DisableBrowserPageFallback",
-      label: l("Tắt fallback đọc trang", "Disable page browser fallback"),
-      help: l("Bật để không dùng Playwright khi HTTP đọc trang 3D66 bị fail/challenge.", "When enabled, Playwright is not used if HTTP page loading fails or hits a challenge."),
-      fallback: false,
+      value: "fallback",
+      label: l("Tự fallback", "Auto fallback"),
+      help: l("Ưu tiên HTTP. Chỉ dùng Playwright khi HTTP đọc trang/thiếu dữ liệu. Nên dùng hằng ngày.", "Prefer HTTP. Use Playwright only when HTTP cannot read the page or misses fields. Recommended daily mode."),
     },
     {
-      field: "threed66DisableBrowserDownloadFallback",
-      label: l("Tắt fallback tải", "Disable download browser fallback"),
-      help: l("Bật để không dùng Playwright khi thiếu dữ liệu tạo link tải.", "When enabled, Playwright is not used when download-link fields are missing."),
-      fallback: false,
-    },
-    {
-      field: "threed66DownloadHandleBrowserFallback",
-      label: l("Fallback sau lỗi download/handle", "Fallback after download/handle error"),
-      help: l("Bật mới cho phép nhảy sang Playwright nếu HTTP download/handle lỗi. Nên tắt để tránh báo sai lỗi ví.", "Only enable to use Playwright after HTTP download/handle fails. Keep off to avoid misleading wallet errors."),
-      fallback: false,
+      value: "always",
+      label: l("Luôn Playwright", "Always Playwright"),
+      help: l("Ép preview/getlink đi qua browser để test model khó. Tốn RAM/CPU hơn.", "Force preview/getlink through the browser for hard models. Uses more RAM/CPU."),
     },
   ];
 
@@ -1315,22 +1319,27 @@ export default function Admin({ user, language = "vi" }) {
               </div>
             </div>
             <div className="runtimeSettingGroup">
-              <h3>{l("Playwright fallback", "Playwright fallback")}</h3>
-              <div className="runtimeSettingList">
-                {browserRuntimeSettings.map((setting) => (
-                  <label className="runtimeSettingRow runtimeToggleRow" key={setting.field}>
-                    <span className="runtimeSettingText">
-                      <strong>{setting.label}</strong>
-                      <small>{setting.help}</small>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(siteSettings[setting.field] ?? setting.fallback)}
-                      onChange={(event) => updateRuntimeToggle(setting.field, event.target.checked)}
-                    />
-                  </label>
+              <h3>{l("Chế độ Playwright", "Playwright mode")}</h3>
+              <div className="runtimeModeGrid">
+                {playwrightModes.map((mode) => (
+                  <button
+                    key={mode.value}
+                    type="button"
+                    className={`runtimeModeButton ${currentPlaywrightMode === mode.value ? "active" : ""}`}
+                    aria-pressed={currentPlaywrightMode === mode.value}
+                    onClick={() => setPlaywrightMode(mode.value)}
+                  >
+                    <strong>{mode.label}</strong>
+                    <small>{mode.help}</small>
+                  </button>
                 ))}
               </div>
+              <p className="muted" style={{ margin: 0 }}>
+                {l(
+                  "Muốn dùng Playwright thì VPS vẫn phải cài package playwright và Chromium.",
+                  "Using Playwright still requires the VPS to have the playwright package and Chromium installed."
+                )}
+              </p>
             </div>
             <p className="muted" style={{ margin: 0 }}>
               {l(

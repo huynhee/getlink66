@@ -316,7 +316,6 @@ function isFallbackMetadata(metadata = {}, inputProductId = "") {
     !title ||
     title === "3D66 model" ||
     title === inputProductId ||
-    !metadata.imageUrl ||
     Number(metadata.creditCost || 0) <= 1,
   );
 }

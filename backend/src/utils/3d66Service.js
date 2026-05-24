@@ -22,9 +22,9 @@ const DEFAULT_SITE_CONTEXTS = {
     accessSourcePage: "5"
   },
   "tietu.3d66.com": {
-    site: "11",
+    site: "5",
     pageType: "5",
-    accessSourceSite: "14",
+    accessSourceSite: "5",
     accessSourcePage: "1"
   },
   "cad.3d66.com": {
@@ -52,15 +52,15 @@ const DEFAULT_SITE_CONTEXTS = {
     accessSourcePage: "5"
   },
   "3d66.com": {
-    site: "6",
+    site: "2",
     pageType: "5",
-    accessSourceSite: "6",
+    accessSourceSite: "2",
     accessSourcePage: "5"
   },
   "www.3d66.com": {
-    site: "6",
+    site: "2",
     pageType: "5",
-    accessSourceSite: "6",
+    accessSourceSite: "2",
     accessSourcePage: "5"
   }
 };
@@ -85,9 +85,14 @@ function withTimeout() {
 
 function shouldFallbackToBrowserPage(error) {
   return (
-    process.env.THREED66_DISABLE_BROWSER_PAGE_FALLBACK !== "true" &&
+    (process.env.THREED66_BROWSER_ALWAYS === "true" ||
+      process.env.THREED66_DISABLE_BROWSER_PAGE_FALLBACK !== "true") &&
     (error.status === 502 || error.status === 504)
   );
+}
+
+function shouldAlwaysUseBrowserPage() {
+  return process.env.THREED66_BROWSER_ALWAYS === "true";
 }
 
 function isPlaywrightMissing(error) {
@@ -618,7 +623,7 @@ function parseDynamicFields(html, pageUrl) {
       ]),
     requestId: param("r_id", "request_id"),
     sourceAlg: param("s_alg", "source_alg"),
-    position: param("position"),
+    position: param("position", "p"),
     llwSourceScene: param("lss", "llw_source_scene"),
     listLayoutType: param("llt", "list_layout_type"),
     ab: param("ab_f", "ab"),
@@ -1120,12 +1125,24 @@ export async function fetch3D66Preview(url, cookieValue) {
   if (popPreview) return popPreview.metadata;
 
   let browserMetadata = null;
-  let { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
-    if (!shouldFallbackToBrowserPage(error)) throw error;
-    const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
-    browserMetadata = browserPage.metadata;
-    return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
-  });
+  let html = "";
+  let pageUrl = normalized.toString();
+  if (shouldAlwaysUseBrowserPage()) {
+    const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue);
+    if (browserPage) {
+      browserMetadata = browserPage.metadata;
+      html = browserPage.html;
+      pageUrl = browserPage.pageUrl || normalized.toString();
+    }
+  }
+  if (!browserMetadata) {
+    ({ html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
+      if (!shouldFallbackToBrowserPage(error)) throw error;
+      const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
+      browserMetadata = browserPage.metadata;
+      return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
+    }));
+  }
   let fields = parseDynamicFields(html, pageUrl);
   let metadata = parseModelMetadata(html, pageUrl, fields);
   if (browserMetadata) {
@@ -1155,12 +1172,24 @@ export async function inspect3D66Page(url, cookieValue) {
   requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
   let browserMetadata = null;
-  let { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
-    if (!shouldFallbackToBrowserPage(error)) throw error;
-    const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
-    browserMetadata = browserPage.metadata;
-    return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
-  });
+  let html = "";
+  let pageUrl = normalized.toString();
+  if (shouldAlwaysUseBrowserPage()) {
+    const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue);
+    if (browserPage) {
+      browserMetadata = browserPage.metadata;
+      html = browserPage.html;
+      pageUrl = browserPage.pageUrl || normalized.toString();
+    }
+  }
+  if (!browserMetadata) {
+    ({ html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
+      if (!shouldFallbackToBrowserPage(error)) throw error;
+      const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
+      browserMetadata = browserPage.metadata;
+      return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
+    }));
+  }
   let fields = parseDynamicFields(html, pageUrl);
   let metadata = parseModelMetadata(html, pageUrl, fields);
   let usedBrowser = Boolean(browserMetadata);
@@ -1274,13 +1303,24 @@ export async function fetchFrom3D66(url, cookieValue) {
   let html = "";
   let pageUrl = normalized.toString();
   if (!seedFields || !seedMetadata) {
-    ({ html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
-      if (!shouldFallbackToBrowserPage(error)) throw error;
-      const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
-      browserMetadata = browserPage.metadata;
-      effectiveCookieValue = browserPage.cookieValue || cookieValue;
-      return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
-    }));
+    if (shouldAlwaysUseBrowserPage()) {
+      const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue);
+      if (browserPage) {
+        browserMetadata = browserPage.metadata;
+        effectiveCookieValue = browserPage.cookieValue || cookieValue;
+        html = browserPage.html;
+        pageUrl = browserPage.pageUrl || normalized.toString();
+      }
+    }
+    if (!browserMetadata) {
+      ({ html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
+        if (!shouldFallbackToBrowserPage(error)) throw error;
+        const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
+        browserMetadata = browserPage.metadata;
+        effectiveCookieValue = browserPage.cookieValue || cookieValue;
+        return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
+      }));
+    }
   }
   let fields = seedFields || parseDynamicFields(html, pageUrl);
   let metadata = seedMetadata || parseModelMetadata(html, pageUrl, fields);

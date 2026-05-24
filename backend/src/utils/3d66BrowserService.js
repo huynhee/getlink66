@@ -354,7 +354,14 @@ function evaluateMetadata() {
   }
 
   const detail = parseDetailData();
-  const res = detail?.data?.res || {};
+  const res =
+    detail?.data?.res && typeof detail.data.res === "object"
+      ? detail.data.res
+      : detail?.data && typeof detail.data === "object"
+        ? detail.data
+        : detail?.res && typeof detail.res === "object"
+          ? detail.res
+          : {};
   const detailImages = Array.isArray(res.res_img) ? res.res_img : [];
   const cover =
     detailImages.find(
@@ -441,8 +448,12 @@ function evaluateMetadata() {
         res.actionId ||
         document.querySelector("#actionId")?.value ||
         document.querySelector("#action_id")?.value ||
+        params.get("searchActionId") ||
         params.get("action_id") ||
         "",
+      requestId: params.get("r_id") || params.get("request_id") || "",
+      sourceAlg: params.get("s_alg") || params.get("source_alg") || "",
+      position: params.get("position") || params.get("p") || "",
       fileFormat: Array.isArray(res.down_file_format)
         ? String(res.down_file_format[0]?.file_format || "")
         : "",
