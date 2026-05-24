@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { download3D66WithBrowser, fetch3D66PageWithBrowser } from "./3d66BrowserService.js";
 
 const DEFAULT_DOWNLOAD_ENDPOINT = "https://user.3d66.com/api/v1/download/handle";
+const DEFAULT_DOWNLOAD_POP_ENDPOINT = "https://user.3d66.com/api/v1/download/pop";
 const DEFAULT_TIMEOUT_MS = 30000;
 const MAX_HTML_LENGTH = 2 * 1024 * 1024;
 const DEFAULT_USER_AGENT =
@@ -185,6 +186,25 @@ function siteContext(pageUrl, cookies) {
     accessSourcePage,
     fileFormat
   };
+}
+
+function currentUnixSeconds() {
+  return String(Math.floor(Date.now() / 1000));
+}
+
+function applyFieldsToContext(context, fields = {}) {
+  if (fields.site) {
+    context.site = String(fields.site);
+    context.accessSourceSite = String(fields.site);
+  }
+  if (fields.pageType) {
+    context.pageType = String(fields.pageType);
+    context.accessSourcePage = String(fields.pageType);
+  }
+  if (fields.fileFormat) {
+    context.fileFormat = String(fields.fileFormat);
+  }
+  return context;
 }
 
 function firstMatch(text, patterns) {
@@ -659,6 +679,8 @@ function buildDownloadPayload(fields, urls, cookies, context) {
     is_commercial: "false",
     voucher_id: "",
     file_format: context.fileFormat,
+    renderer_type: process.env.THREED66_RENDERER_TYPE || context.rendererType || "4",
+    format_version: process.env.THREED66_FORMAT_VERSION || context.formatVersion || "max2018",
     ab: "",
     algorithm_type: "",
     algorithm_version: "",
@@ -746,6 +768,108 @@ function mergeBrowserMetadata(metadata = {}, browserMetadata = {}, fields = {}) 
     creditCost: browserCost > 0 ? browserCost : metadata.creditCost || 1,
     sourceUrl: browserMetadata.sourceUrl || metadata.sourceUrl || ""
   };
+}
+
+async function requestDownloadPop(fields, cookieValue, context) {
+  if (!fields.llId) return null;
+  const endpoint = process.env.THREED66_DOWNLOAD_POP_ENDPOINT || DEFAULT_DOWNLOAD_POP_ENDPOINT;
+  const { controller, done } = withTimeout();
+  const payload = new URLSearchParams({
+    sof: fields.llId,
+    res_type: context.site || "1"
+  });
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        accept: "application/json, text/javascript, */*; q=0.01",
+        "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+        cookie: cookieValue,
+        origin: context.origin,
+        referer: `${context.origin}/`,
+        "user-agent": DEFAULT_USER_AGENT,
+        "x-requested-with": "XMLHttpRequest"
+      },
+      body: payload
+    });
+
+    const text = await response.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw httpError("3D66 download pop returned non-JSON response", 502, { body: text.slice(0, 300) });
+    }
+
+    if (!response.ok || Number(json.status || json.code) !== 200) {
+      throw httpError(`3D66 download pop failed: ${json.msg || `HTTP ${response.status}`}`, 502, {
+        response: json
+      });
+    }
+
+    return json.data || null;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw httpError("3D66 download pop timed out", 504);
+    }
+    if (error.status) throw error;
+    throw httpError(`3D66 download pop request failed: ${error.message}`, 502);
+  } finally {
+    done();
+  }
+}
+
+function mergeDownloadPopFields(fields = {}, popData = {}) {
+  const resInfo = popData.resInfo || {};
+  return {
+    ...fields,
+    llId: fields.llId || resInfo.sof || "",
+    token: fields.token || popData.token || "",
+    upTime: fields.upTime || currentUnixSeconds(),
+    site: fields.site || resInfo.res_type || ""
+  };
+}
+
+function mergeDownloadPopMetadata(metadata = {}, popData = {}, pageUrl = "", fields = {}) {
+  const resInfo = popData.resInfo || {};
+  const popCost = Number(resInfo.res_price || extractCreditCost(popData) || 0);
+  return {
+    productId: metadata.productId || resInfo.sof || fields.llId || "",
+    title: resInfo.res_name || metadata.title || fields.llId || "3D66 model",
+    imageUrl: absoluteUrl(resInfo.img, pageUrl) || metadata.imageUrl || "",
+    creditCost: popCost > 0 ? popCost : metadata.creditCost || 1,
+    sourceUrl: metadata.sourceUrl || pageUrl
+  };
+}
+
+async function enrichFromDownloadPop(fields, metadata, pageUrl, cookieValue, context) {
+  let nextFields = { ...fields };
+  let nextMetadata = { ...metadata };
+  if (!nextFields.llId) {
+    return { fields: nextFields, metadata: nextMetadata };
+  }
+
+  if (!nextFields.upTime) {
+    nextFields.upTime = currentUnixSeconds();
+  }
+
+  if (nextFields.token && !isWeakMetadata(nextMetadata)) {
+    return { fields: nextFields, metadata: nextMetadata };
+  }
+
+  try {
+    const popData = await requestDownloadPop(nextFields, cookieValue, context);
+    if (popData) {
+      nextFields = mergeDownloadPopFields(nextFields, popData);
+      nextMetadata = mergeDownloadPopMetadata(nextMetadata, popData, pageUrl, nextFields);
+    }
+  } catch {
+    // Keep the existing browser fallback path when the lightweight popup API is unavailable.
+  }
+
+  return { fields: nextFields, metadata: nextMetadata };
 }
 
 async function requestDownloadUrl(payload, cookieValue, origin) {
@@ -866,7 +990,7 @@ export async function fetch3D66Preview(url, cookieValue) {
     };
   }
 
-  requireCookie(cookieValue);
+  const cookies = requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
   let browserMetadata = null;
   let { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
@@ -880,6 +1004,11 @@ export async function fetch3D66Preview(url, cookieValue) {
   if (browserMetadata) {
     fields = mergeBrowserFields(fields, browserMetadata);
     metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);
+  }
+
+  if (!browserMetadata && isWeakMetadata(metadata)) {
+    const context = applyFieldsToContext(siteContext(pageUrl, cookies), fields);
+    ({ fields, metadata } = await enrichFromDownloadPop(fields, metadata, pageUrl, cookieValue, context));
   }
 
   if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields)) {
@@ -1004,7 +1133,7 @@ export async function fetchFrom3D66(url, cookieValue) {
     };
   }
 
-  requireCookie(cookieValue);
+  const initialCookies = requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
   let effectiveCookieValue = cookieValue;
   let browserMetadata = null;
@@ -1022,6 +1151,13 @@ export async function fetchFrom3D66(url, cookieValue) {
     metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);
   }
 
+  let effectiveCookies = initialCookies;
+  let context = applyFieldsToContext(siteContext(pageUrl, effectiveCookies), fields);
+  if (!browserMetadata) {
+    ({ fields, metadata } = await enrichFromDownloadPop(fields, metadata, pageUrl, effectiveCookieValue, context));
+    applyFieldsToContext(context, fields);
+  }
+
   if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields, true)) {
     const browserPage = await fetch3D66PageWithBrowser(pageUrl || normalized.toString(), cookieValue);
     html = browserPage.html;
@@ -1029,6 +1165,8 @@ export async function fetchFrom3D66(url, cookieValue) {
     effectiveCookieValue = browserPage.cookieValue || cookieValue;
     fields = mergeBrowserFields(parseDynamicFields(html, pageUrl), browserPage.metadata);
     metadata = mergeBrowserMetadata(parseModelMetadata(html, pageUrl, fields), browserPage.metadata, fields);
+    effectiveCookies = requireCookie(effectiveCookieValue);
+    context = applyFieldsToContext(siteContext(pageUrl, effectiveCookies), fields);
   }
 
   if (!fields.llId || !fields.token || !fields.upTime) {
@@ -1036,19 +1174,7 @@ export async function fetchFrom3D66(url, cookieValue) {
   }
 
   const urls = buildModelUrls(pageUrl, fields);
-  const effectiveCookies = requireCookie(effectiveCookieValue);
-  const context = siteContext(pageUrl, effectiveCookies);
-  if (fields.site) {
-    context.site = String(fields.site);
-    context.accessSourceSite = String(fields.site);
-  }
-  if (fields.pageType) {
-    context.pageType = String(fields.pageType);
-    context.accessSourcePage = String(fields.pageType);
-  }
-  if (fields.fileFormat) {
-    context.fileFormat = String(fields.fileFormat);
-  }
+  applyFieldsToContext(context, fields);
   const payload = buildDownloadPayload(fields, urls, effectiveCookies, context);
   let download;
   try {
