@@ -707,6 +707,64 @@ button:disabled {
   text-transform: none;
 }
 
+.runtimeSettingGroup {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.runtimeSettingGroup h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.runtimeSettingList {
+  display: grid;
+  gap: 8px;
+}
+
+.runtimeSettingRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 180px);
+  align-items: center;
+  gap: var(--space-12);
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 255, 136, 0.14);
+  background: rgba(0, 255, 136, 0.035);
+}
+
+.runtimeSettingText {
+  display: grid;
+  gap: 4px;
+  text-transform: none;
+}
+
+.runtimeSettingText strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.runtimeSettingText small {
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  text-transform: none;
+}
+
+.runtimeSettingRow input {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .runtimeSettingRow {
+    grid-template-columns: 1fr;
+  }
+}
+
 .cookiePoolCard {
   display: grid;
   gap: 4px;

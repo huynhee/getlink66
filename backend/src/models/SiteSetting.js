@@ -34,7 +34,12 @@ const siteSettingSchema = new mongoose.Schema(
     threed66BrowserConcurrency: { type: Number, default: 1 },
     threed66TimeoutMs: { type: Number, default: 30000 },
     threed66CookieMaxFailures: { type: Number, default: 2 },
-    threed66CookieCooldownMinutes: { type: Number, default: 30 }
+    threed66CookieCooldownMinutes: { type: Number, default: 30 },
+    maxGlobalDownloads: { type: Number, default: 20 },
+    maxDownloadsPerUser: { type: Number, default: 2 },
+    maxDownloadsPerIp: { type: Number, default: 4 },
+    getlinkRedownloadDays: { type: Number, default: 3 },
+    getlinkRedownloadLimit: { type: Number, default: 5 }
   },
   { timestamps: true }
 );

@@ -68,6 +68,11 @@ const defaultSiteSettings = {
   threed66TimeoutMs: 30000,
   threed66CookieMaxFailures: 2,
   threed66CookieCooldownMinutes: 30,
+  maxGlobalDownloads: 20,
+  maxDownloadsPerUser: 2,
+  maxDownloadsPerIp: 4,
+  getlinkRedownloadDays: 3,
+  getlinkRedownloadLimit: 5,
 };
 
 function discountedPrice(pkg) {
@@ -340,6 +345,11 @@ export default function Admin({ user, language = "vi" }) {
           threed66TimeoutMs: Number(siteSettings.threed66TimeoutMs || 30000),
           threed66CookieMaxFailures: Number(siteSettings.threed66CookieMaxFailures || 2),
           threed66CookieCooldownMinutes: Number(siteSettings.threed66CookieCooldownMinutes || 30),
+          maxGlobalDownloads: Number(siteSettings.maxGlobalDownloads || 20),
+          maxDownloadsPerUser: Number(siteSettings.maxDownloadsPerUser || 2),
+          maxDownloadsPerIp: Number(siteSettings.maxDownloadsPerIp || 4),
+          getlinkRedownloadDays: Number(siteSettings.getlinkRedownloadDays || 3),
+          getlinkRedownloadLimit: Number(siteSettings.getlinkRedownloadLimit || 5),
         })
       });
       setSiteSettings({ ...defaultSiteSettings, ...(data.settings || {}) });
@@ -499,6 +509,135 @@ export default function Admin({ user, language = "vi" }) {
     { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
     { key: "users", label: t.adminUsers, icon: Users, count: users.length },
     { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert }
+  ];
+  const threed66RuntimeSettings = [
+    {
+      field: "threed66GetlinkConcurrency",
+      label: l("Getlink chạy cùng lúc", "Concurrent getlink tasks"),
+      help: l("Số job mua/generate link 3D66 được chạy song song. VPS nhỏ nên để 1.", "Number of 3D66 purchase/generate jobs running in parallel. Keep 1 on small VPS."),
+      type: "number",
+      min: 1,
+      max: 10,
+      fallback: 1,
+    },
+    {
+      field: "threed66PreviewConcurrency",
+      label: l("Preview chạy cùng lúc", "Concurrent preview tasks"),
+      help: l("Số job lấy tên, ảnh và giá model từ 3D66 chạy song song.", "Number of metadata preview jobs fetching title, image, and price from 3D66."),
+      type: "number",
+      min: 1,
+      max: 10,
+      fallback: 1,
+    },
+    {
+      field: "threed66RefreshConcurrency",
+      label: l("Refresh chạy cùng lúc", "Concurrent refresh tasks"),
+      help: l("Số job lấy lại fileUrl mới khi link tải 3D66 cũ hết hạn hoặc bị 401/403.", "Number of jobs refreshing fileUrl when old 3D66 links expire or return 401/403."),
+      type: "number",
+      min: 1,
+      max: 10,
+      fallback: 1,
+    },
+    {
+      field: "threed66PaytypeValue",
+      label: l("Paytype value 3D66", "3D66 paytype value"),
+      help: l("Value của ví thanh toán trong popup 3D66. Ví dụ value=\"4\" là ví 赠点.", "Payment wallet value in the 3D66 popup. For example value=\"4\" is 赠点."),
+      type: "text",
+      fallback: "4",
+      placeholder: "4",
+    },
+    {
+      field: "threed66RequestIntervalMs",
+      label: l("Khoảng nghỉ request (ms)", "Request interval (ms)"),
+      help: l("Khoảng nghỉ tối thiểu giữa các request sang 3D66 để giảm rủi ro bị chặn.", "Minimum delay between requests sent to 3D66 to reduce blocking risk."),
+      type: "number",
+      min: 0,
+      max: 60000,
+      fallback: 2500,
+    },
+    {
+      field: "threed66BrowserConcurrency",
+      label: l("Browser chạy cùng lúc", "Concurrent browser tasks"),
+      help: l("Số tác vụ Playwright chạy song song khi cần fallback browser.", "Number of Playwright tasks running in parallel when browser fallback is needed."),
+      type: "number",
+      min: 1,
+      max: 5,
+      fallback: 1,
+    },
+    {
+      field: "threed66TimeoutMs",
+      label: l("Timeout 3D66 (ms)", "3D66 timeout (ms)"),
+      help: l("Thời gian chờ tối đa cho request/browser 3D66 trước khi báo lỗi.", "Maximum wait time for 3D66 request/browser work before failing."),
+      type: "number",
+      min: 5000,
+      max: 120000,
+      fallback: 30000,
+    },
+    {
+      field: "threed66CookieMaxFailures",
+      label: l("Lỗi cookie trước khi nghỉ", "Cookie failures before cooldown"),
+      help: l("Cookie lỗi liên tiếp bao nhiêu lần thì chuyển sang trạng thái cooldown.", "How many consecutive failures before a cookie is put into cooldown."),
+      type: "number",
+      min: 1,
+      max: 20,
+      fallback: 2,
+    },
+    {
+      field: "threed66CookieCooldownMinutes",
+      label: l("Thời gian nghỉ cookie (phút)", "Cookie cooldown (minutes)"),
+      help: l("Cookie bị lỗi sẽ nghỉ bao nhiêu phút trước khi được thử lại.", "How many minutes a failed cookie rests before it can be tried again."),
+      type: "number",
+      min: 1,
+      max: 1440,
+      fallback: 30,
+    },
+  ];
+  const userRuntimeSettings = [
+    {
+      field: "maxGlobalDownloads",
+      label: l("Tổng file tải cùng lúc", "Global concurrent downloads"),
+      help: l("Tổng số file mà server được proxy cho tất cả user cùng lúc.", "Total files the server can proxy for all users at the same time."),
+      type: "number",
+      min: 1,
+      max: 200,
+      fallback: 20,
+    },
+    {
+      field: "maxDownloadsPerUser",
+      label: l("Mỗi user tải cùng lúc", "Concurrent downloads per user"),
+      help: l("Giới hạn số file một tài khoản được tải đồng thời.", "Limits how many files one account can download at the same time."),
+      type: "number",
+      min: 1,
+      max: 50,
+      fallback: 2,
+    },
+    {
+      field: "maxDownloadsPerIp",
+      label: l("Mỗi IP tải cùng lúc", "Concurrent downloads per IP"),
+      help: l("Giới hạn số file một IP được tải đồng thời để giảm lạm dụng/IDM quá nhiều kết nối.", "Limits simultaneous downloads from one IP to reduce abuse or too many IDM connections."),
+      type: "number",
+      min: 1,
+      max: 100,
+      fallback: 4,
+    },
+    {
+      field: "getlinkRedownloadDays",
+      label: l("Số ngày tải lại miễn phí", "Free redownload days"),
+      help: l("User được tải lại file đã getlink trong bao nhiêu ngày mà không bị trừ credit lại.", "How many days users can redownload a getlinked file without being charged again."),
+      type: "number",
+      min: 1,
+      max: 30,
+      fallback: 3,
+    },
+    {
+      field: "getlinkRedownloadLimit",
+      label: l("Số lần tải lại miễn phí", "Free redownload limit"),
+      help: l("Số lần tải lại miễn phí cho mỗi file trong thời hạn tải lại.", "Number of free redownloads for each file within the redownload window."),
+      type: "number",
+      min: 1,
+      max: 100,
+      fallback: 5,
+    },
   ];
 
   return (
@@ -1052,95 +1191,46 @@ export default function Admin({ user, language = "vi" }) {
         <section className="panel">
           <h2><Activity size={20} /> {l("Cài đặt vận hành 3D66", "3D66 runtime settings")}</h2>
           <form className="stack" onSubmit={saveRuntimeSettings} style={{ marginTop: 14 }}>
-            <div className="formGrid">
-              <label>
-                {l("Getlink chạy cùng lúc", "Concurrent getlink tasks")}
-                <input
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={siteSettings.threed66GetlinkConcurrency ?? 1}
-                  onChange={(event) => updateRuntimeSetting("threed66GetlinkConcurrency", event.target.value)}
-                />
-              </label>
-              <label>
-                {l("Preview chạy cùng lúc", "Concurrent preview tasks")}
-                <input
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={siteSettings.threed66PreviewConcurrency ?? 1}
-                  onChange={(event) => updateRuntimeSetting("threed66PreviewConcurrency", event.target.value)}
-                />
-              </label>
-              <label>
-                {l("Refresh chạy cùng lúc", "Concurrent refresh tasks")}
-                <input
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={siteSettings.threed66RefreshConcurrency ?? 1}
-                  onChange={(event) => updateRuntimeSetting("threed66RefreshConcurrency", event.target.value)}
-                />
-              </label>
-              <label>
-                {l("Paytype value 3D66", "3D66 paytype value")}
-                <input
-                  value={siteSettings.threed66PaytypeValue ?? "4"}
-                  onChange={(event) => updateRuntimeSetting("threed66PaytypeValue", event.target.value)}
-                  placeholder='4'
-                />
-              </label>
-              <label>
-                {l("Khoảng nghỉ request (ms)", "Request interval (ms)")}
-                <input
-                  type="number"
-                  min="0"
-                  max="60000"
-                  value={siteSettings.threed66RequestIntervalMs ?? 2500}
-                  onChange={(event) => updateRuntimeSetting("threed66RequestIntervalMs", event.target.value)}
-                />
-              </label>
-              <label>
-                {l("Browser chạy cùng lúc", "Concurrent browser tasks")}
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={siteSettings.threed66BrowserConcurrency ?? 1}
-                  onChange={(event) => updateRuntimeSetting("threed66BrowserConcurrency", event.target.value)}
-                />
-              </label>
-              <label>
-                {l("Timeout 3D66 (ms)", "3D66 timeout (ms)")}
-                <input
-                  type="number"
-                  min="5000"
-                  max="120000"
-                  value={siteSettings.threed66TimeoutMs ?? 30000}
-                  onChange={(event) => updateRuntimeSetting("threed66TimeoutMs", event.target.value)}
-                />
-              </label>
-              <label>
-                {l("Lỗi cookie trước khi nghỉ", "Cookie failures before cooldown")}
-                <input
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={siteSettings.threed66CookieMaxFailures ?? 2}
-                  onChange={(event) => updateRuntimeSetting("threed66CookieMaxFailures", event.target.value)}
-                />
-              </label>
-              <label>
-                {l("Thời gian nghỉ cookie (phút)", "Cookie cooldown (minutes)")}
-                <input
-                  type="number"
-                  min="1"
-                  max="1440"
-                  value={siteSettings.threed66CookieCooldownMinutes ?? 30}
-                  onChange={(event) => updateRuntimeSetting("threed66CookieCooldownMinutes", event.target.value)}
-                />
-              </label>
+            <div className="runtimeSettingGroup">
+              <h3>{l("Tác vụ sang 3D66", "3D66 task settings")}</h3>
+              <div className="runtimeSettingList">
+                {threed66RuntimeSettings.map((setting) => (
+                  <label className="runtimeSettingRow" key={setting.field}>
+                    <span className="runtimeSettingText">
+                      <strong>{setting.label}</strong>
+                      <small>{setting.help}</small>
+                    </span>
+                    <input
+                      type={setting.type}
+                      min={setting.min}
+                      max={setting.max}
+                      value={siteSettings[setting.field] ?? setting.fallback}
+                      placeholder={setting.placeholder}
+                      onChange={(event) => updateRuntimeSetting(setting.field, event.target.value)}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="runtimeSettingGroup">
+              <h3>{l("User và tải file", "User and download settings")}</h3>
+              <div className="runtimeSettingList">
+                {userRuntimeSettings.map((setting) => (
+                  <label className="runtimeSettingRow" key={setting.field}>
+                    <span className="runtimeSettingText">
+                      <strong>{setting.label}</strong>
+                      <small>{setting.help}</small>
+                    </span>
+                    <input
+                      type={setting.type}
+                      min={setting.min}
+                      max={setting.max}
+                      value={siteSettings[setting.field] ?? setting.fallback}
+                      onChange={(event) => updateRuntimeSetting(setting.field, event.target.value)}
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
             <p className="muted" style={{ margin: 0 }}>
               {l(

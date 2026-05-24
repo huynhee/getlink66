@@ -28,7 +28,6 @@ import { writeSystemLog } from "../utils/systemLog.js";
 
 const productLocks = new Map();
 const MAX_PRODUCT_LOCKS = 500;
-const REDOWNLOAD_WINDOW_DAYS = Number(process.env.GETLINK_REDOWNLOAD_DAYS || 3);
 const downloadCounters = {
   global: 0,
   user: new Map(),
@@ -44,11 +43,12 @@ function userProductLockKey(userId, productId) {
 }
 
 function redownloadWindowMs() {
-  const days =
-    Number.isFinite(REDOWNLOAD_WINDOW_DAYS) && REDOWNLOAD_WINDOW_DAYS > 0
-      ? REDOWNLOAD_WINDOW_DAYS
-      : 3;
-  return days * 24 * 60 * 60 * 1000;
+  return redownloadWindowDays() * 24 * 60 * 60 * 1000;
+}
+
+function redownloadWindowDays() {
+  const days = Number(process.env.GETLINK_REDOWNLOAD_DAYS || 3);
+  return Number.isFinite(days) && days > 0 ? days : 3;
 }
 
 function redownloadLimit() {
@@ -212,10 +212,7 @@ function publicHistoryItem(req, item) {
     downloadUrl: allowed ? publicDownloadUrl(req, doc._id) : null,
     canRedownload: allowed,
     redownloadExpiresAt: redownloadExpiresAt(doc),
-    redownloadDays:
-      Number.isFinite(REDOWNLOAD_WINDOW_DAYS) && REDOWNLOAD_WINDOW_DAYS > 0
-        ? REDOWNLOAD_WINDOW_DAYS
-        : 3,
+    redownloadDays: redownloadWindowDays(),
     redownloadCount: Number(doc.redownloadCount || 0),
     redownloadLimit: redownloadLimit(),
     redownloadRemaining: Math.max(
@@ -840,7 +837,7 @@ export async function downloadGetlink(req, res, next) {
 
     if (!canRedownload(history)) {
       return res.status(403).json({
-        message: `Free redownload expired after ${REDOWNLOAD_WINDOW_DAYS || 3} days. Please getlink this model again.`,
+        message: `Free redownload expired after ${redownloadWindowDays()} days. Please getlink this model again.`,
         canRedownload: false,
         redownloadExpiresAt: redownloadExpiresAt(history),
       });
@@ -864,7 +861,7 @@ export async function downloadGetlink(req, res, next) {
 
     if (!reservedHistory) {
       return res.status(429).json({
-        message: `Download limit reached. You can download this file ${redownloadLimit()} times within ${REDOWNLOAD_WINDOW_DAYS || 3} days.`,
+        message: `Download limit reached. You can download this file ${redownloadLimit()} times within ${redownloadWindowDays()} days.`,
         canRedownload: false,
         redownloadLimit: redownloadLimit(),
       });

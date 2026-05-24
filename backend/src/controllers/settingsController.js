@@ -52,6 +52,36 @@ const RUNTIME_NUMBER_FIELDS = {
     fallback: 30,
     toEnv: (minutes) => minutes * 60 * 1000,
   },
+  maxGlobalDownloads: {
+    env: "MAX_GLOBAL_DOWNLOADS",
+    min: 1,
+    max: 200,
+    fallback: 20,
+  },
+  maxDownloadsPerUser: {
+    env: "MAX_DOWNLOADS_PER_USER",
+    min: 1,
+    max: 50,
+    fallback: 2,
+  },
+  maxDownloadsPerIp: {
+    env: "MAX_DOWNLOADS_PER_IP",
+    min: 1,
+    max: 100,
+    fallback: 4,
+  },
+  getlinkRedownloadDays: {
+    env: "GETLINK_REDOWNLOAD_DAYS",
+    min: 1,
+    max: 30,
+    fallback: 3,
+  },
+  getlinkRedownloadLimit: {
+    env: "GETLINK_REDOWNLOAD_LIMIT",
+    min: 1,
+    max: 100,
+    fallback: 5,
+  },
 };
 
 const defaultSettings = {
@@ -71,6 +101,11 @@ const defaultSettings = {
   threed66TimeoutMs: Number(process.env.THREED66_TIMEOUT_MS || 30000),
   threed66CookieMaxFailures: Number(process.env.THREED66_COOKIE_MAX_FAILURES || 2),
   threed66CookieCooldownMinutes: Math.round(Number(process.env.THREED66_COOKIE_COOLDOWN_MS || 1800000) / 60000),
+  maxGlobalDownloads: Number(process.env.MAX_GLOBAL_DOWNLOADS || 20),
+  maxDownloadsPerUser: Number(process.env.MAX_DOWNLOADS_PER_USER || 2),
+  maxDownloadsPerIp: Number(process.env.MAX_DOWNLOADS_PER_IP || 4),
+  getlinkRedownloadDays: Number(process.env.GETLINK_REDOWNLOAD_DAYS || 3),
+  getlinkRedownloadLimit: Number(process.env.GETLINK_REDOWNLOAD_LIMIT || 5),
 };
 
 function clampInteger(value, { min, max, fallback }) {
@@ -181,6 +216,11 @@ export async function updateSettings(req, res, next) {
       "threed66TimeoutMs",
       "threed66CookieMaxFailures",
       "threed66CookieCooldownMinutes",
+      "maxGlobalDownloads",
+      "maxDownloadsPerUser",
+      "maxDownloadsPerIp",
+      "getlinkRedownloadDays",
+      "getlinkRedownloadLimit",
     ];
     const unknownKey = rejectUnknownKeys(req.body, fields);
     if (unknownKey) {
