@@ -466,6 +466,17 @@ export async function previewGetlink(req, res, next) {
     const preview = await with3D66Cookie((cookieValue) =>
       queue3D66Preview(() => fetch3D66Preview(url, cookieValue)),
     );
+    if (
+      process.env.THREED66_MOCK === "false" &&
+      isFallbackMetadata(preview, preview.productId || productId)
+    ) {
+      return res.status(422).json({
+        message:
+          "Chưa đọc được đầy đủ thông tin model 3D66. Vui lòng thử lại hoặc bật Playwright fallback nếu model bị 3D66 render/challenge.",
+        metadataIncomplete: true,
+        productId: preview.productId || productId,
+      });
+    }
     const previewPayload = {
       productId: preview.productId || productId,
       sourceUrl: preview.sourceUrl || url,
