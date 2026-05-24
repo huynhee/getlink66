@@ -360,6 +360,14 @@ function parseDetailData(html = "") {
   }
 }
 
+function detailResFromData(detailData) {
+  const data = detailData?.data;
+  if (data?.res && typeof data.res === "object") return data.res;
+  if (data && typeof data === "object") return data;
+  if (detailData?.res && typeof detailData.res === "object") return detailData.res;
+  return {};
+}
+
 function firstAttrFromMatchedTag(html = "", tagPattern, attr = "") {
   const tag = html.match(tagPattern)?.[0] || "";
   return attrValue(tag, attr);
@@ -423,7 +431,8 @@ function extractPreviewImageFromHtml(html = "", pageUrl = "") {
 
 function extractCreditCostFromHtml(html = "") {
   const detailData = parseDetailData(html);
-  const detailPrice = Number(detailData?.data?.res?.res_price);
+  const detailRes = detailResFromData(detailData);
+  const detailPrice = Number(detailRes.res_price || detailRes.origin_price || detailRes.coupon_after_price);
   if (Number.isFinite(detailPrice) && detailPrice > 0) return detailPrice;
 
   const source = decodeHtml(html);
@@ -469,7 +478,7 @@ function extractCreditCostFromHtml(html = "") {
 
 function parseModelMetadata(html, pageUrl, fields = {}) {
   const detailData = parseDetailData(html);
-  const detailRes = detailData?.data?.res || {};
+  const detailRes = detailResFromData(detailData);
   const detailImages = Array.isArray(detailRes.res_img) ? detailRes.res_img : [];
   const coverItem =
     detailImages.find((item) => Number(item?.img_type) === 1 && item?.is_cover) ||
@@ -556,7 +565,7 @@ function parseModelMetadata(html, pageUrl, fields = {}) {
 function parseDynamicFields(html, pageUrl) {
   const parsed = new URL(pageUrl);
   const source = `${pageUrl}\n${html}`;
-  const detailRes = parseDetailData(html)?.data?.res || {};
+  const detailRes = detailResFromData(parseDetailData(html));
   const param = (...names) => {
     for (const name of names) {
       const value = parsed.searchParams.get(name);
