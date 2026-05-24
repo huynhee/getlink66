@@ -744,6 +744,11 @@ function shouldUseBrowserPage(html = "", metadata = {}, fields = {}, requireDown
   return Boolean(!title || title === "3D66 model" || !metadata.imageUrl || Number(metadata.creditCost || 0) <= 1);
 }
 
+function isWeakMetadata(metadata = {}) {
+  const title = String(metadata.title || "").trim();
+  return Boolean(!title || title === "3D66 model" || !metadata.imageUrl || Number(metadata.creditCost || 0) <= 1);
+}
+
 function mergeBrowserFields(fields = {}, browserMetadata = {}) {
   const browserFields = browserMetadata.dynamicFields || {};
   return {
