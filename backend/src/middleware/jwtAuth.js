@@ -56,7 +56,7 @@ export async function jwtAuth(req, res, next) {
       res.clearCookie("refreshToken");
       return res
         .status(401)
-        .json({ message: "Session expired due to security violation." });
+        .json({ message: "Phiên đăng nhập đã hết hạn, bạn cần đăng nhập lại." });
     }
 
     req.user = await User.findById(payload.id);

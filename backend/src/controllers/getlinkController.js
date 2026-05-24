@@ -56,6 +56,14 @@ function redownloadLimit() {
   return Number.isFinite(limit) && limit > 0 ? limit : 5;
 }
 
+async function hasEnoughCredit(userId, creditCost) {
+  const user = await User.findById(userId).select("credit").lean();
+  return {
+    ok: Number(user?.credit || 0) >= Number(creditCost || 0),
+    credit: Number(user?.credit || 0),
+  };
+}
+
 function downloadLimit(name, fallback) {
   const limit = Number(process.env[name] || fallback);
   return Number.isFinite(limit) && limit > 0 ? limit : fallback;
@@ -631,6 +639,15 @@ export async function getLink(req, res, next) {
           );
         }
       }
+    }
+
+    const creditCheck = await hasEnoughCredit(req.user._id, expectedCreditCost);
+    if (!creditCheck.ok) {
+      return res.status(402).json({
+        message: `Không đủ credit. Cần ${expectedCreditCost} credit.`,
+        creditRequired: expectedCreditCost,
+        credit: creditCheck.credit,
+      });
     }
 
     const hadCache = Boolean(
