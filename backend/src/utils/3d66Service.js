@@ -805,12 +805,12 @@ function shouldUseBrowserPage(html = "", metadata = {}, fields = {}, requireDown
   if (requireDownloadFields && (!fields.llId || !fields.token || !fields.upTime)) return true;
 
   const title = String(metadata.title || "").trim();
-  return Boolean(!title || title === "3D66 model" || !metadata.imageUrl || Number(metadata.creditCost || 0) <= 1);
+  return Boolean(!title || title === "3D66 model" || Number(metadata.creditCost || 0) <= 1);
 }
 
 function isWeakMetadata(metadata = {}) {
   const title = String(metadata.title || "").trim();
-  return Boolean(!title || title === "3D66 model" || !metadata.imageUrl || Number(metadata.creditCost || 0) <= 1);
+  return Boolean(!title || title === "3D66 model" || Number(metadata.creditCost || 0) <= 1);
 }
 
 async function fetch3D66PageWithBrowserFallback(url, cookieValue, originalError = null) {

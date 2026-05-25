@@ -320,6 +320,40 @@ function isFallbackMetadata(metadata = {}, inputProductId = "") {
   );
 }
 
+async function upsertProductCache(payload, preferredCache = null) {
+  const normalizedPayload = {
+    ...payload,
+    creditCost: normalizeDownloadCreditCost(payload.creditCost, 1),
+  };
+
+  if (
+    preferredCache?._id &&
+    String(preferredCache.productId || "") ===
+      String(normalizedPayload.productId || "")
+  ) {
+    return ProductCache.findByIdAndUpdate(
+      preferredCache._id,
+      { $set: normalizedPayload },
+      { new: true },
+    );
+  }
+
+  try {
+    return await ProductCache.findOneAndUpdate(
+      { productId: normalizedPayload.productId },
+      { $set: normalizedPayload },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+  } catch (error) {
+    if (error.code !== 11000) throw error;
+    return ProductCache.findOneAndUpdate(
+      { productId: normalizedPayload.productId },
+      { $set: normalizedPayload },
+      { new: true },
+    );
+  }
+}
+
 function setProxyHeaders(res, upstream, history) {
   const passthrough = [
     "content-type",
@@ -444,13 +478,9 @@ export async function previewGetlink(req, res, next) {
       cachedTitle !== cache?.productId &&
       cachedTitle !== productId,
     );
-    const cachedImage = String(cache?.imageUrl || "");
-    const hasLargeCachedImage = Boolean(
-      cachedImage && !/small-size-p|list-w-auto-p/i.test(cachedImage),
-    );
     const hasReliableCachedPrice = Number(cache?.creditCost || 0) > 1;
     const hasPreviewMetadata = Boolean(
-      hasLargeCachedImage && hasRealCachedTitle && hasReliableCachedPrice,
+      hasRealCachedTitle && hasReliableCachedPrice,
     );
     if (hasPreviewMetadata) {
       return res.json({
@@ -483,19 +513,7 @@ export async function previewGetlink(req, res, next) {
       imageUrl: preview.imageUrl,
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
     };
-    if (cache?._id) {
-      await ProductCache.findByIdAndUpdate(cache._id, previewPayload);
-    } else {
-      try {
-        await ProductCache.create(previewPayload);
-      } catch (error) {
-        if (error.code !== 11000) throw error;
-        await ProductCache.findOneAndUpdate(
-          { productId: previewPayload.productId },
-          previewPayload,
-        );
-      }
-    }
+    await upsertProductCache(previewPayload, cache);
     res.json({
       productId: preview.productId || productId,
       title: preview.title,
@@ -558,6 +576,7 @@ export async function getLink(req, res, next) {
     if (!url) return;
 
     const productId = extractProductId(url);
+    let effectiveProductId = productId;
     logProductId = productId;
 
     // Acquire per-user-per-product mutex de chan 2 request dong thoi cung product
@@ -619,6 +638,8 @@ export async function getLink(req, res, next) {
         imageUrl: preview.imageUrl,
         creditCost: expectedCreditCost,
       };
+      effectiveProductId = previewPayload.productId;
+      logProductId = effectiveProductId;
 
       if (previewPayload.productId !== productId) {
         const previewRedownload = await findActiveRedownload(
@@ -630,25 +651,7 @@ export async function getLink(req, res, next) {
         }
       }
 
-      cachePreview = await ProductCache.findOne({
-        productId: previewPayload.productId,
-      });
-      if (cachePreview?._id) {
-        await ProductCache.findByIdAndUpdate(cachePreview._id, previewPayload);
-      } else {
-        try {
-          cachePreview = await ProductCache.create(previewPayload);
-        } catch (error) {
-          if (error.code !== 11000) throw error;
-          cachePreview = await ProductCache.findOneAndUpdate(
-            { productId: previewPayload.productId },
-            previewPayload,
-            {
-              new: true,
-            },
-          );
-        }
-      }
+      cachePreview = await upsertProductCache(previewPayload, cachePreview);
     }
 
     const creditCheck = await hasEnoughCredit(req.user._id, expectedCreditCost);
@@ -661,9 +664,12 @@ export async function getLink(req, res, next) {
     }
 
     const hadCache = Boolean(
-      await ProductCache.exists({ productId, fileUrl: { $ne: "" } }),
+      await ProductCache.exists({
+        productId: effectiveProductId,
+        fileUrl: { $ne: "" },
+      }),
     );
-    const cache = await resolveProductCache(productId, url);
+    const cache = await resolveProductCache(effectiveProductId, url);
     const creditCost = normalizeDownloadCreditCost(
       Math.max(Number(cache.creditCost || 0), Number(expectedCreditCost || 0)),
       1,
