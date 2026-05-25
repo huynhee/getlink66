@@ -583,6 +583,65 @@ export async function listSystemLogs(req, res, next) {
   }
 }
 
+export async function listGetlinkRecords(req, res, next) {
+  try {
+    const requestedLimit = Number(req.query.limit || 200);
+    const limit = Number.isInteger(requestedLimit)
+      ? Math.min(Math.max(requestedLimit, 1), 500)
+      : 200;
+    const records = await Getlink.find()
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate("userId", "name email avatar credit role");
+    const productIds = [
+      ...new Set(records.map((item) => String(item.productId || "")).filter(Boolean)),
+    ];
+    const productCaches = productIds.length
+      ? await ProductCache.find({ productId: { $in: productIds } }).select(
+          "productId title creditCost priceKnown",
+        )
+      : [];
+    const cacheByProductId = new Map(
+      productCaches.map((item) => [String(item.productId), item]),
+    );
+
+    const getlinks = records.map((item) => {
+      const doc = item.toObject ? item.toObject() : item;
+      const user = doc.userId && typeof doc.userId === "object" ? doc.userId : null;
+      const creditUsed = Number(doc.creditUsed || 0);
+      const cache = cacheByProductId.get(String(doc.productId || ""));
+      const modelPrice = Number(cache?.creditCost || creditUsed || 0);
+      return {
+        _id: doc._id,
+        user: user
+          ? {
+              _id: user._id,
+              name: user.name || "",
+              email: user.email || "",
+              avatar: user.avatar || "",
+              credit: Number(user.credit || 0),
+              role: user.role || "user",
+            }
+          : null,
+        userId: user?._id || doc.userId,
+        productId: doc.productId,
+        title: doc.title || cache?.title || "",
+        imageUrl: doc.imageUrl || "",
+        sourceUrl: doc.sourceUrl || "",
+        modelPrice,
+        priceKnown: Boolean(cache?.priceKnown || modelPrice > 1),
+        creditDeducted: creditUsed,
+        redownloadCount: Number(doc.redownloadCount || 0),
+        createdAt: doc.createdAt,
+      };
+    });
+
+    res.json({ getlinks });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function deleteCookie(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) {

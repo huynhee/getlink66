@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Ban, BarChart3, Check, Cookie, FileText, Gift, GripVertical, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, ShieldAlert, UserPlus, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, Ban, BarChart3, Check, Cookie, FileDown, FileText, Gift, GripVertical, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, ShieldAlert, UserPlus, Users, X } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
@@ -115,6 +115,7 @@ export default function Admin({ user, language = "vi" }) {
   const [cookieRecords, setCookieRecords] = useState([]);
   const [cookiePool, setCookiePool] = useState(null);
   const [systemLogs, setSystemLogs] = useState([]);
+  const [getlinkRecords, setGetlinkRecords] = useState([]);
   const [cookie, setCookie] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -136,7 +137,7 @@ export default function Admin({ user, language = "vi" }) {
   const [twoFactorMsg, setTwoFactorMsg] = useState("");
 
   async function loadData() {
-    const [oRes, uRes, pRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
+    const [oRes, uRes, pRes, vRes, cRes, sRes, lRes, gRes, aRes, nRes, rRes, settingRes] = await Promise.all([
       api(`/api/admin/overview?period=${revenuePeriod}`),
       api("/api/admin/users"),
       api("/api/admin/topup-packages"),
@@ -144,6 +145,7 @@ export default function Admin({ user, language = "vi" }) {
       api("/api/admin/cookies"),
       api("/api/admin/cookies/status"),
       api("/api/admin/system-logs"),
+      api("/api/admin/getlinks"),
       api("/api/admin/articles"),
       api("/api/admin/notifications"),
       api("/api/admin/referrals"),
@@ -156,6 +158,7 @@ export default function Admin({ user, language = "vi" }) {
     setCookieRecords(cRes.cookies || []);
     setCookiePool(sRes.pool || null);
     setSystemLogs(lRes.logs || []);
+    setGetlinkRecords(gRes.getlinks || []);
     setArticles(aRes.articles || []);
     setNotifications(nRes.notifications || []);
     setReferrals(rRes.referrals || []);
@@ -556,6 +559,7 @@ export default function Admin({ user, language = "vi" }) {
     { key: "articles", label: t.adminArticles || l("Bài viết", "Articles"), icon: FileText, count: articles.length },
     { key: "threed66", label: l("Cài đặt 3D66", "3D66 settings"), icon: Activity },
     { key: "cookie", label: t.adminCookie, icon: Cookie },
+    { key: "getlinks", label: l("Lịch sử getlink", "Getlink history"), icon: FileDown, count: getlinkRecords.length },
     { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
     { key: "users", label: t.adminUsers, icon: Users, count: users.length },
     { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert }
@@ -1471,6 +1475,47 @@ export default function Admin({ user, language = "vi" }) {
             {!systemLogs.length && (
               <p className="muted" style={{ textAlign: "center", padding: 16 }}>
                 {l("Chưa có log lỗi.", "No error logs yet.")}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {activeSection === "getlinks" && (
+        <section className="panel">
+          <h2><FileDown size={20} /> {l("Lịch sử getlink đã trừ credit", "Charged getlink history")}</h2>
+          <p className="muted" style={{ marginTop: 8 }}>
+            {l("Hiển thị các lần user tạo link tải và số credit đã trừ. Tải lại miễn phí không tạo thêm dòng mới ở bảng này.", "Shows user getlink requests and deducted credits. Free redownloads do not create new rows here.")}
+          </p>
+          <div className="table getlinkAuditTable" style={{ marginTop: 16 }}>
+            {getlinkRecords.map((item) => (
+              <div className="tableRow" key={item._id}>
+                <div className="getlinkAuditUser">
+                  <strong>{item.user?.email || l("Không rõ user", "Unknown user")}</strong>
+                  <span>{item.user?.name || item.userId || ""}</span>
+                </div>
+                <div className="getlinkAuditModel">
+                  <strong>{item.productId || "3D66"}</strong>
+                  <span>{item.title || l("Không có tên model", "No model title")}</span>
+                  {item.sourceUrl && (
+                    <a href={item.sourceUrl} target="_blank" rel="noreferrer">
+                      {l("Mở link gốc", "Open source")}
+                    </a>
+                  )}
+                </div>
+                <span className={`badge ${Number(item.modelPrice || 0) !== Number(item.creditDeducted || 0) ? "error" : ""}`}>
+                  {l("Giá", "Price")}: {Number(item.modelPrice || 0).toLocaleString(locale)} credit{!item.priceKnown ? ` (${l("chưa chắc", "unconfirmed")})` : ""}
+                </span>
+                <strong>{l("Đã trừ", "Deducted")}: {Number(item.creditDeducted || 0).toLocaleString(locale)} credit</strong>
+                <span className="muted">
+                  {l("Tải lại", "Redownloads")}: {Number(item.redownloadCount || 0).toLocaleString(locale)}
+                </span>
+                <time>{new Date(item.createdAt).toLocaleString(locale)}</time>
+              </div>
+            ))}
+            {!getlinkRecords.length && (
+              <p className="muted" style={{ textAlign: "center", padding: 16 }}>
+                {l("Chưa có lịch sử getlink.", "No getlink history yet.")}
               </p>
             )}
           </div>

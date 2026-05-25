@@ -2639,6 +2639,32 @@ label {
   grid-template-columns: auto minmax(220px, 1fr) minmax(120px, auto) auto auto;
 }
 
+.getlinkAuditTable .tableRow {
+  grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.2fr) auto auto auto auto;
+}
+
+.getlinkAuditUser,
+.getlinkAuditModel {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.getlinkAuditUser strong,
+.getlinkAuditUser span,
+.getlinkAuditModel strong,
+.getlinkAuditModel span,
+.getlinkAuditModel a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.getlinkAuditModel a {
+  color: var(--neon-green);
+  font-size: 12px;
+}
+
 .referralTable .tableRow {
   grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto auto auto;
 }

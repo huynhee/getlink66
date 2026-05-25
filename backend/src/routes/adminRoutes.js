@@ -14,6 +14,7 @@ import {
   cookiePoolStatus,
   testCookie,
   listCookies,
+  listGetlinkRecords,
   listSystemLogs,
   deleteCookie,
   testSavedCookie,
@@ -52,6 +53,7 @@ router.post("/users/:id/unban", adminWriteLimit, auditAdmin("UNBAN_USER"), unban
 router.get("/referrals", listReferrals);
 router.get("/audit-logs", listAuditLogs);
 router.get("/system-logs", listSystemLogs);
+router.get("/getlinks", listGetlinkRecords);
 router.post("/add-credit", adminWriteLimit, auditAdmin("ADD_CREDIT"), adminAddCredit);
 router.post("/set-credit", adminWriteLimit, auditAdmin("SET_CREDIT"), adminSetCredit);
 router.get("/cookies", listCookies);
