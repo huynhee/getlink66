@@ -312,11 +312,14 @@ function contentDispositionFrom3D66(upstreamDisposition = "", history) {
 
 function isFallbackMetadata(metadata = {}, inputProductId = "") {
   const title = String(metadata.title || "").trim();
+  const creditCost = Number(metadata.creditCost || 0);
+  const priceKnown = Boolean(metadata.priceKnown || creditCost > 1);
   return Boolean(
     !title ||
     title === "3D66 model" ||
     title === inputProductId ||
-    Number(metadata.creditCost || 0) <= 1,
+    creditCost <= 0 ||
+    (!priceKnown && creditCost <= 1),
   );
 }
 
@@ -324,6 +327,7 @@ async function upsertProductCache(payload, preferredCache = null) {
   const normalizedPayload = {
     ...payload,
     creditCost: normalizeDownloadCreditCost(payload.creditCost, 1),
+    priceKnown: Boolean(payload.priceKnown || Number(payload.creditCost || 0) > 1),
   };
 
   if (
@@ -402,8 +406,9 @@ async function resolveProductCache(productId, url) {
 
   if (!productLocks.has(productId)) {
     if (productLocks.size >= MAX_PRODUCT_LOCKS) {
-      const firstKey = productLocks.keys().next().value;
-      productLocks.delete(firstKey);
+      const error = new Error("Too many 3D66 product tasks are running. Please try again shortly.");
+      error.status = 429;
+      throw error;
     }
     productLocks.set(
       productId,
@@ -430,6 +435,11 @@ async function resolveProductCache(productId, url) {
           metadata.creditCost || staleCache?.creditCost,
           1,
         );
+        const priceKnown = Boolean(
+          metadata.priceKnown ||
+            staleCache?.priceKnown ||
+            Number(metadata.creditCost || staleCache?.creditCost || 0) > 1,
+        );
         const cachePayload = {
           productId: cacheProductId,
           fileUrl,
@@ -437,6 +447,7 @@ async function resolveProductCache(productId, url) {
           title: metadata.title || staleCache?.title,
           imageUrl: metadata.imageUrl || staleCache?.imageUrl,
           creditCost,
+          priceKnown,
           isPurchased: true,
         };
 
@@ -479,8 +490,9 @@ export async function previewGetlink(req, res, next) {
       cachedTitle !== productId,
     );
     const hasReliableCachedPrice = Number(cache?.creditCost || 0) > 1;
+    const hasKnownCachedPrice = Boolean(cache?.priceKnown || hasReliableCachedPrice);
     const hasPreviewMetadata = Boolean(
-      hasRealCachedTitle && hasReliableCachedPrice,
+      hasRealCachedTitle && hasKnownCachedPrice,
     );
     if (hasPreviewMetadata) {
       return res.json({
@@ -512,6 +524,7 @@ export async function previewGetlink(req, res, next) {
       title: preview.title,
       imageUrl: preview.imageUrl,
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
+      priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
     };
     await upsertProductCache(previewPayload, cache);
     res.json({
@@ -637,6 +650,7 @@ export async function getLink(req, res, next) {
         title: preview.title,
         imageUrl: preview.imageUrl,
         creditCost: expectedCreditCost,
+        priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
       };
       effectiveProductId = previewPayload.productId;
       logProductId = effectiveProductId;

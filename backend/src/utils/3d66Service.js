@@ -481,6 +481,17 @@ function extractCreditCostFromHtml(html = "") {
   return Number.isFinite(number) && number > 0 ? number : 1;
 }
 
+function hasKnownCreditCostInHtml(html = "") {
+  const detailData = parseDetailData(html);
+  const detailRes = detailResFromData(detailData);
+  const detailPrice = Number(detailRes.res_price || detailRes.origin_price || detailRes.coupon_after_price);
+  if (Number.isFinite(detailPrice) && detailPrice > 0) return true;
+
+  return /orginal-price|original-price|download-price|res_price|coupon_after_price|download_price|need_xzb|xuan_dian|çŽ„ç‚¹|ç‚¹/i.test(
+    decodeHtml(html),
+  );
+}
+
 function parseModelMetadata(html, pageUrl, fields = {}) {
   const detailData = parseDetailData(html);
   const detailRes = detailResFromData(detailData);
@@ -563,6 +574,7 @@ function parseModelMetadata(html, pageUrl, fields = {}) {
     title: title || fields.llId || "3D66 model",
     imageUrl: absoluteUrl(rawImage, pageUrl),
     creditCost: extractCreditCostFromHtml(html),
+    priceKnown: hasKnownCreditCostInHtml(html),
     sourceUrl: pageUrl
   };
 }
@@ -805,12 +817,16 @@ function shouldUseBrowserPage(html = "", metadata = {}, fields = {}, requireDown
   if (requireDownloadFields && (!fields.llId || !fields.token || !fields.upTime)) return true;
 
   const title = String(metadata.title || "").trim();
-  return Boolean(!title || title === "3D66 model" || Number(metadata.creditCost || 0) <= 1);
+  const creditCost = Number(metadata.creditCost || 0);
+  const priceKnown = Boolean(metadata.priceKnown || creditCost > 1);
+  return Boolean(!title || title === "3D66 model" || creditCost <= 0 || (!priceKnown && creditCost <= 1));
 }
 
 function isWeakMetadata(metadata = {}) {
   const title = String(metadata.title || "").trim();
-  return Boolean(!title || title === "3D66 model" || Number(metadata.creditCost || 0) <= 1);
+  const creditCost = Number(metadata.creditCost || 0);
+  const priceKnown = Boolean(metadata.priceKnown || creditCost > 1);
+  return Boolean(!title || title === "3D66 model" || creditCost <= 0 || (!priceKnown && creditCost <= 1));
 }
 
 async function fetch3D66PageWithBrowserFallback(url, cookieValue, originalError = null) {
@@ -871,6 +887,7 @@ function mergeBrowserMetadata(metadata = {}, browserMetadata = {}, fields = {}) 
     title: browserMetadata.title || metadata.title || fields.llId || "3D66 model",
     imageUrl: browserMetadata.imageUrl || metadata.imageUrl || "",
     creditCost: browserCost > 0 ? browserCost : metadata.creditCost || 1,
+    priceKnown: Boolean(browserMetadata.priceKnown || metadata.priceKnown || browserCost > 1),
     sourceUrl: browserMetadata.sourceUrl || metadata.sourceUrl || ""
   };
 }
@@ -954,6 +971,7 @@ function mergeDownloadPopMetadata(metadata = {}, popData = {}, pageUrl = "", fie
     title: resInfo.res_name || metadata.title || fields.llId || "3D66 model",
     imageUrl: absoluteUrl(resInfo.img, pageUrl) || metadata.imageUrl || "",
     creditCost: popCost > 0 ? popCost : metadata.creditCost || 1,
+    priceKnown: Boolean(popCost > 0 || metadata.priceKnown),
     sourceUrl: metadata.sourceUrl || pageUrl
   };
 }
@@ -995,6 +1013,7 @@ async function previewFromDownloadPopOnly(url, cookieValue, cookies) {
     title: "3D66 model",
     imageUrl: "",
     creditCost: 1,
+    priceKnown: false,
     sourceUrl: url
   };
   const enriched = await enrichFromDownloadPop(fields, metadata, url, cookieValue, context);
@@ -1115,6 +1134,7 @@ export async function fetch3D66Preview(url, cookieValue) {
       title: "Mock 3D66 model",
       imageUrl: "",
       creditCost: 1,
+      priceKnown: true,
       sourceUrl: url
     };
   }
@@ -1289,7 +1309,8 @@ export async function fetchFrom3D66(url, cookieValue) {
       sourceUrl: url,
       title: "Mock 3D66 model",
       imageUrl: "",
-      creditCost: 1
+      creditCost: 1,
+      priceKnown: true
     };
   }
 
@@ -1380,6 +1401,11 @@ export async function fetchFrom3D66(url, cookieValue) {
     sourceUrl: pageUrl,
     title: metadata.title,
     imageUrl: metadata.imageUrl,
-    creditCost: download.creditCost || metadata.creditCost
+    creditCost: download.creditCost || metadata.creditCost,
+    priceKnown: Boolean(
+      download.priceKnown ||
+        metadata.priceKnown ||
+        Number(download.creditCost || metadata.creditCost || 0) > 1,
+    )
   };
 }

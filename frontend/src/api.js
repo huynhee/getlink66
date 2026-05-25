@@ -24,24 +24,33 @@ async function getCsrfToken() {
 
 export async function api(path, options = {}) {
   const method = options.method || "GET";
-  const headers = {
-    "Content-Type": "application/json",
-    ...(options.headers || {})
-  };
+  const mutating = isMutatingMethod(method);
 
-  if (isMutatingMethod(method)) {
-    headers["x-csrf-token"] = await getCsrfToken();
+  async function send() {
+    const headers = {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    };
+
+    if (mutating) {
+      headers["x-csrf-token"] = await getCsrfToken();
+    }
+
+    const response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      credentials: "include",
+      headers
+    });
+    const data = await response.json().catch(() => ({}));
+    return { response, data };
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    credentials: "include",
-    headers
-  });
-
-  const data = await response.json().catch(() => ({}));
+  let { response, data } = await send();
   if (response.status === 403 && data.message === "Invalid CSRF token") {
     csrfToken = "";
+    if (mutating) {
+      ({ response, data } = await send());
+    }
   }
   if (!response.ok) {
     throw new Error(data.message || "Request failed");

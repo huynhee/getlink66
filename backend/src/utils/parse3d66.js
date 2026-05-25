@@ -17,9 +17,10 @@ export function extractProductId(url) {
 
   const pathParts = parsed.pathname.split("/").filter(Boolean);
   const lastPart = pathParts[pathParts.length - 1] || "";
-  const numericMatch = parsed.pathname.match(/(\d{4,})/);
+  const numericMatches = [...parsed.pathname.matchAll(/(\d{4,})/g)].map((match) => match[1]);
+  const numericId = numericMatches.sort((a, b) => b.length - a.length)[0] || "";
   const slugMatch = lastPart.match(/[a-zA-Z0-9_-]+/);
-  const productId = parsed.searchParams.get("sof") || numericMatch?.[1] || parsed.searchParams.get("id") || slugMatch?.[0];
+  const productId = parsed.searchParams.get("sof") || parsed.searchParams.get("id") || numericId || slugMatch?.[0];
 
   if (!productId) {
     throw Object.assign(new Error("Cannot extract product id from URL"), { status: 400 });

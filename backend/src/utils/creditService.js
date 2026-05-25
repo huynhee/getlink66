@@ -1,10 +1,10 @@
 import User from "../models/User.js";
 
-export async function deductCredit(userId, amount = 1) {
+export async function deductCredit(userId, amount = 1, options = {}) {
   const user = await User.findOneAndUpdate(
     { _id: userId, credit: { $gte: amount } },
     { $inc: { credit: -amount } },
-    { new: true }
+    { new: true, ...options }
   );
 
   if (!user) {
@@ -14,8 +14,8 @@ export async function deductCredit(userId, amount = 1) {
   return user;
 }
 
-export async function addCredit(userId, amount) {
-  const user = await User.findByIdAndUpdate(userId, { $inc: { credit: amount } }, { new: true });
+export async function addCredit(userId, amount, options = {}) {
+  const user = await User.findByIdAndUpdate(userId, { $inc: { credit: amount } }, { new: true, ...options });
   if (!user) {
     throw Object.assign(new Error("User not found"), { status: 404 });
   }

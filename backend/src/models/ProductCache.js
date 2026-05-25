@@ -9,6 +9,7 @@ const productCacheSchema = new mongoose.Schema(
     title: String,
     imageUrl: String,
     creditCost: { type: Number, default: 1 },
+    priceKnown: { type: Boolean, default: false },
     isPurchased: { type: Boolean, default: true }
   },
   { timestamps: true }

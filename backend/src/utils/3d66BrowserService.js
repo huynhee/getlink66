@@ -383,6 +383,7 @@ function evaluateMetadata() {
   const detailPrice = toNumber(res.res_price);
   const discountPrice = toNumber(res.coupon_after_price);
   const creditCost = domPrice || detailPrice || discountPrice || 1;
+  const priceKnown = Boolean(domPrice || detailPrice || discountPrice);
 
   const title =
     res.res_name_txt ||
@@ -424,6 +425,7 @@ function evaluateMetadata() {
     title: title.trim(),
     imageUrl: absolute(imageUrl),
     creditCost,
+    priceKnown,
     sourceUrl: location.href,
     dynamicFields: {
       llId:

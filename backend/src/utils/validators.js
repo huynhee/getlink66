@@ -55,6 +55,9 @@ export function sanitizeHtml(value, maxLength = 2000) {
   if (typeof value !== "string") return "";
   return value
     .slice(0, maxLength)
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
     .replace(/on\w+\s*=\s*["'][^"']*["']/gi, "")
@@ -62,9 +65,6 @@ export function sanitizeHtml(value, maxLength = 2000) {
     .replace(/javascript\s*:/gi, "")
     .replace(/data\s*:\s*text\/html/gi, "")
     .replace(/<\/?[^>]+(>|$)/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
     .trim();
 }
 
