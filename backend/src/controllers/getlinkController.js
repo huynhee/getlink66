@@ -664,7 +664,13 @@ export async function getLink(req, res, next) {
       await ProductCache.exists({ productId, fileUrl: { $ne: "" } }),
     );
     const cache = await resolveProductCache(productId, url);
-    const creditCost = normalizeDownloadCreditCost(cache.creditCost, 1);
+    const creditCost = normalizeDownloadCreditCost(
+      Math.max(Number(cache.creditCost || 0), Number(expectedCreditCost || 0)),
+      1,
+    );
+    if (Number(cache.creditCost || 0) !== creditCost) {
+      await ProductCache.findByIdAndUpdate(cache._id, { creditCost });
+    }
 
     // Atomic deduct: no stale pre-check, deductCredit uses $gte atomically
     let user;
