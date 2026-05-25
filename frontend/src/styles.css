@@ -31,9 +31,10 @@
   --error: #EF4444;
 
   /* Typography */
-  --font-display: "Inter", -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
-  --font-body: "DM Sans", sans-serif;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: var(--font-sans);
+  --font-mono: "Cascadia Code", "Consolas", "SFMono-Regular", monospace;
+  --font-body: var(--font-sans);
 
   /* Spacing */
   --space-2: 4px;
