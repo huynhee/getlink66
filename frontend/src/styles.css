@@ -2570,6 +2570,29 @@ label {
   flex-wrap: wrap;
 }
 
+.historyPanelHeader,
+.historyHeaderActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+.historyPanelHeader h2 {
+  margin: 0;
+}
+
+.historyHeaderActions {
+  justify-content: flex-end;
+  flex: 1 1 360px;
+}
+
+.historySupportButton {
+  text-decoration: none;
+  white-space: nowrap;
+}
+
 .historyFilterBar {
   display: flex;
   gap: var(--space-4);

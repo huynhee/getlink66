@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowRightLeft, Download, FileDown, Gift, Lock } from "lucide-react";
+import { ArrowRightLeft, Download, FileDown, Gift, LifeBuoy, Lock } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
+
+const FACEBOOK_GROUP_URL = "https://www.facebook.com/groups/960223243551548";
 
 function compactRemainingLabel(expiresAt, language) {
   const diff = new Date(expiresAt).getTime() - Date.now();
@@ -164,6 +166,11 @@ export default function History({ language = "vi" }) {
     <section className="panel">
       <div className="historyHeader">
         <h2>{language === "vi" ? "Lịch sử" : "History"}</h2>
+        <div className="historyHeaderActions">
+          <a className="smallButton historySupportButton" href={FACEBOOK_GROUP_URL} target="_blank" rel="noreferrer">
+            <LifeBuoy size={14} />
+            {language === "vi" ? "Hỗ trợ" : "Support"}
+          </a>
         <div className="historyFilterBar" role="tablist" aria-label="History filter">
           {[
             ["all", language === "vi" ? "Tất cả" : "All"],
@@ -180,6 +187,7 @@ export default function History({ language = "vi" }) {
               {label}
             </button>
           ))}
+        </div>
         </div>
       </div>
 

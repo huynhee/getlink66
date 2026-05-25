@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import GetlinkBox from "../components/GetlinkBox.jsx";
-import { Coins, FileDown, Download, Lock, ArrowRightLeft } from "lucide-react";
+import { Coins, FileDown, Download, LifeBuoy, Lock, ArrowRightLeft } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
+
+const FACEBOOK_GROUP_URL = "https://www.facebook.com/groups/960223243551548";
 
 function compactRemainingLabel(expiresAt, language) {
   const diff = new Date(expiresAt).getTime() - Date.now();
@@ -91,10 +93,16 @@ export default function Home({ user, onUserChange, language = "vi" }) {
 
       <div className="dashboardHistoryGrid">
         <section className="panel">
-          <h2 style={{ fontSize: 18 }}>
-            <FileDown size={18} color="var(--neon-magenta)" />
-            {t.getlinkHistory}
-          </h2>
+          <div className="historyPanelHeader">
+            <h2 style={{ fontSize: 18 }}>
+              <FileDown size={18} color="var(--neon-magenta)" />
+              {t.getlinkHistory}
+            </h2>
+            <a className="smallButton historySupportButton" href={FACEBOOK_GROUP_URL} target="_blank" rel="noreferrer">
+              <LifeBuoy size={14} />
+              {language === "vi" ? "Hỗ trợ" : "Support"}
+            </a>
+          </div>
           <div className="table compactHistoryTable">
             {getlinkHistory.map((item) => (
               <div className="tableRow" key={item._id}>
