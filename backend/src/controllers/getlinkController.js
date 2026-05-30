@@ -1005,3 +1005,23 @@ export async function getlinkHistory(req, res, next) {
     next(error);
   }
 }
+    }
+    next(error);
+  } finally {
+    if (downloadSlot?.release) downloadSlot.release();
+  }
+}
+
+export async function getlinkHistory(req, res, next) {
+  try {
+    const history = await Getlink.find({ userId: req.user._id })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+    res.json({
+      history: history.map((item) => publicHistoryItem(req, item)),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
