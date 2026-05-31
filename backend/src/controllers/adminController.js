@@ -28,6 +28,7 @@ const MAX_VOUCHER_DISCOUNT_PERCENT = Number(
   process.env.MAX_VOUCHER_DISCOUNT_PERCENT || 90,
 );
 const ADMIN_USER_PAGE_SIZE = 10;
+const ADMIN_GETLINK_PAGE_SIZE = 10;
 
 function normalizedSearch(value = "") {
   return String(value || "").trim().toLowerCase().slice(0, 120);
@@ -748,13 +749,15 @@ export async function listSystemLogs(req, res, next) {
 
 export async function listGetlinkRecords(req, res, next) {
   try {
-    const requestedLimit = Number(req.query.limit || 200);
-    const limit = Number.isInteger(requestedLimit)
-      ? Math.min(Math.max(requestedLimit, 1), 500)
-      : 200;
     const search = normalizedSearch(req.query.search);
+    const requestedPage = Number(req.query.page || 1);
+    const page = Number.isInteger(requestedPage) && requestedPage > 0
+      ? requestedPage
+      : 1;
     let records;
     let total;
+    let safePage;
+    let totalPages;
     if (!isMemoryDb()) {
       const regex = search ? new RegExp(escapedRegex(search), "i") : null;
       const matchedUsers = regex
@@ -771,19 +774,19 @@ export async function listGetlinkRecords(req, res, next) {
             ],
           }
         : {};
-      [records, total] = await Promise.all([
-        Getlink.find(query)
-          .sort({ createdAt: -1 })
-          .limit(limit)
-          .populate("userId", "name email avatar credit role"),
-        Getlink.countDocuments(query),
-      ]);
+      total = await Getlink.countDocuments(query);
+      totalPages = Math.max(1, Math.ceil(total / ADMIN_GETLINK_PAGE_SIZE));
+      safePage = Math.min(page, totalPages);
+      records = await Getlink.find(query)
+        .sort({ createdAt: -1 })
+        .skip((safePage - 1) * ADMIN_GETLINK_PAGE_SIZE)
+        .limit(ADMIN_GETLINK_PAGE_SIZE)
+        .populate("userId", "name email avatar credit role");
     } else {
       const candidates = await Getlink.find()
         .sort({ createdAt: -1 })
-        .limit(search ? 2000 : limit)
         .populate("userId", "name email avatar credit role");
-      records = search
+      const filteredRecords = search
         ? candidates
             .filter((item) => {
               const user = item.userId && typeof item.userId === "object" ? item.userId : null;
@@ -795,9 +798,12 @@ export async function listGetlinkRecords(req, res, next) {
                 item.title,
               ].some((value) => String(value || "").toLowerCase().includes(search));
             })
-            .slice(0, limit)
         : candidates;
-      total = records.length;
+      total = filteredRecords.length;
+      totalPages = Math.max(1, Math.ceil(total / ADMIN_GETLINK_PAGE_SIZE));
+      safePage = Math.min(page, totalPages);
+      const start = (safePage - 1) * ADMIN_GETLINK_PAGE_SIZE;
+      records = filteredRecords.slice(start, start + ADMIN_GETLINK_PAGE_SIZE);
     }
     const productIds = [
       ...new Set(records.map((item) => String(item.productId || "")).filter(Boolean)),
@@ -842,7 +848,15 @@ export async function listGetlinkRecords(req, res, next) {
       };
     });
 
-    res.json({ getlinks, total });
+    res.json({
+      getlinks,
+      pagination: {
+        page: safePage,
+        pageSize: ADMIN_GETLINK_PAGE_SIZE,
+        total,
+        totalPages,
+      },
+    });
   } catch (error) {
     next(error);
   }

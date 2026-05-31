@@ -117,7 +117,8 @@ export default function Admin({ user, language = "vi" }) {
   const [systemLogs, setSystemLogs] = useState([]);
   const [getlinkRecords, setGetlinkRecords] = useState([]);
   const [getlinkSearch, setGetlinkSearch] = useState("");
-  const [getlinkRecordTotal, setGetlinkRecordTotal] = useState(0);
+  const [getlinkPage, setGetlinkPage] = useState(1);
+  const [getlinkPagination, setGetlinkPagination] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
   const [userSearch, setUserSearch] = useState("");
   const [userSort, setUserSort] = useState("created-desc");
   const [userPage, setUserPage] = useState(1);
@@ -184,11 +185,13 @@ export default function Admin({ user, language = "vi" }) {
   }
 
   async function loadGetlinks() {
-    const query = new URLSearchParams({ limit: "200" });
+    const query = new URLSearchParams({ page: String(getlinkPage) });
     if (getlinkSearch.trim()) query.set("search", getlinkSearch.trim());
     const data = await api(`/api/admin/getlinks?${query.toString()}`);
     setGetlinkRecords(data.getlinks || []);
-    setGetlinkRecordTotal(Number(data.total || 0));
+    const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
+    setGetlinkPagination(pagination);
+    if (pagination.page !== getlinkPage) setGetlinkPage(pagination.page);
   }
 
   useEffect(() => {
@@ -207,7 +210,7 @@ export default function Admin({ user, language = "vi" }) {
       loadGetlinks().catch(console.error);
     }, 250);
     return () => clearTimeout(timer);
-  }, [getlinkSearch]);
+  }, [getlinkSearch, getlinkPage]);
 
   function fillPackageForm(pack) {
     setEditingPackageId(pack?._id || "");
@@ -1559,12 +1562,15 @@ export default function Admin({ user, language = "vi" }) {
               <Search size={15} />
               <input
                 value={getlinkSearch}
-                onChange={(event) => setGetlinkSearch(event.target.value)}
+                onChange={(event) => {
+                  setGetlinkSearch(event.target.value);
+                  setGetlinkPage(1);
+                }}
                 placeholder={l("Tìm email, ID model hoặc tên model", "Search email, model ID, or model title")}
               />
             </label>
             <span className="muted">
-              {getlinkRecordTotal} {l("dòng", "rows")}
+              {getlinkPagination.total} {l("dòng", "rows")}
             </span>
           </div>
           <div className="table getlinkAuditTable" style={{ marginTop: 16 }}>
@@ -1598,6 +1604,29 @@ export default function Admin({ user, language = "vi" }) {
                 {l("Không có lịch sử getlink phù hợp.", "No matching getlink history.")}
               </p>
             )}
+          </div>
+          <div className="adminPagination">
+            <button
+              type="button"
+              className="smallButton"
+              disabled={getlinkPagination.page <= 1}
+              onClick={() => setGetlinkPage((page) => Math.max(1, page - 1))}
+              title={l("Trang trước", "Previous page")}
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <span>
+              {l("Trang", "Page")} {getlinkPagination.page}/{getlinkPagination.totalPages} - {getlinkPagination.total} {l("dòng", "rows")}
+            </span>
+            <button
+              type="button"
+              className="smallButton"
+              disabled={getlinkPagination.page >= getlinkPagination.totalPages}
+              onClick={() => setGetlinkPage((page) => Math.min(getlinkPagination.totalPages, page + 1))}
+              title={l("Trang sau", "Next page")}
+            >
+              <ChevronRight size={15} />
+            </button>
           </div>
         </section>
       )}
