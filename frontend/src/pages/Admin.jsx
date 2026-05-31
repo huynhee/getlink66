@@ -628,7 +628,7 @@ export default function Admin({ user, language = "vi" }) {
     { key: "cookie", label: t.adminCookie, icon: Cookie },
     { key: "getlinks", label: l("Lịch sử getlink", "Getlink history"), icon: FileDown, count: getlinkRecords.length },
     { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
-    { key: "users", label: t.adminUsers, icon: Users, count: users.length },
+    { key: "users", label: t.adminUsers, icon: Users, count: userPagination.total },
     { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert }
   ];
   const threed66RuntimeSettings = [
