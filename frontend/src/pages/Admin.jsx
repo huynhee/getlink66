@@ -629,7 +629,7 @@ export default function Admin({ user, language = "vi" }) {
     { key: "articles", label: t.adminArticles || l("Bài viết", "Articles"), icon: FileText, count: articles.length },
     { key: "threed66", label: l("Cài đặt 3D66", "3D66 settings"), icon: Activity },
     { key: "cookie", label: t.adminCookie, icon: Cookie },
-    { key: "getlinks", label: l("Lịch sử getlink", "Getlink history"), icon: FileDown, count: getlinkRecords.length },
+    { key: "getlinks", label: l("Lịch sử getlink", "Getlink history"), icon: FileDown, count: getlinkPagination.total },
     { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
     { key: "users", label: t.adminUsers, icon: Users, count: userPagination.total },
     { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert }
