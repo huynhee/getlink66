@@ -8,6 +8,7 @@ import {
   updateVoucher,
   listVouchers,
   deleteVoucher,
+  getUserCreditHistory,
   listUsers, 
   saveCookie,
   unbanUser,
@@ -48,6 +49,7 @@ const adminWriteLimit = createRateLimit({ keyPrefix: "admin-write", windowMs: 60
 router.use(requireAuth, adminOnly);
 router.get("/overview", getOverview);
 router.get("/users", listUsers);
+router.get("/users/:id/credit-history", getUserCreditHistory);
 router.post("/users/:id/ban", adminWriteLimit, auditAdmin("BAN_USER"), banUser);
 router.post("/users/:id/unban", adminWriteLimit, auditAdmin("UNBAN_USER"), unbanUser);
 router.get("/referrals", listReferrals);

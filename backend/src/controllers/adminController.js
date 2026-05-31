@@ -7,6 +7,7 @@ import Getlink from "../models/Getlink.js";
 import ProductCache from "../models/ProductCache.js";
 import SystemLog from "../models/SystemLog.js";
 import Referral from "../models/Referral.js";
+import { isMemoryDb } from "../config/memoryStore.js";
 import { addCredit } from "../utils/creditService.js";
 import { validate3D66Cookie } from "../utils/3d66Service.js";
 import { get3D66CookiePoolStatus } from "../utils/3d66CookiePool.js";
@@ -26,6 +27,41 @@ const MAX_STORED_CREDIT = Number(process.env.MAX_STORED_CREDIT || 10000000);
 const MAX_VOUCHER_DISCOUNT_PERCENT = Number(
   process.env.MAX_VOUCHER_DISCOUNT_PERCENT || 90,
 );
+const ADMIN_USER_PAGE_SIZE = 10;
+
+function normalizedSearch(value = "") {
+  return String(value || "").trim().toLowerCase().slice(0, 120);
+}
+
+function escapedRegex(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function compareText(a, b) {
+  return String(a || "").localeCompare(String(b || ""), "vi", {
+    sensitivity: "base",
+  });
+}
+
+function compareAdminUsers(a, b, sort = "created-desc") {
+  if (sort === "created-asc") {
+    return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+  }
+  if (sort === "credit-desc") return Number(b.credit || 0) - Number(a.credit || 0);
+  if (sort === "credit-asc") return Number(a.credit || 0) - Number(b.credit || 0);
+  if (sort === "email-asc") return compareText(a.email, b.email);
+  if (sort === "email-desc") return compareText(b.email, a.email);
+  return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+}
+
+function adminUserSort(sort = "created-desc") {
+  if (sort === "created-asc") return { createdAt: 1 };
+  if (sort === "credit-desc") return { credit: -1 };
+  if (sort === "credit-asc") return { credit: 1 };
+  if (sort === "email-asc") return { email: 1 };
+  if (sort === "email-desc") return { email: -1 };
+  return { createdAt: -1 };
+}
 
 function normalizePackagePayload(body = {}) {
   const normalizedFeatures = Array.isArray(body.features)
@@ -294,10 +330,137 @@ function buildRevenueChart(approvedTopups, period = "day") {
   return revenueChart;
 }
 
-export async function listUsers(_req, res, next) {
+export async function listUsers(req, res, next) {
   try {
-    const users = await User.find().sort({ createdAt: -1 }).limit(200);
-    res.json({ users });
+    const search = normalizedSearch(req.query.search);
+    const sort = String(req.query.sort || "created-desc");
+    const requestedPage = Number(req.query.page || 1);
+    const page = Number.isInteger(requestedPage) && requestedPage > 0
+      ? requestedPage
+      : 1;
+    if (!isMemoryDb()) {
+      const regex = search ? new RegExp(escapedRegex(search), "i") : null;
+      const query = regex
+        ? { $or: [{ email: regex }, { name: regex }] }
+        : {};
+      const total = await User.countDocuments(query);
+      const totalPages = Math.max(1, Math.ceil(total / ADMIN_USER_PAGE_SIZE));
+      const safePage = Math.min(page, totalPages);
+      const users = await User.find(query)
+        .sort(adminUserSort(sort))
+        .skip((safePage - 1) * ADMIN_USER_PAGE_SIZE)
+        .limit(ADMIN_USER_PAGE_SIZE);
+      return res.json({
+        users,
+        pagination: {
+          page: safePage,
+          pageSize: ADMIN_USER_PAGE_SIZE,
+          total,
+          totalPages,
+        },
+      });
+    }
+
+    const allUsers = await User.find();
+    const filteredUsers = allUsers
+      .filter((user) => {
+        if (!search) return true;
+        return [user.email, user.name, user._id]
+          .some((value) => String(value || "").toLowerCase().includes(search));
+      })
+      .sort((a, b) => compareAdminUsers(a, b, sort));
+    const total = filteredUsers.length;
+    const totalPages = Math.max(1, Math.ceil(total / ADMIN_USER_PAGE_SIZE));
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * ADMIN_USER_PAGE_SIZE;
+    const users = filteredUsers.slice(start, start + ADMIN_USER_PAGE_SIZE);
+
+    res.json({
+      users,
+      pagination: {
+        page: safePage,
+        pageSize: ADMIN_USER_PAGE_SIZE,
+        total,
+        totalPages,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getUserCreditHistory(req, res, next) {
+  try {
+    if (!isSafeId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const [topups, getlinks, referrals] = await Promise.all([
+      Topup.find({ userId: user._id, status: "approved" })
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .populate("packageId", "name"),
+      Getlink.find({ userId: user._id }).sort({ createdAt: -1 }).limit(200),
+      Referral.find({
+        status: "rewarded",
+        $or: [{ referrerId: user._id }, { referredUserId: user._id }],
+      })
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .populate("referrerId", "name email")
+        .populate("referredUserId", "name email"),
+    ]);
+
+    const entries = [
+      ...topups.map((item) => ({
+        _id: `topup-${item._id}`,
+        type: item.type === "manual" ? "admin-credit" : "topup",
+        amount: Number(item.credit || 0),
+        title:
+          item.type === "manual"
+            ? "Admin cộng credit"
+            : `Nạp credit${item.packageId?.name ? ` - ${item.packageId.name}` : ""}`,
+        detail: item.gatewayTransactionId || item.paymentCode || "",
+        createdAt: item.paidAt || item.createdAt,
+      })),
+      ...getlinks.map((item) => ({
+        _id: `getlink-${item._id}`,
+        type: "getlink",
+        amount: -Number(item.creditUsed || 0),
+        title: `Getlink ${item.productId}`,
+        detail: item.title || "",
+        createdAt: item.createdAt,
+      })),
+      ...referrals.map((item) => {
+        const isReferrer = String(item.referrerId?._id || item.referrerId) === String(user._id);
+        const otherUser = isReferrer ? item.referredUserId : item.referrerId;
+        const amount = isReferrer
+          ? Number(item.referrerRewardCredit ?? item.rewardCredit ?? 0)
+          : Number(item.referredRewardCredit ?? item.rewardCredit ?? 0);
+        return {
+          _id: `referral-${item._id}-${isReferrer ? "referrer" : "referred"}`,
+          type: "referral",
+          amount,
+          title: isReferrer ? "Thưởng giới thiệu bạn bè" : "Thưởng đăng ký qua giới thiệu",
+          detail: otherUser?.email || otherUser?.name || "",
+          createdAt: item.rewardedAt || item.createdAt,
+        };
+      }),
+    ]
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      .slice(0, 300);
+
+    res.json({
+      user: {
+        _id: user._id,
+        name: user.name || "",
+        email: user.email || "",
+        credit: Number(user.credit || 0),
+      },
+      history: entries,
+    });
   } catch (error) {
     next(error);
   }
@@ -589,10 +752,53 @@ export async function listGetlinkRecords(req, res, next) {
     const limit = Number.isInteger(requestedLimit)
       ? Math.min(Math.max(requestedLimit, 1), 500)
       : 200;
-    const records = await Getlink.find()
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .populate("userId", "name email avatar credit role");
+    const search = normalizedSearch(req.query.search);
+    let records;
+    let total;
+    if (!isMemoryDb()) {
+      const regex = search ? new RegExp(escapedRegex(search), "i") : null;
+      const matchedUsers = regex
+        ? await User.find({ $or: [{ email: regex }, { name: regex }] })
+            .select("_id")
+            .limit(500)
+        : [];
+      const query = regex
+        ? {
+            $or: [
+              { userId: { $in: matchedUsers.map((user) => user._id) } },
+              { productId: regex },
+              { title: regex },
+            ],
+          }
+        : {};
+      [records, total] = await Promise.all([
+        Getlink.find(query)
+          .sort({ createdAt: -1 })
+          .limit(limit)
+          .populate("userId", "name email avatar credit role"),
+        Getlink.countDocuments(query),
+      ]);
+    } else {
+      const candidates = await Getlink.find()
+        .sort({ createdAt: -1 })
+        .limit(search ? 2000 : limit)
+        .populate("userId", "name email avatar credit role");
+      records = search
+        ? candidates
+            .filter((item) => {
+              const user = item.userId && typeof item.userId === "object" ? item.userId : null;
+              return [
+                user?.email,
+                user?.name,
+                user?._id || item.userId,
+                item.productId,
+                item.title,
+              ].some((value) => String(value || "").toLowerCase().includes(search));
+            })
+            .slice(0, limit)
+        : candidates;
+      total = records.length;
+    }
     const productIds = [
       ...new Set(records.map((item) => String(item.productId || "")).filter(Boolean)),
     ];
@@ -636,7 +842,7 @@ export async function listGetlinkRecords(req, res, next) {
       };
     });
 
-    res.json({ getlinks });
+    res.json({ getlinks, total });
   } catch (error) {
     next(error);
   }

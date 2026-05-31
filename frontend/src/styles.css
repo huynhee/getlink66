@@ -3793,3 +3793,118 @@ label {
   color: var(--error);
   border-color: rgba(248, 113, 113, 0.35);
 }
+
+.adminTableToolbar,
+.adminPagination,
+.userCreditHistoryHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.adminTableToolbar {
+  margin-top: 16px;
+  justify-content: space-between;
+}
+
+.adminTableToolbar select {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.adminSearchField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(100%, 360px);
+  padding: 0 10px;
+  border: 1px solid var(--border-light);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.adminSearchField input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.adminPagination {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.adminPagination span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.adminUserTable .tableRow {
+  grid-template-columns: minmax(180px, 1fr) auto auto auto minmax(220px, auto);
+}
+
+.adminUserIdentity,
+.creditHistoryTable .tableRow > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.adminUserIdentity span,
+.creditHistoryTable .tableRow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userCreditHistoryPanel {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.userCreditHistoryHeader {
+  justify-content: space-between;
+}
+
+.userCreditHistoryHeader h3 {
+  margin: 0 0 6px;
+}
+
+.userCreditHistoryHeader span {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.creditHistoryTable {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.creditHistoryTable .tableRow {
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+}
+
+@media (max-width: 760px) {
+  .adminSearchField {
+    min-width: 100%;
+  }
+
+  .adminTableToolbar select {
+    width: 100%;
+  }
+
+  .adminUserTable .tableRow,
+  .creditHistoryTable .tableRow {
+    grid-template-columns: 1fr;
+  }
+
+  .adminPagination {
+    justify-content: center;
+  }
+}

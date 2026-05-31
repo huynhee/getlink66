@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Ban, BarChart3, Check, Cookie, FileDown, FileText, Gift, GripVertical, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, ShieldAlert, UserPlus, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, Ban, BarChart3, Check, ChevronLeft, ChevronRight, Cookie, FileDown, FileText, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, UserPlus, Users, X } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
@@ -116,6 +116,15 @@ export default function Admin({ user, language = "vi" }) {
   const [cookiePool, setCookiePool] = useState(null);
   const [systemLogs, setSystemLogs] = useState([]);
   const [getlinkRecords, setGetlinkRecords] = useState([]);
+  const [getlinkSearch, setGetlinkSearch] = useState("");
+  const [getlinkRecordTotal, setGetlinkRecordTotal] = useState(0);
+  const [userSearch, setUserSearch] = useState("");
+  const [userSort, setUserSort] = useState("created-desc");
+  const [userPage, setUserPage] = useState(1);
+  const [userPagination, setUserPagination] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
+  const [creditHistoryUser, setCreditHistoryUser] = useState(null);
+  const [creditHistory, setCreditHistory] = useState([]);
+  const [creditHistoryLoading, setCreditHistoryLoading] = useState(false);
   const [cookie, setCookie] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -137,37 +146,68 @@ export default function Admin({ user, language = "vi" }) {
   const [twoFactorMsg, setTwoFactorMsg] = useState("");
 
   async function loadData() {
-    const [oRes, uRes, pRes, vRes, cRes, sRes, lRes, gRes, aRes, nRes, rRes, settingRes] = await Promise.all([
+    const [oRes, pRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
       api(`/api/admin/overview?period=${revenuePeriod}`),
-      api("/api/admin/users"),
       api("/api/admin/topup-packages"),
       api("/api/admin/vouchers"),
       api("/api/admin/cookies"),
       api("/api/admin/cookies/status"),
       api("/api/admin/system-logs"),
-      api("/api/admin/getlinks"),
       api("/api/admin/articles"),
       api("/api/admin/notifications"),
       api("/api/admin/referrals"),
       api("/api/settings")
     ]);
     setOverview(oRes.overview || null);
-    setUsers(uRes.users || []);
     setPackages(pRes.packages || []);
     setVouchers(vRes.vouchers || []);
     setCookieRecords(cRes.cookies || []);
     setCookiePool(sRes.pool || null);
     setSystemLogs(lRes.logs || []);
-    setGetlinkRecords(gRes.getlinks || []);
     setArticles(aRes.articles || []);
     setNotifications(nRes.notifications || []);
     setReferrals(rRes.referrals || []);
     setSiteSettings({ ...defaultSiteSettings, ...(settingRes.settings || {}) });
   }
 
+  async function loadUsers() {
+    const query = new URLSearchParams({
+      page: String(userPage),
+      sort: userSort,
+    });
+    if (userSearch.trim()) query.set("search", userSearch.trim());
+    const data = await api(`/api/admin/users?${query.toString()}`);
+    setUsers(data.users || []);
+    const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
+    setUserPagination(pagination);
+    if (pagination.page !== userPage) setUserPage(pagination.page);
+  }
+
+  async function loadGetlinks() {
+    const query = new URLSearchParams({ limit: "200" });
+    if (getlinkSearch.trim()) query.set("search", getlinkSearch.trim());
+    const data = await api(`/api/admin/getlinks?${query.toString()}`);
+    setGetlinkRecords(data.getlinks || []);
+    setGetlinkRecordTotal(Number(data.total || 0));
+  }
+
   useEffect(() => {
     loadData().catch(console.error);
   }, [revenuePeriod]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadUsers().catch(console.error);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [userSearch, userSort, userPage]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadGetlinks().catch(console.error);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [getlinkSearch]);
 
   function fillPackageForm(pack) {
     setEditingPackageId(pack?._id || "");
@@ -477,7 +517,7 @@ export default function Admin({ user, language = "vi" }) {
       method: "POST",
       body: JSON.stringify({ userId, credit: 1 })
     });
-    await loadData();
+    await Promise.all([loadData(), loadUsers()]);
   }
 
   async function saveUserCredit(userId) {
@@ -486,7 +526,7 @@ export default function Admin({ user, language = "vi" }) {
       body: JSON.stringify({ userId, credit: Number(editCredit) })
     });
     setEditUser(null);
-    await loadData();
+    await Promise.all([loadData(), loadUsers()]);
   }
 
   async function toggleBanUser(targetUser) {
@@ -506,7 +546,20 @@ export default function Admin({ user, language = "vi" }) {
         };
     await api(endpoint, options);
     setBanReasonByUser((items) => ({ ...items, [targetUser._id]: "" }));
-    await loadData();
+    await loadUsers();
+  }
+
+  async function loadUserCreditHistory(targetUser) {
+    setCreditHistoryUser(targetUser);
+    setCreditHistory([]);
+    setCreditHistoryLoading(true);
+    try {
+      const data = await api(`/api/admin/users/${targetUser._id}/credit-history`);
+      setCreditHistoryUser(data.user || targetUser);
+      setCreditHistory(data.history || []);
+    } finally {
+      setCreditHistoryLoading(false);
+    }
   }
 
   async function handleGenerate2FA() {
@@ -550,6 +603,20 @@ export default function Admin({ user, language = "vi" }) {
     month: l("12 tháng gần nhất", "Last 12 months"),
     year: l("5 năm gần nhất", "Last 5 years")
   };
+  const normalizedGetlinkSearch = getlinkSearch.trim().toLowerCase();
+  const filteredGetlinkRecords = normalizedGetlinkSearch
+    ? getlinkRecords.filter((item) =>
+        [
+          item.user?.email,
+          item.user?.name,
+          item.userId,
+          item.productId,
+          item.title,
+        ].some((value) =>
+          String(value || "").toLowerCase().includes(normalizedGetlinkSearch)
+        )
+      )
+    : getlinkRecords;
   const sections = [
     { key: "overview", label: t.adminOverview, icon: BarChart3 },
     { key: "packages", label: t.adminPackages, icon: Package, count: packages.length },
@@ -1487,8 +1554,21 @@ export default function Admin({ user, language = "vi" }) {
           <p className="muted" style={{ marginTop: 8 }}>
             {l("Hiển thị các lần user tạo link tải và số credit đã trừ. Tải lại miễn phí không tạo thêm dòng mới ở bảng này.", "Shows user getlink requests and deducted credits. Free redownloads do not create new rows here.")}
           </p>
+          <div className="adminTableToolbar">
+            <label className="adminSearchField">
+              <Search size={15} />
+              <input
+                value={getlinkSearch}
+                onChange={(event) => setGetlinkSearch(event.target.value)}
+                placeholder={l("Tìm email, ID model hoặc tên model", "Search email, model ID, or model title")}
+              />
+            </label>
+            <span className="muted">
+              {getlinkRecordTotal} {l("dòng", "rows")}
+            </span>
+          </div>
           <div className="table getlinkAuditTable" style={{ marginTop: 16 }}>
-            {getlinkRecords.map((item) => (
+            {filteredGetlinkRecords.map((item) => (
               <div className="tableRow" key={item._id}>
                 <div className="getlinkAuditUser">
                   <strong>{item.user?.email || l("Không rõ user", "Unknown user")}</strong>
@@ -1513,9 +1593,9 @@ export default function Admin({ user, language = "vi" }) {
                 <time>{new Date(item.createdAt).toLocaleString(locale)}</time>
               </div>
             ))}
-            {!getlinkRecords.length && (
+            {!filteredGetlinkRecords.length && (
               <p className="muted" style={{ textAlign: "center", padding: 16 }}>
-                {l("Chưa có lịch sử getlink.", "No getlink history yet.")}
+                {l("Không có lịch sử getlink phù hợp.", "No matching getlink history.")}
               </p>
             )}
           </div>
@@ -1525,10 +1605,80 @@ export default function Admin({ user, language = "vi" }) {
       {activeSection === "users" && (
         <section className="panel">
           <h2><Users size={20} /> {l("Quản lý người dùng", "Manage users")}</h2>
-          <div className="table">
+          <div className="adminTableToolbar">
+            <label className="adminSearchField">
+              <Search size={15} />
+              <input
+                value={userSearch}
+                onChange={(event) => {
+                  setUserSearch(event.target.value);
+                  setUserPage(1);
+                }}
+                placeholder={l("Tìm theo tên hoặc email", "Search by name or email")}
+              />
+            </label>
+            <select
+              value={userSort}
+              onChange={(event) => {
+                setUserSort(event.target.value);
+                setUserPage(1);
+              }}
+              aria-label={l("Sắp xếp người dùng", "Sort users")}
+            >
+              <option value="created-desc">{l("Mới đăng ký trước", "Newest first")}</option>
+              <option value="created-asc">{l("Cũ đăng ký trước", "Oldest first")}</option>
+              <option value="credit-desc">{l("Credit cao trước", "Highest credit")}</option>
+              <option value="credit-asc">{l("Credit thấp trước", "Lowest credit")}</option>
+              <option value="email-asc">{l("Email A-Z", "Email A-Z")}</option>
+              <option value="email-desc">{l("Email Z-A", "Email Z-A")}</option>
+            </select>
+          </div>
+
+          {creditHistoryUser && (
+            <div className="userCreditHistoryPanel">
+              <div className="userCreditHistoryHeader">
+                <div>
+                  <h3>{l("Lịch sử credit", "Credit history")}</h3>
+                  <strong>{creditHistoryUser.email}</strong>
+                  <span>{creditHistoryUser.name || ""} - {Number(creditHistoryUser.credit || 0).toLocaleString(locale)} credit</span>
+                </div>
+                <button
+                  type="button"
+                  className="smallButton"
+                  onClick={() => {
+                    setCreditHistoryUser(null);
+                    setCreditHistory([]);
+                  }}
+                >
+                  <X size={14} /> {l("Đóng", "Close")}
+                </button>
+              </div>
+              <div className="table creditHistoryTable">
+                {creditHistory.map((item) => (
+                  <div className="tableRow" key={item._id}>
+                    <span className={`badge ${Number(item.amount || 0) >= 0 ? "success" : "error"}`}>
+                      {Number(item.amount || 0) >= 0 ? "+" : ""}{Number(item.amount || 0).toLocaleString(locale)} credit
+                    </span>
+                    <div>
+                      <strong>{item.title}</strong>
+                      {item.detail && <span>{item.detail}</span>}
+                    </div>
+                    <time>{new Date(item.createdAt).toLocaleString(locale)}</time>
+                  </div>
+                ))}
+                {creditHistoryLoading && <p className="muted">{l("Đang tải lịch sử...", "Loading history...")}</p>}
+                {!creditHistoryLoading && !creditHistory.length && (
+                  <p className="muted">{l("Chưa có giao dịch credit được ghi nhận.", "No recorded credit transactions.")}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="table adminUserTable">
             {users.map((user) => (
               <div className="tableRow" key={user._id}>
-                <div>
+                <div className="adminUserIdentity">
+                  <strong>{user.name}</strong>
                   <span>{user.email}</span>
                   {user.isBanned && (
                     <p className="error" style={{ margin: "4px 0 0", fontSize: 12 }}>
@@ -1552,6 +1702,9 @@ export default function Admin({ user, language = "vi" }) {
                     </button>
                   </>
                 )}
+                <button className="smallButton" onClick={() => loadUserCreditHistory(user)}>
+                  <HistoryIcon size={14} /> {l("Lịch sử credit", "Credit history")}
+                </button>
                 {user.role !== "admin" && (
                   <div className="banUserControls">
                     {!user.isBanned && (
@@ -1579,6 +1732,29 @@ export default function Admin({ user, language = "vi" }) {
               </div>
             ))}
             {!users.length && <p className="muted" style={{ textAlign: "center", padding: 24 }}>{l("Chưa có người dùng.", "No users yet.")}</p>}
+          </div>
+          <div className="adminPagination">
+            <button
+              type="button"
+              className="smallButton"
+              disabled={userPagination.page <= 1}
+              onClick={() => setUserPage((page) => Math.max(1, page - 1))}
+              title={l("Trang trước", "Previous page")}
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <span>
+              {l("Trang", "Page")} {userPagination.page}/{userPagination.totalPages} - {userPagination.total} {l("user", "users")}
+            </span>
+            <button
+              type="button"
+              className="smallButton"
+              disabled={userPagination.page >= userPagination.totalPages}
+              onClick={() => setUserPage((page) => Math.min(userPagination.totalPages, page + 1))}
+              title={l("Trang sau", "Next page")}
+            >
+              <ChevronRight size={15} />
+            </button>
           </div>
         </section>
       )}
