@@ -116,7 +116,7 @@ const defaultSettings = {
   heroSubtitle:
     "Dich vu getlink trung gian giup ban tai model tu 3D66 voi gia re hon mua truc tiep.",
   saleText: "Khuyen mai goi PRO trong thang nay",
-  pricingNote: "Nap credit tu dong, cong credit ngay sau khi chon goi.",
+  pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
   referralMode: "both",
   threed66GetlinkConcurrency: Number(process.env.THREED66_GETLINK_CONCURRENCY || 1),
   threed66PreviewConcurrency: Number(process.env.THREED66_PREVIEW_CONCURRENCY || 1),
@@ -219,6 +219,9 @@ async function loadSettings() {
   let nextPricingNote = pricingNote
     .replace(/nhu 3D66/gi, "nhu web")
     .replace(/nh\u01b0 3D66/gi, "nh\u01b0 web");
+  if (nextPricingNote === "Nap credit tu dong, cong credit ngay sau khi chon goi.") {
+    nextPricingNote = defaultSettings.pricingNote;
+  }
   if (/50[.,]000\s*VN[DĐ]/i.test(nextPricingNote) && /128\s*credit/i.test(nextPricingNote)) {
     nextPricingNote = defaultSettings.pricingNote;
   }

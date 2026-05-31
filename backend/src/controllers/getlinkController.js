@@ -28,6 +28,7 @@ import { writeSystemLog } from "../utils/systemLog.js";
 
 const productLocks = new Map();
 const MAX_PRODUCT_LOCKS = 500;
+const PARTIAL_DOWNLOAD_SESSION_MS = 10 * 60 * 1000;
 const downloadCounters = {
   global: 0,
   user: new Map(),
@@ -140,6 +141,21 @@ function canRedownload(history) {
   );
 }
 
+function isWithinRedownloadWindow(history) {
+  const expiresAt = redownloadExpiresAt(history);
+  return Boolean(expiresAt && expiresAt.getTime() > Date.now());
+}
+
+function isRecentPartialDownloadSession(history) {
+  const lastRedownloadAt = history?.lastRedownloadAt
+    ? new Date(history.lastRedownloadAt).getTime()
+    : 0;
+  return Boolean(
+    lastRedownloadAt &&
+      lastRedownloadAt > Date.now() - PARTIAL_DOWNLOAD_SESSION_MS,
+  );
+}
+
 function readUrlRequest(req, res) {
   const unknownKey = rejectUnknownKeys(req.body, ["url"]);
   if (unknownKey) {
@@ -160,10 +176,11 @@ function shouldWriteSystemError(error) {
   return !error.status || Number(error.status) >= 500;
 }
 
-function isClientDownloadAbort(error) {
+function isClientDownloadAbort(error, signal) {
   return (
     error?.code === "ERR_STREAM_PREMATURE_CLOSE" ||
-    /premature close/i.test(error?.message || "")
+    /premature close/i.test(error?.message || "") ||
+    (signal?.aborted && /terminated|aborted|socket hang up/i.test(error?.message || ""))
   );
 }
 
@@ -829,6 +846,7 @@ async function openDownloadResponse(history, req, signal) {
 
 export async function downloadGetlink(req, res, next) {
   const controller = new AbortController();
+  const isPartialDownload = Boolean(String(req.get("range") || "").trim());
   let downloadSlot = null;
   let reservedDownloadCount = false;
   let reservedHistoryId = "";
@@ -888,39 +906,84 @@ export async function downloadGetlink(req, res, next) {
         .json({ message: downloadSlot.message, retryable: true });
     }
 
-    if (!canRedownload(history)) {
+    const reusePartialDownloadSession =
+      isPartialDownload && isRecentPartialDownloadSession(history);
+    if (!isWithinRedownloadWindow(history)) {
       return res.status(403).json({
         message: `Free redownload expired after ${redownloadWindowDays()} days. Please getlink this model again.`,
         canRedownload: false,
         redownloadExpiresAt: redownloadExpiresAt(history),
       });
     }
-
-    const reservedHistory = await Getlink.findOneAndUpdate(
-      {
-        _id: history._id,
-        userId: history.userId,
-        $or: [
-          { redownloadCount: { $exists: false } },
-          { redownloadCount: { $lt: redownloadLimit() } },
-        ],
-      },
-      {
-        $inc: { redownloadCount: 1 },
-        $set: { lastRedownloadAt: new Date() },
-      },
-      { new: true },
-    );
-
-    if (!reservedHistory) {
+    if (!reusePartialDownloadSession && !canRedownload(history)) {
       return res.status(429).json({
         message: `Download limit reached. You can download this file ${redownloadLimit()} times within ${redownloadWindowDays()} days.`,
         canRedownload: false,
         redownloadLimit: redownloadLimit(),
       });
     }
-    reservedDownloadCount = true;
-    reservedHistoryId = String(history._id);
+
+    let reservedHistory = history;
+    if (!reusePartialDownloadSession) {
+      const reserveConditions = [
+        {
+          $or: [
+            { redownloadCount: { $exists: false } },
+            { redownloadCount: { $lt: redownloadLimit() } },
+          ],
+        },
+      ];
+      if (isPartialDownload) {
+        reserveConditions.push({
+          $or: [
+            { lastRedownloadAt: { $exists: false } },
+            {
+              lastRedownloadAt: {
+                $lt: new Date(Date.now() - PARTIAL_DOWNLOAD_SESSION_MS),
+              },
+            },
+          ],
+        });
+      }
+      const newlyReservedHistory = await Getlink.findOneAndUpdate(
+        {
+          _id: history._id,
+          userId: history.userId,
+          $and: reserveConditions,
+        },
+        {
+          $inc: { redownloadCount: 1 },
+          $set: { lastRedownloadAt: new Date() },
+        },
+        { new: true },
+      );
+
+      if (newlyReservedHistory) {
+        reservedHistory = newlyReservedHistory;
+        reservedDownloadCount = true;
+        reservedHistoryId = String(history._id);
+      } else if (isPartialDownload) {
+        const currentHistory = await Getlink.findById(history._id);
+        if (
+          !currentHistory ||
+          !isWithinRedownloadWindow(currentHistory) ||
+          !isRecentPartialDownloadSession(currentHistory)
+        ) {
+          return res.status(429).json({
+            message: `Download limit reached. You can download this file ${redownloadLimit()} times within ${redownloadWindowDays()} days.`,
+            canRedownload: false,
+            redownloadLimit: redownloadLimit(),
+          });
+        }
+        reservedHistory = currentHistory;
+      } else {
+        return res.status(429).json({
+          message: `Download limit reached. You can download this file ${redownloadLimit()} times within ${redownloadWindowDays()} days.`,
+          canRedownload: false,
+          redownloadLimit: redownloadLimit(),
+        });
+      }
+    }
 
     const { history: activeHistory, upstream } = await openDownloadResponse(
       reservedHistory,
@@ -970,7 +1033,7 @@ export async function downloadGetlink(req, res, next) {
       reservedDownloadCount = false;
     }
     if (error.name === "AbortError") return;
-    if (isClientDownloadAbort(error)) return;
+    if (isClientDownloadAbort(error, controller.signal)) return;
     await writeSystemLog({
       type: "download",
       level: "error",
@@ -985,26 +1048,6 @@ export async function downloadGetlink(req, res, next) {
     if (res.headersSent) {
       console.error("Download stream failed after headers were sent:", error);
       return;
-    }
-    next(error);
-  } finally {
-    if (downloadSlot?.release) downloadSlot.release();
-  }
-}
-
-export async function getlinkHistory(req, res, next) {
-  try {
-    const history = await Getlink.find({ userId: req.user._id })
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .lean();
-    res.json({
-      history: history.map((item) => publicHistoryItem(req, item)),
-    });
-  } catch (error) {
-    next(error);
-  }
-}
     }
     next(error);
   } finally {
