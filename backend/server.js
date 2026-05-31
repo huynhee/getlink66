@@ -167,7 +167,10 @@ app.use(
     maxAge: 86400,
     origin(origin, callback) {
       if (!origin || allowedOrigins.has(origin)) return callback(null, true);
-      return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+      const error = new Error(`Origin ${origin} is not allowed by CORS`);
+      error.status = 403;
+      error.code = "CORS_ORIGIN_DENIED";
+      return callback(error);
     },
     credentials: true
   })
