@@ -157,7 +157,7 @@ function isAllowed3D66DownloadUrl(value = "") {
     return (
       parsed.protocol === "https:" &&
       isAllowed3D66Host(hostname) &&
-      /^(?:down|download)[^.]*\./i.test(hostname)
+      /^(?:k?down|download)[^.]*\./i.test(hostname)
     );
   } catch {
     return false;
