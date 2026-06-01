@@ -150,6 +150,56 @@ function isAllowed3D66Host(hostname = "") {
   return normalized === "3d66.com" || normalized.endsWith(".3d66.com");
 }
 
+function isAllowed3D66DownloadUrl(value = "") {
+  try {
+    const parsed = new URL(String(value || "").replaceAll("\\/", "/").trim());
+    const hostname = parsed.hostname.toLowerCase();
+    return (
+      parsed.protocol === "https:" &&
+      isAllowed3D66Host(hostname) &&
+      /^(?:down|download)[^.]*\./i.test(hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function extractDownloadFileUrl(value, depth = 0) {
+  if (depth > 5 || value === null || value === undefined) return "";
+  if (typeof value === "string") {
+    const normalized = value.replaceAll("\\/", "/").trim();
+    return isAllowed3D66DownloadUrl(normalized) ? normalized : "";
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const fileUrl = extractDownloadFileUrl(item, depth + 1);
+      if (fileUrl) return fileUrl;
+    }
+    return "";
+  }
+  if (typeof value !== "object") return "";
+
+  const preferredKeys = [
+    "url",
+    "fileUrl",
+    "file_url",
+    "downloadUrl",
+    "download_url",
+    "downUrl",
+    "down_url",
+    "data",
+  ];
+  for (const key of preferredKeys) {
+    const fileUrl = extractDownloadFileUrl(value[key], depth + 1);
+    if (fileUrl) return fileUrl;
+  }
+  for (const nested of Object.values(value)) {
+    const fileUrl = extractDownloadFileUrl(nested, depth + 1);
+    if (fileUrl) return fileUrl;
+  }
+  return "";
+}
+
 function configuredSiteContexts() {
   const raw = String(process.env.THREED66_SITE_CONTEXTS || "").trim();
   if (!raw) return DEFAULT_SITE_CONTEXTS;
@@ -1052,8 +1102,8 @@ async function requestDownloadUrl(payload, cookieValue, origin) {
       throw httpError(`3D66 download API failed: HTTP ${response.status}`, 502, { response: json });
     }
 
-    const fileUrl = typeof json.data === "string" ? json.data.replaceAll("\\/", "/") : "";
-    if (Number(json.status || json.code) === 200 && /^https:\/\/down\.3d66\.com\//i.test(fileUrl)) {
+    const fileUrl = extractDownloadFileUrl(json);
+    if (fileUrl) {
       return {
         fileUrl,
         creditCost: extractCreditCost(json)

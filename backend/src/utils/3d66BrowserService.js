@@ -481,6 +481,56 @@ function browserHttpError(message, status = 502, details = {}) {
   return error;
 }
 
+function isAllowed3D66DownloadUrl(value = "") {
+  try {
+    const parsed = new URL(String(value || "").replaceAll("\\/", "/").trim());
+    const hostname = parsed.hostname.toLowerCase();
+    return (
+      parsed.protocol === "https:" &&
+      (hostname === "3d66.com" || hostname.endsWith(".3d66.com")) &&
+      /^(?:down|download)[^.]*\./i.test(hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function extractDownloadFileUrl(value, depth = 0) {
+  if (depth > 5 || value === null || value === undefined) return "";
+  if (typeof value === "string") {
+    const normalized = value.replaceAll("\\/", "/").trim();
+    return isAllowed3D66DownloadUrl(normalized) ? normalized : "";
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const fileUrl = extractDownloadFileUrl(item, depth + 1);
+      if (fileUrl) return fileUrl;
+    }
+    return "";
+  }
+  if (typeof value !== "object") return "";
+
+  const preferredKeys = [
+    "url",
+    "fileUrl",
+    "file_url",
+    "downloadUrl",
+    "download_url",
+    "downUrl",
+    "down_url",
+    "data",
+  ];
+  for (const key of preferredKeys) {
+    const fileUrl = extractDownloadFileUrl(value[key], depth + 1);
+    if (fileUrl) return fileUrl;
+  }
+  for (const nested of Object.values(value)) {
+    const fileUrl = extractDownloadFileUrl(nested, depth + 1);
+    if (fileUrl) return fileUrl;
+  }
+  return "";
+}
+
 function waitForDownloadHandleResponse(page, timeout = timeoutMs()) {
   return page.waitForResponse(
     (response) =>
@@ -506,12 +556,8 @@ async function parseDownloadHandleResponse(response) {
     );
   }
 
-  const fileUrl =
-    typeof json.data === "string" ? json.data.replaceAll("\\/", "/") : "";
-  if (
-    Number(json.status || json.code) === 200 &&
-    /^https:\/\/down\.3d66\.com\//i.test(fileUrl)
-  ) {
+  const fileUrl = extractDownloadFileUrl(json);
+  if (fileUrl) {
     return { json, fileUrl };
   }
 

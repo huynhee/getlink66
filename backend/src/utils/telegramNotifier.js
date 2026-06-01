@@ -1,6 +1,31 @@
 import logger from "./logger.js";
 
 const TELEGRAM_API = "https://api.telegram.org";
+const recentNotifications = new Map();
+
+function dedupeWindowMs() {
+  const value = Number(process.env.TELEGRAM_DEDUP_WINDOW_MS || 60_000);
+  return Number.isFinite(value) && value >= 0 ? value : 60_000;
+}
+
+function shouldSend(message, dedupeKey = "") {
+  const text = String(message || "").trim();
+  if (!text) return false;
+
+  const windowMs = dedupeWindowMs();
+  if (windowMs <= 0) return true;
+
+  const now = Date.now();
+  const key = String(dedupeKey || text);
+  const previous = recentNotifications.get(key) || 0;
+  if (now - previous < windowMs) return false;
+
+  recentNotifications.set(key, now);
+  for (const [key, sentAt] of recentNotifications) {
+    if (now - sentAt >= windowMs) recentNotifications.delete(key);
+  }
+  return true;
+}
 
 function isEnabled() {
   return process.env.TELEGRAM_NOTIFICATIONS_ENABLED !== "false";
@@ -29,10 +54,11 @@ function shortId(value = "") {
   return String(value || "").slice(-8) || "-";
 }
 
-export async function sendTelegramNotification(message) {
+export async function sendTelegramNotification(message, options = {}) {
   const token = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
   const targets = chatIds();
-  if (!isEnabled() || !token || !targets.length) return;
+  const text = String(message || "").trim();
+  if (!isEnabled() || !token || !targets.length || !shouldSend(text, options.dedupeKey)) return;
 
   await Promise.allSettled(
     targets.map(async (chatId) => {
@@ -41,7 +67,7 @@ export async function sendTelegramNotification(message) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
-          text: message,
+          text,
           parse_mode: "HTML",
           disable_web_page_preview: true,
         }),
@@ -88,15 +114,21 @@ export function notifyTopupRejected({ topup, actor } = {}) {
 }
 
 export function notifyServerError({ error, req, status } = {}) {
+  const path = `${req?.method || ""} ${req?.originalUrl || req?.url || ""}`.trim();
+  const normalizedMessage = String(error?.message || "Unknown error")
+    .replace(/\s*\([A-Z0-9]{12,}\)\s*$/i, "")
+    .trim();
   const lines = [
     "<b>Server error</b>",
     `Status: ${Number(status || 500)}`,
-    `Path: <code>${escapeHtml(`${req?.method || ""} ${req?.originalUrl || req?.url || ""}`.trim())}</code>`,
+    `Path: <code>${escapeHtml(path)}</code>`,
     `Message: ${escapeHtml(error?.message || "Unknown error")}`,
     `IP: ${escapeHtml(req?.ip || "-")}`,
   ];
 
-  sendTelegramNotification(lines.join("\n")).catch(() => {});
+  sendTelegramNotification(lines.join("\n"), {
+    dedupeKey: `server-error:${Number(status || 500)}:${path}:${normalizedMessage}`,
+  }).catch(() => {});
 }
 
 export function notify3D66CookiesUnavailable({ reason, error, stats } = {}) {
