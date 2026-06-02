@@ -4,11 +4,27 @@ import crypto from "node:crypto";
 import { jwtSecret } from "../config/secrets.js";
 import { securityEvent } from "../utils/logger.js";
 
-function buildFingerprint(req) {
+function shouldBindFingerprintToIp() {
+  return process.env.SESSION_FINGERPRINT_BIND_IP === "true";
+}
+
+function buildFingerprint(req, { bindIp = shouldBindFingerprintToIp() } = {}) {
+  const ip = bindIp ? `${req.ip || ""}|` : "";
   return crypto
     .createHash("sha256")
-    .update(`${req.ip || ""}|${req.get("user-agent") || ""}`)
+    .update(`${ip}${req.get("user-agent") || ""}`)
     .digest("hex");
+}
+
+function isValidFingerprint(req, fingerprint) {
+  if (!fingerprint) return true;
+  if (fingerprint === buildFingerprint(req)) return true;
+
+  // JWTs issued before IP binding became optional remain valid until expiry.
+  return (
+    !shouldBindFingerprintToIp() &&
+    fingerprint === buildFingerprint(req, { bindIp: true })
+  );
 }
 
 export async function jwtAuth(req, res, next) {
@@ -45,8 +61,7 @@ export async function jwtAuth(req, res, next) {
     }
 
     // Verify fingerprint (Anti Hijacking)
-    const currentFingerprint = buildFingerprint(req);
-    if (payload.fp && payload.fp !== currentFingerprint) {
+    if (!isValidFingerprint(req, payload.fp)) {
       securityEvent("SESSION_HIJACK_SUSPECT", {
         userId: payload.id,
         path: req.path,
