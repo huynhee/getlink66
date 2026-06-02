@@ -10,6 +10,16 @@ import { SESSION_EXPIRED_MESSAGE } from "../utils/authMessages.js";
 const SAFE_RETURN_PATH = /^\/[a-zA-Z0-9\-_/]*$/;
 const SAFE_REFERRAL_CODE = /^[a-zA-Z0-9]{6,24}$/;
 
+function twoFactorValidationWindow() {
+  const configured = Number(process.env.TWO_FA_TOTP_WINDOW || 2);
+  if (!Number.isFinite(configured)) return 2;
+  return Math.min(2, Math.max(1, Math.floor(configured)));
+}
+
+function normalizeTwoFactorToken(token) {
+  return String(token || "").replace(/\D/g, "").slice(0, 6);
+}
+
 function oauthCookieOptions() {
   return {
     maxAge: 10 * 60 * 1000,
@@ -138,7 +148,7 @@ export async function setup2FA(req, res, next) {
 
 export async function verifyAndEnable2FA(req, res, next) {
   try {
-    const { token } = req.body;
+    const token = normalizeTwoFactorToken(req.body.token);
     const tempSecret = req.cookies.temp2FASecret;
     if (!token || !tempSecret) {
       return res
@@ -155,7 +165,7 @@ export async function verifyAndEnable2FA(req, res, next) {
       secret: OTPAuth.Secret.fromBase32(tempSecret),
     });
 
-    const delta = totp.validate({ token, window: 1 });
+    const delta = totp.validate({ token, window: twoFactorValidationWindow() });
     if (delta === null) {
       return res
         .status(400)
@@ -189,7 +199,7 @@ export async function verifyAndEnable2FA(req, res, next) {
 
 export async function verify2FALogin(req, res, next) {
   try {
-    const { token } = req.body;
+    const token = normalizeTwoFactorToken(req.body.token);
     if (!req.user || !req.user.isTwoFactorEnabled) {
       return res
         .status(400)
@@ -205,7 +215,7 @@ export async function verify2FALogin(req, res, next) {
       secret: OTPAuth.Secret.fromBase32(req.user.twoFactorSecret),
     });
 
-    const delta = totp.validate({ token, window: 1 });
+    const delta = totp.validate({ token, window: twoFactorValidationWindow() });
     if (delta === null) {
       securityEvent("2FA_VERIFY_FAILED", {
         userId: String(req.user._id),

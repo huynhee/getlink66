@@ -68,6 +68,8 @@ function TwoFactorModal({ onVerify, language = "vi" }) {
             value={token}
             onChange={(e) => setToken(e.target.value.replace(/\D/g, '').slice(0, 6))}
             maxLength={6}
+            inputMode="numeric"
+            autoComplete="one-time-code"
             required
             style={{ fontSize: 24, letterSpacing: 8, textAlign: "center", height: 50 }}
             autoFocus

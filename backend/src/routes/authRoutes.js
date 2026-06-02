@@ -20,11 +20,17 @@ const authLimit = createRateLimit({
   max: 40,
   keyGenerator: (req) => req.ip,
 });
-// Per-user fine-grained rate limit cho 2FA actions (chong brute force OTP).
-const twoFaLimit = createRateLimit({
-  keyPrefix: "auth-2fa",
-  windowMs: 10 * 60_000,
-  max: 10,
+// Keep enrollment and login buckets separate. An admin signed in on multiple
+// devices should not consume the login retry budget while configuring 2FA.
+const twoFaSetupLimit = createRateLimit({
+  keyPrefix: "auth-2fa-setup",
+  windowMs: Number(process.env.TWO_FA_SETUP_RATE_WINDOW_MS || 10 * 60_000),
+  max: Number(process.env.TWO_FA_SETUP_RATE_LIMIT || 10),
+});
+const twoFaVerifyLimit = createRateLimit({
+  keyPrefix: "auth-2fa-verify",
+  windowMs: Number(process.env.TWO_FA_VERIFY_RATE_WINDOW_MS || 5 * 60_000),
+  max: Number(process.env.TWO_FA_VERIFY_RATE_LIMIT || 20),
 });
 
 router.get("/google", authLimit, googleLogin);
@@ -39,16 +45,16 @@ router.post(
   "/2fa/generate",
   requireAuth,
   requireFreshLogin(5 * 60),
-  twoFaLimit,
+  twoFaSetupLimit,
   setup2FA,
 );
 router.post(
   "/2fa/enable",
   requireAuth,
   requireFreshLogin(5 * 60),
-  twoFaLimit,
+  twoFaSetupLimit,
   verifyAndEnable2FA,
 );
-router.post("/2fa/verify", twoFaLimit, verify2FALogin);
+router.post("/2fa/verify", requireAuth, twoFaVerifyLimit, verify2FALogin);
 
 export default router;
