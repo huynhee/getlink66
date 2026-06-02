@@ -6,6 +6,7 @@ import {
   normalizeVoucherCode,
   rejectUnknownKeys,
 } from "../utils/validators.js";
+import { voucherUnavailableMessage } from "../utils/voucherStatus.js";
 
 export async function applyVoucher(req, res, next) {
   try {
@@ -23,16 +24,11 @@ export async function applyVoucher(req, res, next) {
       return res.status(400).json({ message: "Invalid topup package" });
     }
 
-    const voucher = await Voucher.findOne({
-      code,
-      expireAt: { $gt: new Date() },
-      $expr: { $lt: ["$usedCount", "$usageLimit"] },
-    }).lean();
+    const voucher = await Voucher.findOne({ code }).lean();
 
-    if (!voucher) {
-      return res
-        .status(400)
-        .json({ message: "Voucher is invalid, expired, or fully used" });
+    const unavailableMessage = voucherUnavailableMessage(voucher);
+    if (unavailableMessage) {
+      return res.status(400).json({ message: unavailableMessage });
     }
 
     const applicablePackageIds = Array.isArray(voucher.applicablePackageIds)
@@ -40,7 +36,7 @@ export async function applyVoucher(req, res, next) {
       : [];
     if (packageId && applicablePackageIds.length > 0 && !applicablePackageIds.includes(packageId)) {
       return res.status(400).json({
-        message: "Voucher khong ap dung cho goi nap nay.",
+        message: "Voucher không áp dụng cho gói nạp này.",
       });
     }
 
@@ -54,7 +50,7 @@ export async function applyVoucher(req, res, next) {
       });
       if (userVoucherUsed >= perUserLimit) {
         return res.status(400).json({
-          message: "Ban da dat gioi han su dung voucher nay.",
+          message: "Bạn đã đạt giới hạn sử dụng voucher này.",
         });
       }
     }
@@ -77,8 +73,8 @@ export async function applyVoucher(req, res, next) {
       voucher: safeVoucher,
       message:
         voucher.discountPercent > 0
-          ? `Voucher giam ${voucher.discountPercent}% se ap dung khi thanh toan Sepay.`
-          : `Voucher cong them ${voucher.creditBonus} credit se ap dung khi giao dich nap duoc duyet.`,
+          ? `Voucher giảm ${voucher.discountPercent}% sẽ áp dụng khi thanh toán SePay.`
+          : `Voucher cộng thêm ${voucher.creditBonus} credit sẽ áp dụng khi giao dịch nạp thành công.`,
     });
   } catch (error) {
     next(error);

@@ -1,4 +1,8 @@
 import { securityEvent } from "../utils/logger.js";
+import {
+  FRESH_LOGIN_REQUIRED_MESSAGE,
+  SESSION_EXPIRED_MESSAGE,
+} from "../utils/authMessages.js";
 
 /**
  * Middleware bao ve cac hanh dong nhay cam (vd. enroll/disable 2FA, doi password).
@@ -12,7 +16,7 @@ import { securityEvent } from "../utils/logger.js";
 export function requireFreshLogin(maxAgeSeconds = 5 * 60) {
   return (req, res, next) => {
     if (!req.user || !req.jwtPayload) {
-      return res.status(401).json({ message: "Authentication required" });
+      return res.status(401).json({ message: SESSION_EXPIRED_MESSAGE });
     }
 
     const loginAt = Number(req.jwtPayload.loginAt || 0);
@@ -25,7 +29,7 @@ export function requireFreshLogin(maxAgeSeconds = 5 * 60) {
         ageSeconds: loginAt ? ageSeconds : null
       });
       return res.status(401).json({
-        message: "Vui long dang nhap lai (re-login Google) de thuc hien hanh dong nhay cam nay.",
+        message: FRESH_LOGIN_REQUIRED_MESSAGE,
         code: "FRESH_LOGIN_REQUIRED",
         maxAgeSeconds
       });

@@ -5,6 +5,7 @@ import { issueCsrfToken } from "../middleware/csrf.js";
 import { generateTokens } from "../middleware/jwtAuth.js";
 import User from "../models/User.js";
 import { securityEvent } from "../utils/logger.js";
+import { SESSION_EXPIRED_MESSAGE } from "../utils/authMessages.js";
 
 const SAFE_RETURN_PATH = /^\/[a-zA-Z0-9\-_/]*$/;
 const SAFE_REFERRAL_CODE = /^[a-zA-Z0-9]{6,24}$/;
@@ -105,7 +106,7 @@ export function currentUser(req, res) {
 
 export async function setup2FA(req, res, next) {
   try {
-    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+    if (!req.user) return res.status(401).json({ message: SESSION_EXPIRED_MESSAGE });
     if (req.user.isTwoFactorEnabled) {
       return res.status(400).json({ message: "2FA is already enabled" });
     }

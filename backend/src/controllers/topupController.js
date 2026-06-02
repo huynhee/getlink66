@@ -11,6 +11,7 @@ import {
   normalizeVoucherCode,
   rejectUnknownKeys,
 } from "../utils/validators.js";
+import { voucherUnavailableMessage } from "../utils/voucherStatus.js";
 
 const MIN_TOPUP_AMOUNT = Number(process.env.MIN_TOPUP_AMOUNT || 1000);
 
@@ -217,14 +218,11 @@ export async function createTopup(req, res, next) {
     let voucherCreditBonus = 0;
     let voucher = null;
     if (normalizedVoucherCode) {
-      voucher = await Voucher.findOne({
-        code: normalizedVoucherCode,
-        expireAt: { $gt: new Date() },
-        $expr: { $lt: ["$usedCount", "$usageLimit"] },
-      });
-      if (!voucher) {
+      voucher = await Voucher.findOne({ code: normalizedVoucherCode });
+      const unavailableMessage = voucherUnavailableMessage(voucher);
+      if (unavailableMessage) {
         return res.status(400).json({
-          message: "Voucher không hợp lệ, đã hết hạn hoặc hết lượt dùng",
+          message: unavailableMessage,
         });
       }
       const applicablePackageIds = Array.isArray(voucher.applicablePackageIds)
@@ -235,7 +233,7 @@ export async function createTopup(req, res, next) {
         !applicablePackageIds.includes(String(pack._id))
       ) {
         return res.status(400).json({
-          message: "Voucher khong ap dung cho goi nap nay.",
+          message: "Voucher không áp dụng cho gói nạp này.",
         });
       }
       const perUserLimit = Number(voucher.perUserLimit ?? 1);
@@ -247,7 +245,7 @@ export async function createTopup(req, res, next) {
         });
         if (userVoucherUsed >= perUserLimit) {
           return res.status(400).json({
-            message: "Ban da dat gioi han su dung voucher nay.",
+            message: "Bạn đã đạt giới hạn sử dụng voucher này.",
           });
         }
       }

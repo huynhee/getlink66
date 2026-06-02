@@ -1114,7 +1114,9 @@ export default function Admin({ user, language = "vi" }) {
                     <p>{voucher.description || t.noDescription}</p>
                   </div>
                   <span className={new Date(voucher.expireAt) > new Date() ? "badge success" : "badge error"}>
-                    {new Date(voucher.expireAt) > new Date() ? "Active" : "Expired"}
+                    {new Date(voucher.expireAt) > new Date()
+                      ? l("Đang hoạt động", "Active")
+                      : l("Đã hết hạn", "Expired")}
                   </span>
                 </div>
                 <div className="voucherValue">

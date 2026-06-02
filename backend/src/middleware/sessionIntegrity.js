@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { securityEvent } from "../utils/logger.js";
+import { SESSION_EXPIRED_MESSAGE } from "../utils/authMessages.js";
 
 /**
  * Generates a fingerprint from request IP + User-Agent to bind to session.
@@ -37,7 +38,7 @@ export function sessionIntegrity(req, res, next) {
 
     req.logout(() => {});
     req.session.destroy(() => {});
-    return res.status(401).json({ message: "Session expired. Please login again." });
+    return res.status(401).json({ message: SESSION_EXPIRED_MESSAGE });
   }
 
   next();

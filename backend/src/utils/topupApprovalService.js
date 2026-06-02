@@ -47,7 +47,7 @@ async function claimVoucherUsage(topup, session = null) {
   );
 
   if (!voucher) {
-    const error = new Error("Voucher da het han hoac het luot dung, khong the hoan tat giao dich.");
+    const error = new Error("Voucher đã hết hạn hoặc hết lượt dùng, không thể hoàn tất giao dịch.");
     error.status = 409;
     throw error;
   }
@@ -65,7 +65,7 @@ async function claimVoucherUsage(topup, session = null) {
   }), session);
   if (approvedByUser >= perUserLimit) {
     await releaseVoucherCounter(code, session);
-    const error = new Error("Tai khoan nay da dat gioi han su dung voucher.");
+    const error = new Error("Tài khoản này đã đạt giới hạn sử dụng voucher.");
     error.status = 409;
     throw error;
   }
@@ -85,7 +85,7 @@ async function claimVoucherUsage(topup, session = null) {
       if (error?.code === 11000) {
         if (error.keyPattern?.topupId || error.message?.includes("topupId")) {
           await releaseVoucherCounter(code, session);
-          const duplicateError = new Error("Topup da duoc claim voucher.");
+          const duplicateError = new Error("Đơn nạp đã sử dụng voucher.");
           duplicateError.status = 409;
           throw duplicateError;
         }
@@ -98,7 +98,7 @@ async function claimVoucherUsage(topup, session = null) {
 
   if (!redemption) {
     await releaseVoucherCounter(code, session);
-    const error = new Error("Tai khoan nay da dat gioi han su dung voucher.");
+    const error = new Error("Tài khoản này đã đạt giới hạn sử dụng voucher.");
     error.status = 409;
     throw error;
   }

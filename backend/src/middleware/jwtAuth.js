@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import crypto from "node:crypto";
 import { jwtSecret } from "../config/secrets.js";
 import { securityEvent } from "../utils/logger.js";
+import { SESSION_EXPIRED_MESSAGE } from "../utils/authMessages.js";
 
 function shouldBindFingerprintToIp() {
   return process.env.SESSION_FINGERPRINT_BIND_IP === "true";
@@ -71,7 +72,7 @@ export async function jwtAuth(req, res, next) {
       res.clearCookie("refreshToken");
       return res
         .status(401)
-        .json({ message: "Phiên đăng nhập đã hết hạn, bạn cần đăng nhập lại." });
+        .json({ message: SESSION_EXPIRED_MESSAGE });
     }
 
     req.user = await User.findById(payload.id);
