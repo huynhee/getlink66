@@ -87,6 +87,7 @@ export default function Navbar({
   const tabs = [
     ["getlink", t.getlink],
     ["topup", t.topup],
+    ["invite", language === "vi" ? "Mời bạn" : "Invite friends"],
     ["history", t.history],
     ["guide", t.guide]
   ];

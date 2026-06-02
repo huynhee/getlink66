@@ -1493,6 +1493,126 @@ label {
   color: var(--neon-cyan);
 }
 
+.invitePage {
+  gap: var(--space-12);
+}
+
+.inviteHero,
+.inviteStats,
+.inviteLinkRow,
+.inviteHistoryHeader {
+  display: flex;
+  align-items: center;
+}
+
+.inviteHero {
+  justify-content: space-between;
+  gap: var(--space-16);
+}
+
+.inviteEyebrow,
+.inviteLinkPanel span,
+.inviteStats span,
+.inviteHistoryUser span {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.inviteHero h1 {
+  margin: 4px 0;
+  font-size: 28px;
+}
+
+.inviteHero p {
+  color: var(--text-secondary);
+}
+
+.inviteStats {
+  gap: var(--space-8);
+}
+
+.inviteStats > div {
+  display: grid;
+  min-width: 132px;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  background: rgba(0, 255, 136, 0.035);
+  clip-path: var(--cyber-cut-sm);
+}
+
+.inviteStats svg,
+.inviteHistoryHeader svg {
+  color: var(--neon-green);
+}
+
+.inviteStats strong,
+.inviteLinkPanel strong {
+  color: var(--neon-green);
+}
+
+.inviteLinkPanel {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.inviteLinkPanel > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.inviteLinkRow {
+  gap: var(--space-4);
+}
+
+.inviteLinkRow input {
+  min-width: 0;
+  flex: 1;
+  height: 38px;
+  padding: 0 12px;
+  color: var(--neon-cyan);
+}
+
+.inviteHistoryHeader {
+  justify-content: space-between;
+  margin-bottom: var(--space-8);
+}
+
+.inviteHistoryHeader h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.inviteHistoryHeader > span {
+  color: var(--neon-green);
+  font-family: var(--font-mono);
+}
+
+.inviteHistoryTable .tableRow {
+  grid-template-columns: minmax(180px, 1fr) minmax(100px, auto) auto auto;
+}
+
+.inviteHistoryUser {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.inviteHistoryUser strong,
+.inviteHistoryUser span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inviteHistoryEmpty {
+  padding: 24px 0;
+  text-align: center;
+}
+
 .codeWindow {
   background: #000;
   border: 1px solid var(--border-warm);
@@ -3583,6 +3703,21 @@ label {
 
   .referralUrlRow .smallButton {
     width: 100%;
+  }
+
+  .inviteHero,
+  .inviteStats,
+  .inviteLinkRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inviteStats > div {
+    min-width: 0;
+  }
+
+  .inviteHistoryTable .tableRow {
+    grid-template-columns: 1fr;
   }
 
   .linkInputWrap {

@@ -6,6 +6,7 @@ import Login from "./pages/Login.jsx";
 import Home from "./pages/Home.jsx";
 import Topup from "./pages/Topup.jsx";
 import History from "./pages/History.jsx";
+import Invite from "./pages/Invite.jsx";
 import Admin from "./pages/Admin.jsx";
 import Guide from "./pages/Guide.jsx";
 import Privacy from "./pages/Privacy.jsx";
@@ -103,6 +104,7 @@ function BannedOverlay({ user, onClose, language = "vi" }) {
 function pageFromPath(pathname) {
   if (pathname === "/topup") return "topup";
   if (pathname === "/history") return "history";
+  if (pathname === "/invite") return "invite";
   if (pathname === "/admin") return "admin";
   if (pathname === "/guide") return "guide";
   if (pathname === "/privacy" || pathname === "/chinh-sach-bao-mat") return "privacy";
@@ -143,6 +145,7 @@ function App() {
       getlink: "/getlink",
       topup: "/topup",
       history: "/history",
+      invite: "/invite",
       guide: "/guide"
     };
     navigate(routes[nextPage] || "/getlink");
@@ -216,6 +219,7 @@ function App() {
         {user && page === "getlink" && <Home user={user} onUserChange={setUser} language={language} />}
         {user && page === "topup" && <Topup user={user} onUserChange={setUser} language={language} />}
         {user && page === "history" && <History language={language} />}
+        {user && page === "invite" && <Invite language={language} />}
       </main>
       {user?.isBanned && !banOverlayClosed && (
         <BannedOverlay user={user} language={language} onClose={() => setBanOverlayClosed(true)} />
