@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertCircle, ArrowRight, Chrome, ClipboardPaste, DownloadCloud, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowRight, Chrome, ClipboardPaste, DownloadCloud, ShieldCheck, UserPlus } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import { translations } from "../i18n.js";
 
@@ -146,7 +146,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   }
 
   function referralTitle() {
-    if (referral?.mode === "referrer_only") {
+    if ((referral?.mode || siteSettings.referralMode) === "referrer_only") {
       return language === "vi"
         ? "Giới thiệu bạn bè để +1 lượt tải."
         : "Invite friends to get +1 download.";
@@ -216,17 +216,6 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                 {t.viewPricing} <ArrowRight size={16} />
               </a>
             </div>
-            {user && referral?.referralUrl && (
-              <div className="referralInvite">
-                <div>
-                  <strong>{t.referralTitle || "Giới thiệu bạn, cả hai nhận một lượt tải"}</strong>
-                  <span>{referral.referralCode}</span>
-                </div>
-                <button type="button" className="smallButton" onClick={copyReferralLink}>
-                  {referralCopied ? t.copied : t.copy}
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="heroRight">
@@ -286,17 +275,28 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                 </div>
               </div>
             </div>
-            {user && referral?.referralUrl && (
-              <div className="referralInvite">
+            {siteSettings.referralMode !== "off" && (
+              <div className="referralInvite referralGetlinkInvite">
                 <div className="referralInviteHeader">
-                  <strong>{t.referralTitle || "Giới thiệu bạn bè, cả hai +1 lượt tải"}</strong>
-                  <span>{referral.referralCode}</span>
+                  <strong><UserPlus size={14} /> {referralTitle()}</strong>
+                  {referral?.referralCode && <span>{referral.referralCode}</span>}
                 </div>
                 <div className="referralUrlRow">
-                  <input value={referral.referralUrl} readOnly aria-label={t.referralTitle} />
-                  <button type="button" className="smallButton" onClick={copyReferralLink}>
-                    {referralCopied ? t.copied : t.copy}
-                  </button>
+                  <input
+                    value={referral?.referralUrl || ""}
+                    placeholder={language === "vi" ? "Đăng nhập để nhận link mời riêng" : "Sign in to get your invite link"}
+                    readOnly
+                    aria-label={t.referralTitle}
+                  />
+                  {referral?.referralUrl ? (
+                    <button type="button" className="smallButton" onClick={copyReferralLink}>
+                      {referralCopied ? t.copied : t.copy}
+                    </button>
+                  ) : (
+                    <a className="smallButton" href={user ? "/invite" : googleHref("/invite")}>
+                      {language === "vi" ? "ĐĂNG NHẬP" : "SIGN IN"}
+                    </a>
+                  )}
                 </div>
               </div>
             )}

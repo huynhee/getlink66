@@ -228,4 +228,9 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(
+  <>
+    <div className="cyber-scanlines" aria-hidden="true" />
+    <App />
+  </>,
+);

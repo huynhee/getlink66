@@ -15,7 +15,7 @@
   --neon-green: #00FF88;
   --neon-magenta: #FF2BD6;
   --neon-cyan: #00E5FF;
-  --terminal-bar: #11121C;
+  --terminal-bar: #1A1A28;
   --terminal-card: rgba(5, 7, 14, 0.92);
   --cyber-cut: polygon(0 10px, 10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px));
   --cyber-cut-sm: polygon(0 5px, 5px 0, calc(100% - 5px) 0, 100% 5px, 100% calc(100% - 5px), calc(100% - 5px) 100%, 5px 100%, 0 calc(100% - 5px));
@@ -71,19 +71,26 @@ body {
   color: var(--text-primary);
   background: var(--bg-app);
   background-image:
-    linear-gradient(rgba(0, 255, 136, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 255, 136, 0.03) 1px, transparent 1px);
+    linear-gradient(rgba(0, 255, 136, 0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 136, 0.012) 1px, transparent 1px);
   background-size: 50px 50px;
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
 }
 
-body::before {
+.cyber-scanlines {
+  position: relative;
+}
+
+.cyber-scanlines::after {
   content: "";
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-  z-index: 2147483647;
+  z-index: 9999;
   background: repeating-linear-gradient(
     0deg,
     transparent,
@@ -1082,7 +1089,10 @@ label {
 .loginBox,
 .previewPanel,
 .getlinkForm {
-  background: linear-gradient(180deg, rgba(10, 12, 22, 0.94), var(--bg-panel));
+  background:
+    linear-gradient(to bottom, transparent 27px, var(--border-light) 27px 28px, transparent 28px) top / 100% 29px no-repeat,
+    linear-gradient(var(--terminal-bar), var(--terminal-bar)) top / 100% 28px no-repeat,
+    linear-gradient(180deg, rgba(10, 12, 22, 0.94), var(--bg-panel));
   padding: calc(var(--space-12) + 12px) var(--space-12) var(--space-12);
   border: 1px solid var(--border-light);
   border-radius: 0;
@@ -1090,8 +1100,6 @@ label {
   backdrop-filter: blur(10px);
   position: relative;
   box-shadow:
-    inset 0 28px 0 rgba(17, 18, 28, 0.9),
-    inset 0 29px 0 rgba(255, 255, 255, 0.035),
     inset 0 1px 0 rgba(255, 255, 255, 0.035),
     0 20px 70px rgba(0, 0, 0, 0.22);
   overflow: hidden;
@@ -1107,20 +1115,33 @@ label {
   inset: 0;
   pointer-events: none;
   border: 1px solid rgba(255, 255, 255, 0.025);
+  background:
+    linear-gradient(rgba(0, 255, 136, 0.34), rgba(0, 255, 136, 0.34)) 8px 8px / 14px 1px no-repeat,
+    linear-gradient(rgba(0, 255, 136, 0.34), rgba(0, 255, 136, 0.34)) 8px 8px / 1px 14px no-repeat,
+    linear-gradient(rgba(0, 255, 136, 0.34), rgba(0, 255, 136, 0.34)) calc(100% - 22px) 8px / 14px 1px no-repeat,
+    linear-gradient(rgba(0, 255, 136, 0.34), rgba(0, 255, 136, 0.34)) calc(100% - 9px) 8px / 1px 14px no-repeat,
+    linear-gradient(rgba(0, 255, 136, 0.22), rgba(0, 255, 136, 0.22)) 8px calc(100% - 9px) / 14px 1px no-repeat,
+    linear-gradient(rgba(0, 255, 136, 0.22), rgba(0, 255, 136, 0.22)) 8px calc(100% - 22px) / 1px 14px no-repeat,
+    linear-gradient(rgba(0, 255, 136, 0.22), rgba(0, 255, 136, 0.22)) calc(100% - 22px) calc(100% - 9px) / 14px 1px no-repeat,
+    linear-gradient(rgba(0, 255, 136, 0.22), rgba(0, 255, 136, 0.22)) calc(100% - 9px) calc(100% - 22px) / 1px 14px no-repeat;
   clip-path: var(--cyber-cut);
 }
 
-.panel:not(.has-window-controls)::before {
+.panel:not(.has-window-controls)::before,
+.accountCard::before,
+.featureGrid article::before,
+.loginBox::before,
+.previewPanel::before,
+.package::before {
   content: "";
   position: absolute;
   top: 10px;
   left: 12px;
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: #FF5F56;
-  box-shadow: 16px 0 0 #FFBD2E, 32px 0 0 #27C93F;
-  opacity: 0.9;
+  box-shadow: 14px 0 0 #FFBD2E, 28px 0 0 #27CA40;
 }
 
 .panel:not(.has-window-controls)>h2:first-child {
@@ -1132,8 +1153,6 @@ label {
 .getlinkForm:focus-within {
   border-color: var(--neon-green);
   box-shadow:
-    inset 0 28px 0 rgba(17, 18, 28, 0.95),
-    inset 0 29px 0 rgba(0, 255, 136, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.045),
     0 0 0 1px rgba(0, 255, 136, 0.28),
     0 0 34px rgba(0, 255, 136, 0.12);
@@ -1294,13 +1313,13 @@ label {
   display: flex;
   gap: 6px;
   position: absolute;
-  top: 12px;
+  top: 10px;
   left: 12px;
 }
 
 .window-controls span {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   display: inline-block;
 }
@@ -1314,7 +1333,7 @@ label {
 }
 
 .window-controls span:nth-child(3) {
-  background: #27C93F;
+  background: #27CA40;
 }
 
 .has-window-controls {
@@ -1325,9 +1344,31 @@ label {
    LANDING PAGE (Dark Cyber)
    ========================================================================== */
 .landing {
+  --landing-grid-top-offset: -72px;
+  position: relative;
+  isolation: isolate;
   display: grid;
-  gap: var(--space-40);
+  gap: 0;
   padding: var(--space-20) 0 var(--space-64);
+}
+
+.landing::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: var(--landing-grid-top-offset);
+  bottom: 0;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(0, 255, 136, 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 136, 0.14) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.52;
+  -webkit-mask-image: radial-gradient(ellipse 82% 50% at 50% 25%, #000 0%, #000 34%, rgba(0, 0, 0, 0.48) 68%, transparent 100%);
+  mask-image: radial-gradient(ellipse 82% 50% at 50% 25%, #000 0%, #000 34%, rgba(0, 0, 0, 0.48) 68%, transparent 100%);
 }
 
 .signalRail {
@@ -1400,15 +1441,43 @@ label {
 }
 
 .heroSection {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-24);
   align-items: center;
+  min-height: 570px;
+  padding: var(--space-40) 0;
+}
+
+.heroSection::after,
+#pricing::before,
+.ctaSection::before,
+.landingFooter::before {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 136, 0.22) 12%, rgba(0, 229, 255, 0.38) 50%, rgba(0, 255, 136, 0.22) 88%, transparent);
+}
+
+.heroSection::after {
+  bottom: 0;
 }
 
 @media (max-width: 900px) {
   .heroSection {
     grid-template-columns: 1fr;
+    min-height: auto;
+    padding: var(--space-32) 0;
+  }
+}
+
+@media (min-width: 1024px) {
+  .landing {
+    --landing-grid-top-offset: -80px;
   }
 }
 
@@ -1440,8 +1509,23 @@ label {
   clip-path: var(--cyber-cut-sm);
 }
 
-.heroLeft > .referralInvite {
-  display: none;
+.referralGetlinkInvite {
+  margin-top: var(--space-10);
+  background: rgba(2, 10, 8, 0.96);
+  border-color: rgba(0, 255, 136, 0.3);
+  box-shadow: 0 0 18px rgba(0, 255, 136, 0.06);
+}
+
+.referralGetlinkInvite strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.referralGetlinkInvite .smallButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .referralInviteHeader {
@@ -1847,6 +1931,34 @@ label {
   margin-bottom: var(--space-24);
 }
 
+#pricing {
+  position: relative;
+  margin-top: 0 !important;
+  padding: var(--space-40) 0;
+}
+
+#pricing::before,
+.ctaSection::before,
+.landingFooter::before {
+  top: 0;
+}
+
+#pricing::after,
+.ctaSection::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 58px;
+  height: 7px;
+  pointer-events: none;
+  transform: translateX(-50%);
+  border: 1px solid rgba(0, 255, 136, 0.36);
+  background: #07100d;
+  clip-path: var(--cyber-cut-sm);
+  box-shadow: 0 0 14px rgba(0, 255, 136, 0.14);
+}
+
 .sectionTitle h2,
 .sectionTitle h3 {
   display: inline-block;
@@ -1901,7 +2013,10 @@ label {
 }
 
 .pricingCard {
-  background: linear-gradient(180deg, rgba(8, 10, 18, 0.96), #010302);
+  background:
+    linear-gradient(to bottom, transparent 27px, var(--border-light) 27px 28px, transparent 28px) top / 100% 29px no-repeat,
+    linear-gradient(var(--terminal-bar), var(--terminal-bar)) top / 100% 28px no-repeat,
+    linear-gradient(180deg, rgba(8, 10, 18, 0.96), #010302);
   border: 1px solid var(--border-warm);
   padding: clamp(14px, 1.1vw, var(--space-16));
   padding-top: 44px;
@@ -1913,7 +2028,7 @@ label {
   position: relative;
   overflow: visible;
   transition: all 0.2s;
-  box-shadow: inset 0 28px 0 rgba(17, 18, 28, 0.88);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.16);
 }
 
 .pricingCard::before {
@@ -1925,12 +2040,12 @@ label {
   height: 8px;
   border-radius: 50%;
   background: #FF5F56;
-  box-shadow: 14px 0 0 #FFBD2E, 28px 0 0 #27C93F;
+  box-shadow: 14px 0 0 #FFBD2E, 28px 0 0 #27CA40;
 }
 
 .pricingCard:hover {
   border-color: var(--neon-green);
-  box-shadow: inset 0 28px 0 rgba(17, 18, 28, 0.92), 0 0 0 1px rgba(0, 255, 136, 0.22), 0 0 28px rgba(0, 255, 136, 0.14);
+  box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.22), 0 0 28px rgba(0, 255, 136, 0.14);
   transform: translateY(-4px);
 }
 
@@ -2119,13 +2234,14 @@ label {
 }
 
 .ctaSection {
+  position: relative;
   text-align: center;
   padding: var(--space-40) 0;
-  border-top: 1px solid var(--border-light);
-  margin-top: var(--space-20);
+  margin-top: 0;
 }
 
 .landingFooter {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(150px, 1fr));
   gap: var(--space-16);
@@ -2719,8 +2835,11 @@ label {
 
 .package {
   min-height: auto;
-  padding: var(--space-12);
-  background: linear-gradient(180deg, rgba(8, 10, 18, 0.9), #010302);
+  padding: calc(var(--space-12) + 12px) var(--space-12) var(--space-12);
+  background:
+    linear-gradient(to bottom, transparent 27px, var(--border-light) 27px 28px, transparent 28px) top / 100% 29px no-repeat,
+    linear-gradient(var(--terminal-bar), var(--terminal-bar)) top / 100% 28px no-repeat,
+    linear-gradient(180deg, rgba(8, 10, 18, 0.9), #010302);
   border: 1px solid var(--border-warm);
   display: flex;
   flex-direction: column;
@@ -2730,19 +2849,19 @@ label {
   transition: all 0.2s;
   position: relative;
   clip-path: var(--cyber-cut);
-  box-shadow: inset 0 22px 0 rgba(17, 18, 28, 0.78);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.16);
 }
 
 .package:hover {
   border-color: var(--neon-green);
-  box-shadow: inset 0 22px 0 rgba(17, 18, 28, 0.84), 0 0 0 1px rgba(0, 255, 136, 0.22), 0 0 18px rgba(0, 255, 136, 0.18);
+  box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.22), 0 0 18px rgba(0, 255, 136, 0.18);
   background: #000;
   transform: translateY(-2px);
 }
 
 .package.selectedPackage {
   border-color: var(--neon-green);
-  box-shadow: inset 0 22px 0 rgba(17, 18, 28, 0.84), 0 0 0 1px rgba(0, 255, 136, 0.42), 0 0 24px rgba(0, 255, 136, 0.22);
+  box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.42), 0 0 24px rgba(0, 255, 136, 0.22);
 }
 
 .topupCheckoutBox {
@@ -3802,6 +3921,10 @@ label {
 }
 
 @media (max-width: 640px) {
+  .landing {
+    --landing-grid-top-offset: -56px;
+  }
+
   .shell {
     padding: var(--space-8);
   }
@@ -3914,6 +4037,10 @@ label {
     align-items: stretch;
   }
 
+  .appFrame .facebookGroupBanner {
+    top: 58px;
+  }
+
   .referralInviteHeader,
   .referralUrlRow {
     grid-template-columns: 1fr;
@@ -3987,6 +4114,8 @@ label {
 
   .landingFooter {
     grid-template-columns: 1fr;
+    margin-left: 0;
+    margin-right: 0;
   }
 
   .guideLayout {
