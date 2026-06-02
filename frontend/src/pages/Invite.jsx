@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Check, Copy, Gift, Share2, UserPlus, Users } from "lucide-react";
+import { Check, Coins, Copy, Gift, Link2, LogIn, Share2, UserPlus, Users } from "lucide-react";
 import { api } from "../api.js";
 
 export default function Invite({ language = "vi" }) {
@@ -113,11 +113,19 @@ export default function Invite({ language = "vi" }) {
 
   return (
     <div className="stack invitePage">
-      <section className="panel inviteHero">
-        <div>
-          <span className="inviteEyebrow">{isVi ? "Chương trình giới thiệu" : "Referral program"}</span>
-          <h1>{isVi ? "Mời bạn bè" : "Invite friends"}</h1>
+      <section className="panel inviteHero inviteTerminalPanel">
+        <div className="inviteHeroCopy">
+          <span className="inviteSectionTag">
+            [ {isVi ? "Chương trình giới thiệu" : "Referral program"} ]
+          </span>
+          <h1>
+            <span>{isVi ? "Mời bạn" : "Invite"}</span>
+            <strong>{isVi ? "Nhận credit" : "Earn credit"}</strong>
+          </h1>
           <p>{rewardText}</p>
+          <div className="inviteTerminalStatus">
+            <span>$</span> referral --status <strong>active</strong><i>_</i>
+          </div>
         </div>
         <div className="inviteStats">
           <div>
@@ -130,34 +138,95 @@ export default function Invite({ language = "vi" }) {
             <span>{isVi ? "Đã nhận" : "Earned"}</span>
             <strong>{earnedCredit} credit</strong>
           </div>
+          <div>
+            <Coins size={18} />
+            <span>{isVi ? "Thưởng mỗi lượt" : "Reward per invite"}</span>
+            <strong>{summary.rewardCredit} credit</strong>
+          </div>
         </div>
       </section>
 
-      <section className="panel inviteLinkPanel">
-        <div>
-          <span>{isVi ? "Mã giới thiệu của bạn" : "Your referral code"}</span>
-          <strong>{summary.referralCode}</strong>
+      <section className="panel has-window-controls inviteLinkPanel inviteTerminalPanel">
+        <div className="invitePanelHeader">
+          <div className="inviteWindowDots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </div>
+          <span>[ {isVi ? "Link giới thiệu" : "Referral link"} ]</span>
+          <code>{summary.referralCode}</code>
         </div>
-        <div className="inviteLinkRow">
-          <input value={summary.referralUrl || ""} readOnly aria-label={isVi ? "Link giới thiệu" : "Referral link"} />
-          <button className="smallButton" type="button" onClick={copyReferralUrl}>
-            {copied ? <Check size={15} /> : <Copy size={15} />}
-            {copied ? (isVi ? "Đã copy" : "Copied") : "Copy"}
-          </button>
-          <button className="smallButton" type="button" onClick={shareReferralUrl}>
-            <Share2 size={15} />
-            {isVi ? "Chia sẻ" : "Share"}
-          </button>
+        <div className="inviteLinkBody">
+          <div className="inviteLinkIntro">
+            <div>
+              <span>{isVi ? "Mã giới thiệu của bạn" : "Your referral code"}</span>
+              <strong>{summary.referralCode}</strong>
+            </div>
+            <Link2 size={22} />
+          </div>
+          <div className="inviteLinkRow">
+            <input value={summary.referralUrl || ""} readOnly aria-label={isVi ? "Link giới thiệu" : "Referral link"} />
+            <button className="smallButton" type="button" onClick={copyReferralUrl}>
+              {copied ? <Check size={15} /> : <Copy size={15} />}
+              {copied ? (isVi ? "Đã copy" : "Copied") : "Copy"}
+            </button>
+            <button className="smallButton inviteShareButton" type="button" onClick={shareReferralUrl}>
+              <Share2 size={15} />
+              {isVi ? "Chia sẻ" : "Share"}
+            </button>
+          </div>
+          <p className="inviteLinkHint">
+            <span>&gt;</span>{" "}
+            {isVi
+              ? "Gửi link này cho bạn bè. Credit được cộng tự động khi đăng ký thành công."
+              : "Send this link to friends. Credit is added automatically after successful signup."}
+          </p>
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel inviteStepsPanel inviteTerminalPanel">
+        <div className="inviteSectionHeading">
+          <span className="inviteSectionTag">[ {isVi ? "03 bước" : "03 steps"} ]</span>
+          <h2>{isVi ? "Cách nhận credit" : "How to earn credit"}</h2>
+        </div>
+        <div className="inviteSteps">
+          <div className="inviteStep">
+            <strong>01</strong>
+            <Link2 size={19} />
+            <div>
+              <h3>{isVi ? "Copy link" : "Copy link"}</h3>
+              <p>{isVi ? "Lấy link giới thiệu cá nhân phía trên." : "Get your personal referral link above."}</p>
+            </div>
+          </div>
+          <div className="inviteStep">
+            <strong>02</strong>
+            <Share2 size={19} />
+            <div>
+              <h3>{isVi ? "Gửi cho bạn bè" : "Send to friends"}</h3>
+              <p>{isVi ? "Chia sẻ trực tiếp link đăng ký của bạn." : "Share your signup link directly."}</p>
+            </div>
+          </div>
+          <div className="inviteStep">
+            <strong>03</strong>
+            <LogIn size={19} />
+            <div>
+              <h3>{isVi ? "Nhận credit" : "Earn credit"}</h3>
+              <p>{isVi ? "Hệ thống cộng thưởng sau khi đăng ký." : "Credit is added after signup."}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel inviteHistoryPanel inviteTerminalPanel">
         <div className="inviteHistoryHeader">
-          <h2>
-            <UserPlus size={19} />
-            {isVi ? "Lịch sử thưởng giới thiệu" : "Referral reward history"}
-          </h2>
-          <span>{history.length}</span>
+          <div>
+            <span className="inviteSectionTag">[ {isVi ? "Nhật ký" : "Activity log"} ]</span>
+            <h2>
+              <UserPlus size={19} />
+              {isVi ? "Lịch sử thưởng" : "Reward history"}
+            </h2>
+          </div>
+          <span>{String(history.length).padStart(2, "0")}</span>
         </div>
         <div className="table inviteHistoryTable">
           {history.map((item) => (

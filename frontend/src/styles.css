@@ -71,9 +71,9 @@ body {
   color: var(--text-primary);
   background: var(--bg-app);
   background-image:
-    linear-gradient(to right, rgba(0, 255, 136, 0.075) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(0, 255, 136, 0.065) 1px, transparent 1px);
-  background-size: var(--grid-size) var(--grid-size), var(--grid-size) var(--grid-size);
+    linear-gradient(rgba(0, 255, 136, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 136, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
 }
@@ -84,25 +84,17 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: 2147483647;
-  background-image:
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.34) 0 1px, rgba(120, 128, 132, 0.12) 1px 2px, transparent 2px);
-  background-size: 100% var(--scanline-step);
-  background-position: 0 0;
-  background-repeat: repeat;
-  mix-blend-mode: normal;
-  opacity: 0.78;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.15) 2px,
+    rgba(0, 0, 0, 0.15) 4px
+  );
 }
 
 body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    linear-gradient(90deg, rgba(7, 8, 17, 0.82) 0%, rgba(7, 8, 17, 0.34) 18%, transparent 34%, transparent 66%, rgba(7, 8, 17, 0.34) 82%, rgba(7, 8, 17, 0.82) 100%),
-    linear-gradient(to bottom, transparent 0%, transparent 48%, rgba(7, 8, 17, 0.38) 78%, rgba(7, 8, 17, 0.72) 100%);
-  backdrop-filter: blur(0.6px);
+  content: none;
 }
 
 #root {
@@ -1497,21 +1489,43 @@ label {
   gap: var(--space-12);
 }
 
-.inviteHero,
-.inviteStats,
-.inviteLinkRow,
-.inviteHistoryHeader {
-  display: flex;
-  align-items: center;
+.inviteTerminalPanel {
+  position: relative;
+  overflow: hidden;
 }
 
 .inviteHero {
-  justify-content: space-between;
-  gap: var(--space-16);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.8fr);
+  gap: var(--space-20);
+  min-height: 270px;
+  padding: 36px;
+  background: rgba(3, 8, 7, 0.96);
 }
 
-.inviteEyebrow,
-.inviteLinkPanel span,
+.inviteHero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--neon-green) 1px, transparent 1px),
+    linear-gradient(90deg, var(--neon-green) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.2;
+  -webkit-mask-image: radial-gradient(circle, #000, transparent 80%);
+  mask-image: radial-gradient(circle, #000, transparent 80%);
+}
+
+.inviteHeroCopy,
+.inviteStats {
+  position: relative;
+  z-index: 1;
+}
+
+.inviteSectionTag,
+.invitePanelHeader span,
+.inviteLinkIntro span,
 .inviteStats span,
 .inviteHistoryUser span {
   color: var(--text-tertiary);
@@ -1521,26 +1535,60 @@ label {
 }
 
 .inviteHero h1 {
-  margin: 4px 0;
-  font-size: 28px;
+  display: grid;
+  gap: 3px;
+  margin: 14px 0 12px;
+  font-size: 52px;
+  line-height: 0.96;
+}
+
+.inviteHero h1 strong {
+  color: var(--neon-green);
+  text-shadow: 0 0 24px rgba(0, 255, 136, 0.28);
 }
 
 .inviteHero p {
+  max-width: 640px;
+  margin-bottom: 18px;
   color: var(--text-secondary);
 }
 
+.inviteTerminalStatus {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.inviteTerminalStatus span,
+.inviteTerminalStatus strong {
+  color: var(--neon-cyan);
+}
+
+.inviteTerminalStatus i {
+  color: var(--neon-green);
+  font-style: normal;
+}
+
 .inviteStats {
-  gap: var(--space-8);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: center;
+  border: 1px solid rgba(0, 229, 255, 0.18);
+  background: rgba(0, 0, 0, 0.42);
+  clip-path: var(--cyber-cut);
 }
 
 .inviteStats > div {
   display: grid;
-  min-width: 132px;
-  gap: 4px;
-  padding: 12px;
-  border: 1px solid var(--border-light);
-  background: rgba(0, 255, 136, 0.035);
-  clip-path: var(--cyber-cut-sm);
+  min-height: 98px;
+  align-content: center;
+  gap: 5px;
+  padding: 16px;
+  border-right: 1px solid rgba(0, 229, 255, 0.14);
+}
+
+.inviteStats > div:nth-child(3n) {
+  border-right: 0;
 }
 
 .inviteStats svg,
@@ -1551,16 +1599,76 @@ label {
 .inviteStats strong,
 .inviteLinkPanel strong {
   color: var(--neon-green);
+  font-family: var(--font-mono);
 }
 
 .inviteLinkPanel {
+  padding: 0;
+  background: rgba(2, 5, 8, 0.96);
+}
+
+.invitePanelHeader {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(0, 229, 255, 0.16);
+  background: rgba(17, 18, 28, 0.94);
+}
+
+.inviteWindowDots {
+  display: flex;
+  gap: 5px;
+}
+
+.inviteWindowDots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--neon-magenta);
+}
+
+.inviteWindowDots i:nth-child(2) {
+  background: #F59E0B;
+}
+
+.inviteWindowDots i:nth-child(3) {
+  background: var(--neon-green);
+}
+
+.invitePanelHeader code {
+  margin-left: auto;
+  color: var(--neon-cyan);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.inviteLinkBody {
   display: grid;
+  gap: var(--space-8);
+  padding: 20px;
+}
+
+.inviteLinkIntro,
+.inviteLinkRow,
+.inviteHistoryHeader {
+  display: flex;
+  align-items: center;
+}
+
+.inviteLinkIntro {
+  justify-content: space-between;
   gap: var(--space-8);
 }
 
-.inviteLinkPanel > div:first-child {
+.inviteLinkIntro > div {
   display: grid;
-  gap: 4px;
+  gap: 3px;
+}
+
+.inviteLinkIntro svg {
+  color: var(--neon-cyan);
 }
 
 .inviteLinkRow {
@@ -1575,9 +1683,94 @@ label {
   color: var(--neon-cyan);
 }
 
+.inviteShareButton {
+  color: var(--neon-cyan);
+  border-color: var(--neon-cyan);
+  background: rgba(0, 229, 255, 0.07);
+  box-shadow: none;
+}
+
+.inviteLinkHint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.inviteLinkHint span {
+  color: var(--neon-magenta);
+}
+
+.inviteStepsPanel,
+.inviteHistoryPanel {
+  padding: 42px 20px 20px;
+  background: rgba(3, 7, 7, 0.95);
+}
+
+.inviteSectionHeading {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.inviteSectionHeading h2,
+.inviteHistoryHeader h2 {
+  font-size: 24px;
+}
+
+.inviteSteps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid rgba(0, 255, 136, 0.17);
+  background: rgba(0, 0, 0, 0.28);
+  clip-path: var(--cyber-cut-sm);
+}
+
+.inviteStep {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 118px;
+  align-items: start;
+  padding: 16px;
+  border-right: 1px solid rgba(0, 255, 136, 0.17);
+}
+
+.inviteStep:last-child {
+  border-right: 0;
+}
+
+.inviteStep > strong {
+  color: var(--neon-magenta);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.inviteStep svg {
+  color: var(--neon-cyan);
+}
+
+.inviteStep h3 {
+  color: var(--neon-green);
+  font-size: 12px;
+}
+
+.inviteStep p {
+  margin: 6px 0 0;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 .inviteHistoryHeader {
   justify-content: space-between;
-  margin-bottom: var(--space-8);
+  gap: var(--space-8);
+  margin-bottom: 14px;
+}
+
+.inviteHistoryHeader > div {
+  display: grid;
+  gap: 6px;
 }
 
 .inviteHistoryHeader h2 {
@@ -1587,8 +1780,15 @@ label {
 }
 
 .inviteHistoryHeader > span {
+  min-width: 40px;
+  min-height: 34px;
+  display: grid;
+  place-items: center;
   color: var(--neon-green);
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  background: rgba(0, 255, 136, 0.05);
   font-family: var(--font-mono);
+  clip-path: var(--cyber-cut-sm);
 }
 
 .inviteHistoryTable .tableRow {
@@ -3581,6 +3781,24 @@ label {
   .topupCheckoutBox button {
     width: 100%;
   }
+
+  .inviteHero {
+    grid-template-columns: 1fr;
+  }
+
+  .inviteSteps {
+    grid-template-columns: 1fr;
+  }
+
+  .inviteStep {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid rgba(0, 255, 136, 0.17);
+  }
+
+  .inviteStep:last-child {
+    border-bottom: 0;
+  }
 }
 
 @media (max-width: 640px) {
@@ -3706,14 +3924,41 @@ label {
   }
 
   .inviteHero,
-  .inviteStats,
   .inviteLinkRow {
     align-items: stretch;
     flex-direction: column;
   }
 
+  .inviteHero {
+    min-height: 0;
+    padding: 24px 18px;
+  }
+
+  .inviteHero h1 {
+    font-size: 40px;
+  }
+
+  .inviteStats {
+    grid-template-columns: 1fr;
+  }
+
   .inviteStats > div {
     min-width: 0;
+    min-height: 78px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(0, 229, 255, 0.14);
+  }
+
+  .inviteStats > div:last-child {
+    border-bottom: 0;
+  }
+
+  .invitePanelHeader code {
+    display: none;
+  }
+
+  .inviteLinkRow .smallButton {
+    width: 100%;
   }
 
   .inviteHistoryTable .tableRow {
