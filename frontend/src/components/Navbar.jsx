@@ -198,7 +198,7 @@ export default function Navbar({
                     }
                   }}
                 >
-                  <span>[ {label} ]</span>
+                  <span>{key === "guide" ? label : `[ ${label} ]`}</span>
                 </button>
               );
             })}
