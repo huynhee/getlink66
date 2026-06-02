@@ -21,6 +21,7 @@ import {
   numberInRange,
   rejectUnknownKeys,
 } from "../utils/validators.js";
+import { expirePendingSepayTopups } from "../utils/topupExpiryService.js";
 
 const MAX_MANUAL_CREDIT = Number(process.env.MAX_MANUAL_CREDIT || 1000000);
 const MAX_STORED_CREDIT = Number(process.env.MAX_STORED_CREDIT || 10000000);
@@ -543,6 +544,8 @@ export async function listReferrals(_req, res, next) {
 
 export async function getOverview(req, res, next) {
   try {
+    await expirePendingSepayTopups();
+
     const requestedPeriod = String(req.query.period || "day");
     const revenuePeriod = ["day", "month", "year"].includes(requestedPeriod)
       ? requestedPeriod

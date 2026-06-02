@@ -9,6 +9,10 @@ function shouldBindFingerprintToIp() {
   return process.env.SESSION_FINGERPRINT_BIND_IP === "true";
 }
 
+function shouldEnforceFingerprint() {
+  return process.env.SESSION_FINGERPRINT_ENFORCE === "true";
+}
+
 function buildFingerprint(req, { bindIp = shouldBindFingerprintToIp() } = {}) {
   const ip = bindIp ? `${req.ip || ""}|` : "";
   return crypto
@@ -115,15 +119,26 @@ export async function jwtAuth(req, res, next) {
 
     // Verify fingerprint (Anti Hijacking)
     if (!isValidFingerprint(req, payload.fp)) {
-      securityEvent("SESSION_HIJACK_SUSPECT", {
+      const enforceFingerprint = shouldEnforceFingerprint();
+      securityEvent(
+        enforceFingerprint
+          ? "SESSION_HIJACK_SUSPECT"
+          : "SESSION_FINGERPRINT_CHANGED",
+        {
         userId: payload.id,
         path: req.path,
         ip: req.ip,
-      });
-      clearAuthCookies(res);
-      return res
-        .status(401)
-        .json({ message: SESSION_EXPIRED_MESSAGE });
+        },
+      );
+
+      if (enforceFingerprint) {
+        clearAuthCookies(res);
+        return res
+          .status(401)
+          .json({ message: SESSION_EXPIRED_MESSAGE });
+      }
+
+      shouldRotateTokens = true;
     }
 
     if (shouldRotateTokens) {

@@ -9,10 +9,22 @@ const router = Router();
 const previewLimit = createRateLimit({ keyPrefix: "getlink-preview", windowMs: 60_000, max: 30 });
 const getlinkLimit = createRateLimit({ keyPrefix: "getlink-create", windowMs: 60_000, max: 10 });
 const downloadLimit = createRateLimit({ keyPrefix: "getlink-download", windowMs: 60_000, max: 30 });
+const previewIpLimit = createRateLimit({
+  keyPrefix: "getlink-preview-ip",
+  windowMs: 60_000,
+  max: Number(process.env.GETLINK_PREVIEW_IP_RATE_LIMIT || 180),
+  keyGenerator: (req) => req.ip,
+});
+const getlinkIpLimit = createRateLimit({
+  keyPrefix: "getlink-create-ip",
+  windowMs: 60_000,
+  max: Number(process.env.GETLINK_CREATE_IP_RATE_LIMIT || 60),
+  keyGenerator: (req) => req.ip,
+});
 
-router.post("/getlink/preview", requireAuth, requireNotBanned, previewLimit, previewGetlink);
+router.post("/getlink/preview", requireAuth, requireNotBanned, previewLimit, previewIpLimit, previewGetlink);
 router.post("/getlink/inspect", requireAuth, adminOnly, previewLimit, inspectGetlink);
-router.post("/getlink", requireAuth, requireNotBanned, getlinkLimit, getLink);
+router.post("/getlink", requireAuth, requireNotBanned, getlinkLimit, getlinkIpLimit, getLink);
 router.get("/getlink/download/:id", downloadLimit, downloadGetlink);
 router.get("/getlink/history", requireAuth, getlinkHistory);
 

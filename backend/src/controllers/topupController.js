@@ -12,6 +12,7 @@ import {
   rejectUnknownKeys,
 } from "../utils/validators.js";
 import { voucherUnavailableMessage } from "../utils/voucherStatus.js";
+import { expirePendingSepayTopups } from "../utils/topupExpiryService.js";
 
 const MIN_TOPUP_AMOUNT = Number(process.env.MIN_TOPUP_AMOUNT || 1000);
 
@@ -176,6 +177,8 @@ export async function getPackages(_req, res, next) {
 
 export async function createTopup(req, res, next) {
   try {
+    await expirePendingSepayTopups({ userId: req.user._id });
+
     const unknownKey = rejectUnknownKeys(req.body, [
       "packageId",
       "price",
@@ -336,6 +339,8 @@ export async function createTopup(req, res, next) {
 
 export async function topupHistory(req, res, next) {
   try {
+    await expirePendingSepayTopups({ userId: req.user._id });
+
     const history = await Topup.find({ userId: req.user._id })
       .populate("packageId", "name")
       .sort({ createdAt: -1 })
@@ -353,11 +358,16 @@ export async function topupStatus(req, res, next) {
       return res.status(400).json({ message: "Invalid topup id" });
     }
 
+    await expirePendingSepayTopups({
+      _id: req.params.id,
+      userId: req.user._id,
+    });
+
     const topup = await Topup.findOne({
       _id: req.params.id,
       userId: req.user._id,
     })
-      .select("status credit amount paymentCode paidAt createdAt updatedAt")
+      .select("status credit amount paymentCode paidAt canceledAt rejectionReason createdAt updatedAt")
       .lean();
 
     if (!topup) {
@@ -369,6 +379,65 @@ export async function topupStatus(req, res, next) {
       status: topup.status,
       credit: topup.credit,
       userCredit: req.user.credit,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function cancelTopup(req, res, next) {
+  try {
+    if (!isSafeId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid topup id" });
+    }
+
+    const unknownKey = rejectUnknownKeys(req.body, ["reason"]);
+    if (unknownKey) {
+      return res.status(400).json({ message: "Invalid cancel request" });
+    }
+
+    const reason = String(req.body.reason || "user_cancel");
+    if (!["user_cancel", "gateway_error"].includes(reason)) {
+      return res.status(400).json({ message: "Invalid cancel reason" });
+    }
+
+    const canceledAt = new Date();
+    let topup = await Topup.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        userId: req.user._id,
+        gatewayProvider: "sepay",
+        status: "pending",
+      },
+      {
+        $set: {
+          status: "rejected",
+          canceledAt,
+          rejectionReason: reason,
+        },
+      },
+      { new: true },
+    );
+
+    if (!topup) {
+      topup = await Topup.findOne({
+        _id: req.params.id,
+        userId: req.user._id,
+      });
+    }
+
+    if (!topup) {
+      return res.status(404).json({ message: "Topup not found" });
+    }
+
+    res.json({
+      topup,
+      status: topup.status,
+      userCredit: req.user.credit,
+      message:
+        topup.status === "approved"
+          ? "Giao dịch đã được xác nhận thanh toán."
+          : "Đã hủy đơn thanh toán SePay.",
     });
   } catch (error) {
     next(error);

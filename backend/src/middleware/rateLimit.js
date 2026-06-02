@@ -50,7 +50,7 @@ export function createRateLimit({
     if (bucket.count > max) {
       securityEvent("RATE_LIMIT_HIT", { ip: req.ip, key, path: req.path, count: bucket.count });
       res.setHeader("retry-after", String(Math.ceil((bucket.resetAt - now) / 1000)));
-      return res.status(429).json({ message: "Too many requests. Please try again later." });
+      return res.status(429).json({ message: "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút." });
     }
 
     return next();

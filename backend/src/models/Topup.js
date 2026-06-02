@@ -36,6 +36,8 @@ const topupSchema = new mongoose.Schema(
     accountName: String,
     expiresAt: Date,
     paidAt: Date,
+    canceledAt: Date,
+    rejectionReason: String,
     gatewayTransactionId: { type: String, index: true },
     gatewayPayload: mongoose.Schema.Types.Mixed,
   },

@@ -37,6 +37,12 @@ function recentApprovedTopup(history = []) {
   });
 }
 
+function clearPaymentQuery() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("payment");
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 export default function Topup({ user, onUserChange, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const locale = language === "vi" ? "vi-VN" : "en-US";
@@ -57,19 +63,54 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   useEffect(() => {
     const paymentStatus = new URLSearchParams(window.location.search).get("payment");
     if (!paymentStatus) return undefined;
-
-    if (paymentStatus === "error") {
-      window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
-      setError(t.paymentError);
-      return undefined;
-    }
-    if (paymentStatus === "cancel") {
-      window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
-      setMessage(t.paymentCanceled);
-      return undefined;
-    }
-
     const pendingTopupId = window.sessionStorage.getItem(PENDING_TOPUP_ID_KEY);
+
+    if (["error", "cancel"].includes(paymentStatus)) {
+      let canceled = false;
+
+      async function closePendingPayment() {
+        if (!pendingTopupId) {
+          clearPaymentQuery();
+          if (paymentStatus === "error") setError(t.paymentError);
+          else setMessage(t.paymentCanceled);
+          return;
+        }
+
+        try {
+          const data = await api(`/api/topup/${pendingTopupId}/cancel`, {
+            method: "POST",
+            body: JSON.stringify({
+              reason: paymentStatus === "error" ? "gateway_error" : "user_cancel",
+            }),
+          });
+          if (canceled) return;
+
+          window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
+          clearPaymentQuery();
+          setPayment(null);
+
+          if (data.status === "approved") {
+            setLastPaidPayment(data.topup);
+            onUserChange({ ...user, credit: data.userCredit });
+            setMessage(language === "vi"
+              ? `Nạp thành công: +${data.topup.credit} credit. Số dư hiện tại: ${data.userCredit} credit`
+              : `Top-up successful: +${data.topup.credit} credit. Current balance: ${data.userCredit} credit`);
+            return;
+          }
+
+          if (paymentStatus === "error") setError(t.paymentError);
+          else setMessage(t.paymentCanceled);
+        } catch (err) {
+          if (!canceled) setError(err.message);
+        }
+      }
+
+      closePendingPayment();
+      return () => {
+        canceled = true;
+      };
+    }
+
     setMessage(t.checkingPayment);
     if (!pendingTopupId) {
       api("/api/topup/history")
@@ -98,6 +139,12 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
             ? `Nạp thành công: +${data.topup.credit} credit. Số dư hiện tại: ${data.userCredit} credit`
             : `Top-up successful: +${data.topup.credit} credit. Current balance: ${data.userCredit} credit`);
           window.clearInterval(timer);
+        } else if (data.status === "rejected") {
+          window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
+          clearPaymentQuery();
+          setPayment(null);
+          setMessage(t.paymentCanceled);
+          window.clearInterval(timer);
         }
       } catch {
         /* keep polling */
@@ -122,6 +169,11 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           setMessage(language === "vi"
             ? `Nạp thành công: +${data.topup.credit} credit. Số dư hiện tại: ${data.userCredit} credit`
             : `Top-up successful: +${data.topup.credit} credit. Current balance: ${data.userCredit} credit`);
+          window.clearInterval(timer);
+        } else if (data.status === "rejected") {
+          setPayment(null);
+          window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
+          setMessage(t.paymentCanceled);
           window.clearInterval(timer);
         }
       } catch {
