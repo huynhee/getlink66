@@ -9,7 +9,7 @@ export const translations = {
     history: "Lịch sử",
     guide: "Hướng dẫn",
     guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
-    guideList: "Bài hướng dẫn",
+    guideList: "Hướng dẫn",
     noGuides: "Chưa có bài hướng dẫn.",
     admin: "Admin",
     logout: "Đăng xuất",
