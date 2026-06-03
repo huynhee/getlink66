@@ -32,6 +32,13 @@ function sortArticles(articles = []) {
   });
 }
 
+function articlesForLanguage(articles = [], language = "vi") {
+  const exact = articles.filter((article) => article.language === language);
+  if (exact.length) return exact;
+  const fallback = articles.filter((article) => article.language === "vi");
+  return fallback.length ? fallback : articles;
+}
+
 async function uniqueSlug(baseSlug, ignoreId = "") {
   let candidate = slugify(baseSlug);
   let suffix = 2;
@@ -79,7 +86,7 @@ export async function listPublishedGuides(req, res, next) {
   try {
     const language = normalizeLanguage(req.query.language);
     const articles = (await GuideArticle.find({ isPublished: true })).map(toPlain);
-    const filtered = articles.filter((article) => article.language === language);
+    const filtered = articlesForLanguage(articles, language);
     res.json({ articles: sortArticles(filtered) });
   } catch (error) {
     next(error);
@@ -90,7 +97,10 @@ export async function getPublishedGuide(req, res, next) {
   try {
     const language = normalizeLanguage(req.query.language);
     const articles = (await GuideArticle.find({ slug: req.params.slug, isPublished: true })).map(toPlain);
-    const article = articles.find((item) => item.language === language) || articles[0];
+    const article =
+      articles.find((item) => item.language === language) ||
+      articles.find((item) => item.language === "vi") ||
+      articles[0];
     if (!article) return res.status(404).json({ message: "Guide article not found" });
     res.json({ article });
   } catch (error) {
