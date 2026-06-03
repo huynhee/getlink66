@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Loader2, ArrowDownToLine, Copy, Check, ClipboardPaste, Search } from "lucide-react";
+import { Loader2, ArrowDownToLine, Copy, Check, ClipboardPaste, Search, ImageDown } from "lucide-react";
 import { api } from "../api.js";
 import { translations } from "../i18n.js";
 import {
@@ -13,8 +13,10 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   const t = translations[language] || translations.vi;
   const [url, setUrl] = useState(initialUrl);
   const [result, setResult] = useState("");
+  const [previewImageDownloadUrl, setPreviewImageDownloadUrl] = useState("");
   const [preview, setPreview] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [includePreviewImage, setIncludePreviewImage] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -91,10 +93,22 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     clearProgressLater(2200);
   }
 
+  function triggerBrowserDownload(downloadUrl) {
+    if (!downloadUrl) return;
+    const anchor = document.createElement("a");
+    anchor.href = downloadUrl;
+    anchor.target = "_blank";
+    anchor.rel = "noreferrer";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
+
   async function submit(event) {
     event.preventDefault();
     setError("");
     setResult("");
+    setPreviewImageDownloadUrl("");
     setPreview(null);
     setPreviewUrl("");
     if (disabledReason) {
@@ -127,6 +141,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   async function confirmDownload() {
     setError("");
     setResult("");
+    setPreviewImageDownloadUrl("");
     if (disabledReason) {
       setError(disabledReason);
       return;
@@ -137,9 +152,13 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     try {
       const data = await api("/api/getlink", {
         method: "POST",
-        body: JSON.stringify({ url: previewUrl || url })
+        body: JSON.stringify({
+          url: previewUrl || url,
+          includePreviewImage
+        })
       });
       setResult(data.downloadUrl || data.url);
+      setPreviewImageDownloadUrl(data.previewImageDownloadUrl || "");
       setPreview({
         ...(preview || {}),
         title: data.title || preview?.title,
@@ -148,6 +167,9 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
         creditCost: data.creditUsed || preview?.creditCost
       });
       onCreditChange(data.credit);
+      if (includePreviewImage && data.previewImageDownloadUrl) {
+        window.setTimeout(() => triggerBrowserDownload(data.previewImageDownloadUrl), 250);
+      }
       finishProgress(language === "vi" ? "Đã sẵn sàng tải file" : "Download is ready");
     } catch (err) {
       setError(err.message);
@@ -188,6 +210,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
       setUrl(pasted);
       setPreview(null);
       setResult("");
+      setPreviewImageDownloadUrl("");
       setProgress(0);
       setProgressLabel("");
       resetFaviconProgress();
@@ -211,6 +234,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
                 setUrl(event.target.value);
                 setPreview(null);
                 setResult("");
+                setPreviewImageDownloadUrl("");
                 setProgress(0);
                 setProgressLabel("");
                 resetFaviconProgress();
@@ -227,6 +251,17 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
             {loading ? t.processing : t.checkLink}
           </button>
         </div>
+        <label className="previewImageOption">
+          <input
+            type="checkbox"
+            checked={includePreviewImage}
+            onChange={(event) => setIncludePreviewImage(event.target.checked)}
+          />
+          <span>
+            <strong>{t.downloadPreviewImageOption}</strong>
+            <small>{t.downloadPreviewImageHelp}</small>
+          </span>
+        </label>
       </form>
       {(loading || confirming || progress > 0) && (
         <div className="getlinkProgress" aria-live="polite">
@@ -285,6 +320,18 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               {copied ? t.copied : t.copy}
             </button>
           </div>
+          {(includePreviewImage || previewImageDownloadUrl) && (
+            <div className="previewImageDownloadRow">
+              {previewImageDownloadUrl ? (
+                <a href={previewImageDownloadUrl} target="_blank" rel="noreferrer">
+                  <ImageDown size={16} />
+                  {t.previewImageDownload}
+                </a>
+              ) : (
+                <p className="muted">{t.previewImageUnavailable}</p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </section>

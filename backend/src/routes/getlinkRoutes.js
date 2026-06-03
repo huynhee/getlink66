@@ -1,5 +1,12 @@
 import { Router } from "express";
-import { downloadGetlink, getLink, getlinkHistory, inspectGetlink, previewGetlink } from "../controllers/getlinkController.js";
+import {
+  downloadGetlink,
+  downloadGetlinkPreviewImage,
+  getLink,
+  getlinkHistory,
+  inspectGetlink,
+  previewGetlink,
+} from "../controllers/getlinkController.js";
 import { adminOnly } from "../middleware/adminOnly.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireNotBanned } from "../middleware/requireNotBanned.js";
@@ -26,6 +33,7 @@ router.post("/getlink/preview", requireAuth, requireNotBanned, previewLimit, pre
 router.post("/getlink/inspect", requireAuth, adminOnly, previewLimit, inspectGetlink);
 router.post("/getlink", requireAuth, requireNotBanned, getlinkLimit, getlinkIpLimit, getLink);
 router.get("/getlink/download/:id", downloadLimit, downloadGetlink);
+router.get("/getlink/preview-image/:id", downloadLimit, downloadGetlinkPreviewImage);
 router.get("/getlink/history", requireAuth, getlinkHistory);
 
 export default router;

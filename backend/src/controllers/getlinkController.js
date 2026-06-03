@@ -157,7 +157,7 @@ function isRecentPartialDownloadSession(history) {
 }
 
 function readUrlRequest(req, res) {
-  const unknownKey = rejectUnknownKeys(req.body, ["url"]);
+  const unknownKey = rejectUnknownKeys(req.body, ["url", "includePreviewImage"]);
   if (unknownKey) {
     res.status(400).json({ message: "Invalid getlink request" });
     return null;
@@ -170,6 +170,15 @@ function readUrlRequest(req, res) {
   }
 
   return url;
+}
+
+function normalizeBooleanFlag(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  if (typeof value === "string") {
+    return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+  }
+  return false;
 }
 
 function shouldWriteSystemError(error) {
@@ -228,6 +237,12 @@ function publicDownloadUrl(req, historyId) {
   return `${publicBaseUrl(req)}/api/getlink/download/${historyId}?t=${token}`;
 }
 
+function publicPreviewImageUrl(req, historyId) {
+  const userId = String(req.user?._id || "");
+  const token = signDownloadToken(String(historyId), userId);
+  return `${publicBaseUrl(req)}/api/getlink/preview-image/${historyId}?t=${token}`;
+}
+
 function publicHistoryItem(req, item) {
   const doc = item.toObject ? item.toObject() : item;
   const allowed = canRedownload(doc);
@@ -235,6 +250,8 @@ function publicHistoryItem(req, item) {
     ...doc,
     fileUrl: undefined,
     downloadUrl: allowed ? publicDownloadUrl(req, doc._id) : null,
+    previewImageDownloadUrl:
+      allowed && doc.imageUrl ? publicPreviewImageUrl(req, doc._id) : null,
     canRedownload: allowed,
     redownloadExpiresAt: redownloadExpiresAt(doc),
     redownloadDays: redownloadWindowDays(),
@@ -247,11 +264,16 @@ function publicHistoryItem(req, item) {
   };
 }
 
-function sendFreeRedownload(req, res, history) {
+function sendFreeRedownload(req, res, history, options = {}) {
   const downloadUrl = publicDownloadUrl(req, history._id);
+  const includePreviewImage = Boolean(options.includePreviewImage);
   return res.json({
     url: downloadUrl,
     downloadUrl,
+    previewImageDownloadUrl:
+      includePreviewImage && history.imageUrl
+        ? publicPreviewImageUrl(req, history._id)
+        : null,
     productId: history.productId,
     title: history.title,
     imageUrl: history.imageUrl,
@@ -290,6 +312,41 @@ function fileExtensionFromUrl(fileUrl = "") {
   const name = fileNameFromUrl(fileUrl, "");
   const match = name.match(/\.(rar|zip|7z|tar|gz|dwg|skp|max|fbx|obj)$/i);
   return match ? match[0].toLowerCase() : ".rar";
+}
+
+function imageExtensionFromUrl(imageUrl = "", contentType = "") {
+  const byContentType = String(contentType).toLowerCase();
+  if (byContentType.includes("png")) return ".png";
+  if (byContentType.includes("webp")) return ".webp";
+  if (byContentType.includes("gif")) return ".gif";
+  if (byContentType.includes("jpeg") || byContentType.includes("jpg")) return ".jpg";
+
+  try {
+    const parsed = new URL(imageUrl);
+    const match = parsed.pathname.match(/\.(jpe?g|png|webp|gif)$/i);
+    return match ? `.${match[1].toLowerCase().replace("jpeg", "jpg")}` : ".jpg";
+  } catch {
+    return ".jpg";
+  }
+}
+
+function previewImageFileName(history, contentType = "") {
+  const modelName = fileNameFromUrl(history.fileUrl, history.productId);
+  const baseName =
+    modelName.replace(/\.[^.]+$/, "").trim() ||
+    String(history.productId || "preview");
+  return `${baseName}${imageExtensionFromUrl(history.imageUrl, contentType)}`.replace(/"/g, "");
+}
+
+function resolvePreviewImageUrl(imageUrl = "", sourceUrl = "") {
+  const resolved = new URL(
+    String(imageUrl || ""),
+    sourceUrl || "https://www.3d66.com/",
+  );
+  if (!["http:", "https:"].includes(resolved.protocol)) {
+    throw httpError(400, "Invalid preview image URL");
+  }
+  return resolved.toString();
 }
 
 function dispositionFileName(disposition = "") {
@@ -604,6 +661,7 @@ export async function getLink(req, res, next) {
   try {
     const url = readUrlRequest(req, res);
     if (!url) return;
+    const includePreviewImage = normalizeBooleanFlag(req.body?.includePreviewImage);
 
     const productId = extractProductId(url);
     let effectiveProductId = productId;
@@ -632,7 +690,9 @@ export async function getLink(req, res, next) {
       productId,
     );
     if (activeRedownload) {
-      return sendFreeRedownload(req, res, activeRedownload);
+      return sendFreeRedownload(req, res, activeRedownload, {
+        includePreviewImage,
+      });
     }
 
     let cachePreview = await ProductCache.findOne({ productId });
@@ -678,7 +738,9 @@ export async function getLink(req, res, next) {
           previewPayload.productId,
         );
         if (previewRedownload) {
-          return sendFreeRedownload(req, res, previewRedownload);
+          return sendFreeRedownload(req, res, previewRedownload, {
+            includePreviewImage,
+          });
         }
       }
 
@@ -735,10 +797,15 @@ export async function getLink(req, res, next) {
       creditUsed: creditCost,
     });
     const downloadUrl = publicDownloadUrl(req, history._id);
+    const previewImageDownloadUrl =
+      includePreviewImage && cache.imageUrl
+        ? publicPreviewImageUrl(req, history._id)
+        : null;
 
     res.json({
       url: downloadUrl,
       downloadUrl,
+      previewImageDownloadUrl,
       productId: cache.productId,
       title: cache.title,
       imageUrl: cache.imageUrl,
@@ -1052,6 +1119,133 @@ export async function downloadGetlink(req, res, next) {
     next(error);
   } finally {
     if (downloadSlot?.release) downloadSlot.release();
+  }
+}
+
+export async function downloadGetlinkPreviewImage(req, res, next) {
+  const controller = new AbortController();
+  let activeLogUserId = req.user?._id;
+  res.on("close", () => {
+    if (!res.writableEnded) controller.abort();
+  });
+
+  try {
+    if (!isSafeId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid download id" });
+    }
+
+    const history = await Getlink.findById(req.params.id);
+    if (!history) {
+      return res.status(404).json({ message: "Download not found" });
+    }
+    activeLogUserId = history.userId;
+
+    const token = String(req.query?.t || "");
+    const ownerUserId = String(history.userId);
+    const authenticatedOwner =
+      req.isAuthenticated?.() &&
+      req.user &&
+      String(req.user._id) === ownerUserId;
+    const tokenValid = verifyDownloadToken(
+      token,
+      String(req.params.id),
+      ownerUserId,
+    );
+
+    if (!authenticatedOwner && !tokenValid) {
+      securityEvent("PREVIEW_IMAGE_TOKEN_INVALID", {
+        userId: ownerUserId,
+        requesterId: req.user?._id ? String(req.user._id) : "",
+        historyId: String(req.params.id),
+        ip: req.ip,
+        path: req.path,
+      });
+      return res.status(403).json({
+        message:
+          "Preview image link da het han hoac khong hop le. Vui long mo lai tu trang Lich su / Getlink.",
+      });
+    }
+
+    if (!history.imageUrl) {
+      return res.status(404).json({ message: "Preview image not found" });
+    }
+
+    if (!isWithinRedownloadWindow(history)) {
+      return res.status(403).json({
+        message: `Free redownload expired after ${redownloadWindowDays()} days. Please getlink this model again.`,
+        canRedownload: false,
+        redownloadExpiresAt: redownloadExpiresAt(history),
+      });
+    }
+
+    const previewUrl = resolvePreviewImageUrl(
+      history.imageUrl,
+      history.sourceUrl,
+    );
+    const upstream = await fetch(previewUrl, {
+      signal: controller.signal,
+      headers: {
+        "user-agent":
+          req.get("user-agent") ||
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        referer: history.sourceUrl || "https://www.3d66.com/",
+        accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      },
+    });
+
+    if (!upstream.ok) {
+      return res
+        .status(upstream.status || 502)
+        .json({ message: `Preview image download failed: HTTP ${upstream.status}` });
+    }
+
+    const contentType = upstream.headers.get("content-type") || "image/jpeg";
+    if (!String(contentType).toLowerCase().startsWith("image/")) {
+      return res.status(502).json({
+        message: "3D66 did not return a preview image.",
+      });
+    }
+
+    const fileName = previewImageFileName(history, contentType);
+    const encoded = encodeURIComponent(fileName).replace(/['()]/g, (char) =>
+      `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+    );
+    const contentLength = upstream.headers.get("content-length");
+    if (contentLength) res.setHeader("content-length", contentLength);
+    res.setHeader("content-type", contentType);
+    res.setHeader(
+      "content-disposition",
+      `attachment; filename="${fileName}"; filename*=UTF-8''${encoded}`,
+    );
+    res.setHeader("cache-control", "no-store");
+    res.setHeader("x-accel-buffering", "no");
+    res.status(200);
+
+    if (!upstream.body) {
+      return res.end();
+    }
+
+    res.flushHeaders();
+    await pipeline(Readable.fromWeb(upstream.body), res);
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    if (isClientDownloadAbort(error, controller.signal)) return;
+    await writeSystemLog({
+      type: "download",
+      level: "error",
+      message: error.message,
+      userId: activeLogUserId,
+      historyId: req.params?.id,
+      ip: req.ip,
+      path: req.path,
+      status: error.status,
+      details: { stage: "preview-image" },
+    });
+    if (res.headersSent) {
+      console.error("Preview image stream failed after headers were sent:", error);
+      return;
+    }
+    next(error);
   }
 }
 
