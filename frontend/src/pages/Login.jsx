@@ -326,67 +326,6 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
         </section>
       )}
 
-      {!adminMode && (
-        <section className="homeGuideSection" id="home-guide">
-          <div className="sectionTitle">
-            <h3>
-              <BookOpen size={14} />
-              {t.guide}
-            </h3>
-            <h2 className="glitchTitle subtle" data-text={t.guideList}>
-              {t.guideList}
-            </h2>
-            <p>{t.guideIntro}</p>
-          </div>
-
-          <section className="guideLayout homeGuideLayout">
-            <aside className="panel guideSidebar homeGuideSidebar">
-              <h3>{t.guideList}</h3>
-              {guideLoading && <p className="muted">{t.loading}</p>}
-              {guideError && <p className="error">{guideError}</p>}
-              {!guideLoading && !guideArticles.length && <p className="muted">{t.noGuides}</p>}
-              <div className="guideNav">
-                {guideArticles.map((article) => (
-                  <button
-                    key={article._id}
-                    type="button"
-                    className={activeGuideArticle?.slug === article.slug ? "active" : ""}
-                    onClick={() => setGuideActiveSlug(article.slug)}
-                  >
-                    <span>{article.title}</span>
-                    <ChevronRight size={14} />
-                  </button>
-                ))}
-              </div>
-            </aside>
-
-            <article className="panel guideArticle homeGuideArticle">
-              {activeGuideArticle ? (
-                <>
-                  <h2>{activeGuideArticle.title}</h2>
-                  {activeGuideArticle.coverImage && (
-                    <figure className="guideImage guideCoverImage">
-                      <img src={activeGuideArticle.coverImage} alt={activeGuideArticle.title} loading="lazy" referrerPolicy="no-referrer" />
-                    </figure>
-                  )}
-                  {activeGuideArticle.summary && <p className="guideSummary">{activeGuideArticle.summary}</p>}
-                  <div className="guideArticleBody">
-                    <GuideContent content={activeGuideArticle.content} />
-                  </div>
-                  <div className="homeGuideActions">
-                    <a className="googleButton" href="/guide">
-                      {t.guide} <ArrowRight size={16} />
-                    </a>
-                  </div>
-                </>
-              ) : (
-                <p className="muted">{guideLoading ? t.loading : t.noGuides}</p>
-              )}
-            </article>
-          </section>
-        </section>
-      )}
-
       {adminMode && (
         <section className="loginPage adminLoginPage">
           <div className="panel loginPanel has-window-controls">
@@ -488,6 +427,65 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                 </div>
               ))}
             </div>
+          </section>
+
+          <section className="homeGuideSection" id="home-guide">
+            <div className="sectionTitle">
+              <h3>
+                <BookOpen size={14} />
+                {t.guide}
+              </h3>
+              <h2 className="glitchTitle subtle" data-text={t.guideList}>
+                {t.guideList}
+              </h2>
+              <p>{t.guideIntro}</p>
+            </div>
+
+            <section className="guideLayout homeGuideLayout">
+              <aside className="panel guideSidebar homeGuideSidebar">
+                <h3>{t.guideList}</h3>
+                {guideLoading && <p className="muted">{t.loading}</p>}
+                {guideError && <p className="error">{guideError}</p>}
+                {!guideLoading && !guideArticles.length && <p className="muted">{t.noGuides}</p>}
+                <div className="guideNav">
+                  {guideArticles.map((article) => (
+                    <button
+                      key={article._id}
+                      type="button"
+                      className={activeGuideArticle?.slug === article.slug ? "active" : ""}
+                      onClick={() => setGuideActiveSlug(article.slug)}
+                    >
+                      <span>{article.title}</span>
+                      <ChevronRight size={14} />
+                    </button>
+                  ))}
+                </div>
+              </aside>
+
+              <article className="panel guideArticle homeGuideArticle">
+                {activeGuideArticle ? (
+                  <>
+                    <h2>{activeGuideArticle.title}</h2>
+                    {activeGuideArticle.coverImage && (
+                      <figure className="guideImage guideCoverImage">
+                        <img src={activeGuideArticle.coverImage} alt={activeGuideArticle.title} loading="lazy" referrerPolicy="no-referrer" />
+                      </figure>
+                    )}
+                    {activeGuideArticle.summary && <p className="guideSummary">{activeGuideArticle.summary}</p>}
+                    <div className="guideArticleBody">
+                      <GuideContent content={activeGuideArticle.content} />
+                    </div>
+                    <div className="homeGuideActions">
+                      <a className="googleButton" href="/guide">
+                        {t.guide} <ArrowRight size={16} />
+                      </a>
+                    </div>
+                  </>
+                ) : (
+                  <p className="muted">{guideLoading ? t.loading : t.noGuides}</p>
+                )}
+              </article>
+            </section>
           </section>
 
           <section className="ctaSection">
