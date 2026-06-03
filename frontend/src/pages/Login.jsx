@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertCircle, ArrowRight, Chrome, ClipboardPaste, DownloadCloud, ShieldCheck, UserPlus } from "lucide-react";
+import { AlertCircle, ArrowRight, BookOpenCheck, Chrome, ClipboardPaste, DownloadCloud, ShieldCheck, UserPlus, WalletCards } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import { translations } from "../i18n.js";
 
@@ -67,6 +67,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
         features: t.defaultPackageFeatures
       }
     ];
+  const homeGuideIcons = [ClipboardPaste, WalletCards, DownloadCloud];
 
   function finalPrice(pkg) {
     if (Number(pkg.salePrice || 0) > 0) return Number(pkg.salePrice || 0);
@@ -300,6 +301,46 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                 </div>
               </div>
             )}
+          </div>
+        </section>
+      )}
+
+      {!adminMode && (
+        <section className="homeGuideSection" id="home-guide">
+          <div className="sectionTitle">
+            <h3>
+              <BookOpenCheck size={14} />
+              {t.homeGuideEyebrow}
+            </h3>
+            <h2 className="glitchTitle subtle" data-text={t.homeGuideTitle}>
+              {t.homeGuideTitle}
+            </h2>
+            <p>{t.homeGuideIntro}</p>
+          </div>
+
+          <div className="homeGuideGrid">
+            {(t.homeGuideSteps || []).map((step, index) => {
+              const Icon = homeGuideIcons[index] || BookOpenCheck;
+              return (
+                <article className="homeGuideStep" key={step.title}>
+                  <div className="homeGuideStepMeta">
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <Icon size={18} />
+                  </div>
+                  <h3>{step.title}</h3>
+                  <p>{step.body}</p>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="homeGuideActions">
+            <a className="googleButton" href="/guide">
+              {t.homeGuideCtaGuide} <ArrowRight size={16} />
+            </a>
+            <a className="primaryButton" href={authAwareHref("/getlink")}>
+              <Chrome size={18} /> {t.homeGuideCtaGetlink}
+            </a>
           </div>
         </section>
       )}

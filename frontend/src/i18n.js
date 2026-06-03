@@ -11,6 +11,25 @@ export const translations = {
     guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
     guideList: "Bài hướng dẫn",
     noGuides: "Chưa có bài hướng dẫn.",
+    homeGuideEyebrow: "Hướng dẫn nhanh",
+    homeGuideTitle: "Cách tải model 3D66",
+    homeGuideIntro: "Quy trình ngắn để kiểm tra link, nạp credit và nhận link tải nội bộ.",
+    homeGuideSteps: [
+      {
+        title: "Dán link 3D66",
+        body: "Copy link model từ 3D66 rồi dán vào ô getlink để hệ thống kiểm tra thông tin và giá."
+      },
+      {
+        title: "Nạp credit tự động",
+        body: "Chọn gói nạp phù hợp, thanh toán Sepay và credit được cộng tự động sau khi giao dịch thành công."
+      },
+      {
+        title: "Tải file qua server",
+        body: "Sau khi xác nhận, hệ thống tạo link tải nội bộ có token để tải bằng trình duyệt hoặc IDM."
+      }
+    ],
+    homeGuideCtaGuide: "Xem hướng dẫn chi tiết",
+    homeGuideCtaGetlink: "Bắt đầu getlink",
     admin: "Admin",
     logout: "Đăng xuất",
     adminRequiredTitle: "Cần quyền admin",
@@ -151,6 +170,25 @@ export const translations = {
     guideIntro: "Read guides for Getlink, credit top-up, and redownloading purchased files.",
     guideList: "Guide articles",
     noGuides: "No guide articles yet.",
+    homeGuideEyebrow: "Quick guide",
+    homeGuideTitle: "How to download 3D66 models",
+    homeGuideIntro: "A short flow for checking a link, topping up credit, and receiving an internal download link.",
+    homeGuideSteps: [
+      {
+        title: "Paste a 3D66 link",
+        body: "Copy a model link from 3D66 and paste it into Getlink so the system can check metadata and price."
+      },
+      {
+        title: "Top up automatically",
+        body: "Choose a package, pay with Sepay, and credit is added automatically after the transaction succeeds."
+      },
+      {
+        title: "Download via server",
+        body: "After confirmation, the system creates an internal tokenized download link for browser or IDM."
+      }
+    ],
+    homeGuideCtaGuide: "Read full guide",
+    homeGuideCtaGetlink: "Start getlink",
     admin: "Admin",
     logout: "Log out",
     adminRequiredTitle: "Admin access required",
