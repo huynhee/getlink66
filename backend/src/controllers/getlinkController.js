@@ -549,6 +549,33 @@ async function resolveProductCache(productId, url) {
   return productLocks.get(productId);
 }
 
+async function refreshPreviewImageForGetlink(cache, url) {
+  if (!cache?._id) return cache;
+  try {
+    const preview = await with3D66Cookie((cookieValue) =>
+      queue3D66Preview(() => fetch3D66Preview(url, cookieValue)),
+    );
+    if (!preview?.imageUrl || preview.imageUrl === cache.imageUrl) {
+      return cache;
+    }
+
+    const updated = await ProductCache.findByIdAndUpdate(
+      cache._id,
+      {
+        $set: {
+          imageUrl: preview.imageUrl,
+          title: preview.title || cache.title,
+          sourceUrl: preview.sourceUrl || cache.sourceUrl || url,
+        },
+      },
+      { new: true },
+    );
+    return updated || cache;
+  } catch {
+    return cache;
+  }
+}
+
 export async function previewGetlink(req, res, next) {
   try {
     const url = readUrlRequest(req, res);
@@ -762,13 +789,16 @@ export async function getLink(req, res, next) {
         fileUrl: { $ne: "" },
       }),
     );
-    const cache = await resolveProductCache(effectiveProductId, url);
+    let cache = await resolveProductCache(effectiveProductId, url);
     const creditCost = normalizeDownloadCreditCost(
       Math.max(Number(cache.creditCost || 0), Number(expectedCreditCost || 0)),
       1,
     );
     if (Number(cache.creditCost || 0) !== creditCost) {
       await ProductCache.findByIdAndUpdate(cache._id, { creditCost });
+    }
+    if (includePreviewImage) {
+      cache = await refreshPreviewImageForGetlink(cache, url);
     }
 
     // Atomic deduct: no stale pre-check, deductCredit uses $gte atomically
