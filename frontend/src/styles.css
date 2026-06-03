@@ -1962,7 +1962,7 @@ label {
 #pricing {
   position: relative;
   margin-top: 0 !important;
-  padding: var(--space-40) 0;
+  padding: clamp(72px, 6vw, 96px) 0 var(--space-40);
 }
 
 #pricing::before,
@@ -2002,7 +2002,7 @@ label {
 
 .homeGuideSection {
   position: relative;
-  padding: var(--space-36) 0 var(--space-40);
+  padding: clamp(76px, 7vw, 112px) 0 clamp(86px, 8vw, 124px);
 }
 
 .homeGuideSection .sectionTitle h3 {
@@ -2021,7 +2021,7 @@ label {
 }
 
 .homeGuideLayout {
-  margin-top: var(--space-16);
+  margin-top: var(--space-20);
 }
 
 .homeGuideLayout .guideSidebar {
