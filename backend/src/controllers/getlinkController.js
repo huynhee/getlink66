@@ -360,6 +360,11 @@ function previewImageUrlCandidates(imageUrl = "", sourceUrl = "") {
     const parsed = new URL(original);
     const noStylePath = parsed.pathname.replace(/![^/?#]+$/i, "");
     if (noStylePath !== parsed.pathname) {
+      const noStyleNoQuery = new URL(parsed.toString());
+      noStyleNoQuery.pathname = noStylePath;
+      noStyleNoQuery.search = "";
+      add(noStyleNoQuery.toString());
+
       const noStyle = new URL(parsed.toString());
       noStyle.pathname = noStylePath;
       add(noStyle.toString());
@@ -367,6 +372,10 @@ function previewImageUrlCandidates(imageUrl = "", sourceUrl = "") {
       const largeStyle = new URL(parsed.toString());
       largeStyle.pathname = `${noStylePath}!large-size-p`;
       add(largeStyle.toString());
+
+      const detailStyle = new URL(parsed.toString());
+      detailStyle.pathname = `${noStylePath}!detail-pic-p`;
+      add(detailStyle.toString());
 
       const mediumStyle = new URL(parsed.toString());
       mediumStyle.pathname = `${noStylePath}!medium-size-p`;
