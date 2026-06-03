@@ -349,6 +349,37 @@ function resolvePreviewImageUrl(imageUrl = "", sourceUrl = "") {
   return resolved.toString();
 }
 
+function previewImageUrlCandidates(imageUrl = "", sourceUrl = "") {
+  const original = resolvePreviewImageUrl(imageUrl, sourceUrl);
+  const candidates = [];
+  const add = (value) => {
+    if (value && !candidates.includes(value)) candidates.push(value);
+  };
+
+  try {
+    const parsed = new URL(original);
+    const noStylePath = parsed.pathname.replace(/![^/?#]+$/i, "");
+    if (noStylePath !== parsed.pathname) {
+      const noStyle = new URL(parsed.toString());
+      noStyle.pathname = noStylePath;
+      add(noStyle.toString());
+
+      const largeStyle = new URL(parsed.toString());
+      largeStyle.pathname = `${noStylePath}!large-size-p`;
+      add(largeStyle.toString());
+
+      const mediumStyle = new URL(parsed.toString());
+      mediumStyle.pathname = `${noStylePath}!medium-size-p`;
+      add(mediumStyle.toString());
+    }
+  } catch {
+    // keep original fallback
+  }
+
+  add(original);
+  return candidates;
+}
+
 function dispositionFileName(disposition = "") {
   const utf8 = String(disposition).match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1];
   if (utf8) {
@@ -1208,25 +1239,44 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
       });
     }
 
-    const previewUrl = resolvePreviewImageUrl(
+    const previewCandidates = previewImageUrlCandidates(
       history.imageUrl,
       history.sourceUrl,
     );
-    const upstream = await fetch(previewUrl, {
-      signal: controller.signal,
-      headers: {
-        "user-agent":
-          req.get("user-agent") ||
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        referer: history.sourceUrl || "https://www.3d66.com/",
-        accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-      },
-    });
+    let upstream = null;
+    let lastPreviewStatus = 0;
+    const previewHeaders = {
+      "user-agent":
+        req.get("user-agent") ||
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      referer: history.sourceUrl || "https://www.3d66.com/",
+      accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    };
 
-    if (!upstream.ok) {
+    for (const previewUrl of previewCandidates) {
+      const candidate = await fetch(previewUrl, {
+        signal: controller.signal,
+        headers: previewHeaders,
+      });
+      lastPreviewStatus = candidate.status;
+      const candidateContentType = String(
+        candidate.headers.get("content-type") || "",
+      ).toLowerCase();
+      if (candidate.ok && candidateContentType.startsWith("image/")) {
+        upstream = candidate;
+        break;
+      }
+      try {
+        await candidate.body?.cancel();
+      } catch {
+        // ignore failed candidate cleanup
+      }
+    }
+
+    if (!upstream) {
       return res
-        .status(upstream.status || 502)
-        .json({ message: `Preview image download failed: HTTP ${upstream.status}` });
+        .status(lastPreviewStatus || 502)
+        .json({ message: `Preview image download failed: HTTP ${lastPreviewStatus || 502}` });
     }
 
     const contentType = upstream.headers.get("content-type") || "image/jpeg";
