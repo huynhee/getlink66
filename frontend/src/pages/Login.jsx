@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { AlertCircle, ArrowRight, BookOpenCheck, Chrome, ClipboardPaste, DownloadCloud, ShieldCheck, UserPlus, WalletCards } from "lucide-react";
+import { AlertCircle, ArrowRight, BookOpen, ChevronRight, Chrome, ClipboardPaste, ShieldCheck, UserPlus } from "lucide-react";
 import { API_URL, api } from "../api.js";
+import GuideContent from "../components/GuideContent.jsx";
 import { translations } from "../i18n.js";
 
 export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/", language = "vi" }) {
@@ -11,6 +12,10 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
   const [referral, setReferral] = useState(null);
   const [referralCopied, setReferralCopied] = useState(false);
+  const [guideArticles, setGuideArticles] = useState([]);
+  const [guideActiveSlug, setGuideActiveSlug] = useState("");
+  const [guideLoading, setGuideLoading] = useState(true);
+  const [guideError, setGuideError] = useState("");
   const [siteSettings, setSiteSettings] = useState({
     heroText: language === "vi" ? "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ" : "FAST 3D66\nGETLINK\nSERVICE",
     heroSubtitle: language === "vi"
@@ -42,8 +47,21 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
       api("/api/system/3d66-status")
         .then((data) => setSystemStatus({ online: Boolean(data.online), message: data.message || "" }))
         .catch(() => setSystemStatus({ online: false, message: t.systemOfflineMessage }));
+      setGuideLoading(true);
+      setGuideError("");
+      api(`/api/guides?language=${language}`)
+        .then((data) => {
+          const nextArticles = data.articles || [];
+          setGuideArticles(nextArticles);
+          setGuideActiveSlug((current) => {
+            if (nextArticles.some((item) => item.slug === current)) return current;
+            return nextArticles[0]?.slug || "";
+          });
+        })
+        .catch((err) => setGuideError(err.message))
+        .finally(() => setGuideLoading(false));
     }
-  }, [adminMode, t.systemOfflineMessage]);
+  }, [adminMode, language, t.systemOfflineMessage]);
 
   React.useEffect(() => {
     if (!user || adminMode) {
@@ -67,7 +85,10 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
         features: t.defaultPackageFeatures
       }
     ];
-  const homeGuideIcons = [ClipboardPaste, WalletCards, DownloadCloud];
+  const activeGuideArticle = React.useMemo(
+    () => guideArticles.find((item) => item.slug === guideActiveSlug) || guideArticles[0],
+    [guideActiveSlug, guideArticles]
+  );
 
   function finalPrice(pkg) {
     if (Number(pkg.salePrice || 0) > 0) return Number(pkg.salePrice || 0);
@@ -309,39 +330,60 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
         <section className="homeGuideSection" id="home-guide">
           <div className="sectionTitle">
             <h3>
-              <BookOpenCheck size={14} />
-              {t.homeGuideEyebrow}
+              <BookOpen size={14} />
+              {t.guide}
             </h3>
-            <h2 className="glitchTitle subtle" data-text={t.homeGuideTitle}>
-              {t.homeGuideTitle}
+            <h2 className="glitchTitle subtle" data-text={t.guideList}>
+              {t.guideList}
             </h2>
-            <p>{t.homeGuideIntro}</p>
+            <p>{t.guideIntro}</p>
           </div>
 
-          <div className="homeGuideGrid">
-            {(t.homeGuideSteps || []).map((step, index) => {
-              const Icon = homeGuideIcons[index] || BookOpenCheck;
-              return (
-                <article className="homeGuideStep" key={step.title}>
-                  <div className="homeGuideStepMeta">
-                    <span>{String(index + 1).padStart(2, "0")}</span>
-                    <Icon size={18} />
+          <section className="guideLayout homeGuideLayout">
+            <aside className="panel guideSidebar homeGuideSidebar">
+              <h3>{t.guideList}</h3>
+              {guideLoading && <p className="muted">{t.loading}</p>}
+              {guideError && <p className="error">{guideError}</p>}
+              {!guideLoading && !guideArticles.length && <p className="muted">{t.noGuides}</p>}
+              <div className="guideNav">
+                {guideArticles.map((article) => (
+                  <button
+                    key={article._id}
+                    type="button"
+                    className={activeGuideArticle?.slug === article.slug ? "active" : ""}
+                    onClick={() => setGuideActiveSlug(article.slug)}
+                  >
+                    <span>{article.title}</span>
+                    <ChevronRight size={14} />
+                  </button>
+                ))}
+              </div>
+            </aside>
+
+            <article className="panel guideArticle homeGuideArticle">
+              {activeGuideArticle ? (
+                <>
+                  <h2>{activeGuideArticle.title}</h2>
+                  {activeGuideArticle.coverImage && (
+                    <figure className="guideImage guideCoverImage">
+                      <img src={activeGuideArticle.coverImage} alt={activeGuideArticle.title} loading="lazy" referrerPolicy="no-referrer" />
+                    </figure>
+                  )}
+                  {activeGuideArticle.summary && <p className="guideSummary">{activeGuideArticle.summary}</p>}
+                  <div className="guideArticleBody">
+                    <GuideContent content={activeGuideArticle.content} />
                   </div>
-                  <h3>{step.title}</h3>
-                  <p>{step.body}</p>
-                </article>
-              );
-            })}
-          </div>
-
-          <div className="homeGuideActions">
-            <a className="googleButton" href="/guide">
-              {t.homeGuideCtaGuide} <ArrowRight size={16} />
-            </a>
-            <a className="primaryButton" href={authAwareHref("/getlink")}>
-              <Chrome size={18} /> {t.homeGuideCtaGetlink}
-            </a>
-          </div>
+                  <div className="homeGuideActions">
+                    <a className="googleButton" href="/guide">
+                      {t.guide} <ArrowRight size={16} />
+                    </a>
+                  </div>
+                </>
+              ) : (
+                <p className="muted">{guideLoading ? t.loading : t.noGuides}</p>
+              )}
+            </article>
+          </section>
         </section>
       )}
 
