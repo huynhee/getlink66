@@ -259,7 +259,6 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
           />
           <span>
             <strong>{t.downloadPreviewImageOption}</strong>
-            <small>{t.downloadPreviewImageHelp}</small>
           </span>
         </label>
       </form>
