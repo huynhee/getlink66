@@ -394,31 +394,24 @@ function evaluateMetadata() {
     document.title ||
     "";
 
-  const imageEl =
-    document.querySelector("#swiper_max_html img[data-img-type='1']") ||
-    document.querySelector(".detail-swiper img[data-img-type='1']") ||
-    document.querySelector("img[data-img-type='1']") ||
-    document.querySelector("#swiper_max_html .swiper-imgs-list img.llimgs") ||
-    document.querySelector("#swiper_max_html img.llimgs") ||
-    document.querySelector(".detail-swiper .swiper-imgs-list img") ||
-    document.querySelector(".detail-swiper img.llimgs") ||
-    document.querySelector(".swiper-imgs-list img");
-  const domImageUrl =
-    imageEl?.getAttribute("data-imgurl") ||
-    imageEl?.getAttribute("data-original") ||
-    imageEl?.getAttribute("data-src") ||
-    imageEl?.src ||
-    "";
   const imageUrl =
-    cover.fullimg ||
+    document.querySelector("#swiper_max_html img[data-img-type='1']")?.src ||
+    document.querySelector(".detail-swiper img[data-img-type='1']")?.src ||
+    document.querySelector("img[data-img-type='1']")?.src ||
+    document.querySelector("#swiper_max_html .swiper-imgs-list img.llimgs")
+      ?.src ||
+    document.querySelector("#swiper_max_html img.llimgs")?.src ||
+    document.querySelector(".detail-swiper .swiper-imgs-list img")?.src ||
+    document.querySelector(".detail-swiper img.llimgs")?.src ||
+    document.querySelector(".swiper-imgs-list img")?.src ||
+    document.querySelector("meta[property='og:image']")?.content ||
     cover.img_pic ||
-    domImageUrl ||
     cover.thuimg600 ||
-    cover.res_img_dg ||
+    cover.fullimg ||
     cover.thuimg88 ||
+    cover.res_img_dg ||
     res.business_img ||
     res.res_img_dg ||
-    document.querySelector("meta[property='og:image']")?.content ||
     "";
 
   return {

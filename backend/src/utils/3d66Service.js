@@ -314,14 +314,6 @@ function absoluteUrl(value = "", baseUrl = "") {
   }
 }
 
-function firstAbsoluteUrl(baseUrl = "", ...values) {
-  for (const value of values) {
-    const absolute = absoluteUrl(String(value || "").replaceAll("\\/", "/"), baseUrl);
-    if (absolute) return absolute;
-  }
-  return "";
-}
-
 function attrValue(tag = "", attr = "") {
   const match = String(tag).match(new RegExp(`\\s${attr}\\s*=\\s*["']([^"']+)["']`, "i"));
   return match?.[1] || "";
@@ -455,24 +447,12 @@ function extractModelTitleFromHtml(html = "") {
 }
 
 function extractPreviewImageFromHtml(html = "", pageUrl = "") {
-  const dataTypeOneTag = firstTagWithAttrValue(html, "img", "data-img-type", "1");
-  const dataTypeOneUrl = firstAbsoluteUrl(
-    pageUrl,
-    attrValue(dataTypeOneTag, "data-imgurl"),
-    attrValue(dataTypeOneTag, "data-original"),
-    attrValue(dataTypeOneTag, "data-src"),
-    attrValue(dataTypeOneTag, "src"),
-  );
+  const dataTypeOneImage = html.match(/<img\b(?=[^>]*\bdata-img-type=["']1["'])[^>]*\bsrc=(["'])([\s\S]*?)\1/i)?.[2];
+  const dataTypeOneUrl = absoluteUrl(String(dataTypeOneImage || "").replaceAll("\\/", "/"), pageUrl);
   if (dataTypeOneUrl) return dataTypeOneUrl;
 
-  const mainGalleryTag = html.match(/<div\b(?=[^>]*\bid=["']swiper_max_html["'])[\s\S]*?<div\b(?=[^>]*\bclass=["'][^"']*swiper-imgs-list[^"']*["'])[\s\S]*?<img\b(?=[^>]*\bclass=["'][^"']*llimgs[^"']*["'])[^>]*>/i)?.[0] || "";
-  const mainGalleryUrl = firstAbsoluteUrl(
-    pageUrl,
-    attrValue(mainGalleryTag, "data-imgurl"),
-    attrValue(mainGalleryTag, "data-original"),
-    attrValue(mainGalleryTag, "data-src"),
-    attrValue(mainGalleryTag, "src"),
-  );
+  const mainGalleryImage = html.match(/<div\b(?=[^>]*\bid=["']swiper_max_html["'])[\s\S]*?<div\b(?=[^>]*\bclass=["'][^"']*swiper-imgs-list[^"']*["'])[\s\S]*?<img\b(?=[^>]*\bclass=["'][^"']*llimgs[^"']*["'])[^>]*\bsrc=(["'])([\s\S]*?)\1/i)?.[2];
+  const mainGalleryUrl = absoluteUrl(String(mainGalleryImage || "").replaceAll("\\/", "/"), pageUrl);
   if (mainGalleryUrl) return mainGalleryUrl;
 
   const directPatterns = [
@@ -486,12 +466,12 @@ function extractPreviewImageFromHtml(html = "", pageUrl = "") {
 
   for (const pattern of directPatterns) {
     const raw =
-      firstAttrFromMatchedTag(html, pattern, "data-imgurl") ||
-      firstAttrFromMatchedTag(html, pattern, "data-original") ||
-      firstAttrFromMatchedTag(html, pattern, "data-src") ||
       firstAttrFromMatchedTag(html, pattern, "src") ||
+      firstAttrFromMatchedTag(html, pattern, "data-imgurl") ||
+      firstAttrFromMatchedTag(html, pattern, "data-src") ||
+      firstAttrFromMatchedTag(html, pattern, "data-original") ||
       firstAttrFromMatchedTag(html, pattern, "content");
-    const absolute = firstAbsoluteUrl(pageUrl, raw);
+    const absolute = absoluteUrl(String(raw).replaceAll("\\/", "/"), pageUrl);
     if (absolute) return absolute;
   }
 
@@ -582,18 +562,18 @@ function parseModelMetadata(html, pageUrl, fields = {}) {
     firstTagWithAttr(html, "img", "data-img-type") ||
     firstTagWithAttr(html, "img", "data-img-id");
   const largeHtmlImage =
+    attrValue(previewImageTag, "src") ||
     attrValue(previewImageTag, "data-imgurl") ||
-    attrValue(previewImageTag, "data-original") ||
     attrValue(previewImageTag, "data-src") ||
-    attrValue(previewImageTag, "src");
+    attrValue(previewImageTag, "data-original");
   const coverImage =
-    coverItem.fullimg ||
-    coverItem.img_pic ||
     directPreviewImage ||
     largeHtmlImage ||
+    coverItem.img_pic ||
     coverItem.thuimg600 ||
-    coverItem.res_img_dg ||
+    coverItem.fullimg ||
     coverItem.thuimg88 ||
+    coverItem.res_img_dg ||
     detailRes.business_img ||
     detailRes.res_img_dg ||
     detailData?.images?.[0] ||
@@ -622,10 +602,9 @@ function parseModelMetadata(html, pageUrl, fields = {}) {
 
   const rawImage = (
     coverImage ||
-    attrValue(previewImageTag, "data-imgurl") ||
-    attrValue(previewImageTag, "data-original") ||
-    attrValue(previewImageTag, "data-src") ||
     attrValue(previewImageTag, "src") ||
+    attrValue(previewImageTag, "data-src") ||
+    attrValue(previewImageTag, "data-original") ||
     firstMatch(html, [
     /<img[^>]+class=["'][^"']*llimgs[^"']*["'][^>]+src=["']([^"']+)["'][^>]*>/i,
     /<img[^>]+src=["']([^"']+)["'][^>]+class=["'][^"']*llimgs[^"']*["'][^>]*>/i,
