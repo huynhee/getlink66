@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Ban, BarChart3, Check, ChevronLeft, ChevronRight, Cookie, FileDown, FileText, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, UserPlus, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, Ban, BarChart3, Check, ChevronLeft, ChevronRight, Cookie, CreditCard, Database, FileDown, FileText, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, UserPlus, Users, X } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
@@ -101,6 +101,7 @@ export default function Admin({ user, language = "vi" }) {
   const l = (vi, en) => text(language, vi, en);
   const locale = language === "vi" ? "vi-VN" : "en-US";
   const [activeSection, setActiveSection] = useState("overview");
+  const [dataSection, setDataSection] = useState("logs");
   const [revenuePeriod, setRevenuePeriod] = useState("day");
   const [overview, setOverview] = useState(null);
   const [users, setUsers] = useState([]);
@@ -119,6 +120,11 @@ export default function Admin({ user, language = "vi" }) {
   const [getlinkSearch, setGetlinkSearch] = useState("");
   const [getlinkPage, setGetlinkPage] = useState(1);
   const [getlinkPagination, setGetlinkPagination] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
+  const [topupRecords, setTopupRecords] = useState([]);
+  const [topupSearch, setTopupSearch] = useState("");
+  const [topupStatus, setTopupStatus] = useState("approved");
+  const [topupPage, setTopupPage] = useState(1);
+  const [topupPagination, setTopupPagination] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
   const [userSearch, setUserSearch] = useState("");
   const [userSort, setUserSort] = useState("created-desc");
   const [userPage, setUserPage] = useState(1);
@@ -194,6 +200,19 @@ export default function Admin({ user, language = "vi" }) {
     if (pagination.page !== getlinkPage) setGetlinkPage(pagination.page);
   }
 
+  async function loadTopups() {
+    const query = new URLSearchParams({
+      page: String(topupPage),
+      status: topupStatus,
+    });
+    if (topupSearch.trim()) query.set("search", topupSearch.trim());
+    const data = await api(`/api/admin/topups?${query.toString()}`);
+    setTopupRecords(data.topups || []);
+    const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
+    setTopupPagination(pagination);
+    if (pagination.page !== topupPage) setTopupPage(pagination.page);
+  }
+
   useEffect(() => {
     loadData().catch(console.error);
   }, [revenuePeriod]);
@@ -211,6 +230,13 @@ export default function Admin({ user, language = "vi" }) {
     }, 250);
     return () => clearTimeout(timer);
   }, [getlinkSearch, getlinkPage]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadTopups().catch(console.error);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [topupSearch, topupStatus, topupPage]);
 
   function fillPackageForm(pack) {
     setEditingPackageId(pack?._id || "");
@@ -622,17 +648,21 @@ export default function Admin({ user, language = "vi" }) {
     : getlinkRecords;
   const sections = [
     { key: "overview", label: t.adminOverview, icon: BarChart3 },
+    { key: "data", label: "Data", icon: Database },
     { key: "packages", label: t.adminPackages, icon: Package, count: packages.length },
     { key: "vouchers", label: t.adminVouchers, icon: Gift, count: vouchers.length },
     { key: "notifications", label: t.notifications, icon: Megaphone, count: notifications.length },
-    { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
     { key: "articles", label: t.adminArticles || l("Bài viết", "Articles"), icon: FileText, count: articles.length },
     { key: "threed66", label: l("Cài đặt 3D66", "3D66 settings"), icon: Activity },
     { key: "cookie", label: t.adminCookie, icon: Cookie },
-    { key: "getlinks", label: l("Lịch sử getlink", "Getlink history"), icon: FileDown, count: getlinkPagination.total },
+    { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert }
+  ];
+  const dataSections = [
     { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
     { key: "users", label: t.adminUsers, icon: Users, count: userPagination.total },
-    { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert }
+    { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
+    { key: "getlinks", label: l("Lịch sử getlink", "Getlink history"), icon: FileDown, count: getlinkPagination.total },
+    { key: "topups", label: l("Ai đã nạp gói nào", "Top-up purchases"), icon: CreditCard, count: topupPagination.total },
   ];
   const threed66RuntimeSettings = [
     {
@@ -810,6 +840,34 @@ export default function Admin({ user, language = "vi" }) {
           })}
         </nav>
       </section>
+
+      {activeSection === "data" && (
+        <section className="panel adminDataPanel">
+          <div>
+            <h2><Database size={20} /> Data</h2>
+            <p className="muted">
+              {l("Tra cứu dữ liệu vận hành, người dùng và giao dịch của hệ thống.", "Inspect system operations, users, and transaction data.")}
+            </p>
+          </div>
+          <nav className="adminSectionNav adminDataNav" aria-label="Admin data sections">
+            {dataSections.map((section) => {
+              const Icon = section.icon;
+              return (
+                <button
+                  key={section.key}
+                  type="button"
+                  className={dataSection === section.key ? "active" : ""}
+                  onClick={() => setDataSection(section.key)}
+                >
+                  <Icon size={16} />
+                  {section.label}
+                  {typeof section.count === "number" && <span>{section.count}</span>}
+                </button>
+              );
+            })}
+          </nav>
+        </section>
+      )}
 
       {activeSection === "overview" && (
         <section className="panel">
@@ -1289,7 +1347,7 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "referrals" && (
+      {activeSection === "data" && dataSection === "referrals" && (
         <section className="panel">
           <h2><UserPlus size={20} /> {l("Ai đã mời ai", "Who invited whom")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
@@ -1526,7 +1584,7 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "logs" && (
+      {activeSection === "data" && dataSection === "logs" && (
         <section className="panel">
           <h2><AlertTriangle size={20} /> {l("Log lỗi getlink / tải file", "Getlink / download error logs")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
@@ -1553,7 +1611,7 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "getlinks" && (
+      {activeSection === "data" && dataSection === "getlinks" && (
         <section className="panel">
           <h2><FileDown size={20} /> {l("Lịch sử getlink đã trừ credit", "Charged getlink history")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
@@ -1633,7 +1691,104 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "users" && (
+      {activeSection === "data" && dataSection === "topups" && (
+        <section className="panel">
+          <h2><CreditCard size={20} /> {l("Ai đã nạp gói nào", "Who purchased which package")}</h2>
+          <p className="muted" style={{ marginTop: 8 }}>
+            {l("Lịch sử nạp tự động, gói đã chọn, số tiền thanh toán và credit nhận được. Các lần admin cộng credit thủ công không xuất hiện tại đây.", "Automatic top-up history showing selected packages, paid amounts, and received credit. Manual admin credit adjustments are excluded.")}
+          </p>
+          <div className="adminTableToolbar">
+            <label className="adminSearchField">
+              <Search size={15} />
+              <input
+                value={topupSearch}
+                onChange={(event) => {
+                  setTopupSearch(event.target.value);
+                  setTopupPage(1);
+                }}
+                placeholder={l("Tìm email, tên gói hoặc mã giao dịch", "Search email, package, or transaction code")}
+              />
+            </label>
+            <select
+              value={topupStatus}
+              onChange={(event) => {
+                setTopupStatus(event.target.value);
+                setTopupPage(1);
+              }}
+              aria-label={l("Lọc trạng thái nạp", "Filter top-up status")}
+            >
+              <option value="approved">{l("Thành công", "Approved")}</option>
+              <option value="pending">{l("Chờ thanh toán", "Pending")}</option>
+              <option value="rejected">{l("Đã hủy / từ chối", "Rejected")}</option>
+              <option value="all">{l("Tất cả trạng thái", "All statuses")}</option>
+            </select>
+          </div>
+          <div className="table topupAuditTable" style={{ marginTop: 16 }}>
+            {topupRecords.map((item) => (
+              <div className="tableRow" key={item._id}>
+                <div className="topupAuditIdentity">
+                  <strong>{item.user?.email || l("Không rõ user", "Unknown user")}</strong>
+                  <span>{item.user?.name || item.userId || ""}</span>
+                </div>
+                <div className="topupAuditPackage">
+                  <strong>{item.package?.name || l("Gói đã bị xóa", "Deleted package")}</strong>
+                  <span>{item.type || item.gatewayProvider || "auto"}</span>
+                  {item.voucherCode && <code>{l("Voucher", "Voucher")}: {item.voucherCode}</code>}
+                </div>
+                <span className={`badge ${item.status === "approved" ? "success" : item.status === "pending" ? "pending" : "error"}`}>
+                  {item.status === "approved"
+                    ? l("Thành công", "Approved")
+                    : item.status === "pending"
+                      ? l("Chờ thanh toán", "Pending")
+                      : l("Đã hủy", "Rejected")}
+                </span>
+                <div className="topupAuditAmount">
+                  <strong>{formatMoney(item.amount)}</strong>
+                  {Number(item.discountAmount || 0) > 0 && (
+                    <span>{l("Giảm", "Discount")}: {formatMoney(item.discountAmount)}</span>
+                  )}
+                </div>
+                <strong>+{Number(item.credit || 0).toLocaleString(locale)} credit</strong>
+                <div className="topupAuditPayment">
+                  <code>{item.paymentCode || item.gatewayTransactionId || "-"}</code>
+                  {item.rejectionReason && <span className="error">{item.rejectionReason}</span>}
+                </div>
+                <time>{new Date(item.paidAt || item.createdAt).toLocaleString(locale)}</time>
+              </div>
+            ))}
+            {!topupRecords.length && (
+              <p className="muted" style={{ textAlign: "center", padding: 16 }}>
+                {l("Không có lịch sử nạp phù hợp.", "No matching top-up history.")}
+              </p>
+            )}
+          </div>
+          <div className="adminPagination">
+            <button
+              type="button"
+              className="smallButton"
+              disabled={topupPagination.page <= 1}
+              onClick={() => setTopupPage((page) => Math.max(1, page - 1))}
+              title={l("Trang trước", "Previous page")}
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <span>
+              {l("Trang", "Page")} {topupPagination.page}/{topupPagination.totalPages} - {topupPagination.total} {l("giao dịch", "transactions")}
+            </span>
+            <button
+              type="button"
+              className="smallButton"
+              disabled={topupPagination.page >= topupPagination.totalPages}
+              onClick={() => setTopupPage((page) => Math.min(topupPagination.totalPages, page + 1))}
+              title={l("Trang sau", "Next page")}
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        </section>
+      )}
+
+      {activeSection === "data" && dataSection === "users" && (
         <section className="panel">
           <h2><Users size={20} /> {l("Quản lý người dùng", "Manage users")}</h2>
           <div className="adminTableToolbar">

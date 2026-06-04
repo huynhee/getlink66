@@ -705,6 +705,20 @@ button:disabled {
   font-size: 11px;
 }
 
+.adminDataPanel > div:first-child {
+  display: grid;
+  gap: 6px;
+}
+
+.adminDataPanel > div:first-child h2,
+.adminDataPanel > div:first-child p {
+  margin: 0;
+}
+
+.adminDataNav {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
 .overviewGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -3242,8 +3256,16 @@ label {
   grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.2fr) auto auto auto auto;
 }
 
+.topupAuditTable .tableRow {
+  grid-template-columns: minmax(180px, 1fr) minmax(170px, 0.9fr) auto auto auto minmax(140px, 0.8fr) auto;
+}
+
 .getlinkAuditUser,
-.getlinkAuditModel {
+.getlinkAuditModel,
+.topupAuditIdentity,
+.topupAuditPackage,
+.topupAuditAmount,
+.topupAuditPayment {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -3253,7 +3275,14 @@ label {
 .getlinkAuditUser span,
 .getlinkAuditModel strong,
 .getlinkAuditModel span,
-.getlinkAuditModel a {
+.getlinkAuditModel a,
+.topupAuditIdentity strong,
+.topupAuditIdentity span,
+.topupAuditPackage strong,
+.topupAuditPackage span,
+.topupAuditPackage code,
+.topupAuditPayment code,
+.topupAuditPayment span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3262,6 +3291,19 @@ label {
 .getlinkAuditModel a {
   color: var(--neon-green);
   font-size: 12px;
+}
+
+.topupAuditPackage span,
+.topupAuditAmount span,
+.topupAuditPayment span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.topupAuditPackage code,
+.topupAuditPayment code {
+  color: var(--neon-cyan);
+  font-size: 11px;
 }
 
 .referralTable .tableRow {
@@ -4535,6 +4577,12 @@ label {
   grid-template-columns: auto minmax(180px, 1fr) auto;
 }
 
+@media (max-width: 1200px) {
+  .topupAuditTable .tableRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 760px) {
   .adminSearchField {
     min-width: 100%;
@@ -4545,7 +4593,8 @@ label {
   }
 
   .adminUserTable .tableRow,
-  .creditHistoryTable .tableRow {
+  .creditHistoryTable .tableRow,
+  .topupAuditTable .tableRow {
     grid-template-columns: 1fr;
   }
 

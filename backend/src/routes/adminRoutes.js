@@ -16,6 +16,7 @@ import {
   testCookie,
   listCookies,
   listGetlinkRecords,
+  listTopupRecords,
   listSystemLogs,
   deleteCookie,
   testSavedCookie,
@@ -56,6 +57,7 @@ router.get("/referrals", listReferrals);
 router.get("/audit-logs", listAuditLogs);
 router.get("/system-logs", listSystemLogs);
 router.get("/getlinks", listGetlinkRecords);
+router.get("/topups", listTopupRecords);
 router.post("/add-credit", adminWriteLimit, auditAdmin("ADD_CREDIT"), adminAddCredit);
 router.post("/set-credit", adminWriteLimit, auditAdmin("SET_CREDIT"), adminSetCredit);
 router.get("/cookies", listCookies);

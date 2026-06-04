@@ -30,6 +30,7 @@ const MAX_VOUCHER_DISCOUNT_PERCENT = Number(
 );
 const ADMIN_USER_PAGE_SIZE = 10;
 const ADMIN_GETLINK_PAGE_SIZE = 10;
+const ADMIN_TOPUP_PAGE_SIZE = 10;
 
 function normalizedSearch(value = "") {
   return String(value || "").trim().toLowerCase().slice(0, 120);
@@ -856,6 +857,138 @@ export async function listGetlinkRecords(req, res, next) {
       pagination: {
         page: safePage,
         pageSize: ADMIN_GETLINK_PAGE_SIZE,
+        total,
+        totalPages,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listTopupRecords(req, res, next) {
+  try {
+    const search = normalizedSearch(req.query.search);
+    const requestedStatus = String(req.query.status || "approved").trim();
+    const status = ["all", "approved", "pending", "rejected"].includes(requestedStatus)
+      ? requestedStatus
+      : "approved";
+    const requestedPage = Number(req.query.page || 1);
+    const page = Number.isInteger(requestedPage) && requestedPage > 0
+      ? requestedPage
+      : 1;
+    let records;
+    let total;
+    let safePage;
+    let totalPages;
+
+    if (!isMemoryDb()) {
+      const regex = search ? new RegExp(escapedRegex(search), "i") : null;
+      const [matchedUsers, matchedPackages] = regex
+        ? await Promise.all([
+            User.find({ $or: [{ email: regex }, { name: regex }] })
+              .select("_id")
+              .limit(500),
+            TopupPackage.find({ name: regex }).select("_id").limit(500),
+          ])
+        : [[], []];
+      const query = {
+        type: { $ne: "manual" },
+        ...(status !== "all" ? { status } : {}),
+        ...(regex
+          ? {
+              $or: [
+                { userId: { $in: matchedUsers.map((user) => user._id) } },
+                { packageId: { $in: matchedPackages.map((pack) => pack._id) } },
+                { paymentCode: regex },
+                { gatewayTransactionId: regex },
+                { voucherCode: regex },
+              ],
+            }
+          : {}),
+      };
+      total = await Topup.countDocuments(query);
+      totalPages = Math.max(1, Math.ceil(total / ADMIN_TOPUP_PAGE_SIZE));
+      safePage = Math.min(page, totalPages);
+      records = await Topup.find(query)
+        .sort({ createdAt: -1 })
+        .skip((safePage - 1) * ADMIN_TOPUP_PAGE_SIZE)
+        .limit(ADMIN_TOPUP_PAGE_SIZE)
+        .populate("userId", "name email avatar credit role")
+        .populate("packageId", "name price credit badge");
+    } else {
+      const candidates = await Topup.find()
+        .sort({ createdAt: -1 })
+        .populate("userId", "name email avatar credit role")
+        .populate("packageId", "name price credit badge");
+      const filteredRecords = candidates.filter((item) => {
+        if (item.type === "manual") return false;
+        if (status !== "all" && item.status !== status) return false;
+        if (!search) return true;
+        const user = item.userId && typeof item.userId === "object" ? item.userId : null;
+        const pack = item.packageId && typeof item.packageId === "object" ? item.packageId : null;
+        return [
+          user?.email,
+          user?.name,
+          pack?.name,
+          item.paymentCode,
+          item.gatewayTransactionId,
+          item.voucherCode,
+        ].some((value) => String(value || "").toLowerCase().includes(search));
+      });
+      total = filteredRecords.length;
+      totalPages = Math.max(1, Math.ceil(total / ADMIN_TOPUP_PAGE_SIZE));
+      safePage = Math.min(page, totalPages);
+      const start = (safePage - 1) * ADMIN_TOPUP_PAGE_SIZE;
+      records = filteredRecords.slice(start, start + ADMIN_TOPUP_PAGE_SIZE);
+    }
+
+    const topups = records.map((item) => {
+      const doc = item.toObject ? item.toObject() : item;
+      const user = doc.userId && typeof doc.userId === "object" ? doc.userId : null;
+      const pack = doc.packageId && typeof doc.packageId === "object" ? doc.packageId : null;
+      return {
+        _id: doc._id,
+        user: user
+          ? {
+              _id: user._id,
+              name: user.name || "",
+              email: user.email || "",
+              avatar: user.avatar || "",
+            }
+          : null,
+        userId: user?._id || doc.userId,
+        package: pack
+          ? {
+              _id: pack._id,
+              name: pack.name || "",
+              price: Number(pack.price || 0),
+              credit: Number(pack.credit || 0),
+              badge: pack.badge || "",
+            }
+          : null,
+        packageId: pack?._id || doc.packageId,
+        amount: Number(doc.amount || 0),
+        originalAmount: Number(doc.originalAmount || doc.amount || 0),
+        discountAmount: Number(doc.discountAmount || 0),
+        credit: Number(doc.credit || 0),
+        status: doc.status || "pending",
+        type: doc.type || "auto",
+        voucherCode: doc.voucherCode || "",
+        paymentCode: doc.paymentCode || "",
+        gatewayProvider: doc.gatewayProvider || "",
+        gatewayTransactionId: doc.gatewayTransactionId || "",
+        rejectionReason: doc.rejectionReason || "",
+        paidAt: doc.paidAt,
+        createdAt: doc.createdAt,
+      };
+    });
+
+    res.json({
+      topups,
+      pagination: {
+        page: safePage,
+        pageSize: ADMIN_TOPUP_PAGE_SIZE,
         total,
         totalPages,
       },
