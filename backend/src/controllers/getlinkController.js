@@ -58,7 +58,7 @@ function redownloadLimit() {
 }
 
 async function hasEnoughCredit(userId, creditCost) {
-  const user = await User.findById(userId).select("credit").lean();
+  const user = await User.findById(userId);
   return {
     ok: Number(user?.credit || 0) >= Number(creditCost || 0),
     credit: Number(user?.credit || 0),
@@ -156,6 +156,53 @@ function isRecentPartialDownloadSession(history) {
   );
 }
 
+function uniqueProductIds(values = []) {
+  return [
+    ...new Set(
+      values
+        .flat()
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function productIdsFromModelUrl(url = "") {
+  const ids = [];
+  try {
+    const parsed = new URL(url);
+    ["sof", "id", "parentId"].forEach((key) => {
+      const value = parsed.searchParams.get(key);
+      if (value) ids.push(value);
+    });
+    ids.push(extractProductId(parsed.toString()));
+  } catch {
+    // The caller may pass an old or partial URL; ignore it and use other ids.
+  }
+  return uniqueProductIds(ids);
+}
+
+function modelPageKey(url = "") {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.hostname.toLowerCase()}${parsed.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return "";
+  }
+}
+
+function historyMatchesProductIdentity(history, productIds = [], sourceUrl = "") {
+  const candidateIds = new Set(uniqueProductIds(productIds));
+  if (candidateIds.has(String(history?.productId || ""))) return true;
+
+  const historySourceIds = productIdsFromModelUrl(history?.sourceUrl || "");
+  if (historySourceIds.some((id) => candidateIds.has(id))) return true;
+
+  const currentKey = modelPageKey(sourceUrl);
+  const historyKey = modelPageKey(history?.sourceUrl || "");
+  return Boolean(currentKey && historyKey && currentKey === historyKey);
+}
+
 function readUrlRequest(req, res) {
   const unknownKey = rejectUnknownKeys(req.body, ["url", "includePreviewImage"]);
   if (unknownKey) {
@@ -193,17 +240,24 @@ function isClientDownloadAbort(error, signal) {
   );
 }
 
-async function findActiveRedownload(userId, productId) {
-  if (!productId) return null;
-  return Getlink.findOne({
-    userId,
-    productId,
-    createdAt: { $gte: new Date(Date.now() - redownloadWindowMs()) },
-    $or: [
-      { redownloadCount: { $exists: false } },
-      { redownloadCount: { $lt: redownloadLimit() } },
-    ],
-  }).sort({ createdAt: -1 });
+async function findActiveRedownload(userId, productIds, sourceUrl = "") {
+  const candidates = uniqueProductIds([
+    productIds,
+    productIdsFromModelUrl(sourceUrl),
+  ]);
+  if (!candidates.length && !sourceUrl) return null;
+
+  const histories = await Getlink.find({ userId })
+    .sort({ createdAt: -1 })
+    .limit(500);
+
+  return (
+    histories.find(
+      (history) =>
+        canRedownload(history) &&
+        historyMatchesProductIdentity(history, candidates, sourceUrl),
+    ) || null
+  );
 }
 
 function isCacheFresh(cache) {
@@ -728,6 +782,7 @@ export async function getLink(req, res, next) {
     const activeRedownload = await findActiveRedownload(
       req.user._id,
       productId,
+      url,
     );
     if (activeRedownload) {
       return sendFreeRedownload(req, res, activeRedownload, {
@@ -775,7 +830,8 @@ export async function getLink(req, res, next) {
       if (previewPayload.productId !== productId) {
         const previewRedownload = await findActiveRedownload(
           req.user._id,
-          previewPayload.productId,
+          [productId, previewPayload.productId],
+          url,
         );
         if (previewRedownload) {
           return sendFreeRedownload(req, res, previewRedownload, {
@@ -803,6 +859,16 @@ export async function getLink(req, res, next) {
       }),
     );
     const cache = await resolveProductCache(effectiveProductId, url);
+    const cachedRedownload = await findActiveRedownload(
+      req.user._id,
+      [productId, effectiveProductId, cache.productId],
+      url,
+    );
+    if (cachedRedownload) {
+      return sendFreeRedownload(req, res, cachedRedownload, {
+        includePreviewImage,
+      });
+    }
     const creditCost = normalizeDownloadCreditCost(
       Math.max(Number(cache.creditCost || 0), Number(expectedCreditCost || 0)),
       1,
