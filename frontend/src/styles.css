@@ -801,6 +801,43 @@ button:disabled {
   width: 100%;
 }
 
+.homeTextEditor {
+  display: grid;
+  gap: var(--space-14);
+  margin-top: var(--space-14);
+}
+
+.homeTextGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-10);
+}
+
+.homeTextField {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+.homeTextField span {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.homeTextField input,
+.homeTextField textarea {
+  width: 100%;
+}
+
+.homeTextField textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
 .adminCheckboxRow {
   display: inline-flex;
   align-items: center;

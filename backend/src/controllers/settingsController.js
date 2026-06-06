@@ -2,6 +2,52 @@ import SiteSetting from "../models/SiteSetting.js";
 import { limitedString, rejectUnknownKeys, sanitizeHtml } from "../utils/validators.js";
 
 const REFERRAL_MODES = ["both", "referrer_only", "off"];
+const HOME_TEXT_FIELDS = [
+  "heroText",
+  "heroSubtitle",
+  "heroEyebrow",
+  "saleText",
+  "demoTitle",
+  "demoSubmitText",
+  "systemStatusLabel",
+  "pricePerDownloadLabel",
+  "pricePerDownloadValue",
+  "referralTitleBoth",
+  "referralTitleReferrerOnly",
+  "pricingEyebrow",
+  "pricingTitle",
+  "pricingNote",
+  "guideEyebrow",
+  "guideTitle",
+  "guideIntro",
+  "ctaTitle",
+  "ctaUserText",
+  "ctaGuestText",
+  "footerTagline",
+];
+const HOME_TEXT_DEFAULTS = {
+  heroText: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ",
+  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp.",
+  heroEyebrow: "+ api 3d66 sdk",
+  saleText: "Khuyến mãi gói PRO trong tháng này",
+  demoTitle: "Bắt đầu tải ngay",
+  demoSubmitText: "GET LINK",
+  systemStatusLabel: "Trạng thái hệ thống",
+  pricePerDownloadLabel: "Giá tải chỉ từ",
+  pricePerDownloadValue: "10K",
+  referralTitleBoth: "Giới thiệu bạn bè, cả hai +1 lượt tải.",
+  referralTitleReferrerOnly: "Giới thiệu bạn bè để +1 lượt tải.",
+  pricingEyebrow: "Bảng giá",
+  pricingTitle: "Chọn gói phù hợp",
+  pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
+  guideEyebrow: "Hướng dẫn",
+  guideTitle: "Bài hướng dẫn",
+  guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
+  ctaTitle: "Sẵn sàng bắt đầu?",
+  ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
+  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
+  footerTagline: "Hỗ trợ 24/7",
+};
 
 function normalizeBoolean(value, fallback = false) {
   if (typeof value === "boolean") return value;
@@ -115,8 +161,25 @@ const defaultSettings = {
   heroText: "SIEU RE\nTAI 3D66\nTOC DO",
   heroSubtitle:
     "Dich vu getlink trung gian giup ban tai model tu 3D66 voi gia re hon mua truc tiep.",
+  heroEyebrow: "+ api 3d66 sdk",
   saleText: "Khuyen mai goi PRO trong thang nay",
+  demoTitle: "Bắt đầu tải ngay",
+  demoSubmitText: "GET LINK",
+  systemStatusLabel: "Trạng thái hệ thống",
+  pricePerDownloadLabel: "Giá tải chỉ từ",
+  pricePerDownloadValue: "10K",
+  referralTitleBoth: "Giới thiệu bạn bè, cả hai +1 lượt tải.",
+  referralTitleReferrerOnly: "Giới thiệu bạn bè để +1 lượt tải.",
+  pricingEyebrow: "Bảng giá",
+  pricingTitle: "Chọn gói phù hợp",
   pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
+  guideEyebrow: "Hướng dẫn",
+  guideTitle: "Bài hướng dẫn",
+  guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
+  ctaTitle: "Sẵn sàng bắt đầu?",
+  ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
+  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
+  footerTagline: "Hỗ trợ 24/7",
   referralMode: "both",
   threed66GetlinkConcurrency: Number(process.env.THREED66_GETLINK_CONCURRENCY || 1),
   threed66PreviewConcurrency: Number(process.env.THREED66_PREVIEW_CONCURRENCY || 1),
@@ -137,6 +200,8 @@ const defaultSettings = {
   getlinkRedownloadDays: Number(process.env.GETLINK_REDOWNLOAD_DAYS || 3),
   getlinkRedownloadLimit: Number(process.env.GETLINK_REDOWNLOAD_LIMIT || 5),
 };
+
+Object.assign(defaultSettings, HOME_TEXT_DEFAULTS);
 
 function clampInteger(value, { min, max, fallback }) {
   const number = Number(value);
@@ -251,10 +316,7 @@ export async function getSettings(_req, res, next) {
 export async function updateSettings(req, res, next) {
   try {
     const fields = [
-      "heroText",
-      "heroSubtitle",
-      "saleText",
-      "pricingNote",
+      ...HOME_TEXT_FIELDS,
       "referralMode",
       "threed66GetlinkConcurrency",
       "threed66PreviewConcurrency",

@@ -1,6 +1,30 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 
+const HOME_TEXT_DEFAULTS = {
+  heroText: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ",
+  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp.",
+  heroEyebrow: "+ api 3d66 sdk",
+  saleText: "Khuyến mãi gói PRO trong tháng này",
+  demoTitle: "Bắt đầu tải ngay",
+  demoSubmitText: "GET LINK",
+  systemStatusLabel: "Trạng thái hệ thống",
+  pricePerDownloadLabel: "Giá tải chỉ từ",
+  pricePerDownloadValue: "10K",
+  referralTitleBoth: "Giới thiệu bạn bè, cả hai +1 lượt tải.",
+  referralTitleReferrerOnly: "Giới thiệu bạn bè để +1 lượt tải.",
+  pricingEyebrow: "Bảng giá",
+  pricingTitle: "Chọn gói phù hợp",
+  pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
+  guideEyebrow: "Hướng dẫn",
+  guideTitle: "Bài hướng dẫn",
+  guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
+  ctaTitle: "Sẵn sàng bắt đầu?",
+  ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
+  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
+  footerTagline: "Hỗ trợ 24/7",
+};
+
 const siteSettingSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true, default: "homepage" },
@@ -13,14 +37,46 @@ const siteSettingSchema = new mongoose.Schema(
       default:
         "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp."
     },
+    heroEyebrow: { type: String, default: "+ api 3d66 sdk" },
     saleText: {
       type: String,
       default: "Khuyến mãi gói PRO trong tháng này"
     },
+    demoTitle: { type: String, default: "Bắt đầu tải ngay" },
+    demoSubmitText: { type: String, default: "GET LINK" },
+    systemStatusLabel: { type: String, default: "Trạng thái hệ thống" },
+    pricePerDownloadLabel: { type: String, default: "Giá tải chỉ từ" },
+    pricePerDownloadValue: { type: String, default: "10K" },
+    referralTitleBoth: {
+      type: String,
+      default: "Giới thiệu bạn bè, cả hai +1 lượt tải."
+    },
+    referralTitleReferrerOnly: {
+      type: String,
+      default: "Giới thiệu bạn bè để +1 lượt tải."
+    },
+    pricingEyebrow: { type: String, default: "Bảng giá" },
+    pricingTitle: { type: String, default: "Chọn gói phù hợp" },
     pricingNote: {
       type: String,
       default: "Nạp credit tự động, cộng credit ngay sau khi chọn gói."
     },
+    guideEyebrow: { type: String, default: "Hướng dẫn" },
+    guideTitle: { type: String, default: "Bài hướng dẫn" },
+    guideIntro: {
+      type: String,
+      default: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua."
+    },
+    ctaTitle: { type: String, default: "Sẵn sàng bắt đầu?" },
+    ctaUserText: {
+      type: String,
+      default: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn."
+    },
+    ctaGuestText: {
+      type: String,
+      default: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn."
+    },
+    footerTagline: { type: String, default: "Hỗ trợ 24/7" },
     referralMode: {
       type: String,
       enum: ["both", "referrer_only", "off"],
@@ -47,5 +103,9 @@ const siteSettingSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+Object.entries(HOME_TEXT_DEFAULTS).forEach(([field, value]) => {
+  siteSettingSchema.path(field)?.default(value);
+});
 
 export default isMemoryDb() ? createMemoryModel("SiteSetting") : mongoose.model("SiteSetting", siteSettingSchema);

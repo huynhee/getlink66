@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Ban, BarChart3, Check, ChevronLeft, ChevronRight, Cookie, CreditCard, Database, FileDown, FileText, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, UserPlus, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, Ban, BarChart3, Check, ChevronLeft, ChevronRight, Cookie, CreditCard, Database, FileDown, FileText, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Type, UserPlus, Users, X } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
@@ -57,8 +57,53 @@ const referralModeOptions = [
   },
 ];
 
+const HOME_TEXT_FIELDS = [
+  "heroEyebrow",
+  "heroText",
+  "heroSubtitle",
+  "saleText",
+  "demoTitle",
+  "demoSubmitText",
+  "systemStatusLabel",
+  "pricePerDownloadLabel",
+  "pricePerDownloadValue",
+  "referralTitleBoth",
+  "referralTitleReferrerOnly",
+  "pricingEyebrow",
+  "pricingTitle",
+  "pricingNote",
+  "guideEyebrow",
+  "guideTitle",
+  "guideIntro",
+  "ctaTitle",
+  "ctaUserText",
+  "ctaGuestText",
+  "footerTagline",
+];
+
 const defaultSiteSettings = {
   referralMode: "both",
+  heroEyebrow: "+ api 3d66 sdk",
+  heroText: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ",
+  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp.",
+  saleText: "",
+  demoTitle: "Bắt đầu tải ngay",
+  demoSubmitText: "GET LINK",
+  systemStatusLabel: "Trạng thái hệ thống",
+  pricePerDownloadLabel: "Giá tải chỉ từ",
+  pricePerDownloadValue: "10K",
+  referralTitleBoth: "Giới thiệu bạn bè, cả hai +1 lượt tải.",
+  referralTitleReferrerOnly: "Giới thiệu bạn bè để +1 lượt tải.",
+  pricingEyebrow: "Bảng giá",
+  pricingTitle: "Chọn gói phù hợp",
+  pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
+  guideEyebrow: "Hướng dẫn",
+  guideTitle: "Bài hướng dẫn",
+  guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
+  ctaTitle: "Sẵn sàng bắt đầu?",
+  ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
+  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
+  footerTagline: "Hỗ trợ 24/7",
   threed66GetlinkConcurrency: 1,
   threed66PreviewConcurrency: 1,
   threed66RefreshConcurrency: 1,
@@ -111,6 +156,7 @@ export default function Admin({ user, language = "vi" }) {
   const [notifications, setNotifications] = useState([]);
   const [referrals, setReferrals] = useState([]);
   const [siteSettings, setSiteSettings] = useState(defaultSiteSettings);
+  const [homeTextMsg, setHomeTextMsg] = useState("");
   const [referralMsg, setReferralMsg] = useState("");
   const [runtimeSettingsMsg, setRuntimeSettingsMsg] = useState("");
   const [cookieRecords, setCookieRecords] = useState([]);
@@ -433,6 +479,30 @@ export default function Admin({ user, language = "vi" }) {
     }
   }
 
+  async function saveHomeTextSettings(event) {
+    event.preventDefault();
+    try {
+      setHomeTextMsg("");
+      const payload = {};
+      HOME_TEXT_FIELDS.forEach((field) => {
+        payload[field] = siteSettings[field] ?? "";
+      });
+      const data = await api("/api/settings", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      setSiteSettings({ ...defaultSiteSettings, ...(data.settings || {}) });
+      setHomeTextMsg(l("Đã cập nhật text trang chủ.", "Homepage text updated."));
+      await loadData();
+    } catch (err) {
+      setHomeTextMsg(err.message);
+    }
+  }
+
+  function updateHomeText(field, value) {
+    setSiteSettings((settings) => ({ ...settings, [field]: value }));
+  }
+
   function updateRuntimeSetting(field, value) {
     setSiteSettings((settings) => ({ ...settings, [field]: value }));
   }
@@ -652,6 +722,7 @@ export default function Admin({ user, language = "vi" }) {
     { key: "packages", label: t.adminPackages, icon: Package, count: packages.length },
     { key: "vouchers", label: t.adminVouchers, icon: Gift, count: vouchers.length },
     { key: "notifications", label: t.notifications, icon: Megaphone, count: notifications.length },
+    { key: "homeText", label: l("Text trang chủ", "Homepage text"), icon: Type },
     { key: "articles", label: t.adminArticles || l("Bài viết", "Articles"), icon: FileText, count: articles.length },
     { key: "threed66", label: l("Cài đặt 3D66", "3D66 settings"), icon: Activity },
     { key: "cookie", label: t.adminCookie, icon: Cookie },
@@ -663,6 +734,59 @@ export default function Admin({ user, language = "vi" }) {
     { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
     { key: "getlinks", label: l("Lịch sử getlink", "Getlink history"), icon: FileDown, count: getlinkPagination.total },
     { key: "topups", label: l("Lịch sử nạp", "Top-up history"), icon: CreditCard, count: topupPagination.total },
+  ];
+  const homeTextGroups = [
+    {
+      title: l("Hero đầu trang", "Hero section"),
+      fields: [
+        { field: "heroEyebrow", label: l("Nhãn nhỏ phía trên", "Small eyebrow"), type: "input" },
+        { field: "heroText", label: l("Tiêu đề lớn", "Main headline"), type: "textarea", rows: 3 },
+        { field: "heroSubtitle", label: l("Mô tả dưới tiêu đề", "Subtitle"), type: "textarea", rows: 3 },
+        { field: "saleText", label: l("Dòng khuyến mại", "Promotion text"), type: "input" },
+      ],
+    },
+    {
+      title: l("Ô nhập getlink demo", "Demo getlink box"),
+      fields: [
+        { field: "demoTitle", label: l("Tiêu đề ô nhập", "Box title"), type: "input" },
+        { field: "demoSubmitText", label: l("Chữ nút getlink", "Getlink button text"), type: "input" },
+        { field: "systemStatusLabel", label: l("Nhãn trạng thái", "Status label"), type: "input" },
+        { field: "pricePerDownloadLabel", label: l("Nhãn giá tải", "Price label"), type: "input" },
+        { field: "pricePerDownloadValue", label: l("Giá hiển thị", "Displayed price"), type: "input" },
+      ],
+    },
+    {
+      title: l("Mời bạn", "Referral invite"),
+      fields: [
+        { field: "referralTitleBoth", label: l("Text khi cả hai nhận thưởng", "Text when both receive reward"), type: "input" },
+        { field: "referralTitleReferrerOnly", label: l("Text khi chỉ người mời nhận", "Text when only referrer receives reward"), type: "input" },
+      ],
+    },
+    {
+      title: l("Bảng giá", "Pricing"),
+      fields: [
+        { field: "pricingEyebrow", label: l("Nhãn bảng giá", "Pricing eyebrow"), type: "input" },
+        { field: "pricingTitle", label: l("Tiêu đề bảng giá", "Pricing title"), type: "input" },
+        { field: "pricingNote", label: l("Mô tả bảng giá", "Pricing note"), type: "textarea", rows: 2 },
+      ],
+    },
+    {
+      title: l("Hướng dẫn trên trang chủ", "Homepage guide"),
+      fields: [
+        { field: "guideEyebrow", label: l("Nhãn hướng dẫn", "Guide eyebrow"), type: "input" },
+        { field: "guideTitle", label: l("Tiêu đề hướng dẫn", "Guide title"), type: "input" },
+        { field: "guideIntro", label: l("Mô tả hướng dẫn", "Guide intro"), type: "textarea", rows: 2 },
+      ],
+    },
+    {
+      title: l("CTA cuối trang và footer", "Bottom CTA and footer"),
+      fields: [
+        { field: "ctaTitle", label: l("Tiêu đề CTA", "CTA title"), type: "input" },
+        { field: "ctaUserText", label: l("Mô tả CTA khi đã đăng nhập", "CTA text for signed-in users"), type: "textarea", rows: 2 },
+        { field: "ctaGuestText", label: l("Mô tả CTA khi chưa đăng nhập", "CTA text for guests"), type: "textarea", rows: 2 },
+        { field: "footerTagline", label: l("Dòng mô tả footer", "Footer tagline"), type: "input" },
+      ],
+    },
   ];
   const threed66RuntimeSettings = [
     {
@@ -1344,6 +1468,49 @@ export default function Admin({ user, language = "vi" }) {
             ))}
             {!notifications.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{t.noNotifications}</p>}
           </div>
+        </section>
+      )}
+
+      {activeSection === "homeText" && (
+        <section className="panel">
+          <h2><Type size={20} /> {l("Sửa text trang chủ", "Edit homepage text")}</h2>
+          <p className="muted" style={{ marginTop: 8 }}>
+            {l("Các text này hiển thị ở trang chủ. Để trống dòng khuyến mại nếu không muốn hiện banner sale.", "These texts appear on the homepage. Leave promotion text empty to hide the sale banner.")}
+          </p>
+          <form className="homeTextEditor" onSubmit={saveHomeTextSettings}>
+            {homeTextGroups.map((group) => (
+              <div className="runtimeSettingGroup" key={group.title}>
+                <h3>{group.title}</h3>
+                <div className="homeTextGrid">
+                  {group.fields.map((item) => (
+                    <label className="homeTextField" key={item.field}>
+                      <span>{item.label}</span>
+                      {item.type === "textarea" ? (
+                        <textarea
+                          value={siteSettings[item.field] || ""}
+                          rows={item.rows || 2}
+                          onChange={(event) => updateHomeText(item.field, event.target.value)}
+                        />
+                      ) : (
+                        <input
+                          value={siteSettings[item.field] || ""}
+                          onChange={(event) => updateHomeText(item.field, event.target.value)}
+                        />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <button className="smallButton" style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}>
+              <Save size={14} /> {l("Lưu text trang chủ", "Save homepage text")}
+            </button>
+            {homeTextMsg && (
+              <p className={/cập nhật|updated/i.test(homeTextMsg) ? "success" : "error"}>
+                {homeTextMsg}
+              </p>
+            )}
+          </form>
         </section>
       )}
 

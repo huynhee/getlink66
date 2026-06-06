@@ -4,6 +4,55 @@ import { API_URL, api } from "../api.js";
 import GuideContent from "../components/GuideContent.jsx";
 import { translations } from "../i18n.js";
 
+const HOME_TEXT_DEFAULTS = {
+  vi: {
+    heroEyebrow: "+ api 3d66 sdk",
+    heroText: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ",
+    heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp.",
+    saleText: "",
+    demoTitle: "Bắt đầu tải ngay",
+    demoSubmitText: "GET LINK",
+    systemStatusLabel: "Trạng thái hệ thống",
+    pricePerDownloadLabel: "Giá tải chỉ từ",
+    pricePerDownloadValue: "10K",
+    referralTitleBoth: "Giới thiệu bạn bè, cả hai +1 lượt tải.",
+    referralTitleReferrerOnly: "Giới thiệu bạn bè để +1 lượt tải.",
+    pricingEyebrow: "Bảng giá",
+    pricingTitle: "Chọn gói phù hợp",
+    pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
+    guideEyebrow: "Hướng dẫn",
+    guideTitle: "Bài hướng dẫn",
+    guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
+    ctaTitle: "Sẵn sàng bắt đầu?",
+    ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
+    ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
+    footerTagline: "Hỗ trợ 24/7",
+  },
+  en: {
+    heroEyebrow: "+ api 3d66 sdk",
+    heroText: "FAST 3D66\nGETLINK\nSERVICE",
+    heroSubtitle: "An intermediary getlink service that helps you download 3D66 models with a faster credit workflow.",
+    saleText: "",
+    demoTitle: "Start download",
+    demoSubmitText: "GET LINK",
+    systemStatusLabel: "System status",
+    pricePerDownloadLabel: "Download price from",
+    pricePerDownloadValue: "10K",
+    referralTitleBoth: "Invite friends, both get rewards +1 download.",
+    referralTitleReferrerOnly: "Invite friends to get +1 download.",
+    pricingEyebrow: "Pricing",
+    pricingTitle: "Choose the right package",
+    pricingNote: "Automatic credit top-up after selecting a package.",
+    guideEyebrow: "Guide",
+    guideTitle: "Guide articles",
+    guideIntro: "Read guides for Getlink, credit top-up, and redownloading purchased files.",
+    ctaTitle: "Ready to start?",
+    ctaUserText: "Open Getlink to download 3D66 models and manage your credit.",
+    ctaGuestText: "Sign in with Google to start using 3D66 Getlink and manage your credit.",
+    footerTagline: "24/7 support",
+  },
+};
+
 export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/", language = "vi" }) {
   const t = { ...(translations[language] || translations.vi) };
   const [demoLink, setDemoLink] = useState("");
@@ -17,14 +66,42 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   const [guideLoading, setGuideLoading] = useState(true);
   const [guideError, setGuideError] = useState("");
   const [siteSettings, setSiteSettings] = useState({
+    heroEyebrow: "+ api 3d66 sdk",
     heroText: language === "vi" ? "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ" : "FAST 3D66\nGETLINK\nSERVICE",
     heroSubtitle: language === "vi"
       ? "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp."
       : "An intermediary getlink service that helps you download 3D66 models with a faster credit workflow.",
     saleText: "",
+    demoTitle: language === "vi" ? "Bắt đầu tải ngay" : "Start download",
+    demoSubmitText: "GET LINK",
+    systemStatusLabel: language === "vi" ? "Trạng thái hệ thống" : "System status",
+    pricePerDownloadLabel: language === "vi" ? "Giá tải chỉ từ" : "Download price from",
+    pricePerDownloadValue: "10K",
+    referralTitleBoth: language === "vi"
+      ? "Giới thiệu bạn bè, cả hai +1 lượt tải."
+      : "Invite friends, both get rewards +1 download.",
+    referralTitleReferrerOnly: language === "vi"
+      ? "Giới thiệu bạn bè để +1 lượt tải."
+      : "Invite friends to get +1 download.",
+    pricingEyebrow: language === "vi" ? "Bảng giá" : "Pricing",
+    pricingTitle: language === "vi" ? "Chọn gói phù hợp" : "Choose the right package",
     pricingNote: language === "vi"
       ? "Nạp credit tự động, cộng credit ngay sau khi chọn gói."
-      : "Automatic credit top-up after selecting a package."
+      : "Automatic credit top-up after selecting a package.",
+    guideEyebrow: language === "vi" ? "Hướng dẫn" : "Guide",
+    guideTitle: language === "vi" ? "Bài hướng dẫn" : "Guide articles",
+    guideIntro: language === "vi"
+      ? "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua."
+      : "Read guides for Getlink, credit top-up, and redownloading purchased files.",
+    ctaTitle: language === "vi" ? "Sẵn sàng bắt đầu?" : "Ready to start?",
+    ctaUserText: language === "vi"
+      ? "Vào trang getlink để tải model 3D66 và quản lý credit của bạn."
+      : "Open Getlink to download 3D66 models and manage your credit.",
+    ctaGuestText: language === "vi"
+      ? "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn."
+      : "Sign in with Google to start using 3D66 Getlink and manage your credit.",
+    footerTagline: language === "vi" ? "Hỗ trợ 24/7" : "24/7 support",
+    ...HOME_TEXT_DEFAULTS[language]
   });
   const demoCursorText = demoLink || t.getlinkPlaceholder;
   const demoCursorX = Math.min(demoCursorText.length * 8.4, 520);
@@ -38,7 +115,9 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
     if (!adminMode) {
       api("/api/settings")
         .then((data) => {
-          if (data?.settings) setSiteSettings(data.settings);
+          if (data?.settings) {
+            setSiteSettings((current) => ({ ...current, ...data.settings }));
+          }
         })
         .catch(console.error);
       api("/api/topup/packages")
@@ -178,6 +257,13 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
       : "Invite friends, both get rewards");
   }
 
+  function homepageReferralTitle() {
+    if ((referral?.mode || siteSettings.referralMode) === "referrer_only") {
+      return siteSettings.referralTitleReferrerOnly || referralTitle();
+    }
+    return siteSettings.referralTitleBoth || referralTitle();
+  }
+
   return (
     <div className="landing">
       {!adminMode && (
@@ -197,7 +283,9 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
       {!adminMode && (
         <section className="heroSection">
           <div className="heroLeft">
-            <h3 className="eyebrowSignal" style={{ marginBottom: 16 }}>+ api 3d66 sdk</h3>
+            <h3 className="eyebrowSignal" style={{ marginBottom: 16 }}>
+              {siteSettings.heroEyebrow || "+ api 3d66 sdk"}
+            </h3>
             {siteSettings.saleText && (
               <div
                 style={{
@@ -250,7 +338,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
               }}
             >
               <h2 style={{ fontSize: 20, marginBottom: 24 }}>
-                {t.startDownload}
+                {siteSettings.demoTitle || t.startDownload}
               </h2>
               <form onSubmit={handleDemoGetlink} className="inputWrapper">
                 <div className="linkInputWrap terminalInput" style={{ "--cursor-x": `${demoCursorX}px` }}>
@@ -276,7 +364,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                   disabled={!demoLink.trim()}
                   style={{ border: "none" }}
                 >
-                  GET LINK
+                  {siteSettings.demoSubmitText || "GET LINK"}
                 </button>
               </form>
               {demoError && (
@@ -286,21 +374,21 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
               )}
               <div className="statusBox" style={{ marginTop: 24, paddingTop: 24, borderTop: "1px solid var(--border-warm)" }}>
                 <div className="statusItem">
-                  <span>{t.systemStatus}</span>
+                  <span>{siteSettings.systemStatusLabel || t.systemStatus}</span>
                   <strong className={systemStatus.online ? "ready" : "offline"}>
                     {systemStatus.online ? t.online : t.offline}
                   </strong>
                 </div>
                 <div className="statusItem">
-                  <span>{t.pricePerDownload}</span>
-                  <strong>10K</strong>
+                  <span>{siteSettings.pricePerDownloadLabel || t.pricePerDownload}</span>
+                  <strong>{siteSettings.pricePerDownloadValue || "10K"}</strong>
                 </div>
               </div>
             </div>
             {siteSettings.referralMode !== "off" && (
               <div className="referralInvite referralGetlinkInvite">
                 <div className="referralInviteHeader">
-                  <strong><UserPlus size={14} /> {referralTitle()}</strong>
+                  <strong><UserPlus size={14} /> {homepageReferralTitle()}</strong>
                   {referral?.referralCode && <span>{referral.referralCode}</span>}
                 </div>
                 <div className="referralUrlRow">
@@ -352,9 +440,9 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
         <>
           <section id="pricing" style={{ marginTop: 64 }}>
             <div className="sectionTitle">
-              <h3>{t.pricing}</h3>
-              <h2 className="glitchTitle subtle" data-text={t.choosePackage}>
-                {t.choosePackage}
+              <h3>{siteSettings.pricingEyebrow || t.pricing}</h3>
+              <h2 className="glitchTitle subtle" data-text={siteSettings.pricingTitle || t.choosePackage}>
+                {siteSettings.pricingTitle || t.choosePackage}
               </h2>
               <p style={{ maxWidth: 600, margin: "0 auto" }}>{siteSettings.pricingNote}</p>
             </div>
@@ -433,17 +521,17 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
             <div className="sectionTitle">
               <h3>
                 <BookOpen size={14} />
-                {t.guide}
+                {siteSettings.guideEyebrow || t.guide}
               </h3>
-              <h2 className="glitchTitle subtle" data-text={t.guideList}>
-                {t.guideList}
+              <h2 className="glitchTitle subtle" data-text={siteSettings.guideTitle || t.guideList}>
+                {siteSettings.guideTitle || t.guideList}
               </h2>
-              <p>{t.guideIntro}</p>
+              <p>{siteSettings.guideIntro || t.guideIntro}</p>
             </div>
 
             <section className="guideLayout homeGuideLayout">
               <aside className="panel guideSidebar homeGuideSidebar">
-                <h3>{t.guideList}</h3>
+                <h3>{siteSettings.guideTitle || t.guideList}</h3>
                 {guideLoading && <p className="muted">{t.loading}</p>}
                 {guideError && <p className="error">{guideError}</p>}
                 {!guideLoading && !guideArticles.length && <p className="muted">{t.noGuides}</p>}
@@ -489,13 +577,13 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
           </section>
 
           <section className="ctaSection">
-            <h2 className="glitchTitle" data-text={t.readyTitle} style={{ marginBottom: 16 }}>
-              {t.readyTitle}
+            <h2 className="glitchTitle" data-text={siteSettings.ctaTitle || t.readyTitle} style={{ marginBottom: 16 }}>
+              {siteSettings.ctaTitle || t.readyTitle}
             </h2>
             <p style={{ maxWidth: 500, margin: "0 auto 32px" }}>
               {user
-                ? t.readyUser
-                : t.readyGuest}
+                ? (siteSettings.ctaUserText || t.readyUser)
+                : (siteSettings.ctaGuestText || t.readyGuest)}
             </p>
             <a className="primaryButton" href={authAwareHref("/getlink")}>
               <Chrome size={18} /> {user ? t.enterGetlink : t.googleLogin}
@@ -505,7 +593,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
           <footer className="landingFooter">
             <div className="footerBrand">
               <strong>3DIPL</strong>
-              <span>{t.support247}</span>
+              <span>{siteSettings.footerTagline || t.support247}</span>
             </div>
             <nav>
               <h3>{t.product}</h3>
