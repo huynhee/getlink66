@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Check, Coins, Copy, Gift, Link2, LogIn, Share2, UserPlus, Users } from "lucide-react";
+import { Check, Coins, Copy, Gift, Link2, Share2, UserPlus, Users } from "lucide-react";
 import { api } from "../api.js";
 
 export default function Invite({ language = "vi" }) {
@@ -181,39 +181,6 @@ export default function Invite({ language = "vi" }) {
               ? "Gửi link này cho bạn bè. Credit được cộng tự động khi đăng ký thành công."
               : "Send this link to friends. Credit is added automatically after successful signup."}
           </p>
-        </div>
-      </section>
-
-      <section className="panel inviteStepsPanel inviteTerminalPanel">
-        <div className="inviteSectionHeading">
-          <span className="inviteSectionTag">[ {isVi ? "03 bước" : "03 steps"} ]</span>
-          <h2>{isVi ? "Cách nhận credit" : "How to earn credit"}</h2>
-        </div>
-        <div className="inviteSteps">
-          <div className="inviteStep">
-            <strong>01</strong>
-            <Link2 size={19} />
-            <div>
-              <h3>{isVi ? "Copy link" : "Copy link"}</h3>
-              <p>{isVi ? "Lấy link giới thiệu cá nhân phía trên." : "Get your personal referral link above."}</p>
-            </div>
-          </div>
-          <div className="inviteStep">
-            <strong>02</strong>
-            <Share2 size={19} />
-            <div>
-              <h3>{isVi ? "Gửi cho bạn bè" : "Send to friends"}</h3>
-              <p>{isVi ? "Chia sẻ trực tiếp link đăng ký của bạn." : "Share your signup link directly."}</p>
-            </div>
-          </div>
-          <div className="inviteStep">
-            <strong>03</strong>
-            <LogIn size={19} />
-            <div>
-              <h3>{isVi ? "Nhận credit" : "Earn credit"}</h3>
-              <p>{isVi ? "Hệ thống cộng thưởng sau khi đăng ký." : "Credit is added after signup."}</p>
-            </div>
-          </div>
         </div>
       </section>
 

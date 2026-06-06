@@ -662,7 +662,7 @@ export default function Admin({ user, language = "vi" }) {
     { key: "users", label: t.adminUsers, icon: Users, count: userPagination.total },
     { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
     { key: "getlinks", label: l("Lịch sử getlink", "Getlink history"), icon: FileDown, count: getlinkPagination.total },
-    { key: "topups", label: l("Ai đã nạp gói nào", "Top-up purchases"), icon: CreditCard, count: topupPagination.total },
+    { key: "topups", label: l("Lịch sử nạp", "Top-up history"), icon: CreditCard, count: topupPagination.total },
   ];
   const threed66RuntimeSettings = [
     {
