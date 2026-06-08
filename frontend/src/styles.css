@@ -841,24 +841,27 @@ button:disabled {
   background: var(--error);
 }
 
-.overviewMainGrid {
+.overviewTopGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.75fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-10);
   align-items: start;
 }
 
-.overviewSidePanel {
-  display: grid;
-  gap: var(--space-10);
+.overviewTopGrid > .panel {
+  min-width: 0;
 }
 
-.overviewSidePanel h3,
+.overviewTopGrid h3,
 .overviewActivityGrid h3 {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0 0 var(--space-12);
+}
+
+.overviewTopGrid .systemHealthGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .systemHealthGrid,
@@ -978,15 +981,20 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .overviewMainGrid {
-    grid-template-columns: 1fr;
+  .overviewTopGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 720px) {
   .overviewHero,
   .adminKpiGrid,
+  .overviewTopGrid,
   .overviewActivityGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .overviewTopGrid .systemHealthGrid {
     grid-template-columns: 1fr;
   }
 

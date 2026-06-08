@@ -1095,95 +1095,93 @@ export default function Admin({ user, language = "vi" }) {
             })}
           </div>
 
-          <div className="overviewMainGrid">
-            <div className="revenueChartPanel">
-              <div className="chartHeader">
-                <div>
-                  <h3>{l("Biểu đồ doanh thu", "Revenue chart")}</h3>
-                  <p>{chartLabels[revenuePeriod]}, {l("tính theo giao dịch đã thanh toán.", "based on paid transactions.")}</p>
-                </div>
-                <div className="chartControls">
-                  {[
-                    ["day", l("Ngày", "Day")],
-                    ["month", l("Tháng", "Month")],
-                    ["year", l("Năm", "Year")]
-                  ].map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={revenuePeriod === value ? "active" : ""}
-                      onClick={() => setRevenuePeriod(value)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="chartTotal">
-                  <span>{l("Tổng kỳ", "Period total")}</span>
-                  <strong>{formatMoney(chartRevenue)}</strong>
-                </div>
-              </div>
-              <div className={`revenueChart ${revenuePeriod}`} aria-label={l("Biểu đồ doanh thu", "Revenue chart")}>
-                {revenueChart.map((item) => {
-                  const height = Math.max(6, Math.round((Number(item.revenue || 0) / maxRevenue) * 100));
-                  const tooltip = `${item.label} · ${formatMoney(item.revenue)} · ${formatNumber(item.count, locale)} ${l("giao dịch", "transactions")}`;
+          <div className="overviewTopGrid">
+            <div className="panel">
+              <h3><Package size={16} /> {l("Top gói nạp", "Top packages")}</h3>
+              <div className="packageBars">
+                {topPackages.map((item) => {
+                  const width = Math.max(8, Math.round((Number(item.revenue || 0) / maxPackageRevenue) * 100));
                   return (
-                    <div className="chartBarItem" key={item.date}>
-                      <div className="chartBarTrack" aria-label={tooltip}>
-                        <div className="chartBarFill" style={{ height: `${height}%` }} />
+                    <div className="packageBarItem" key={item.packageId}>
+                      <div>
+                        <strong>{item.name}</strong>
+                        <span>{formatMoney(item.revenue)} · {formatNumber(item.count, locale)} {l("đơn", "orders")}</span>
                       </div>
-                      <div className="chartTooltip" role="tooltip">
-                        <strong>{formatMoney(item.revenue)}</strong>
-                        <small>{formatNumber(item.count, locale)} {l("giao dịch", "transactions")}</small>
+                      <div className="packageBarTrack">
+                        <i style={{ width: `${width}%` }} />
                       </div>
-                      <span>{item.label}</span>
+                    </div>
+                  );
+                })}
+                {!topPackages.length && <p className="muted">{l("Chưa có gói nạp thành công.", "No successful package top-ups yet.")}</p>}
+              </div>
+            </div>
+
+            <div className="panel">
+              <h3><Activity size={16} /> {l("Sức khỏe hệ thống", "System health")}</h3>
+              <div className="systemHealthGrid">
+                {systemHealthItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div className="systemHealthItem" key={item.label}>
+                      <Icon size={16} />
+                      <div>
+                        <span>{item.label}</span>
+                        <strong>{item.value}</strong>
+                        <small>{item.detail}</small>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </div>
+          </div>
 
-            <aside className="overviewSidePanel">
-              <div className="panel">
-                <h3><Activity size={16} /> {l("Sức khỏe hệ thống", "System health")}</h3>
-                <div className="systemHealthGrid">
-                  {systemHealthItems.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <div className="systemHealthItem" key={item.label}>
-                        <Icon size={16} />
-                        <div>
-                          <span>{item.label}</span>
-                          <strong>{item.value}</strong>
-                          <small>{item.detail}</small>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+          <div className="revenueChartPanel">
+            <div className="chartHeader">
+              <div>
+                <h3>{l("Biểu đồ doanh thu", "Revenue chart")}</h3>
+                <p>{chartLabels[revenuePeriod]}, {l("tính theo giao dịch đã thanh toán.", "based on paid transactions.")}</p>
               </div>
-
-              <div className="panel">
-                <h3><Package size={16} /> {l("Top gói nạp", "Top packages")}</h3>
-                <div className="packageBars">
-                  {topPackages.map((item) => {
-                    const width = Math.max(8, Math.round((Number(item.revenue || 0) / maxPackageRevenue) * 100));
-                    return (
-                      <div className="packageBarItem" key={item.packageId}>
-                        <div>
-                          <strong>{item.name}</strong>
-                          <span>{formatMoney(item.revenue)} · {formatNumber(item.count, locale)} {l("đơn", "orders")}</span>
-                        </div>
-                        <div className="packageBarTrack">
-                          <i style={{ width: `${width}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {!topPackages.length && <p className="muted">{l("Chưa có gói nạp thành công.", "No successful package top-ups yet.")}</p>}
-                </div>
+              <div className="chartControls">
+                {[
+                  ["day", l("Ngày", "Day")],
+                  ["month", l("Tháng", "Month")],
+                  ["year", l("Năm", "Year")]
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={revenuePeriod === value ? "active" : ""}
+                    onClick={() => setRevenuePeriod(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-            </aside>
+              <div className="chartTotal">
+                <span>{l("Tổng kỳ", "Period total")}</span>
+                <strong>{formatMoney(chartRevenue)}</strong>
+              </div>
+            </div>
+            <div className={`revenueChart ${revenuePeriod}`} aria-label={l("Biểu đồ doanh thu", "Revenue chart")}>
+              {revenueChart.map((item) => {
+                const height = Math.max(6, Math.round((Number(item.revenue || 0) / maxRevenue) * 100));
+                const tooltip = `${item.label} · ${formatMoney(item.revenue)} · ${formatNumber(item.count, locale)} ${l("giao dịch", "transactions")}`;
+                return (
+                  <div className="chartBarItem" key={item.date}>
+                    <div className="chartBarTrack" aria-label={tooltip}>
+                      <div className="chartBarFill" style={{ height: `${height}%` }} />
+                    </div>
+                    <div className="chartTooltip" role="tooltip">
+                      <strong>{formatMoney(item.revenue)}</strong>
+                      <small>{formatNumber(item.count, locale)} {l("giao dịch", "transactions")}</small>
+                    </div>
+                    <span>{item.label}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           <div className="overviewActivityGrid">
