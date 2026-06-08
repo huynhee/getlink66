@@ -1118,15 +1118,23 @@ export default function Admin({ user, language = "vi" }) {
                     </button>
                   ))}
                 </div>
-                <strong>{formatMoney(chartRevenue)}</strong>
+                <div className="chartTotal">
+                  <span>{l("Tổng kỳ", "Period total")}</span>
+                  <strong>{formatMoney(chartRevenue)}</strong>
+                </div>
               </div>
               <div className={`revenueChart ${revenuePeriod}`} aria-label={l("Biểu đồ doanh thu", "Revenue chart")}>
                 {revenueChart.map((item) => {
                   const height = Math.max(6, Math.round((Number(item.revenue || 0) / maxRevenue) * 100));
+                  const tooltip = `${item.label} · ${formatMoney(item.revenue)} · ${formatNumber(item.count, locale)} ${l("giao dịch", "transactions")}`;
                   return (
                     <div className="chartBarItem" key={item.date}>
-                      <div className="chartBarTrack" title={`${item.label}: ${formatMoney(item.revenue)} (${item.count} ${l("giao dịch", "transactions")})`}>
+                      <div className="chartBarTrack" aria-label={tooltip}>
                         <div className="chartBarFill" style={{ height: `${height}%` }} />
+                      </div>
+                      <div className="chartTooltip" role="tooltip">
+                        <strong>{formatMoney(item.revenue)}</strong>
+                        <small>{formatNumber(item.count, locale)} {l("giao dịch", "transactions")}</small>
                       </div>
                       <span>{item.label}</span>
                     </div>

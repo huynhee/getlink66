@@ -271,49 +271,83 @@ function pad(value) {
   return String(value).padStart(2, "0");
 }
 
-function chartKey(date, period) {
-  if (period === "year") return String(date.getFullYear());
+const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+function toVietnamShiftedDate(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.valueOf())) return null;
+  return new Date(date.getTime() + VIETNAM_OFFSET_MS);
+}
+
+function shiftedChartKey(date, period) {
+  if (period === "year") return String(date.getUTCFullYear());
   if (period === "month")
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}`;
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+}
+
+function shiftedChartLabel(date, period) {
+  if (period === "year") return String(date.getUTCFullYear());
+  if (period === "month")
+    return `${pad(date.getUTCMonth() + 1)}/${date.getUTCFullYear()}`;
+  return `${pad(date.getUTCDate())}/${pad(date.getUTCMonth() + 1)}`;
+}
+
+function vietnamChartKey(value, period = "day") {
+  const shiftedDate = toVietnamShiftedDate(value);
+  return shiftedDate ? shiftedChartKey(shiftedDate, period) : "";
+}
+
+function recentVietnamDayKeys(length = 7, now = new Date()) {
+  const shiftedNow = toVietnamShiftedDate(now) || toVietnamShiftedDate(new Date());
+  return Array.from({ length }, (_, index) => {
+    const date = new Date(
+      Date.UTC(
+        shiftedNow.getUTCFullYear(),
+        shiftedNow.getUTCMonth(),
+        shiftedNow.getUTCDate() - (length - 1 - index),
+      ),
+    );
+    return shiftedChartKey(date, "day");
+  });
 }
 
 function buildRevenueChart(approvedTopups, period = "day") {
   const now = new Date();
   const config = {
-    day: {
-      length: 14,
-      label: (date) => `${pad(date.getDate())}/${pad(date.getMonth() + 1)}`,
-    },
-    month: {
-      length: 12,
-      label: (date) => `${pad(date.getMonth() + 1)}/${date.getFullYear()}`,
-    },
-    year: { length: 5, label: (date) => String(date.getFullYear()) },
-  }[period] || {
-    length: 14,
-    label: (date) => `${pad(date.getDate())}/${pad(date.getMonth() + 1)}`,
-  };
+    day: { length: 14 },
+    month: { length: 12 },
+    year: { length: 5 },
+  }[period] || { length: 14 };
+  const shiftedNow = toVietnamShiftedDate(now) || toVietnamShiftedDate(new Date());
 
   const revenueChart = Array.from({ length: config.length }, (_, index) => {
     let date;
     if (period === "year") {
-      date = new Date(now.getFullYear() - (config.length - 1 - index), 0, 1);
+      date = new Date(
+        Date.UTC(shiftedNow.getUTCFullYear() - (config.length - 1 - index), 0, 1),
+      );
     } else if (period === "month") {
       date = new Date(
-        now.getFullYear(),
-        now.getMonth() - (config.length - 1 - index),
-        1,
+        Date.UTC(
+          shiftedNow.getUTCFullYear(),
+          shiftedNow.getUTCMonth() - (config.length - 1 - index),
+          1,
+        ),
       );
     } else {
-      date = new Date(now);
-      date.setHours(0, 0, 0, 0);
-      date.setDate(now.getDate() - (config.length - 1 - index));
+      date = new Date(
+        Date.UTC(
+          shiftedNow.getUTCFullYear(),
+          shiftedNow.getUTCMonth(),
+          shiftedNow.getUTCDate() - (config.length - 1 - index),
+        ),
+      );
     }
 
     return {
-      date: chartKey(date, period),
-      label: config.label(date),
+      date: shiftedChartKey(date, period),
+      label: shiftedChartLabel(date, period),
       revenue: 0,
       count: 0,
     };
@@ -321,10 +355,9 @@ function buildRevenueChart(approvedTopups, period = "day") {
 
   const revenueBucket = new Map(revenueChart.map((item) => [item.date, item]));
   approvedTopups.forEach((topup) => {
-    const topupDate = new Date(
-      topup.paidAt || topup.updatedAt || topup.createdAt || now,
+    const bucket = revenueBucket.get(
+      vietnamChartKey(topup.paidAt || topup.updatedAt || topup.createdAt || now, period),
     );
-    const bucket = revenueBucket.get(chartKey(topupDate, period));
     if (!bucket) return;
     bucket.revenue += Number(topup.amount || 0);
     bucket.count += 1;
@@ -567,10 +600,8 @@ export async function getOverview(req, res, next) {
     );
     const pendingTopups = topups.filter((topup) => topup.status === "pending");
     const now = new Date();
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(startOfWeek.getDate() - 7);
+    const todayKey = vietnamChartKey(now, "day");
+    const recentWeekKeys = new Set(recentVietnamDayKeys(7, now));
     const revenueChart = buildRevenueChart(approvedTopups, revenuePeriod);
     const userById = new Map(
       users.map((user) => [String(user._id), user]),
@@ -578,14 +609,9 @@ export async function getOverview(req, res, next) {
     const packageById = new Map(
       packages.map((pack) => [String(pack._id), pack]),
     );
-    const dateFrom = (value) => {
-      const date = value ? new Date(value) : null;
-      return date && !Number.isNaN(date.valueOf()) ? date : null;
-    };
-    const isSince = (value, date) => {
-      const parsed = dateFrom(value);
-      return Boolean(parsed && parsed >= date);
-    };
+    const isToday = (value) => vietnamChartKey(value, "day") === todayKey;
+    const isInRecentWeek = (value) =>
+      recentWeekKeys.has(vietnamChartKey(value, "day"));
     const activeVouchers = vouchers.filter((voucher) => {
       const expiresAt = voucher.expireAt ? new Date(voucher.expireAt) : null;
       return (
@@ -671,10 +697,10 @@ export async function getOverview(req, res, next) {
           .length,
         revenue: approvedRevenue,
         todayRevenue: approvedTopups
-          .filter((topup) => isSince(topup.paidAt || topup.updatedAt, startOfToday))
+          .filter((topup) => isToday(topup.paidAt || topup.updatedAt || topup.createdAt))
           .reduce((sum, topup) => sum + Number(topup.amount || 0), 0),
         weekRevenue: approvedTopups
-          .filter((topup) => isSince(topup.paidAt || topup.updatedAt, startOfWeek))
+          .filter((topup) => isInRecentWeek(topup.paidAt || topup.updatedAt || topup.createdAt))
           .reduce((sum, topup) => sum + Number(topup.amount || 0), 0),
         averageTopupAmount: approvedTopups.length
           ? Math.round(approvedRevenue / approvedTopups.length)
@@ -683,17 +709,17 @@ export async function getOverview(req, res, next) {
         revenueChart,
         totalGetlinks: getlinks.length,
         todayGetlinks: getlinks.filter((item) =>
-          isSince(item.createdAt, startOfToday),
+          isToday(item.createdAt),
         ).length,
         weekGetlinks: getlinks.filter((item) =>
-          isSince(item.createdAt, startOfWeek),
+          isInRecentWeek(item.createdAt),
         ).length,
         totalCreditSpent: getlinks.reduce(
           (sum, item) => sum + Number(item.creditUsed || 0),
           0,
         ),
         cachedProducts: caches.length,
-        todayUsers: users.filter((user) => isSince(user.createdAt, startOfToday))
+        todayUsers: users.filter((user) => isToday(user.createdAt))
           .length,
         bannedUsers: users.filter((user) => user.isBanned).length,
         adminUsers: users.filter((user) => user.role === "admin").length,
