@@ -551,7 +551,7 @@ export async function getOverview(req, res, next) {
     const revenuePeriod = ["day", "month", "year"].includes(requestedPeriod)
       ? requestedPeriod
       : "day";
-    const [users, packages, vouchers, topups, getlinks, caches] =
+    const [users, packages, vouchers, topups, getlinks, caches, cookiePool] =
       await Promise.all([
         User.find(),
         TopupPackage.find(),
@@ -559,6 +559,7 @@ export async function getOverview(req, res, next) {
         Topup.find(),
         Getlink.find(),
         ProductCache.find(),
+        get3D66CookiePoolStatus(),
       ]);
 
     const approvedTopups = topups.filter(
@@ -566,7 +567,25 @@ export async function getOverview(req, res, next) {
     );
     const pendingTopups = topups.filter((topup) => topup.status === "pending");
     const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(startOfWeek.getDate() - 7);
     const revenueChart = buildRevenueChart(approvedTopups, revenuePeriod);
+    const userById = new Map(
+      users.map((user) => [String(user._id), user]),
+    );
+    const packageById = new Map(
+      packages.map((pack) => [String(pack._id), pack]),
+    );
+    const dateFrom = (value) => {
+      const date = value ? new Date(value) : null;
+      return date && !Number.isNaN(date.valueOf()) ? date : null;
+    };
+    const isSince = (value, date) => {
+      const parsed = dateFrom(value);
+      return Boolean(parsed && parsed >= date);
+    };
     const activeVouchers = vouchers.filter((voucher) => {
       const expiresAt = voucher.expireAt ? new Date(voucher.expireAt) : null;
       return (
@@ -575,6 +594,62 @@ export async function getOverview(req, res, next) {
         Number(voucher.usedCount || 0) < Number(voucher.usageLimit || 0)
       );
     });
+    const packageStats = approvedTopups.reduce((stats, topup) => {
+      const packageId = topup.packageId ? String(topup.packageId) : "unknown";
+      const current = stats.get(packageId) || {
+        packageId,
+        name: packageById.get(packageId)?.name || "Không rõ gói",
+        count: 0,
+        revenue: 0,
+        credit: 0,
+      };
+      current.count += 1;
+      current.revenue += Number(topup.amount || 0);
+      current.credit += Number(topup.credit || 0);
+      stats.set(packageId, current);
+      return stats;
+    }, new Map());
+    const recentGetlinks = [...getlinks]
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      .slice(0, 6)
+      .map((item) => {
+        const itemUser = userById.get(String(item.userId));
+        return {
+          _id: item._id,
+          userEmail: itemUser?.email || "",
+          userName: itemUser?.name || "",
+          productId: item.productId || "",
+          title: item.title || "",
+          creditUsed: Number(item.creditUsed || 0),
+          createdAt: item.createdAt,
+        };
+      });
+    const recentTopups = [...topups]
+      .sort((a, b) => new Date(b.paidAt || b.createdAt || 0) - new Date(a.paidAt || a.createdAt || 0))
+      .slice(0, 6)
+      .map((item) => {
+        const itemUser = userById.get(String(item.userId));
+        const packageName = item.packageId ? packageById.get(String(item.packageId))?.name : "";
+        return {
+          _id: item._id,
+          userEmail: itemUser?.email || "",
+          userName: itemUser?.name || "",
+          packageName: packageName || "",
+          amount: Number(item.amount || 0),
+          credit: Number(item.credit || 0),
+          status: item.status || "",
+          type: item.type || "",
+          paidAt: item.paidAt,
+          createdAt: item.createdAt,
+        };
+      });
+    const topPackages = [...packageStats.values()]
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+    const approvedRevenue = approvedTopups.reduce(
+      (sum, topup) => sum + Number(topup.amount || 0),
+      0,
+    );
 
     res.json({
       overview: {
@@ -592,14 +667,41 @@ export async function getOverview(req, res, next) {
           0,
         ),
         approvedTopups: approvedTopups.length,
-        revenue: approvedTopups.reduce(
-          (sum, topup) => sum + Number(topup.amount || 0),
-          0,
-        ),
+        rejectedTopups: topups.filter((topup) => topup.status === "rejected")
+          .length,
+        revenue: approvedRevenue,
+        todayRevenue: approvedTopups
+          .filter((topup) => isSince(topup.paidAt || topup.updatedAt, startOfToday))
+          .reduce((sum, topup) => sum + Number(topup.amount || 0), 0),
+        weekRevenue: approvedTopups
+          .filter((topup) => isSince(topup.paidAt || topup.updatedAt, startOfWeek))
+          .reduce((sum, topup) => sum + Number(topup.amount || 0), 0),
+        averageTopupAmount: approvedTopups.length
+          ? Math.round(approvedRevenue / approvedTopups.length)
+          : 0,
         revenuePeriod,
         revenueChart,
         totalGetlinks: getlinks.length,
+        todayGetlinks: getlinks.filter((item) =>
+          isSince(item.createdAt, startOfToday),
+        ).length,
+        weekGetlinks: getlinks.filter((item) =>
+          isSince(item.createdAt, startOfWeek),
+        ).length,
+        totalCreditSpent: getlinks.reduce(
+          (sum, item) => sum + Number(item.creditUsed || 0),
+          0,
+        ),
         cachedProducts: caches.length,
+        todayUsers: users.filter((user) => isSince(user.createdAt, startOfToday))
+          .length,
+        bannedUsers: users.filter((user) => user.isBanned).length,
+        adminUsers: users.filter((user) => user.role === "admin").length,
+        cookieStats: cookiePool.stats,
+        queueStatus: cookiePool.queue,
+        recentGetlinks,
+        recentTopups,
+        topPackages,
       },
     });
   } catch (error) {

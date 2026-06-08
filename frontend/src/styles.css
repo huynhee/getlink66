@@ -726,6 +726,285 @@ button:disabled {
   margin-top: var(--space-12);
 }
 
+.overviewDashboard {
+  display: grid;
+  gap: var(--space-12);
+}
+
+.overviewHero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.overviewHero h2,
+.overviewHero p {
+  margin: 0;
+}
+
+.overviewHeroStats {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  padding: var(--space-14);
+  background: linear-gradient(135deg, rgba(0, 255, 136, 0.12), rgba(0, 212, 255, 0.05));
+  border: 1px solid rgba(0, 255, 136, 0.28);
+  clip-path: var(--cyber-cut-sm);
+  text-align: right;
+}
+
+.overviewHeroStats span,
+.overviewHeroStats small {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.overviewHeroStats strong {
+  color: var(--neon-green);
+  font-family: var(--font-display);
+  font-size: clamp(26px, 4vw, 42px);
+  line-height: 1;
+}
+
+.adminKpiGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-10);
+}
+
+.adminKpiCard {
+  position: relative;
+  display: flex;
+  min-height: 118px;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding: var(--space-14);
+  overflow: hidden;
+  background: rgba(2, 4, 3, 0.86);
+  border: 1px solid var(--border-light);
+  clip-path: var(--cyber-cut-sm);
+}
+
+.adminKpiCard::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--neon-green);
+  box-shadow: 0 0 18px currentColor;
+}
+
+.adminKpiCard span,
+.adminKpiCard small {
+  display: block;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.adminKpiCard strong {
+  display: block;
+  margin: 8px 0 6px;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: clamp(24px, 3vw, 36px);
+  line-height: 1;
+}
+
+.adminKpiCard > svg {
+  flex: 0 0 auto;
+  color: var(--neon-green);
+  opacity: 0.82;
+}
+
+.adminKpiCard.cyan::before,
+.adminKpiCard.cyan > svg {
+  color: var(--neon-cyan);
+  background: var(--neon-cyan);
+}
+
+.adminKpiCard.magenta::before,
+.adminKpiCard.magenta > svg {
+  color: var(--neon-magenta);
+  background: var(--neon-magenta);
+}
+
+.adminKpiCard.danger::before,
+.adminKpiCard.danger > svg {
+  color: var(--error);
+  background: var(--error);
+}
+
+.overviewMainGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.8fr);
+  gap: var(--space-12);
+  align-items: start;
+}
+
+.overviewSidePanel {
+  display: grid;
+  gap: var(--space-12);
+}
+
+.overviewSidePanel h3,
+.overviewActivityGrid h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 var(--space-12);
+}
+
+.systemHealthGrid,
+.adminActivityList,
+.packageBars {
+  display: grid;
+  gap: 8px;
+}
+
+.systemHealthItem,
+.adminActivityItem {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-10);
+  padding: 10px 12px;
+  background: rgba(0, 255, 136, 0.035);
+  border: 1px solid rgba(0, 255, 136, 0.14);
+  clip-path: var(--cyber-cut-sm);
+}
+
+.systemHealthItem {
+  grid-template-columns: 28px minmax(0, 1fr);
+}
+
+.systemHealthItem svg,
+.adminActivityItem svg {
+  color: var(--neon-cyan);
+}
+
+.systemHealthItem span,
+.systemHealthItem small,
+.adminActivityItem span,
+.adminActivityItem small {
+  display: block;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.systemHealthItem strong,
+.adminActivityItem strong {
+  display: block;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adminActivityItem.approved svg {
+  color: var(--neon-green);
+}
+
+.adminActivityItem.pending svg {
+  color: var(--warning);
+}
+
+.adminActivityItem.rejected svg {
+  color: var(--error);
+}
+
+.packageBarItem {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  clip-path: var(--cyber-cut-sm);
+}
+
+.packageBarItem > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.packageBarItem strong,
+.packageBarItem span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.packageBarItem span {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.packageBarTrack {
+  height: 6px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.packageBarTrack i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--neon-green), var(--neon-cyan));
+  box-shadow: 0 0 16px rgba(0, 255, 136, 0.36);
+}
+
+.overviewActivityGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-12);
+}
+
+@media (max-width: 1180px) {
+  .adminKpiGrid,
+  .overviewActivityGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .overviewMainGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .overviewHero,
+  .adminKpiGrid,
+  .overviewActivityGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .overviewHeroStats {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .adminActivityItem,
+  .systemHealthItem,
+  .packageBarItem > div:first-child {
+    grid-template-columns: 1fr;
+  }
+
+  .packageBarItem > div:first-child {
+    display: grid;
+  }
+}
+
 .cookiePoolGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

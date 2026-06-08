@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Ban, BarChart3, Check, ChevronLeft, ChevronRight, Cookie, CreditCard, Database, FileDown, FileText, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Type, UserPlus, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, Ban, BarChart3, Check, ChevronLeft, ChevronRight, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Gauge, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
@@ -131,6 +131,10 @@ function discountedPrice(pkg) {
 
 function formatMoney(value) {
   return `${Number(value || 0).toLocaleString("vi-VN")}đ`;
+}
+
+function formatNumber(value, locale = "vi-VN") {
+  return Number(value || 0).toLocaleString(locale);
 }
 
 function toDatetimeLocal(value) {
@@ -702,6 +706,71 @@ export default function Admin({ user, language = "vi" }) {
     month: l("12 tháng gần nhất", "Last 12 months"),
     year: l("5 năm gần nhất", "Last 5 years")
   };
+  const cookieStats = overview?.cookieStats || {};
+  const queueStatus = overview?.queueStatus || {};
+  const recentGetlinks = overview?.recentGetlinks || [];
+  const recentTopups = overview?.recentTopups || [];
+  const topPackages = overview?.topPackages || [];
+  const maxPackageRevenue = Math.max(...topPackages.map((item) => Number(item.revenue || 0)), 1);
+  const cookieHealthLabel = Number(cookieStats.active || 0) > 0
+    ? l("Có cookie sẵn sàng", "Cookie ready")
+    : l("Cần kiểm tra cookie", "Check cookies");
+  const overviewKpis = [
+    {
+      label: l("Doanh thu hôm nay", "Today revenue"),
+      value: formatMoney(overview?.todayRevenue),
+      detail: l(`7 ngày: ${formatMoney(overview?.weekRevenue)}`, `7 days: ${formatMoney(overview?.weekRevenue)}`),
+      icon: CircleDollarSign,
+      tone: "green",
+    },
+    {
+      label: l("Getlink hôm nay", "Today getlinks"),
+      value: formatNumber(overview?.todayGetlinks, locale),
+      detail: l(`7 ngày: ${formatNumber(overview?.weekGetlinks, locale)} lượt`, `7 days: ${formatNumber(overview?.weekGetlinks, locale)} requests`),
+      icon: FileDown,
+      tone: "cyan",
+    },
+    {
+      label: l("Người dùng mới", "New users"),
+      value: formatNumber(overview?.todayUsers, locale),
+      detail: l(`Tổng: ${formatNumber(overview?.totalUsers, locale)} user`, `Total: ${formatNumber(overview?.totalUsers, locale)} users`),
+      icon: Users,
+      tone: "magenta",
+    },
+    {
+      label: l("Cookie 3D66", "3D66 cookies"),
+      value: `${formatNumber(cookieStats.active, locale)}/${formatNumber(cookieStats.total, locale)}`,
+      detail: cookieHealthLabel,
+      icon: Cookie,
+      tone: Number(cookieStats.active || 0) > 0 ? "green" : "danger",
+    },
+  ];
+  const systemHealthItems = [
+    {
+      label: l("Queue getlink", "Getlink queue"),
+      value: `${formatNumber(queueStatus.running, locale)}/${formatNumber(queueStatus.concurrency, locale)}`,
+      detail: l(`${formatNumber(queueStatus.queued, locale)} đang chờ`, `${formatNumber(queueStatus.queued, locale)} queued`),
+      icon: Gauge,
+    },
+    {
+      label: l("Credit user còn", "User credit balance"),
+      value: formatNumber(overview?.totalCredit, locale),
+      detail: l(`${formatNumber(overview?.totalCreditSpent, locale)} credit đã trừ`, `${formatNumber(overview?.totalCreditSpent, locale)} credit spent`),
+      icon: Wallet,
+    },
+    {
+      label: l("Đơn chờ thanh toán", "Pending payments"),
+      value: formatNumber(overview?.pendingTopups, locale),
+      detail: formatMoney(overview?.pendingAmount),
+      icon: Timer,
+    },
+    {
+      label: l("Cache model", "Model cache"),
+      value: formatNumber(overview?.cachedProducts, locale),
+      detail: l("ProductCache đang lưu", "Stored ProductCache records"),
+      icon: Zap,
+    },
+  ];
   const normalizedGetlinkSearch = getlinkSearch.trim().toLowerCase();
   const filteredGetlinkRecords = normalizedGetlinkSearch
     ? getlinkRecords.filter((item) =>
@@ -994,78 +1063,154 @@ export default function Admin({ user, language = "vi" }) {
       )}
 
       {activeSection === "overview" && (
-        <section className="panel">
-          <h2><BarChart3 size={20} /> {l("Tổng quan web", "Website overview")}</h2>
-          <div className="overviewGrid">
-            <div className="overviewCard">
-              <span>{l("Người dùng", "Users")}</span>
-              <strong>{overview?.totalUsers || 0}</strong>
+        <section className="overviewDashboard">
+          <div className="overviewHero panel">
+            <div>
+              <p className="eyebrowSignal">{l("Admin command center", "Admin command center")}</p>
+              <h2><BarChart3 size={20} /> {l("Tổng quan vận hành", "Operations overview")}</h2>
+              <p className="muted">
+                {l("Theo dõi doanh thu, getlink, cookie 3D66 và các hoạt động mới nhất trong một màn hình.", "Track revenue, getlinks, 3D66 cookies, and latest activity in one screen.")}
+              </p>
             </div>
-            <div className="overviewCard">
-              <span>{l("Credit đang có", "Current credit")}</span>
-              <strong>{overview?.totalCredit || 0}</strong>
-            </div>
-            <div className="overviewCard">
-              <span>{l("Doanh thu đã thanh toán", "Paid revenue")}</span>
+            <div className="overviewHeroStats">
+              <span>{l("Tổng doanh thu", "Total revenue")}</span>
               <strong>{formatMoney(overview?.revenue)}</strong>
-            </div>
-            <div className="overviewCard">
-              <span>{l("Số giao dịch thành công", "Successful top-up transactions")}</span>
-              <strong>{overview?.approvedTopups || 0}</strong>
-            </div>
-            <div className="overviewCard">
-              <span>{l("Tiền chờ thanh toán", "Awaiting payment amount")}</span>
-              <strong>{formatMoney(overview?.pendingAmount)}</strong>
-            </div>
-            <div className="overviewCard">
-              <span>{l("Lượt getlink", "Getlink requests")}</span>
-              <strong>{overview?.totalGetlinks || 0}</strong>
-            </div>
-            <div className="overviewCard">
-              <span>{l("Model đã cache", "Cached models")}</span>
-              <strong>{overview?.cachedProducts || 0}</strong>
-            </div>
-            <div className="overviewCard">
-              <span>{l("Gói/Voucher active", "Active packages/vouchers")}</span>
-              <strong>{overview?.activePackages || 0}/{overview?.activeVouchers || 0}</strong>
+              <small>{l(`TB đơn: ${formatMoney(overview?.averageTopupAmount)}`, `Avg order: ${formatMoney(overview?.averageTopupAmount)}`)}</small>
             </div>
           </div>
-          <div className="revenueChartPanel">
-            <div className="chartHeader">
-              <div>
-                <h3>{l("Biểu đồ doanh thu", "Revenue chart")}</h3>
-                <p>{chartLabels[revenuePeriod]}, {l("tính theo giao dịch đã thanh toán.", "based on paid transactions.")}</p>
-              </div>
-              <div className="chartControls">
-                {[
-                  ["day", l("Ngày", "Day")],
-                  ["month", l("Tháng", "Month")],
-                  ["year", l("Năm", "Year")]
-                ].map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={revenuePeriod === value ? "active" : ""}
-                    onClick={() => setRevenuePeriod(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <strong>{formatMoney(chartRevenue)}</strong>
-            </div>
-            <div className={`revenueChart ${revenuePeriod}`} aria-label={l("Biểu đồ doanh thu", "Revenue chart")}>
-              {revenueChart.map((item) => {
-                const height = Math.max(6, Math.round((Number(item.revenue || 0) / maxRevenue) * 100));
-                return (
-                  <div className="chartBarItem" key={item.date}>
-                    <div className="chartBarTrack" title={`${item.label}: ${formatMoney(item.revenue)} (${item.count} ${l("giao dịch", "transactions")})`}>
-                      <div className="chartBarFill" style={{ height: `${height}%` }} />
-                    </div>
+
+          <div className="adminKpiGrid">
+            {overviewKpis.map((item) => {
+              const Icon = item.icon;
+              return (
+                <div className={`adminKpiCard ${item.tone}`} key={item.label}>
+                  <div>
                     <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                    <small>{item.detail}</small>
                   </div>
-                );
-              })}
+                  <Icon size={28} />
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="overviewMainGrid">
+            <div className="revenueChartPanel">
+              <div className="chartHeader">
+                <div>
+                  <h3>{l("Biểu đồ doanh thu", "Revenue chart")}</h3>
+                  <p>{chartLabels[revenuePeriod]}, {l("tính theo giao dịch đã thanh toán.", "based on paid transactions.")}</p>
+                </div>
+                <div className="chartControls">
+                  {[
+                    ["day", l("Ngày", "Day")],
+                    ["month", l("Tháng", "Month")],
+                    ["year", l("Năm", "Year")]
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={revenuePeriod === value ? "active" : ""}
+                      onClick={() => setRevenuePeriod(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <strong>{formatMoney(chartRevenue)}</strong>
+              </div>
+              <div className={`revenueChart ${revenuePeriod}`} aria-label={l("Biểu đồ doanh thu", "Revenue chart")}>
+                {revenueChart.map((item) => {
+                  const height = Math.max(6, Math.round((Number(item.revenue || 0) / maxRevenue) * 100));
+                  return (
+                    <div className="chartBarItem" key={item.date}>
+                      <div className="chartBarTrack" title={`${item.label}: ${formatMoney(item.revenue)} (${item.count} ${l("giao dịch", "transactions")})`}>
+                        <div className="chartBarFill" style={{ height: `${height}%` }} />
+                      </div>
+                      <span>{item.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <aside className="overviewSidePanel">
+              <div className="panel">
+                <h3><Activity size={16} /> {l("Sức khỏe hệ thống", "System health")}</h3>
+                <div className="systemHealthGrid">
+                  {systemHealthItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div className="systemHealthItem" key={item.label}>
+                        <Icon size={16} />
+                        <div>
+                          <span>{item.label}</span>
+                          <strong>{item.value}</strong>
+                          <small>{item.detail}</small>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="panel">
+                <h3><Package size={16} /> {l("Top gói nạp", "Top packages")}</h3>
+                <div className="packageBars">
+                  {topPackages.map((item) => {
+                    const width = Math.max(8, Math.round((Number(item.revenue || 0) / maxPackageRevenue) * 100));
+                    return (
+                      <div className="packageBarItem" key={item.packageId}>
+                        <div>
+                          <strong>{item.name}</strong>
+                          <span>{formatMoney(item.revenue)} · {formatNumber(item.count, locale)} {l("đơn", "orders")}</span>
+                        </div>
+                        <div className="packageBarTrack">
+                          <i style={{ width: `${width}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!topPackages.length && <p className="muted">{l("Chưa có gói nạp thành công.", "No successful package top-ups yet.")}</p>}
+                </div>
+              </div>
+            </aside>
+          </div>
+
+          <div className="overviewActivityGrid">
+            <div className="panel">
+              <h3><FileDown size={16} /> {l("Getlink mới nhất", "Latest getlinks")}</h3>
+              <div className="adminActivityList">
+                {recentGetlinks.map((item) => (
+                  <div className="adminActivityItem" key={item._id}>
+                    <FileDown size={16} />
+                    <div>
+                      <strong>{item.productId || item.title || l("Model 3D66", "3D66 model")}</strong>
+                      <span>{item.userEmail || item.userName || l("Không rõ user", "Unknown user")}</span>
+                    </div>
+                    <small>-{formatNumber(item.creditUsed, locale)} credit</small>
+                  </div>
+                ))}
+                {!recentGetlinks.length && <p className="muted">{l("Chưa có getlink.", "No getlinks yet.")}</p>}
+              </div>
+            </div>
+
+            <div className="panel">
+              <h3><CreditCard size={16} /> {l("Nạp credit mới nhất", "Latest top-ups")}</h3>
+              <div className="adminActivityList">
+                {recentTopups.map((item) => (
+                  <div className={`adminActivityItem ${item.status}`} key={item._id}>
+                    <CreditCard size={16} />
+                    <div>
+                      <strong>{item.packageName || item.type || l("Nạp credit", "Credit top-up")}</strong>
+                      <span>{item.userEmail || item.userName || l("Không rõ user", "Unknown user")}</span>
+                    </div>
+                    <small>{formatMoney(item.amount)} · {item.status}</small>
+                  </div>
+                ))}
+                {!recentTopups.length && <p className="muted">{l("Chưa có giao dịch.", "No transactions yet.")}</p>}
+              </div>
             </div>
           </div>
         </section>
