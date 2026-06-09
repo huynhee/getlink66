@@ -1021,6 +1021,7 @@ export async function downloadGetlink(req, res, next) {
   const controller = new AbortController();
   const isPartialDownload = Boolean(String(req.get("range") || "").trim());
   let downloadSlot = null;
+  let reservedInitialDownload = false;
   let reservedDownloadCount = false;
   let reservedHistoryId = "";
   let activeLogUserId = req.user?._id;
@@ -1097,7 +1098,41 @@ export async function downloadGetlink(req, res, next) {
     }
 
     let reservedHistory = history;
-    if (!reusePartialDownloadSession) {
+    const isInitialDownload =
+      !history.initialDownloadAt && Number(history.redownloadCount || 0) <= 0;
+    if (!reusePartialDownloadSession && isInitialDownload) {
+      const initialHistory = await Getlink.findOneAndUpdate(
+        {
+          _id: history._id,
+          userId: history.userId,
+          $or: [
+            { initialDownloadAt: { $exists: false } },
+            { initialDownloadAt: null },
+          ],
+          $and: [
+            {
+              $or: [
+                { redownloadCount: { $exists: false } },
+                { redownloadCount: { $lte: 0 } },
+              ],
+            },
+          ],
+        },
+        {
+          $set: {
+            initialDownloadAt: new Date(),
+            lastRedownloadAt: new Date(),
+          },
+        },
+        { new: true },
+      );
+
+      if (initialHistory) {
+        reservedHistory = initialHistory;
+        reservedInitialDownload = true;
+        reservedHistoryId = String(history._id);
+      }
+    } else if (!reusePartialDownloadSession) {
       const reserveConditions = [
         {
           $or: [
@@ -1165,6 +1200,12 @@ export async function downloadGetlink(req, res, next) {
     );
 
     if (!upstream.ok && upstream.status !== 206) {
+      if (reservedInitialDownload && reservedHistoryId) {
+        await Getlink.findByIdAndUpdate(reservedHistoryId, {
+          $unset: { initialDownloadAt: "", lastRedownloadAt: "" },
+        }).catch(() => {});
+        reservedInitialDownload = false;
+      }
       if (reservedDownloadCount && reservedHistoryId) {
         await Getlink.findByIdAndUpdate(reservedHistoryId, {
           $inc: { redownloadCount: -1 },
@@ -1177,6 +1218,12 @@ export async function downloadGetlink(req, res, next) {
     }
 
     if (!looksLikeDownloadFile(upstream)) {
+      if (reservedInitialDownload && reservedHistoryId) {
+        await Getlink.findByIdAndUpdate(reservedHistoryId, {
+          $unset: { initialDownloadAt: "", lastRedownloadAt: "" },
+        }).catch(() => {});
+        reservedInitialDownload = false;
+      }
       if (reservedDownloadCount && reservedHistoryId) {
         await Getlink.findByIdAndUpdate(reservedHistoryId, {
           $inc: { redownloadCount: -1 },
@@ -1197,8 +1244,15 @@ export async function downloadGetlink(req, res, next) {
 
     res.flushHeaders();
     await pipeline(Readable.fromWeb(upstream.body), res);
+    reservedInitialDownload = false;
     reservedDownloadCount = false;
   } catch (error) {
+    if (reservedInitialDownload && reservedHistoryId) {
+      await Getlink.findByIdAndUpdate(reservedHistoryId, {
+        $unset: { initialDownloadAt: "", lastRedownloadAt: "" },
+      }).catch(() => {});
+      reservedInitialDownload = false;
+    }
     if (reservedDownloadCount && reservedHistoryId) {
       await Getlink.findByIdAndUpdate(reservedHistoryId, {
         $inc: { redownloadCount: -1 },

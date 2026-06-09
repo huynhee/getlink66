@@ -10,6 +10,7 @@ const getlinkSchema = new mongoose.Schema(
     title: String,
     imageUrl: String,
     creditUsed: { type: Number, default: 1 },
+    initialDownloadAt: Date,
     redownloadCount: { type: Number, default: 0, min: 0 },
     lastRedownloadAt: Date,
   },
