@@ -729,6 +729,7 @@ button:disabled {
 .overviewDashboard {
   display: grid;
   gap: var(--space-10);
+  min-width: 0;
 }
 
 .overviewHero {
@@ -742,6 +743,10 @@ button:disabled {
 .overviewHero h2,
 .overviewHero p {
   margin: 0;
+}
+
+.overviewHero > div {
+  min-width: 0;
 }
 
 .overviewHeroStats {
@@ -787,6 +792,10 @@ button:disabled {
   background: rgba(2, 4, 3, 0.86);
   border: 1px solid var(--border-light);
   clip-path: var(--cyber-cut-sm);
+}
+
+.adminKpiCard > div {
+  min-width: 0;
 }
 
 .adminKpiCard::before {
@@ -986,6 +995,27 @@ button:disabled {
   }
 }
 
+@media (max-width: 1024px) {
+  .overviewHero {
+    grid-template-columns: 1fr;
+  }
+
+  .overviewHeroStats {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .overviewTopGrid,
+  .overviewActivityGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .overviewTopGrid .systemHealthGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+}
+
 @media (max-width: 720px) {
   .overviewHero,
   .adminKpiGrid,
@@ -998,9 +1028,8 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .overviewHeroStats {
-    justify-items: start;
-    text-align: left;
+  .overviewHero {
+    padding: var(--space-12);
   }
 
   .adminActivityItem,
@@ -1011,6 +1040,39 @@ button:disabled {
 
   .packageBarItem > div:first-child {
     display: grid;
+  }
+
+  .adminKpiCard {
+    min-height: 88px;
+  }
+
+  .adminKpiCard > svg {
+    width: 22px;
+    height: 22px;
+  }
+
+}
+
+@media (max-width: 420px) {
+  .adminKpiCard {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-8);
+    padding: 10px 12px;
+  }
+
+  .adminKpiCard strong {
+    font-size: 24px;
+  }
+
+  .systemHealthItem,
+  .adminActivityItem,
+  .packageBarItem {
+    padding: 9px;
+  }
+
+  .adminActivityItem small {
+    justify-self: start;
   }
 }
 
@@ -1444,6 +1506,63 @@ button:disabled {
   color: var(--text-tertiary);
   text-align: center;
   white-space: nowrap;
+}
+
+@media (max-width: 1024px) {
+  .chartHeader {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .chartControls {
+    order: 3;
+    grid-column: 1 / -1;
+    width: fit-content;
+  }
+}
+
+@media (max-width: 720px) {
+  .chartHeader {
+    grid-template-columns: 1fr;
+  }
+
+  .chartControls {
+    width: 100%;
+  }
+
+  .chartControls button {
+    flex: 1;
+  }
+
+  .chartTotal {
+    justify-items: start;
+  }
+
+  .revenueChartPanel {
+    padding: var(--space-10);
+  }
+
+  .revenueChart {
+    height: 190px;
+    grid-template-columns: repeat(14, minmax(38px, 1fr));
+  }
+
+  .revenueChart.month {
+    grid-template-columns: repeat(12, minmax(46px, 1fr));
+  }
+
+  .revenueChart.year {
+    grid-template-columns: repeat(5, minmax(64px, 1fr));
+  }
+
+  .chartBarTrack {
+    min-height: 118px;
+  }
+
+  .chartTooltip {
+    display: none;
+  }
 }
 
 /* ==========================================================================
