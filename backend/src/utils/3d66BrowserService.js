@@ -1,5 +1,8 @@
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_BROWSER_CONCURRENCY = 2;
+const DEFAULT_BROWSER_QUEUE_MAX = 50;
+const DEFAULT_BROWSER_MAX_TASKS = 100;
+const DEFAULT_BROWSER_MAX_AGE_MS = 30 * 60 * 1000;
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
@@ -33,13 +36,21 @@ function assertSafe3D66Url(rawUrl) {
 
 let browserPromise = null;
 let activeBrowser = null;
+let browserLaunchedAt = 0;
+let browserTasksSinceLaunch = 0;
+let browserRecyclePending = false;
 let shutdownHandlersInstalled = false;
 let activeBrowserTasks = 0;
 const browserTaskQueue = [];
 
+function numberEnv(name, fallback) {
+  const value = Number(process.env[name] || fallback);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
 function timeoutMs() {
-  const value = Number(process.env.THREED66_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
-  return Number.isFinite(value) && value > 0 ? value : DEFAULT_TIMEOUT_MS;
+  const value = numberEnv("THREED66_TIMEOUT_MS", DEFAULT_TIMEOUT_MS);
+  return value > 0 ? value : DEFAULT_TIMEOUT_MS;
 }
 
 function navigationWaitUntil() {
@@ -52,19 +63,16 @@ function navigationWaitUntil() {
 }
 
 function postCommitWaitMs() {
-  const value = Number(process.env.THREED66_BROWSER_POST_COMMIT_WAIT_MS || 1200);
-  return Number.isFinite(value) && value >= 0 ? value : 1200;
+  return numberEnv("THREED66_BROWSER_POST_COMMIT_WAIT_MS", 1200);
 }
 
 function navigationRetries() {
-  const value = Number(process.env.THREED66_BROWSER_NAV_RETRIES || 2);
+  const value = numberEnv("THREED66_BROWSER_NAV_RETRIES", 2);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 2;
 }
 
 function retryDelayMs(attempt) {
-  const base = Number(process.env.THREED66_BROWSER_RETRY_DELAY_MS || 1200);
-  const safeBase = Number.isFinite(base) && base >= 0 ? base : 1200;
-  return safeBase * attempt;
+  return numberEnv("THREED66_BROWSER_RETRY_DELAY_MS", 1200) * attempt;
 }
 
 function shouldBlockAssets() {
@@ -72,12 +80,36 @@ function shouldBlockAssets() {
 }
 
 function browserConcurrency() {
-  const value = Number(
-    process.env.THREED66_BROWSER_CONCURRENCY || DEFAULT_BROWSER_CONCURRENCY,
+  const value = numberEnv(
+    "THREED66_BROWSER_CONCURRENCY",
+    DEFAULT_BROWSER_CONCURRENCY,
   );
   return Number.isFinite(value) && value > 0
     ? Math.floor(value)
     : DEFAULT_BROWSER_CONCURRENCY;
+}
+
+function browserQueueMax() {
+  const value = numberEnv("THREED66_BROWSER_QUEUE_MAX", DEFAULT_BROWSER_QUEUE_MAX);
+  return value > 0 ? Math.floor(value) : DEFAULT_BROWSER_QUEUE_MAX;
+}
+
+function browserMaxTasks() {
+  return Math.floor(numberEnv("THREED66_BROWSER_MAX_TASKS", DEFAULT_BROWSER_MAX_TASKS));
+}
+
+function browserMaxAgeMs() {
+  return numberEnv("THREED66_BROWSER_MAX_AGE_MS", DEFAULT_BROWSER_MAX_AGE_MS);
+}
+
+function shouldRecycleBrowser() {
+  if (!activeBrowser?.isConnected?.()) return false;
+
+  const maxTasks = browserMaxTasks();
+  if (maxTasks > 0 && browserTasksSinceLaunch >= maxTasks) return true;
+
+  const maxAgeMs = browserMaxAgeMs();
+  return maxAgeMs > 0 && browserLaunchedAt > 0 && Date.now() - browserLaunchedAt >= maxAgeMs;
 }
 
 async function importChromium() {
@@ -99,12 +131,7 @@ function installShutdownHandlers() {
   shutdownHandlersInstalled = true;
 
   const closeBrowser = async () => {
-    const browser = activeBrowser;
-    activeBrowser = null;
-    browserPromise = null;
-    if (browser) {
-      await browser.close().catch(() => {});
-    }
+    await closeActiveBrowser();
   };
 
   process.once("SIGINT", () => {
@@ -113,6 +140,25 @@ function installShutdownHandlers() {
   process.once("SIGTERM", () => {
     closeBrowser().finally(() => process.exit(0));
   });
+}
+
+async function closeActiveBrowser() {
+  const browser = activeBrowser;
+  activeBrowser = null;
+  browserPromise = null;
+  browserLaunchedAt = 0;
+  browserTasksSinceLaunch = 0;
+  browserRecyclePending = false;
+
+  if (browser) {
+    await browser.close().catch(() => {});
+  }
+}
+
+async function recycleBrowserIfIdle() {
+  if (activeBrowserTasks > 0) return;
+  if (!browserRecyclePending && !shouldRecycleBrowser()) return;
+  await closeActiveBrowser();
 }
 
 async function getSharedBrowser() {
@@ -124,15 +170,24 @@ async function getSharedBrowser() {
         headless: process.env.THREED66_BROWSER_HEADLESS !== "false",
       });
       activeBrowser = browser;
+      browserLaunchedAt = Date.now();
+      browserTasksSinceLaunch = 0;
+      browserRecyclePending = false;
       browser.on("disconnected", () => {
         if (activeBrowser === browser) activeBrowser = null;
         browserPromise = null;
+        browserLaunchedAt = 0;
+        browserTasksSinceLaunch = 0;
+        browserRecyclePending = false;
       });
       installShutdownHandlers();
       return browser;
     })().catch((error) => {
       browserPromise = null;
       activeBrowser = null;
+      browserLaunchedAt = 0;
+      browserTasksSinceLaunch = 0;
+      browserRecyclePending = false;
       throw error;
     });
   }
@@ -149,14 +204,21 @@ function pumpBrowserQueue() {
     Promise.resolve()
       .then(item.task)
       .then(item.resolve, item.reject)
-      .finally(() => {
+      .finally(async () => {
         activeBrowserTasks -= 1;
+        await recycleBrowserIfIdle();
         pumpBrowserQueue();
       });
   }
 }
 
 function runBrowserTask(task) {
+  if (browserTaskQueue.length >= browserQueueMax()) {
+    const error = new Error("3D66 browser is busy. Please try again later.");
+    error.status = 503;
+    return Promise.reject(error);
+  }
+
   return new Promise((resolve, reject) => {
     browserTaskQueue.push({ task, resolve, reject });
     pumpBrowserQueue();
@@ -184,6 +246,10 @@ async function withBrowserContext(url, cookieValue, callback) {
       return await callback({ context, page });
     } finally {
       await context.close().catch(() => {});
+      browserTasksSinceLaunch += 1;
+      if (shouldRecycleBrowser()) {
+        browserRecyclePending = true;
+      }
     }
   });
 }
