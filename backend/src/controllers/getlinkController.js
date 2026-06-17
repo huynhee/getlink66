@@ -29,6 +29,7 @@ import { writeSystemLog } from "../utils/systemLog.js";
 const productLocks = new Map();
 const MAX_PRODUCT_LOCKS = 500;
 const PARTIAL_DOWNLOAD_SESSION_MS = 10 * 60 * 1000;
+const MAX_PREVIEW_IMAGE_BYTES = 15 * 1024 * 1024;
 const downloadCounters = {
   global: 0,
   user: new Map(),
@@ -370,6 +371,9 @@ function fileExtensionFromUrl(fileUrl = "") {
 
 function imageExtensionFromUrl(imageUrl = "", contentType = "") {
   const byContentType = String(contentType).toLowerCase();
+  if (byContentType.includes("avif")) return ".avif";
+  if (byContentType.includes("svg")) return ".svg";
+  if (byContentType.includes("heic")) return ".heic";
   if (byContentType.includes("png")) return ".png";
   if (byContentType.includes("webp")) return ".webp";
   if (byContentType.includes("gif")) return ".gif";
@@ -377,11 +381,53 @@ function imageExtensionFromUrl(imageUrl = "", contentType = "") {
 
   try {
     const parsed = new URL(imageUrl);
-    const match = parsed.pathname.match(/\.(jpe?g|png|webp|gif)$/i);
+    const match = parsed.pathname.match(/\.(jpe?g|png|webp|gif|avif|svg|heic)$/i);
     return match ? `.${match[1].toLowerCase().replace("jpeg", "jpg")}` : ".jpg";
   } catch {
     return ".jpg";
   }
+}
+
+function sniffImageMime(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return "";
+
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  const sixBytes = buffer.subarray(0, 6).toString("ascii");
+  if (sixBytes === "GIF87a" || sixBytes === "GIF89a") return "image/gif";
+  if (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  if (buffer.length >= 12 && buffer.subarray(4, 8).toString("ascii") === "ftyp") {
+    const brand = buffer.subarray(8, 12).toString("ascii").toLowerCase();
+    if (brand === "avif" || brand === "avis") return "image/avif";
+    if (brand.startsWith("hei")) return "image/heic";
+  }
+
+  const head = buffer.subarray(0, Math.min(buffer.length, 512)).toString("utf8").trimStart().toLowerCase();
+  if (head.startsWith("<svg") || (head.startsWith("<?xml") && head.includes("<svg"))) {
+    return "image/svg+xml";
+  }
+
+  return "";
 }
 
 function previewImageFileName(history, contentType = "") {
@@ -1343,13 +1389,15 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
       history.sourceUrl,
     );
     let upstream = null;
+    let previewImageBuffer = null;
+    let detectedContentType = "";
     let lastPreviewStatus = 0;
     const previewHeaders = {
       "user-agent":
         req.get("user-agent") ||
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       referer: history.sourceUrl || "https://www.3d66.com/",
-      accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      accept: "image/jpeg,image/png,image/webp,image/gif,image/*;q=0.8,*/*;q=0.5",
     };
 
     for (const previewUrl of previewCandidates) {
@@ -1362,8 +1410,28 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
         candidate.headers.get("content-type") || "",
       ).toLowerCase();
       if (candidate.ok && candidateContentType.startsWith("image/")) {
-        upstream = candidate;
-        break;
+        const candidateLength = Number(candidate.headers.get("content-length") || 0);
+        if (candidateLength > MAX_PREVIEW_IMAGE_BYTES) {
+          try {
+            await candidate.body?.cancel();
+          } catch {
+            // ignore failed candidate cleanup
+          }
+          continue;
+        }
+
+        const candidateBuffer = Buffer.from(await candidate.arrayBuffer());
+        const candidateMime = sniffImageMime(candidateBuffer);
+        if (
+          candidateBuffer.length > 0 &&
+          candidateBuffer.length <= MAX_PREVIEW_IMAGE_BYTES &&
+          candidateMime
+        ) {
+          previewImageBuffer = candidateBuffer;
+          detectedContentType = candidateMime;
+          upstream = candidate;
+          break;
+        }
       }
       try {
         await candidate.body?.cancel();
@@ -1372,13 +1440,13 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
       }
     }
 
-    if (!upstream) {
+    if (!upstream || !previewImageBuffer) {
       return res
         .status(lastPreviewStatus || 502)
         .json({ message: `Preview image download failed: HTTP ${lastPreviewStatus || 502}` });
     }
 
-    const contentType = upstream.headers.get("content-type") || "image/jpeg";
+    const contentType = detectedContentType || upstream.headers.get("content-type") || "image/jpeg";
     if (!String(contentType).toLowerCase().startsWith("image/")) {
       return res.status(502).json({
         message: "3D66 did not return a preview image.",
@@ -1389,8 +1457,7 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
     const encoded = encodeURIComponent(fileName).replace(/['()]/g, (char) =>
       `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
     );
-    const contentLength = upstream.headers.get("content-length");
-    if (contentLength) res.setHeader("content-length", contentLength);
+    res.setHeader("content-length", String(previewImageBuffer.length));
     res.setHeader("content-type", contentType);
     res.setHeader(
       "content-disposition",
@@ -1398,14 +1465,7 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
     );
     res.setHeader("cache-control", "no-store");
     res.setHeader("x-accel-buffering", "no");
-    res.status(200);
-
-    if (!upstream.body) {
-      return res.end();
-    }
-
-    res.flushHeaders();
-    await pipeline(Readable.fromWeb(upstream.body), res);
+    return res.status(200).end(previewImageBuffer);
   } catch (error) {
     if (error.name === "AbortError") return;
     if (isClientDownloadAbort(error, controller.signal)) return;
