@@ -203,6 +203,64 @@ const defaultSettings = {
 
 Object.assign(defaultSettings, HOME_TEXT_DEFAULTS);
 
+let settingsCache = null;
+
+function settingsSnapshot(settings = {}) {
+  const plain = settings?.toObject ? settings.toObject() : { ...settings };
+  return {
+    ...defaultSettings,
+    ...plain,
+  };
+}
+
+function cacheSettings(settings) {
+  settingsCache = settingsSnapshot(settings);
+  return settings;
+}
+
+function fallbackSettings() {
+  return settingsCache || settingsSnapshot(defaultSettings);
+}
+
+function isTransientSettingsStoreError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return (
+    message.includes("ssl routines") ||
+    message.includes("tlsv1 alert internal error") ||
+    message.includes("server selection timed out") ||
+    message.includes("replicasetnoprimary") ||
+    message.includes("econnreset") ||
+    message.includes("etimedout") ||
+    message.includes("connection closed")
+  );
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function loadSettingsWithRetry({ allowFallback = false } = {}) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await loadSettings();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientSettingsStoreError(error) || attempt === 1) break;
+      await sleep(250);
+    }
+  }
+
+  if (allowFallback && isTransientSettingsStoreError(lastError)) {
+    const fallback = fallbackSettings();
+    applyRuntimeSettings(fallback);
+    console.warn(`Settings store temporarily unavailable. Serving cached settings: ${lastError.message}`);
+    return fallback;
+  }
+
+  throw lastError;
+}
+
 function clampInteger(value, { min, max, fallback }) {
   const number = Number(value);
   if (!Number.isInteger(number)) return fallback;
@@ -297,16 +355,16 @@ async function loadSettings() {
       { new: true },
     );
   }
-  return settings;
+  return cacheSettings(settings);
 }
 
 export async function initializeSettings() {
-  return loadSettings();
+  return loadSettingsWithRetry({ allowFallback: true });
 }
 
 export async function getSettings(_req, res, next) {
   try {
-    const settings = await loadSettings();
+    const settings = await loadSettingsWithRetry({ allowFallback: true });
     res.json({ settings });
   } catch (error) {
     next(error);
@@ -364,13 +422,14 @@ export async function updateSettings(req, res, next) {
       update[field] = sanitizeHtml(limitedString(req.body[field], 1000));
     });
 
-    await loadSettings();
+    await loadSettingsWithRetry();
     const settings = await SiteSetting.findOneAndUpdate(
       { key: "homepage" },
       { $set: update },
       { new: true },
     );
     applyRuntimeSettings(settings);
+    cacheSettings(settings);
 
     res.json({ settings });
   } catch (error) {
