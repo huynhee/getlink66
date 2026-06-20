@@ -251,10 +251,12 @@ async function loadSettingsWithRetry({ allowFallback = false } = {}) {
     }
   }
 
-  if (allowFallback && isTransientSettingsStoreError(lastError)) {
+  if (allowFallback) {
     const fallback = fallbackSettings();
     applyRuntimeSettings(fallback);
-    console.warn(`Settings store temporarily unavailable. Serving cached settings: ${lastError.message}`);
+    console.warn(
+      `Settings store unavailable. Serving cached settings: ${lastError?.message || lastError}`,
+    );
     return fallback;
   }
 
