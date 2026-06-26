@@ -1026,6 +1026,35 @@ function mergeDownloadPopMetadata(metadata = {}, popData = {}, pageUrl = "", fie
   };
 }
 
+function downloadRequestIdSuffix(json = {}) {
+  const requestId = String(json.request_id || json.requestId || "").trim();
+  return requestId ? ` (${requestId})` : "";
+}
+
+function map3D66DownloadFailure(json = {}, fallbackMessage = "missing download URL") {
+  const rawMessage = String(json.msg || json.message || fallbackMessage || "").trim();
+  const combined = `${rawMessage} ${JSON.stringify(json)}`;
+  const requestId = downloadRequestIdSuffix(json);
+
+  if (
+    /\u5df2\u4e0b\u67b6|\u91cd\u65b0\u6311\u9009|\u5df2\u5220\u9664|\u8d44\u6e90\u4e0d\u5b58\u5728|not\s*found/i.test(
+      combined,
+    )
+  ) {
+    return httpError(
+      `Model này đã bị 3D66 gỡ khỏi kho. Vui lòng chọn model khác.${requestId}`,
+      410,
+      { code: "THREED66_MODEL_REMOVED", response: json },
+    );
+  }
+
+  return httpError(
+    `3D66 download failed: ${rawMessage || fallbackMessage}${requestId}`,
+    502,
+    { response: json },
+  );
+}
+
 async function enrichFromDownloadPop(fields, metadata, pageUrl, cookieValue, context) {
   let nextFields = { ...fields };
   let nextMetadata = { ...metadata };
@@ -1099,7 +1128,7 @@ async function requestDownloadUrl(payload, cookieValue, origin) {
     }
 
     if (!response.ok) {
-      throw httpError(`3D66 download API failed: HTTP ${response.status}`, 502, { response: json });
+      throw map3D66DownloadFailure(json, `HTTP ${response.status}`);
     }
 
     const fileUrl = extractDownloadFileUrl(json);
@@ -1110,11 +1139,7 @@ async function requestDownloadUrl(payload, cookieValue, origin) {
       };
     }
 
-    throw httpError(
-      `3D66 download failed: ${json.msg || "missing download URL"}${json.request_id ? ` (${json.request_id})` : ""}`,
-      502,
-      { response: json }
-    );
+    throw map3D66DownloadFailure(json, "missing download URL");
   } catch (error) {
     if (error.name === "AbortError") {
       throw httpError("3D66 download API timed out", 504);
