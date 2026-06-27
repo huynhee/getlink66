@@ -19,9 +19,19 @@ function isUsableFormatOption(option = {}) {
   return Boolean(fileFormat && fileFormat !== "0");
 }
 
+function formatDisplayName(option = {}, fallback = "Định dạng file") {
+  const fileFormat = String(option.fileFormat || option.file_format || String(option.key || "").split("|")[0] || "").trim();
+  const mapped = {
+    1: "3Dmax（.max）",
+    3: "OBJ（.obj）",
+    14: "FBX（.fbx）"
+  }[fileFormat];
+  return option.label || option.name || mapped || fileFormat || fallback;
+}
+
 function formatOptionLabel(option = {}, language = "vi") {
   return {
-    title: option.label || option.fileFormat || (language === "vi" ? "Định dạng file" : "File format"),
+    title: formatDisplayName(option, language === "vi" ? "Định dạng file" : "File format"),
     versionLabel: language === "vi" ? "Phiên bản" : "Version",
     rendererLabel: "Renderer",
   };

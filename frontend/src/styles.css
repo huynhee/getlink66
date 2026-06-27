@@ -3457,7 +3457,7 @@ label {
 .formatOption strong {
   color: inherit;
   font-size: 13px;
-  text-transform: uppercase;
+  text-transform: none;
   overflow-wrap: anywhere;
 }
 

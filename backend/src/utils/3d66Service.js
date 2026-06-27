@@ -402,9 +402,9 @@ function downloadFormatKey(format = {}) {
 function formatNameFromCode(fileFormat = "") {
   const code = String(fileFormat || "");
   return {
-    1: "3Dmax",
-    3: "OBJ",
-    14: "FBX",
+    1: "3Dmax（.max）",
+    3: "OBJ（.obj）",
+    14: "FBX（.fbx）",
   }[code] || (code ? `Format ${code}` : "Default");
 }
 

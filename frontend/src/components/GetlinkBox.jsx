@@ -15,6 +15,16 @@ function isUsableFormatOption(option = {}) {
   return Boolean(fileFormat && fileFormat !== "0");
 }
 
+function formatDisplayName(option = {}, fallback = "Định dạng file") {
+  const fileFormat = String(option.fileFormat || option.file_format || String(option.key || "").split("|")[0] || "").trim();
+  const mapped = {
+    1: "3Dmax（.max）",
+    3: "OBJ（.obj）",
+    14: "FBX（.fbx）"
+  }[fileFormat];
+  return option.label || option.name || mapped || fileFormat || fallback;
+}
+
 export default function GetlinkBox({ onCreditChange, initialUrl = "", language = "vi", disabledReason = "" }) {
   const t = translations[language] || translations.vi;
   const [url, setUrl] = useState(initialUrl);
@@ -368,7 +378,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
                     >
                       <span className="formatOptionCheck">{active && <Check size={12} />}</span>
                       <span className="formatOptionInfo">
-                        <strong>{option.label || option.fileFormat || t.fileFormat}</strong>
+                        <strong>{formatDisplayName(option, t.fileFormat)}</strong>
                         <span className="formatOptionMeta">
                           {option.formatVersion && <small>{t.formatVersion}: {option.formatVersion}</small>}
                           {option.rendererLabel && <small>{t.rendererType}: {option.rendererLabel}</small>}
@@ -456,7 +466,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
                   >
                     <span className="formatOptionCheck">{active && <Check size={12} />}</span>
                     <span className="formatOptionInfo">
-                      <strong>{option.label || option.fileFormat || t.fileFormat}</strong>
+                      <strong>{formatDisplayName(option, t.fileFormat)}</strong>
                       <span className="formatOptionMeta">
                         {option.formatVersion && <small>{t.formatVersion}: {option.formatVersion}</small>}
                         {option.rendererLabel && <small>{t.rendererType}: {option.rendererLabel}</small>}
