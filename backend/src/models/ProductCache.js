@@ -11,6 +11,7 @@ const productCacheSchema = new mongoose.Schema(
     creditCost: { type: Number, default: 1 },
     priceKnown: { type: Boolean, default: false },
     formatOptions: { type: Array, default: [] },
+    formatOptionsVersion: { type: Number, default: 0 },
     downloadFormatKey: { type: String, default: "" },
     fileFormat: { type: String, default: "" },
     formatVersion: { type: String, default: "" },

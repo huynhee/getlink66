@@ -557,7 +557,26 @@ function hasFormatOptionFields(value = {}) {
 }
 
 function parseFormatOptionsFromDetail(detailRes = {}) {
-  return formatOptionsFromAny(detailRes);
+  const candidateLists = [
+    detailRes.down_file_format,
+    detailRes.download_file_format,
+    detailRes.file_format_list,
+    detailRes.fileFormatList,
+    detailRes.format_list,
+    detailRes.formatList,
+  ].filter(Array.isArray);
+
+  const options = uniqueFormatOptions(
+    candidateLists.flatMap((list) =>
+      list
+        .map((item, index) =>
+          hasFormatOptionFields(item) ? normalizeDownloadFormatOption(item, index, index === 0) : null,
+        )
+        .filter(Boolean),
+    ),
+  );
+
+  return options.length > 1 ? options : [];
 }
 
 function formatSpanValue(item = "", keywordPattern = null) {
@@ -1136,7 +1155,7 @@ function buildDownloadPayload(fields, urls, cookies, context) {
     request_id: fields.requestId || ""
   });
 
-  if (!context.fileFormat) payload.delete("file_format");
+  if (!fileFormat) payload.delete("file_format");
   return payload;
 }
 
@@ -1565,7 +1584,6 @@ export async function fetch3D66Preview(url, cookieValue) {
 
   const cookies = requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
-  const popPreview = await previewFromDownloadPopOnly(normalized.toString(), cookieValue, cookies);
 
   let browserMetadata = null;
   let html = "";
@@ -1580,7 +1598,6 @@ export async function fetch3D66Preview(url, cookieValue) {
   }
   if (!browserMetadata) {
     ({ html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
-      if (popPreview && !shouldFallbackToBrowserPage(error)) return { html: "", pageUrl: normalized.toString() };
       if (!shouldFallbackToBrowserPage(error)) throw error;
       const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
       browserMetadata = browserPage.metadata;
@@ -1588,7 +1605,7 @@ export async function fetch3D66Preview(url, cookieValue) {
     }));
   }
   let fields = parseDynamicFields(html, pageUrl);
-  let metadata = html ? parseModelMetadata(html, pageUrl, fields) : popPreview?.metadata || parseModelMetadata(html, pageUrl, fields);
+  let metadata = parseModelMetadata(html, pageUrl, fields);
   if (browserMetadata) {
     fields = mergeBrowserFields(fields, browserMetadata);
     metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);

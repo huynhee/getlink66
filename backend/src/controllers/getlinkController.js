@@ -30,6 +30,7 @@ const productLocks = new Map();
 const MAX_PRODUCT_LOCKS = 500;
 const PARTIAL_DOWNLOAD_SESSION_MS = 10 * 60 * 1000;
 const MAX_PREVIEW_IMAGE_BYTES = 15 * 1024 * 1024;
+const DOWNLOAD_FORMAT_OPTIONS_VERSION = 2;
 const downloadCounters = {
   global: 0,
   user: new Map(),
@@ -225,6 +226,16 @@ function sanitizeDownloadFormatOptions(options = []) {
     seen.add(key);
     return true;
   });
+}
+
+function cacheDownloadFormatOptions(cache = {}) {
+  if (Number(cache?.formatOptionsVersion || 0) !== DOWNLOAD_FORMAT_OPTIONS_VERSION) return [];
+  return sanitizeDownloadFormatOptions(cache?.formatOptions);
+}
+
+function freshDownloadFormatOptions(options = [], fallbackCache = null) {
+  const sanitized = sanitizeDownloadFormatOptions(options);
+  return sanitized.length ? sanitized : cacheDownloadFormatOptions(fallbackCache);
 }
 
 function normalizeDownloadFormatRequest(value) {
@@ -772,7 +783,8 @@ async function resolveProductCache(productId, url, downloadFormat = null) {
           imageUrl: metadata.imageUrl || metadataCache?.imageUrl,
           creditCost,
           priceKnown,
-          formatOptions: sanitizeDownloadFormatOptions(metadata.formatOptions || metadataCache?.formatOptions || []),
+          formatOptions: freshDownloadFormatOptions(metadata.formatOptions, metadataCache),
+          formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
           ...cacheFormatPatch(metadata.selectedFormat),
           isPurchased: true,
         };
@@ -831,7 +843,7 @@ export async function previewGetlink(req, res, next) {
         title: cache.title || cache.productId,
         imageUrl: cache.imageUrl || "",
         creditCost: normalizeDownloadCreditCost(cache.creditCost, 1),
-        formatOptions: sanitizeDownloadFormatOptions(cache.formatOptions),
+        formatOptions: cacheDownloadFormatOptions(cache),
         cached: isCacheFresh(cache),
       });
     }
@@ -858,6 +870,7 @@ export async function previewGetlink(req, res, next) {
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
       priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
       formatOptions: sanitizeDownloadFormatOptions(preview.formatOptions),
+      formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
     };
     await upsertProductCache(previewPayload, cache);
     res.json({
@@ -996,6 +1009,7 @@ export async function getLink(req, res, next) {
         creditCost: expectedCreditCost,
         priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
         formatOptions: sanitizeDownloadFormatOptions(preview.formatOptions),
+        formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
       };
       effectiveProductId = previewPayload.productId;
       logProductId = effectiveProductId;
@@ -1215,7 +1229,7 @@ export async function prepareRedownload(req, res, next) {
     }
 
     const cache = await ProductCache.findOne({ productId: history.productId }).lean();
-    const formatOptions = sanitizeDownloadFormatOptions(cache?.formatOptions);
+    const formatOptions = cacheDownloadFormatOptions(cache);
     const requestedFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
     let selectedFormat = requestedFormat;
 
@@ -1756,7 +1770,7 @@ export async function getlinkHistory(req, res, next) {
     ];
     const caches = productIds.length
       ? await ProductCache.find({ productId: { $in: productIds } })
-          .select("productId formatOptions")
+          .select("productId formatOptions formatOptionsVersion")
           .lean()
       : [];
     const cacheByProductId = new Map(caches.map((cache) => [String(cache.productId), cache]));
@@ -1764,9 +1778,7 @@ export async function getlinkHistory(req, res, next) {
       history: history.map((item) =>
         publicHistoryItem(req, {
           ...item,
-          formatOptions: sanitizeDownloadFormatOptions(
-            cacheByProductId.get(String(item.productId || ""))?.formatOptions || [],
-          ),
+          formatOptions: cacheDownloadFormatOptions(cacheByProductId.get(String(item.productId || ""))),
         }),
       ),
     });
