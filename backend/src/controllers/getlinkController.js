@@ -192,6 +192,13 @@ function modelPageKey(url = "") {
   }
 }
 
+function cacheMatchesModelUrl(cache = {}, sourceUrl = "") {
+  const currentKey = modelPageKey(sourceUrl);
+  const cacheKey = modelPageKey(cache?.sourceUrl || "");
+  if (currentKey && cacheKey) return currentKey === cacheKey;
+  return false;
+}
+
 function historyMatchesProductIdentity(history, productIds = [], sourceUrl = "") {
   const candidateIds = new Set(uniqueProductIds(productIds));
   if (candidateIds.has(String(history?.productId || ""))) return true;
@@ -616,7 +623,7 @@ function looksLikeDownloadFile(upstream) {
 
 async function resolveProductCache(productId, url) {
   const existing = await ProductCache.findOne({ productId });
-  if (isCacheFresh(existing)) return existing;
+  if (isCacheFresh(existing) && cacheMatchesModelUrl(existing, url)) return existing;
 
   if (!productLocks.has(productId)) {
     if (productLocks.size >= MAX_PRODUCT_LOCKS) {
@@ -628,7 +635,7 @@ async function resolveProductCache(productId, url) {
       productId,
       (async () => {
         const cached = await ProductCache.findOne({ productId });
-        if (isCacheFresh(cached)) return cached;
+        if (isCacheFresh(cached) && cacheMatchesModelUrl(cached, url)) return cached;
 
         const download = await with3D66Cookie((cookieValue) =>
           queue3D66Getlink(() => fetchFrom3D66(url, cookieValue)),
@@ -642,9 +649,11 @@ async function resolveProductCache(productId, url) {
           cacheProductId !== productId
             ? await ProductCache.findOne({ productId: cacheProductId })
             : null;
-        if (isCacheFresh(resolvedCache)) return resolvedCache;
+        if (isCacheFresh(resolvedCache) && cacheMatchesModelUrl(resolvedCache, url)) return resolvedCache;
 
-        const staleCache = resolvedCache || cached || existing;
+        const staleCache = [resolvedCache, cached, existing].find((cache) =>
+          cacheMatchesModelUrl(cache, url),
+        );
         const creditCost = normalizeDownloadCreditCost(
           metadata.creditCost || staleCache?.creditCost,
           1,
@@ -696,6 +705,7 @@ export async function previewGetlink(req, res, next) {
 
     const productId = extractProductId(url);
     const cache = await ProductCache.findOne({ productId });
+    const cacheMatchesCurrentUrl = cacheMatchesModelUrl(cache, url);
     const cachedTitle = String(cache?.title || "").trim();
     const hasRealCachedTitle = Boolean(
       cachedTitle &&
@@ -706,7 +716,7 @@ export async function previewGetlink(req, res, next) {
     const hasReliableCachedPrice = Number(cache?.creditCost || 0) > 1;
     const hasKnownCachedPrice = Boolean(cache?.priceKnown || hasReliableCachedPrice);
     const hasPreviewMetadata = Boolean(
-      hasRealCachedTitle && hasKnownCachedPrice,
+      cacheMatchesCurrentUrl && hasRealCachedTitle && hasKnownCachedPrice,
     );
     if (hasPreviewMetadata) {
       return res.json({
@@ -837,6 +847,9 @@ export async function getLink(req, res, next) {
     }
 
     let cachePreview = await ProductCache.findOne({ productId });
+    if (cachePreview && !cacheMatchesModelUrl(cachePreview, url)) {
+      cachePreview = null;
+    }
     let expectedCreditCost = normalizeDownloadCreditCost(
       cachePreview?.creditCost,
       0,
