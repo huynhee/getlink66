@@ -1078,6 +1078,9 @@ async function fetchModelPage(url, cookieValue) {
 
 function buildDownloadPayload(fields, urls, cookies, context) {
   const selectedFormat = fields.selectedFormat || context.selectedFormat || null;
+  const fileFormat = selectedFormat
+    ? String(selectedFormat.fileFormat || "")
+    : context.fileFormat;
   const rendererType = selectedFormat
     ? String(selectedFormat.rendererType || "")
     : context.rendererType || process.env.THREED66_RENDERER_TYPE || "4";
@@ -1124,7 +1127,7 @@ function buildDownloadPayload(fields, urls, cookies, context) {
     down_type: "0",
     is_commercial: "false",
     voucher_id: fields.voucherId || "",
-    file_format: context.fileFormat,
+    file_format: fileFormat,
     renderer_type: rendererType,
     format_version: formatVersion,
     ab: fields.ab || "",
@@ -1750,9 +1753,7 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   const requestedFormat = options.downloadFormat
     ? normalizeDownloadFormatOption(options.downloadFormat, 0, false)
     : null;
-  const popPreview = requestedFormat
-    ? null
-    : await previewFromDownloadPopOnly(normalized.toString(), effectiveCookieValue, initialCookies);
+  const popPreview = await previewFromDownloadPopOnly(normalized.toString(), effectiveCookieValue, initialCookies);
   let seedFields = popPreview?.fields || null;
   let seedMetadata = popPreview?.metadata || null;
   let html = "";

@@ -35,6 +35,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   const cursorText = url || t.getlinkPlaceholder;
   const cursorX = Math.min(cursorText.length * 8.4, 520);
   const formatOptions = Array.isArray(preview?.formatOptions) ? preview.formatOptions.filter(isUsableFormatOption) : [];
+  const canChooseFormat = formatOptions.length > 1;
   const selectedFormat =
     formatOptions.find((option) => option.key === selectedFormatKey) ||
     formatOptions.find((option) => option.isDefault) ||
@@ -172,7 +173,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
         body: JSON.stringify({
           url: previewUrl || url,
           includePreviewImage,
-          downloadFormat: selectedFormat
+          downloadFormat: canChooseFormat && selectedFormat
             ? {
                 key: selectedFormat.key,
                 fileFormat: selectedFormat.fileFormat,
@@ -326,7 +327,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               <p className="muted" style={{ margin: 0 }}>{t.price}: {preview.creditCost || 1} credit</p>
             </div>
           </div>
-          {formatOptions.length > 0 && (
+          {canChooseFormat && (
             <div className="formatSelector" aria-label={t.fileFormat}>
               <div className="formatSelectorHeader">
                 <span>{t.fileFormat}</span>
@@ -360,7 +361,9 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
           {!result && (
             <button type="button" onClick={confirmDownload} disabled={confirming || Boolean(disabledReason)} style={{ marginTop: 14 }}>
               {confirming ? <Loader2 size={18} className="spin" /> : <ArrowDownToLine size={18} />}
-              {confirming ? t.processing : `${t.confirmDownload}${selectedFormat?.label ? ` ${selectedFormat.label}` : ""} - ${preview.creditCost || 1} credit`}
+              {confirming
+                ? t.processing
+                : `${t.confirmDownload}${canChooseFormat && selectedFormat?.label ? ` ${selectedFormat.label}` : ""} - ${preview.creditCost || 1} credit`}
             </button>
           )}
         </div>
