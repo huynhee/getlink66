@@ -1,5 +1,9 @@
 import crypto from "crypto";
-import { download3D66WithBrowser, fetch3D66PageWithBrowser } from "./3d66BrowserService.js";
+import {
+  download3D66WithBrowser,
+  fetch3D66PageWithBrowser,
+  inspect3D66DownloadFormatsWithBrowser,
+} from "./3d66BrowserService.js";
 
 const DEFAULT_DOWNLOAD_ENDPOINT = "https://user.3d66.com/api/v1/download/handle";
 const DEFAULT_DOWNLOAD_POP_ENDPOINT = "https://user.3d66.com/api/v1/download/pop";
@@ -1256,6 +1260,16 @@ async function download3D66WithBrowserFallback(url, cookieValue, originalError =
   }
 }
 
+async function inspect3D66DownloadFormatsWithBrowserFallback(url, cookieValue) {
+  if (process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK === "true") return null;
+  try {
+    return await inspect3D66DownloadFormatsWithBrowser(url, cookieValue);
+  } catch (error) {
+    if (isPlaywrightMissing(error)) return null;
+    return null;
+  }
+}
+
 function mergeBrowserFields(fields = {}, browserMetadata = {}) {
   const browserFields = browserMetadata.dynamicFields || {};
   return {
@@ -1746,6 +1760,12 @@ export async function request3D66File(fileUrl, cookieValue, options = {}) {
     signal: options.signal,
     headers
   });
+}
+
+export async function inspect3D66DownloadFormats(url, cookieValue) {
+  requireCookie(cookieValue);
+  const normalized = normalizeModelUrl(url);
+  return inspect3D66DownloadFormatsWithBrowserFallback(normalized.toString(), cookieValue);
 }
 
 export async function fetchFrom3D66(url, cookieValue, options = {}) {

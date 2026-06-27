@@ -653,6 +653,67 @@ async function waitForDownloadOrPaymentPopup(page) {
   return Promise.race([responseWait, popupWait]);
 }
 
+async function waitForFormatPopupDownloadOrPayment(page) {
+  const responseWait = waitForDownloadHandleResponse(
+    page,
+    Math.min(timeoutMs(), 10000),
+  )
+    .then((response) => ({ type: "response", response }))
+    .catch(() => null);
+  const formatWait = page
+    .waitForSelector(".download-file-format-pop .pop-bd-item, .pop-bd-item[data-file_format]", {
+      timeout: Math.min(timeoutMs(), 10000),
+    })
+    .then(() => ({ type: "format" }))
+    .catch(() => null);
+  const paymentWait = page
+    .waitForSelector(".paytype-item, .right-pay-btn", {
+      timeout: Math.min(timeoutMs(), 10000),
+    })
+    .then(() => ({ type: "payment" }))
+    .catch(() => null);
+
+  return Promise.race([formatWait, responseWait, paymentWait]);
+}
+
+function evaluateFormatOptions() {
+  function text(selector, root = document) {
+    return (root.querySelector(selector)?.textContent || "").replace(/\s+/g, " ").trim();
+  }
+
+  function attr(node, name) {
+    return (node.getAttribute(name) || "").trim();
+  }
+
+  function spanTitle(item, keywordPattern) {
+    for (const span of item.querySelectorAll("span[title]")) {
+      const label = (span.textContent || "").replace(/\s+/g, " ").trim();
+      if (!keywordPattern || keywordPattern.test(label)) {
+        return attr(span, "title") || label.replace(/^[^:：]+[:：]\s*/, "");
+      }
+    }
+    return "";
+  }
+
+  return Array.from(document.querySelectorAll(".download-file-format-pop .pop-bd-item, .pop-bd-item[data-file_format]"))
+    .map((item, index) => {
+      const fileFormat = attr(item, "data-file_format");
+      if (!fileFormat || fileFormat === "0") return null;
+      const title = text(".bd-title", item).replace(/^✓\s*/, "");
+      return {
+        key: [fileFormat, attr(item, "data-format_version") || spanTitle(item, /版本|version/i), attr(item, "data-renderer_type")].join("|"),
+        fileFormat,
+        formatVersion: attr(item, "data-format_version") || spanTitle(item, /版本|version/i),
+        rendererType: attr(item, "data-renderer_type"),
+        rendererLabel: spanTitle(item, /渲染器|renderer/i),
+        label: title || fileFormat,
+        size: text(".right-file-size", item),
+        isDefault: item.classList.contains("active") || index === 0,
+      };
+    })
+    .filter(Boolean);
+}
+
 async function selectGiftPointWallet(page) {
   const configuredPaytype = String(process.env.THREED66_PAYTYPE_VALUE || "4").trim();
   const paytypeValue = /^[\w-]{1,20}$/.test(configuredPaytype)
@@ -720,6 +781,46 @@ export async function fetch3D66PageWithBrowser(url, cookieValue) {
       metadata,
       cookieValue: serializeCookies(browserCookies) || cookieValue,
       usedBrowser: true,
+    };
+  });
+}
+
+export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue) {
+  assertSafe3D66Url(url);
+  return withBrowserContext(url, cookieValue, async ({ context, page }) => {
+    await goto3D66Page(page, url);
+
+    const metadata = await evaluateMetadataWithRetry(page, true);
+    const downloadButton = page.locator(".j_download").last();
+    await downloadButton.click({
+      timeout: Math.min(timeoutMs(), 15000),
+      force: true,
+    });
+
+    const result = await waitForFormatPopupDownloadOrPayment(page);
+    const browserCookies = await context.cookies();
+    if (result?.type === "format") {
+      const formatOptions = await page.evaluate(evaluateFormatOptions);
+      return {
+        metadata: {
+          ...metadata,
+          formatOptions,
+          selectedFormat: formatOptions.find((option) => option.isDefault) || formatOptions[0] || null,
+        },
+        formatOptions,
+        pageUrl: page.url(),
+        cookieValue: serializeCookies(browserCookies) || cookieValue,
+        usedBrowser: true,
+      };
+    }
+
+    return {
+      metadata,
+      formatOptions: [],
+      pageUrl: page.url(),
+      cookieValue: serializeCookies(browserCookies) || cookieValue,
+      usedBrowser: true,
+      terminalType: result?.type || "none",
     };
   });
 }

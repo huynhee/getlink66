@@ -6,6 +6,7 @@ import User from "../models/User.js";
 import {
   fetch3D66Preview,
   fetchFrom3D66,
+  inspect3D66DownloadFormats,
   inspect3D66Page,
   request3D66File,
 } from "../utils/3d66Service.js";
@@ -711,6 +712,21 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
     );
     metadata = inspection?.metadata || metadata;
     formatOptions = sanitizeDownloadFormatOptions(metadata.formatOptions);
+
+    if (formatOptions.length <= 1) {
+      const browserInspection = await with3D66Cookie((cookieValue) =>
+        queue3D66Getlink(() => inspect3D66DownloadFormats(url, cookieValue)),
+      );
+      if (browserInspection?.metadata) {
+        metadata = {
+          ...metadata,
+          ...browserInspection.metadata,
+        };
+      }
+      formatOptions = sanitizeDownloadFormatOptions(
+        browserInspection?.formatOptions || browserInspection?.metadata?.formatOptions,
+      );
+    }
 
     if (formatOptions.length > 1) {
       targetCache = await upsertProductCache(
