@@ -685,15 +685,15 @@ function downloadFormatKey(format = {}) {
   return fileFormat ? [fileFormat, formatVersion, rendererType].join("|") : "";
 }
 
-function formatNameFromCode(fileFormat = "") {
-  return {
-    1: "3Dmax（.max）",
-    3: "OBJ（.obj）",
-    14: "FBX（.fbx）",
-  }[String(fileFormat || "")] || (fileFormat ? `Format ${fileFormat}` : "");
-}
-
 function evaluateFormatOptions() {
+  function formatNameFromCode(fileFormat = "") {
+    return {
+      1: "3Dmax（.max）",
+      3: "OBJ（.obj）",
+      14: "FBX（.fbx）",
+    }[String(fileFormat || "")] || (fileFormat ? `Format ${fileFormat}` : "");
+  }
+
   function text(selector, root = document) {
     return (root.querySelector(selector)?.textContent || "").replace(/\s+/g, " ").trim();
   }

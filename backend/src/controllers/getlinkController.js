@@ -702,8 +702,9 @@ function formatSelectionPayload(req, payload = {}) {
 }
 
 async function resolveDownloadFormatSelection(url, productId, cache = null, fallbackMetadata = {}, options = {}) {
+  const preferLive = Boolean(options.preferLive);
   let metadata = fallbackMetadata || {};
-  let formatOptions = options.preferLive ? [] : cacheDownloadFormatOptions(cache);
+  let formatOptions = preferLive ? [] : cacheDownloadFormatOptions(cache);
   let targetCache = cache;
   let browserInspection = null;
 
@@ -712,9 +713,9 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
       queue3D66Getlink(() => inspect3D66Page(url, cookieValue)),
     );
     metadata = inspection?.metadata || metadata;
-    formatOptions = sanitizeDownloadFormatOptions(metadata.formatOptions);
+    formatOptions = preferLive ? [] : sanitizeDownloadFormatOptions(metadata.formatOptions);
 
-    if (formatOptions.length <= 1) {
+    if (preferLive || formatOptions.length <= 1) {
       browserInspection = await with3D66Cookie((cookieValue) =>
         queue3D66Getlink(() => inspect3D66DownloadFormats(url, cookieValue)),
       );
