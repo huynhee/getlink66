@@ -201,12 +201,30 @@ function cacheMatchesModelUrl(cache = {}, sourceUrl = "") {
 
 function downloadFormatKey(format = {}) {
   const key = String(format?.key || "").trim();
-  if (key) return key;
+  if (key) {
+    const keyFileFormat = key.split("|")[0];
+    if (usableDownloadFileFormat(format?.fileFormat || format?.file_format || keyFileFormat)) return key;
+  }
   const fileFormat = String(format?.fileFormat || format?.file_format || "").trim();
   const formatVersion = String(format?.formatVersion || format?.format_version || "").trim();
   const rendererType = String(format?.rendererType || format?.renderer_type || "").trim();
-  if (!fileFormat && !formatVersion && !rendererType) return "";
+  if (!usableDownloadFileFormat(fileFormat)) return "";
   return [fileFormat, formatVersion, rendererType].join("|");
+}
+
+function usableDownloadFileFormat(value = "") {
+  const text = String(value || "").trim();
+  return text && text !== "0" ? text : "";
+}
+
+function sanitizeDownloadFormatOptions(options = []) {
+  const seen = new Set();
+  return (Array.isArray(options) ? options : []).filter((option) => {
+    const key = downloadFormatKey(option);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function normalizeDownloadFormatRequest(value) {
@@ -264,7 +282,7 @@ function findDownloadFormatOption(formatOptions = [], requestedFormat = null) {
   const requestedKey = downloadFormatKey(requestedFormat);
   if (!requestedKey) return null;
   return (
-    (Array.isArray(formatOptions) ? formatOptions : []).find(
+    sanitizeDownloadFormatOptions(formatOptions).find(
       (option) => downloadFormatKey(option) === requestedKey,
     ) || null
   );
@@ -368,7 +386,7 @@ function publicPreviewImageUrl(req, historyId) {
 function publicHistoryItem(req, item) {
   const doc = item.toObject ? item.toObject() : item;
   const allowed = canRedownload(doc);
-  const formatOptions = Array.isArray(doc.formatOptions) ? doc.formatOptions : [];
+  const formatOptions = sanitizeDownloadFormatOptions(doc.formatOptions);
   return {
     ...doc,
     formatOptions,
@@ -754,7 +772,7 @@ async function resolveProductCache(productId, url, downloadFormat = null) {
           imageUrl: metadata.imageUrl || metadataCache?.imageUrl,
           creditCost,
           priceKnown,
-          formatOptions: metadata.formatOptions || metadataCache?.formatOptions || [],
+          formatOptions: sanitizeDownloadFormatOptions(metadata.formatOptions || metadataCache?.formatOptions || []),
           ...cacheFormatPatch(metadata.selectedFormat),
           isPurchased: true,
         };
@@ -813,7 +831,7 @@ export async function previewGetlink(req, res, next) {
         title: cache.title || cache.productId,
         imageUrl: cache.imageUrl || "",
         creditCost: normalizeDownloadCreditCost(cache.creditCost, 1),
-        formatOptions: Array.isArray(cache.formatOptions) ? cache.formatOptions : [],
+        formatOptions: sanitizeDownloadFormatOptions(cache.formatOptions),
         cached: isCacheFresh(cache),
       });
     }
@@ -839,7 +857,7 @@ export async function previewGetlink(req, res, next) {
       imageUrl: preview.imageUrl,
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
       priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
-      formatOptions: preview.formatOptions || [],
+      formatOptions: sanitizeDownloadFormatOptions(preview.formatOptions),
     };
     await upsertProductCache(previewPayload, cache);
     res.json({
@@ -847,7 +865,7 @@ export async function previewGetlink(req, res, next) {
       title: preview.title,
       imageUrl: preview.imageUrl,
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
-      formatOptions: preview.formatOptions || [],
+      formatOptions: sanitizeDownloadFormatOptions(preview.formatOptions),
       selectedFormat: preview.selectedFormat || null,
       cached: false,
       metadataIncomplete: isFallbackMetadata(
@@ -977,7 +995,7 @@ export async function getLink(req, res, next) {
         imageUrl: preview.imageUrl,
         creditCost: expectedCreditCost,
         priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
-        formatOptions: preview.formatOptions || [],
+        formatOptions: sanitizeDownloadFormatOptions(preview.formatOptions),
       };
       effectiveProductId = previewPayload.productId;
       logProductId = effectiveProductId;
@@ -1197,7 +1215,7 @@ export async function prepareRedownload(req, res, next) {
     }
 
     const cache = await ProductCache.findOne({ productId: history.productId }).lean();
-    const formatOptions = Array.isArray(cache?.formatOptions) ? cache.formatOptions : [];
+    const formatOptions = sanitizeDownloadFormatOptions(cache?.formatOptions);
     const requestedFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
     let selectedFormat = requestedFormat;
 
@@ -1746,8 +1764,9 @@ export async function getlinkHistory(req, res, next) {
       history: history.map((item) =>
         publicHistoryItem(req, {
           ...item,
-          formatOptions:
+          formatOptions: sanitizeDownloadFormatOptions(
             cacheByProductId.get(String(item.productId || ""))?.formatOptions || [],
+          ),
         }),
       ),
     });

@@ -384,10 +384,14 @@ function normalizeFormatText(value = "") {
 
 function downloadFormatKey(format = {}) {
   const key = String(format.key || "").trim();
-  if (key) return key;
+  if (key) {
+    const keyFileFormat = key.split("|")[0];
+    if (usableFormatCode(format.fileFormat || format.file_format || keyFileFormat)) return key;
+  }
   const fileFormat = String(format.fileFormat || format.file_format || "").trim();
   const formatVersion = String(format.formatVersion || format.format_version || "").trim();
   const rendererType = String(format.rendererType || format.renderer_type || "").trim();
+  if (!usableFormatCode(fileFormat)) return "";
   return [fileFormat, formatVersion, rendererType].join("|");
 }
 
@@ -491,6 +495,10 @@ function normalizeDownloadFormatOption(option = {}, index = 0, isDefault = false
 function uniqueFormatOptions(options = []) {
   const seen = new Set();
   return options.filter(Boolean).filter((option) => {
+    const optionFileFormat = usableFormatCode(
+      option.fileFormat || option.file_format || String(option.key || "").split("|")[0],
+    );
+    if (!optionFileFormat) return false;
     if (!option.key || seen.has(option.key)) return false;
     seen.add(option.key);
     return true;

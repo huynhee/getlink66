@@ -13,6 +13,11 @@ function triggerBrowserDownload(downloadUrl) {
   anchor.remove();
 }
 
+function isUsableFormatOption(option = {}) {
+  const fileFormat = String(option.fileFormat || option.file_format || String(option.key || "").split("|")[0] || "").trim();
+  return Boolean(fileFormat && fileFormat !== "0");
+}
+
 function formatOptionLabel(option = {}, language = "vi") {
   return {
     title: option.label || option.fileFormat || (language === "vi" ? "Định dạng file" : "File format"),
@@ -22,7 +27,7 @@ function formatOptionLabel(option = {}, language = "vi") {
 }
 
 export default function RedownloadFormatModal({ item, language = "vi", onClose, onDone }) {
-  const options = Array.isArray(item?.formatOptions) ? item.formatOptions : [];
+  const options = Array.isArray(item?.formatOptions) ? item.formatOptions.filter(isUsableFormatOption) : [];
   const [selectedKey, setSelectedKey] = useState(item?.downloadFormat?.key || options[0]?.key || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

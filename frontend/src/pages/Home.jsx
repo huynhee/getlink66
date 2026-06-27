@@ -7,6 +7,13 @@ import { translations } from "../i18n.js";
 
 const FACEBOOK_GROUP_URL = "https://www.facebook.com/groups/960223243551548";
 
+function usableFormatCount(options = []) {
+  return (Array.isArray(options) ? options : []).filter((option) => {
+    const fileFormat = String(option.fileFormat || option.file_format || String(option.key || "").split("|")[0] || "").trim();
+    return fileFormat && fileFormat !== "0";
+  }).length;
+}
+
 function compactRemainingLabel(expiresAt, language) {
   const diff = new Date(expiresAt).getTime() - Date.now();
   if (!Number.isFinite(diff) || diff <= 0) return language === "vi" ? "hết hạn" : "expired";
@@ -70,7 +77,7 @@ export default function Home({ user, onUserChange, language = "vi" }) {
   }
 
   function handleRedownloadClick(event, item) {
-    if (item.canRedownload && Array.isArray(item.formatOptions) && item.formatOptions.length > 1) {
+    if (item.canRedownload && usableFormatCount(item.formatOptions) > 1) {
       event.preventDefault();
       setRedownloadItem(item);
     }

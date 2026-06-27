@@ -9,6 +9,11 @@ import {
   setFaviconProgress,
 } from "../utils/faviconProgress.js";
 
+function isUsableFormatOption(option = {}) {
+  const fileFormat = String(option.fileFormat || option.file_format || String(option.key || "").split("|")[0] || "").trim();
+  return Boolean(fileFormat && fileFormat !== "0");
+}
+
 export default function GetlinkBox({ onCreditChange, initialUrl = "", language = "vi", disabledReason = "" }) {
   const t = translations[language] || translations.vi;
   const [url, setUrl] = useState(initialUrl);
@@ -29,7 +34,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   const resetTimerRef = useRef(null);
   const cursorText = url || t.getlinkPlaceholder;
   const cursorX = Math.min(cursorText.length * 8.4, 520);
-  const formatOptions = Array.isArray(preview?.formatOptions) ? preview.formatOptions : [];
+  const formatOptions = Array.isArray(preview?.formatOptions) ? preview.formatOptions.filter(isUsableFormatOption) : [];
   const selectedFormat =
     formatOptions.find((option) => option.key === selectedFormatKey) ||
     formatOptions.find((option) => option.isDefault) ||
