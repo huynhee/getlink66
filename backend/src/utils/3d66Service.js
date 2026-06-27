@@ -459,7 +459,7 @@ function normalizeDownloadFormatOption(option = {}, index = 0, isDefault = false
       keyParts[2] ??
       "",
   ).trim();
-  if (!fileFormat && !formatVersion && !rendererType) return null;
+  if (!fileFormat) return null;
 
   const baseLabel = normalizeFormatText(
     option.label ||
@@ -1248,9 +1248,9 @@ async function fetch3D66PageWithBrowserFallback(url, cookieValue, originalError 
   }
 }
 
-async function download3D66WithBrowserFallback(url, cookieValue, originalError = null) {
+async function download3D66WithBrowserFallback(url, cookieValue, originalError = null, options = {}) {
   try {
-    return await download3D66WithBrowser(url, cookieValue);
+    return await download3D66WithBrowser(url, cookieValue, options);
   } catch (error) {
     if (isPlaywrightMissing(error) && originalError) throw originalError;
     if (isPlaywrightMissing(error)) {
@@ -1854,7 +1854,12 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
     if (process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK === "true") {
       validateDynamicFields(fields);
     }
-    const browserDownload = await download3D66WithBrowserFallback(pageUrl || normalized.toString(), effectiveCookieValue);
+    const browserDownload = await download3D66WithBrowserFallback(
+      pageUrl || normalized.toString(),
+      effectiveCookieValue,
+      null,
+      { downloadFormat: requestedFormat },
+    );
     if (browserDownload) return browserDownload;
     validateDynamicFields(fields);
   }
@@ -1870,7 +1875,12 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
       process.env.THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK === "true" &&
       process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK !== "true"
     ) {
-      const browserDownload = await download3D66WithBrowserFallback(pageUrl || normalized.toString(), effectiveCookieValue, error);
+      const browserDownload = await download3D66WithBrowserFallback(
+        pageUrl || normalized.toString(),
+        effectiveCookieValue,
+        error,
+        { downloadFormat: requestedFormat },
+      );
       if (browserDownload) return browserDownload;
     }
     throw error;

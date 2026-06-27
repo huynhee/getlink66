@@ -676,6 +676,15 @@ async function waitForFormatPopupDownloadOrPayment(page) {
   return Promise.race([formatWait, responseWait, paymentWait]);
 }
 
+function downloadFormatKey(format = {}) {
+  const key = String(format.key || "").trim();
+  if (key) return key;
+  const fileFormat = String(format.fileFormat || format.file_format || "").trim();
+  const formatVersion = String(format.formatVersion || format.format_version || "").trim();
+  const rendererType = String(format.rendererType || format.renderer_type || "").trim();
+  return fileFormat ? [fileFormat, formatVersion, rendererType].join("|") : "";
+}
+
 function evaluateFormatOptions() {
   function text(selector, root = document) {
     return (root.querySelector(selector)?.textContent || "").replace(/\s+/g, " ").trim();
@@ -712,6 +721,37 @@ function evaluateFormatOptions() {
       };
     })
     .filter(Boolean);
+}
+
+async function submitDownloadFormatPopup(page, requestedFormat = null) {
+  const requestedKey = downloadFormatKey(requestedFormat);
+  if (requestedKey) {
+    const selected = await page.evaluate((key) => {
+      const items = Array.from(document.querySelectorAll(".download-file-format-pop .pop-bd-item, .pop-bd-item[data-file_format]"));
+      const match = items.find((item) => {
+        const fileFormat = (item.getAttribute("data-file_format") || "").trim();
+        const formatVersion = (item.getAttribute("data-format_version") || "").trim();
+        const rendererType = (item.getAttribute("data-renderer_type") || "").trim();
+        return [fileFormat, formatVersion, rendererType].join("|") === key;
+      });
+      if (!match) return false;
+      match.click();
+      return true;
+    }, requestedKey);
+
+    if (!selected) {
+      throw browserHttpError(
+        "Selected 3D66 file format is no longer available.",
+        400,
+        { requestedFormat },
+      );
+    }
+  }
+
+  const nextResult = waitForDownloadOrPaymentPopup(page);
+  const button = page.locator(".download-file-format-pop .file-format-pop-btn, .file-format-pop-btn").last();
+  await button.click({ timeout: Math.min(timeoutMs(), 10000), force: true });
+  return nextResult;
 }
 
 async function selectGiftPointWallet(page) {
@@ -825,7 +865,7 @@ export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue) {
   });
 }
 
-export async function download3D66WithBrowser(url, cookieValue) {
+export async function download3D66WithBrowser(url, cookieValue, options = {}) {
   assertSafe3D66Url(url);
   return withBrowserContext(url, cookieValue, async ({ context, page }) => {
     await goto3D66Page(page, url);
@@ -836,11 +876,19 @@ export async function download3D66WithBrowser(url, cookieValue) {
       timeout: Math.min(timeoutMs(), 15000),
       force: true,
     });
-    const firstResult = await waitForDownloadOrPaymentPopup(page);
-    const response =
-      firstResult?.type === "response"
-        ? firstResult.response
-        : await confirmPaymentPopup(page);
+    const firstResult = await waitForFormatPopupDownloadOrPayment(page);
+    let response;
+    if (firstResult?.type === "response") {
+      response = firstResult.response;
+    } else if (firstResult?.type === "format") {
+      const afterFormat = await submitDownloadFormatPopup(page, options.downloadFormat);
+      response =
+        afterFormat?.type === "response"
+          ? afterFormat.response
+          : await confirmPaymentPopup(page);
+    } else {
+      response = await confirmPaymentPopup(page);
+    }
     const { json, fileUrl } = await parseDownloadHandleResponse(response);
 
     const browserCookies = await context.cookies();
@@ -851,6 +899,8 @@ export async function download3D66WithBrowser(url, cookieValue) {
       title: metadata.title,
       imageUrl: metadata.imageUrl,
       creditCost: metadata.creditCost || 1,
+      formatOptions: options.downloadFormat ? [options.downloadFormat] : metadata.formatOptions || [],
+      selectedFormat: options.downloadFormat || metadata.selectedFormat || null,
       cookieValue: serializeCookies(browserCookies) || cookieValue,
       response: json,
       usedBrowser: true,

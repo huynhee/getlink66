@@ -1043,16 +1043,41 @@ export async function getLink(req, res, next) {
     userProductLocks.add(lockKey);
     acquiredLockKey = lockKey;
 
-    const activeRedownload = await findActiveRedownload(
+    let activeRedownload = await findActiveRedownload(
       req.user._id,
       productId,
       url,
       downloadFormat,
     );
+    if (!activeRedownload && downloadFormat) {
+      const activeRedownloadAnyFormat = await findActiveRedownload(
+        req.user._id,
+        productId,
+        url,
+        null,
+      );
+      if (activeRedownloadAnyFormat) {
+        activeRedownload = await with3D66Cookie((cookieValue) =>
+          refreshHistoryDownload(activeRedownloadAnyFormat, cookieValue, downloadFormat),
+        );
+      }
+    }
     if (activeRedownload) {
       if (!downloadFormat) {
         const redownloadCache = await ProductCache.findOne({ productId: activeRedownload.productId }).lean();
-        const redownloadFormatOptions = cacheDownloadFormatOptions(redownloadCache);
+        const redownloadFormatSelection = await resolveDownloadFormatSelection(
+          activeRedownload.sourceUrl || url,
+          activeRedownload.productId,
+          redownloadCache,
+          {
+            productId: activeRedownload.productId,
+            title: activeRedownload.title,
+            imageUrl: activeRedownload.imageUrl,
+            creditCost: activeRedownload.creditUsed || 1,
+            priceKnown: true,
+          },
+        );
+        const redownloadFormatOptions = sanitizeDownloadFormatOptions(redownloadFormatSelection.formatOptions);
         if (redownloadFormatOptions.length > 1) {
           return res.json(formatSelectionPayload(req, {
             productId: activeRedownload.productId,
@@ -1110,16 +1135,41 @@ export async function getLink(req, res, next) {
       logProductId = effectiveProductId;
 
       if (previewPayload.productId !== productId) {
-        const previewRedownload = await findActiveRedownload(
+        let previewRedownload = await findActiveRedownload(
           req.user._id,
           [productId, previewPayload.productId],
           url,
           downloadFormat,
         );
+        if (!previewRedownload && downloadFormat) {
+          const previewRedownloadAnyFormat = await findActiveRedownload(
+            req.user._id,
+            [productId, previewPayload.productId],
+            url,
+            null,
+          );
+          if (previewRedownloadAnyFormat) {
+            previewRedownload = await with3D66Cookie((cookieValue) =>
+              refreshHistoryDownload(previewRedownloadAnyFormat, cookieValue, downloadFormat),
+            );
+          }
+        }
         if (previewRedownload) {
           if (!downloadFormat) {
             const redownloadCache = await ProductCache.findOne({ productId: previewRedownload.productId }).lean();
-            const redownloadFormatOptions = cacheDownloadFormatOptions(redownloadCache);
+            const redownloadFormatSelection = await resolveDownloadFormatSelection(
+              previewRedownload.sourceUrl || url,
+              previewRedownload.productId,
+              redownloadCache,
+              {
+                productId: previewRedownload.productId,
+                title: previewRedownload.title,
+                imageUrl: previewRedownload.imageUrl,
+                creditCost: previewRedownload.creditUsed || 1,
+                priceKnown: true,
+              },
+            );
+            const redownloadFormatOptions = sanitizeDownloadFormatOptions(redownloadFormatSelection.formatOptions);
             if (redownloadFormatOptions.length > 1) {
               return res.json(formatSelectionPayload(req, {
                 productId: previewRedownload.productId,
@@ -1138,15 +1188,6 @@ export async function getLink(req, res, next) {
       }
 
       cachePreview = await upsertProductCache(previewPayload, cachePreview);
-    }
-
-    const creditCheck = await hasEnoughCredit(req.user._id, expectedCreditCost);
-    if (!creditCheck.ok) {
-      return res.status(402).json({
-        message: `Không đủ credit. Cần ${expectedCreditCost} credit.`,
-        creditRequired: expectedCreditCost,
-        credit: creditCheck.credit,
-      });
     }
 
     if (!downloadFormat) {
@@ -1174,6 +1215,15 @@ export async function getLink(req, res, next) {
           formatOptions,
         }));
       }
+    }
+
+    const creditCheck = await hasEnoughCredit(req.user._id, expectedCreditCost);
+    if (!creditCheck.ok) {
+      return res.status(402).json({
+        message: `Không đủ credit. Cần ${expectedCreditCost} credit.`,
+        creditRequired: expectedCreditCost,
+        credit: creditCheck.credit,
+      });
     }
 
     const cachedBeforeDownload = await ProductCache.findOne({
@@ -1365,9 +1415,35 @@ export async function prepareRedownload(req, res, next) {
     }
 
     const cache = await ProductCache.findOne({ productId: history.productId }).lean();
-    const formatOptions = cacheDownloadFormatOptions(cache);
+    let formatOptions = cacheDownloadFormatOptions(cache);
     const requestedFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
     let selectedFormat = requestedFormat;
+
+    if (!requestedFormat) {
+      const formatSelection = await resolveDownloadFormatSelection(
+        history.sourceUrl,
+        history.productId,
+        cache,
+        {
+          productId: history.productId,
+          title: history.title,
+          imageUrl: history.imageUrl,
+          creditCost: history.creditUsed || 1,
+          priceKnown: true,
+        },
+      );
+      formatOptions = sanitizeDownloadFormatOptions(formatSelection.formatOptions);
+      if (formatOptions.length > 1) {
+        return res.json(formatSelectionPayload(req, {
+          productId: history.productId,
+          title: history.title,
+          imageUrl: history.imageUrl,
+          creditCost: history.creditUsed || 1,
+          formatOptions,
+          freeRedownload: true,
+        }));
+      }
+    }
 
     if (requestedFormat) {
       if (!formatOptions.length) {

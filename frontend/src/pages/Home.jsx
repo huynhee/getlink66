@@ -14,6 +14,17 @@ function usableFormatCount(options = []) {
   }).length;
 }
 
+function triggerBrowserDownload(downloadUrl) {
+  if (!downloadUrl) return;
+  const anchor = document.createElement("a");
+  anchor.href = downloadUrl;
+  anchor.target = "_blank";
+  anchor.rel = "noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
 function compactRemainingLabel(expiresAt, language) {
   const diff = new Date(expiresAt).getTime() - Date.now();
   if (!Number.isFinite(diff) || diff <= 0) return language === "vi" ? "hết hạn" : "expired";
@@ -38,6 +49,7 @@ export default function Home({ user, onUserChange, language = "vi" }) {
   const [getlinkHistory, setGetlinkHistory] = useState([]);
   const [topupHistory, setTopupHistory] = useState([]);
   const [redownloadItem, setRedownloadItem] = useState(null);
+  const [redownloadPreparingId, setRedownloadPreparingId] = useState("");
   const initialUrl = new URLSearchParams(window.location.search).get("url") || "";
   const redownloadText = language === "vi" ? "Tải lại" : "Redownload";
 
@@ -76,10 +88,39 @@ export default function Home({ user, onUserChange, language = "vi" }) {
     );
   }
 
-  function handleRedownloadClick(event, item) {
-    if (item.canRedownload && usableFormatCount(item.formatOptions) > 1) {
-      event.preventDefault();
+  async function handleRedownloadClick(event, item) {
+    if (!item.canRedownload) return;
+    event.preventDefault();
+    if (redownloadPreparingId === item._id) return;
+
+    if (usableFormatCount(item.formatOptions) > 1) {
       setRedownloadItem(item);
+      return;
+    }
+
+    setRedownloadPreparingId(item._id);
+    try {
+      const data = await api(`/api/getlink/redownload/${item._id}`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      if (data.requiresFormatSelection) {
+        setRedownloadItem({
+          ...item,
+          title: data.title || item.title,
+          productId: data.productId || item.productId,
+          imageUrl: data.imageUrl || item.imageUrl,
+          downloadFormat: data.selectedFormat || item.downloadFormat,
+          formatOptions: data.formatOptions || item.formatOptions,
+        });
+        return;
+      }
+      handleRedownloadPrepared(item._id, data);
+      triggerBrowserDownload(data.downloadUrl || data.url || item.downloadUrl || buildApiUrl(`/api/getlink/download/${item._id}`));
+    } catch (err) {
+      alert(err.message || (language === "vi" ? "Khong chuan bi duoc link tai lai." : "Cannot prepare redownload."));
+    } finally {
+      setRedownloadPreparingId("");
     }
   }
 
