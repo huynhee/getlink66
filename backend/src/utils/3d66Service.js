@@ -409,19 +409,35 @@ function rendererNameFromCode(rendererType = "") {
   }[code] || (code ? `Renderer ${code}` : "");
 }
 
+function ownProp(value = {}, key = "") {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function usableFormatCode(value) {
+  const text = String(value ?? "").trim();
+  return text && text !== "0" ? text : "";
+}
+
+function downloadFileFormatCode(option = {}, keyParts = []) {
+  const explicit = [
+    option.fileFormat,
+    option.file_format,
+    option.fileFormatCode,
+    option.file_format_code,
+    option.formatCode,
+    option.format_code,
+  ].map(usableFormatCode).find(Boolean);
+  if (explicit) return explicit;
+
+  const plainFormat = usableFormatCode(option.format);
+  if (plainFormat) return plainFormat;
+
+  return usableFormatCode(keyParts[0]);
+}
+
 function normalizeDownloadFormatOption(option = {}, index = 0, isDefault = false) {
   const keyParts = String(option.key || "").split("|");
-  const fileFormat = String(
-    option.fileFormat ??
-      option.file_format ??
-      option.fileFormatCode ??
-      option.file_format_code ??
-      option.format ??
-      option.formatCode ??
-      option.format_code ??
-      keyParts[0] ??
-      "",
-  ).trim();
+  const fileFormat = downloadFileFormatCode(option, keyParts);
   const formatVersion = String(
     option.formatVersion ?? option.format_version ?? option.version ?? keyParts[1] ?? "",
   ).trim();
@@ -483,20 +499,41 @@ function uniqueFormatOptions(options = []) {
 
 function hasFormatOptionFields(value = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const hasStructuredKey =
-    Object.prototype.hasOwnProperty.call(value, "key") && String(value.key || "").includes("|");
-  return hasStructuredKey || [
+  const hasStructuredKey = ownProp(value, "key") && String(value.key || "").includes("|");
+  const hasExplicitFileFormat = [
     "fileFormat",
     "file_format",
     "fileFormatCode",
     "file_format_code",
-    "fileFormatName",
-    "file_format_name",
-    "format",
     "formatCode",
     "format_code",
-    "formatName",
-    "format_name",
+  ].some((key) => ownProp(value, key) && usableFormatCode(value[key]));
+  const hasPlainFormat =
+    ownProp(value, "format") &&
+    usableFormatCode(value.format) &&
+    [
+      "fileFormatName",
+      "file_format_name",
+      "formatName",
+      "format_name",
+      "formatVersion",
+      "format_version",
+      "version",
+      "rendererType",
+      "renderer_type",
+      "renderType",
+      "render_type",
+      "rendererLabel",
+      "rendererName",
+      "renderer_name",
+      "fileSize",
+      "file_size",
+      "zip_size",
+      "package_size",
+      "size",
+    ].some((key) => ownProp(value, key));
+
+  return hasStructuredKey || hasExplicitFileFormat || hasPlainFormat || [
     "formatVersion",
     "format_version",
     "rendererType",
@@ -508,7 +545,7 @@ function hasFormatOptionFields(value = {}) {
     "rendererLabel",
     "rendererName",
     "renderer_name",
-  ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
+  ].some((key) => ownProp(value, key) && usableFormatCode(downloadFileFormatCode(value)));
 }
 
 function parseFormatOptionsFromDetail(detailRes = {}) {

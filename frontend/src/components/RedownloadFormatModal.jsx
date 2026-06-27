@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Download, Loader2, X } from "lucide-react";
+import { Check, Download, Loader2, X } from "lucide-react";
 import { api } from "../api.js";
 
 function triggerBrowserDownload(downloadUrl) {
@@ -14,13 +14,10 @@ function triggerBrowserDownload(downloadUrl) {
 }
 
 function formatOptionLabel(option = {}, language = "vi") {
-  const detail = [
-    option.formatVersion ? `${language === "vi" ? "Phiên bản" : "Version"}: ${option.formatVersion}` : "",
-    option.rendererLabel ? `${language === "vi" ? "Renderer" : "Renderer"}: ${option.rendererLabel}` : "",
-  ].filter(Boolean).join(" / ");
   return {
     title: option.label || option.fileFormat || (language === "vi" ? "Định dạng file" : "File format"),
-    detail,
+    versionLabel: language === "vi" ? "Phiên bản" : "Version",
+    rendererLabel: "Renderer",
   };
 }
 
@@ -68,7 +65,11 @@ export default function RedownloadFormatModal({ item, language = "vi", onClose, 
           </button>
         </div>
 
-        <div className="formatOptionGrid">
+        <div className="formatSelectorHeader">
+          <span>{language === "vi" ? "Định dạng file" : "File format"}</span>
+          <span>{language === "vi" ? "Dung lượng nén" : "Package size"}</span>
+        </div>
+        <div className="formatOptionList">
           {options.map((option) => {
             const label = formatOptionLabel(option, language);
             const active = option.key === selectedFormat?.key;
@@ -79,9 +80,15 @@ export default function RedownloadFormatModal({ item, language = "vi", onClose, 
                 className={`formatOption ${active ? "active" : ""}`}
                 onClick={() => setSelectedKey(option.key)}
               >
-                <strong>{label.title}</strong>
-                {label.detail && <small>{label.detail}</small>}
-                {option.size && <em>{option.size}</em>}
+                <span className="formatOptionCheck">{active && <Check size={12} />}</span>
+                <span className="formatOptionInfo">
+                  <strong>{label.title}</strong>
+                  <span className="formatOptionMeta">
+                    {option.formatVersion && <small>{label.versionLabel}: {option.formatVersion}</small>}
+                    {option.rendererLabel && <small>{label.rendererLabel}: {option.rendererLabel}</small>}
+                  </span>
+                </span>
+                {option.size && <em className="formatOptionSize">{option.size}</em>}
               </button>
             );
           })}

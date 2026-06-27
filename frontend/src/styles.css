@@ -3387,17 +3387,36 @@ label {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.formatSelectorHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
 .formatOptionGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
 }
 
+.formatOptionList {
+  display: grid;
+  gap: 8px;
+}
+
 .formatOption {
   display: grid;
-  gap: 4px;
-  min-height: 70px;
-  padding: 10px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 10px 12px;
   border: 1px solid rgba(0, 229, 255, 0.18);
   background: rgba(0, 229, 255, 0.035);
   color: var(--text-secondary);
@@ -3414,6 +3433,27 @@ label {
   box-shadow: 0 0 18px rgba(0, 255, 136, 0.12);
 }
 
+.formatOptionCheck {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--bg-primary);
+}
+
+.formatOption.active .formatOptionCheck {
+  border-color: var(--neon-green);
+  background: var(--neon-green);
+}
+
+.formatOptionInfo {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
 .formatOption strong {
   color: inherit;
   font-size: 13px;
@@ -3421,12 +3461,43 @@ label {
   overflow-wrap: anywhere;
 }
 
-.formatOption small,
-.formatOption em {
+.formatOptionMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.formatOptionMeta small {
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.formatOptionSize {
+  justify-self: end;
   color: var(--text-muted);
   font-size: 11px;
   font-style: normal;
+  white-space: nowrap;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .formatSelectorHeader {
+    grid-template-columns: 1fr;
+  }
+
+  .formatOption {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .formatOptionSize {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 
 .redownloadFormatOverlay {

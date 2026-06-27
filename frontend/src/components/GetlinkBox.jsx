@@ -323,14 +323,13 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
           </div>
           {formatOptions.length > 0 && (
             <div className="formatSelector" aria-label={t.fileFormat}>
-              <span>{t.fileFormat}</span>
-              <div className="formatOptionGrid">
+              <div className="formatSelectorHeader">
+                <span>{t.fileFormat}</span>
+                <span>{language === "vi" ? "Dung lượng nén" : "Package size"}</span>
+              </div>
+              <div className="formatOptionList">
                 {formatOptions.map((option) => {
                   const active = option.key === selectedFormat?.key;
-                  const versionText = [
-                    option.formatVersion ? `${t.formatVersion}: ${option.formatVersion}` : "",
-                    option.rendererLabel ? `${t.rendererType}: ${option.rendererLabel}` : ""
-                  ].filter(Boolean).join(" / ");
                   return (
                     <button
                       key={option.key}
@@ -338,9 +337,15 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
                       className={`formatOption ${active ? "active" : ""}`}
                       onClick={() => setSelectedFormatKey(option.key)}
                     >
-                      <strong>{option.label || option.fileFormat || t.fileFormat}</strong>
-                      {versionText && <small>{versionText}</small>}
-                      {option.size && <em>{option.size}</em>}
+                      <span className="formatOptionCheck">{active && <Check size={12} />}</span>
+                      <span className="formatOptionInfo">
+                        <strong>{option.label || option.fileFormat || t.fileFormat}</strong>
+                        <span className="formatOptionMeta">
+                          {option.formatVersion && <small>{t.formatVersion}: {option.formatVersion}</small>}
+                          {option.rendererLabel && <small>{t.rendererType}: {option.rendererLabel}</small>}
+                        </span>
+                      </span>
+                      {option.size && <em className="formatOptionSize">{option.size}</em>}
                     </button>
                   );
                 })}
