@@ -685,6 +685,14 @@ function downloadFormatKey(format = {}) {
   return fileFormat ? [fileFormat, formatVersion, rendererType].join("|") : "";
 }
 
+function formatNameFromCode(fileFormat = "") {
+  return {
+    1: "3Dmax（.max）",
+    3: "OBJ（.obj）",
+    14: "FBX（.fbx）",
+  }[String(fileFormat || "")] || (fileFormat ? `Format ${fileFormat}` : "");
+}
+
 function evaluateFormatOptions() {
   function text(selector, root = document) {
     return (root.querySelector(selector)?.textContent || "").replace(/\s+/g, " ").trim();
@@ -708,14 +716,14 @@ function evaluateFormatOptions() {
     .map((item, index) => {
       const fileFormat = attr(item, "data-file_format");
       if (!fileFormat || fileFormat === "0") return null;
-      const title = text(".bd-title", item).replace(/^✓\s*/, "");
+      const title = text(".bd-title", item).replace(/^✓\s*/, "").trim();
       return {
         key: [fileFormat, attr(item, "data-format_version") || spanTitle(item, /版本|version/i), attr(item, "data-renderer_type")].join("|"),
         fileFormat,
         formatVersion: attr(item, "data-format_version") || spanTitle(item, /版本|version/i),
         rendererType: attr(item, "data-renderer_type"),
         rendererLabel: spanTitle(item, /渲染器|renderer/i),
-        label: title || fileFormat,
+        label: title || formatNameFromCode(fileFormat) || fileFormat,
         size: text(".right-file-size", item),
         isDefault: item.classList.contains("active") || index === 0,
       };

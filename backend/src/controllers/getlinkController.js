@@ -701,9 +701,9 @@ function formatSelectionPayload(req, payload = {}) {
   };
 }
 
-async function resolveDownloadFormatSelection(url, productId, cache = null, fallbackMetadata = {}) {
+async function resolveDownloadFormatSelection(url, productId, cache = null, fallbackMetadata = {}, options = {}) {
   let metadata = fallbackMetadata || {};
-  let formatOptions = cacheDownloadFormatOptions(cache);
+  let formatOptions = options.preferLive ? [] : cacheDownloadFormatOptions(cache);
   let targetCache = cache;
   let browserInspection = null;
 
@@ -1102,6 +1102,7 @@ export async function getLink(req, res, next) {
             creditCost: activeRedownload.creditUsed || 1,
             priceKnown: true,
           },
+          { preferLive: true },
         );
         const redownloadFormatOptions = sanitizeDownloadFormatOptions(redownloadFormatSelection.formatOptions);
         if (redownloadFormatOptions.length > 1) {
@@ -1194,6 +1195,7 @@ export async function getLink(req, res, next) {
                 creditCost: previewRedownload.creditUsed || 1,
                 priceKnown: true,
               },
+              { preferLive: true },
             );
             const redownloadFormatOptions = sanitizeDownloadFormatOptions(redownloadFormatSelection.formatOptions);
             if (redownloadFormatOptions.length > 1) {
@@ -1237,6 +1239,7 @@ export async function getLink(req, res, next) {
           creditCost: expectedCreditCost,
           priceKnown: cachePreview?.priceKnown,
         },
+        { preferLive: true },
       );
       const formatOptions = sanitizeDownloadFormatOptions(formatSelection.formatOptions);
       if (formatSelection.cache) {
@@ -1471,6 +1474,7 @@ export async function prepareRedownload(req, res, next) {
           creditCost: history.creditUsed || 1,
           priceKnown: true,
         },
+        { preferLive: true },
       );
       formatOptions = sanitizeDownloadFormatOptions(formatSelection.formatOptions);
       if (formatOptions.length > 1) {
