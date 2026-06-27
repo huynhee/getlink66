@@ -3516,19 +3516,35 @@ label {
 }
 
 .redownloadFormatCard {
+  position: relative;
   box-sizing: border-box;
   width: min(640px, calc(100vw - 24px));
   max-height: min(88vh, 720px);
   overflow: auto;
   padding: 20px;
   border: 1px solid rgba(0, 255, 136, 0.38);
-  background:
-    linear-gradient(180deg, rgba(10, 12, 20, 0.98), rgba(3, 8, 8, 0.98)),
-    var(--scanlines);
+  background: #030808;
   box-shadow:
     0 24px 80px rgba(0, 0, 0, 0.7),
     0 0 36px rgba(0, 255, 136, 0.18);
   clip-path: var(--cyber-cut);
+}
+
+.redownloadFormatCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(10, 12, 20, 0.98), rgba(3, 8, 8, 0.98)),
+    var(--scanlines);
+  opacity: 0.22;
+  z-index: 0;
+}
+
+.redownloadFormatCard > * {
+  position: relative;
+  z-index: 1;
 }
 
 .redownloadFormatHeader {
