@@ -1210,6 +1210,16 @@ function shouldUseBrowserPage(html = "", metadata = {}, fields = {}, requireDown
   if (requireDownloadFields && (!fields.llId || !fields.token || !fields.upTime)) return true;
 
   const title = String(metadata.title || "").trim();
+  const productId = String(metadata.productId || fields.llId || "").trim();
+  const hasBasicMetadata = Boolean(
+    !requireDownloadFields &&
+      productId &&
+      title &&
+      title !== "3D66 model" &&
+      title !== productId,
+  );
+  if (hasBasicMetadata) return false;
+
   const creditCost = Number(metadata.creditCost || 0);
   const priceKnown = Boolean(metadata.priceKnown || creditCost > 1);
   return Boolean(!title || title === "3D66 model" || creditCost <= 0 || (!priceKnown && creditCost <= 1));
@@ -1582,7 +1592,7 @@ export async function fetch3D66Preview(url, cookieValue) {
     };
   }
 
-  const cookies = requireCookie(cookieValue);
+  requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
 
   let browserMetadata = null;
@@ -1609,11 +1619,6 @@ export async function fetch3D66Preview(url, cookieValue) {
   if (browserMetadata) {
     fields = mergeBrowserFields(fields, browserMetadata);
     metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);
-  }
-
-  if (!browserMetadata && isWeakMetadata(metadata)) {
-    const context = applyFieldsToContext(siteContext(pageUrl, cookies), fields);
-    ({ fields, metadata } = await enrichFromDownloadPop(fields, metadata, pageUrl, cookieValue, context));
   }
 
   if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields)) {

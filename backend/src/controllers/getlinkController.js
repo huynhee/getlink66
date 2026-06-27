@@ -626,8 +626,17 @@ function contentDispositionFrom3D66(upstreamDisposition = "", history) {
 
 function isFallbackMetadata(metadata = {}, inputProductId = "") {
   const title = String(metadata.title || "").trim();
+  const productId = String(metadata.productId || inputProductId || "").trim();
   const creditCost = Number(metadata.creditCost || 0);
   const priceKnown = Boolean(metadata.priceKnown || creditCost > 1);
+  const hasBasicMetadata = Boolean(
+    productId &&
+      title &&
+      title !== "3D66 model" &&
+      title !== inputProductId &&
+      title !== productId,
+  );
+  if (hasBasicMetadata && creditCost > 0) return false;
   return Boolean(
     !title ||
     title === "3D66 model" ||
