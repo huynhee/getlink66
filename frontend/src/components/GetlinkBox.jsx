@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Loader2, ArrowDownToLine, Copy, Check, ClipboardPaste, Search, ImageDown } from "lucide-react";
+import { Loader2, ArrowDownToLine, Copy, Check, ClipboardPaste, Search, ImageDown, X } from "lucide-react";
 import { api } from "../api.js";
 import { translations } from "../i18n.js";
 import {
@@ -23,6 +23,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   const [previewUrl, setPreviewUrl] = useState("");
   const [includePreviewImage, setIncludePreviewImage] = useState(false);
   const [selectedFormatKey, setSelectedFormatKey] = useState("");
+  const [pendingFormatSelection, setPendingFormatSelection] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -34,13 +35,16 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   const resetTimerRef = useRef(null);
   const cursorText = url || t.getlinkPlaceholder;
   const cursorX = Math.min(cursorText.length * 8.4, 520);
-  const formatOptions = Array.isArray(preview?.formatOptions) ? preview.formatOptions.filter(isUsableFormatOption) : [];
-  const canChooseFormat = formatOptions.length > 1;
+  const pendingFormatOptions = Array.isArray(pendingFormatSelection?.formatOptions)
+    ? pendingFormatSelection.formatOptions.filter(isUsableFormatOption)
+    : [];
+  const formatOptions = [];
+  const canChooseFormat = false;
   const selectedFormat =
-    formatOptions.find((option) => option.key === selectedFormatKey) ||
-    formatOptions.find((option) => option.isDefault) ||
-    formatOptions[0] ||
-    preview?.selectedFormat ||
+    pendingFormatOptions.find((option) => option.key === selectedFormatKey) ||
+    pendingFormatOptions.find((option) => option.isDefault) ||
+    pendingFormatOptions[0] ||
+    pendingFormatSelection?.selectedFormat ||
     null;
 
   useEffect(() => {
@@ -126,6 +130,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     setPreview(null);
     setPreviewUrl("");
     setSelectedFormatKey("");
+    setPendingFormatSelection(null);
     if (disabledReason) {
       setError(disabledReason);
       return;
@@ -143,9 +148,6 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
         body: JSON.stringify({ url })
       });
       setPreview(data);
-      const nextFormats = Array.isArray(data.formatOptions) ? data.formatOptions : [];
-      const defaultFormat = nextFormats.find((option) => option.isDefault) || nextFormats[0] || data.selectedFormat;
-      setSelectedFormatKey(defaultFormat?.key || "");
       setPreviewUrl(url);
       finishProgress(language === "vi" ? "Đã lấy thông tin model" : "Model info loaded");
     } catch (err) {
@@ -156,7 +158,20 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     }
   }
 
-  async function confirmDownload() {
+  function downloadFormatPayload(format) {
+    if (!format) return undefined;
+    return {
+      key: format.key,
+      fileFormat: format.fileFormat,
+      formatVersion: format.formatVersion,
+      rendererType: format.rendererType,
+      rendererLabel: format.rendererLabel,
+      label: format.label,
+      size: format.size
+    };
+  }
+
+  async function confirmDownload(downloadFormatOverride = null) {
     setError("");
     setResult("");
     setPreviewImageDownloadUrl("");
@@ -173,19 +188,25 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
         body: JSON.stringify({
           url: previewUrl || url,
           includePreviewImage,
-          downloadFormat: canChooseFormat && selectedFormat
-            ? {
-                key: selectedFormat.key,
-                fileFormat: selectedFormat.fileFormat,
-                formatVersion: selectedFormat.formatVersion,
-                rendererType: selectedFormat.rendererType,
-                rendererLabel: selectedFormat.rendererLabel,
-                label: selectedFormat.label,
-                size: selectedFormat.size
-              }
-            : undefined
+          downloadFormat: downloadFormatPayload(downloadFormatOverride)
         })
       });
+      if (data.requiresFormatSelection) {
+        const nextFormats = Array.isArray(data.formatOptions) ? data.formatOptions.filter(isUsableFormatOption) : [];
+        const defaultFormat = nextFormats.find((option) => option.isDefault) || nextFormats[0] || data.selectedFormat;
+        setPendingFormatSelection(data);
+        setSelectedFormatKey(defaultFormat?.key || "");
+        setPreview({
+          ...(preview || {}),
+          title: data.title || preview?.title,
+          imageUrl: data.imageUrl || preview?.imageUrl,
+          productId: data.productId || preview?.productId,
+          creditCost: data.creditCost || preview?.creditCost
+        });
+        finishProgress(language === "vi" ? "Chon dinh dang file" : "Choose file format");
+        return;
+      }
+      setPendingFormatSelection(null);
       setResult(data.downloadUrl || data.url);
       setPreviewImageDownloadUrl(data.previewImageDownloadUrl || "");
       setPreview({
@@ -194,8 +215,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
         imageUrl: data.imageUrl || preview?.imageUrl,
         productId: data.productId || preview?.productId,
         creditCost: data.creditUsed || preview?.creditCost,
-        selectedFormat: data.selectedFormat || selectedFormat,
-        formatOptions: preview?.formatOptions || []
+        selectedFormat: data.selectedFormat || downloadFormatOverride || null
       });
       onCreditChange(data.credit);
       if (includePreviewImage && data.previewImageDownloadUrl) {
@@ -241,6 +261,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
       setUrl(pasted);
       setPreview(null);
       setSelectedFormatKey("");
+      setPendingFormatSelection(null);
       setResult("");
       setPreviewImageDownloadUrl("");
       setProgress(0);
@@ -266,6 +287,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
                 setUrl(event.target.value);
                 setPreview(null);
                 setSelectedFormatKey("");
+                setPendingFormatSelection(null);
                 setResult("");
                 setPreviewImageDownloadUrl("");
                 setProgress(0);
@@ -359,11 +381,11 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
             </div>
           )}
           {!result && (
-            <button type="button" onClick={confirmDownload} disabled={confirming || Boolean(disabledReason)} style={{ marginTop: 14 }}>
+            <button type="button" onClick={() => confirmDownload()} disabled={confirming || Boolean(disabledReason)} style={{ marginTop: 14 }}>
               {confirming ? <Loader2 size={18} className="spin" /> : <ArrowDownToLine size={18} />}
               {confirming
                 ? t.processing
-                : `${t.confirmDownload}${canChooseFormat && selectedFormat?.label ? ` ${selectedFormat.label}` : ""} - ${preview.creditCost || 1} credit`}
+                : `${t.confirmDownload} - ${preview.creditCost || 1} credit`}
             </button>
           )}
         </div>
@@ -397,6 +419,69 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               )}
             </div>
           )}
+        </div>
+      )}
+      {pendingFormatSelection && pendingFormatOptions.length > 1 && (
+        <div className="redownloadFormatOverlay" role="dialog" aria-modal="true">
+          <div className="redownloadFormatCard">
+            <div className="redownloadFormatHeader">
+              <div>
+                <span>{language === "vi" ? "Chon dinh dang file" : "Choose file format"}</span>
+                <strong>{pendingFormatSelection.title || pendingFormatSelection.productId}</strong>
+              </div>
+              <button
+                type="button"
+                className="iconButton"
+                onClick={() => setPendingFormatSelection(null)}
+                aria-label="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="formatSelectorHeader">
+              <span>{t.fileFormat}</span>
+              <span>{language === "vi" ? "Dung luong nen" : "Package size"}</span>
+            </div>
+            <div className="formatOptionList">
+              {pendingFormatOptions.map((option) => {
+                const active = option.key === selectedFormat?.key;
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={`formatOption ${active ? "active" : ""}`}
+                    onClick={() => setSelectedFormatKey(option.key)}
+                  >
+                    <span className="formatOptionCheck">{active && <Check size={12} />}</span>
+                    <span className="formatOptionInfo">
+                      <strong>{option.label || option.fileFormat || t.fileFormat}</strong>
+                      <span className="formatOptionMeta">
+                        {option.formatVersion && <small>{t.formatVersion}: {option.formatVersion}</small>}
+                        {option.rendererLabel && <small>{t.rendererType}: {option.rendererLabel}</small>}
+                      </span>
+                    </span>
+                    {option.size && <em className="formatOptionSize">{option.size}</em>}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="redownloadFormatActions">
+              <button
+                type="button"
+                className="ghostButton"
+                onClick={() => setPendingFormatSelection(null)}
+                disabled={confirming}
+              >
+                {language === "vi" ? "Huy" : "Cancel"}
+              </button>
+              <button type="button" onClick={() => confirmDownload(selectedFormat)} disabled={confirming || !selectedFormat}>
+                {confirming ? <Loader2 size={16} className="spin" /> : <ArrowDownToLine size={16} />}
+                {language === "vi" ? "Xac nhan tai" : "Confirm download"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </section>

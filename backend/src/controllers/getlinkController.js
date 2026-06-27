@@ -681,6 +681,69 @@ async function upsertProductCache(payload, preferredCache = null) {
   }
 }
 
+function selectedDownloadFormat(formatOptions = []) {
+  return formatOptions.find((option) => option.isDefault) || formatOptions[0] || null;
+}
+
+function formatSelectionPayload(req, payload = {}) {
+  const formatOptions = sanitizeDownloadFormatOptions(payload.formatOptions);
+  return {
+    requiresFormatSelection: true,
+    productId: payload.productId || "",
+    title: payload.title || payload.productId || "",
+    imageUrl: payload.imageUrl || "",
+    creditCost: normalizeDownloadCreditCost(payload.creditCost, 1),
+    selectedFormat: selectedDownloadFormat(formatOptions),
+    formatOptions,
+    credit: req.user?.credit,
+    freeRedownload: Boolean(payload.freeRedownload),
+  };
+}
+
+async function resolveDownloadFormatSelection(url, productId, cache = null, fallbackMetadata = {}) {
+  let metadata = fallbackMetadata || {};
+  let formatOptions = cacheDownloadFormatOptions(cache);
+  let targetCache = cache;
+
+  if (formatOptions.length <= 1) {
+    const inspection = await with3D66Cookie((cookieValue) =>
+      queue3D66Getlink(() => inspect3D66Page(url, cookieValue)),
+    );
+    metadata = inspection?.metadata || metadata;
+    formatOptions = sanitizeDownloadFormatOptions(metadata.formatOptions);
+
+    if (formatOptions.length > 1) {
+      targetCache = await upsertProductCache(
+        {
+          productId: metadata.productId || productId,
+          sourceUrl: metadata.sourceUrl || inspection?.pageUrl || url,
+          title: metadata.title || cache?.title || fallbackMetadata.title,
+          imageUrl: metadata.imageUrl || cache?.imageUrl || fallbackMetadata.imageUrl,
+          creditCost: normalizeDownloadCreditCost(
+            metadata.creditCost || cache?.creditCost || fallbackMetadata.creditCost,
+            1,
+          ),
+          priceKnown: Boolean(
+            metadata.priceKnown ||
+              cache?.priceKnown ||
+              fallbackMetadata.priceKnown ||
+              Number(metadata.creditCost || cache?.creditCost || fallbackMetadata.creditCost || 0) > 1,
+          ),
+          formatOptions,
+          formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
+        },
+        cache,
+      );
+    }
+  }
+
+  return {
+    cache: targetCache,
+    metadata,
+    formatOptions,
+  };
+}
+
 function setProxyHeaders(res, upstream, history) {
   const passthrough = [
     "content-type",
@@ -852,7 +915,6 @@ export async function previewGetlink(req, res, next) {
         title: cache.title || cache.productId,
         imageUrl: cache.imageUrl || "",
         creditCost: normalizeDownloadCreditCost(cache.creditCost, 1),
-        formatOptions: cacheDownloadFormatOptions(cache),
         cached: isCacheFresh(cache),
       });
     }
@@ -878,8 +940,6 @@ export async function previewGetlink(req, res, next) {
       imageUrl: preview.imageUrl,
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
       priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
-      formatOptions: sanitizeDownloadFormatOptions(preview.formatOptions),
-      formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
     };
     await upsertProductCache(previewPayload, cache);
     res.json({
@@ -887,8 +947,6 @@ export async function previewGetlink(req, res, next) {
       title: preview.title,
       imageUrl: preview.imageUrl,
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
-      formatOptions: sanitizeDownloadFormatOptions(preview.formatOptions),
-      selectedFormat: preview.selectedFormat || null,
       cached: false,
       metadataIncomplete: isFallbackMetadata(
         preview,
@@ -976,6 +1034,20 @@ export async function getLink(req, res, next) {
       downloadFormat,
     );
     if (activeRedownload) {
+      if (!downloadFormat) {
+        const redownloadCache = await ProductCache.findOne({ productId: activeRedownload.productId }).lean();
+        const redownloadFormatOptions = cacheDownloadFormatOptions(redownloadCache);
+        if (redownloadFormatOptions.length > 1) {
+          return res.json(formatSelectionPayload(req, {
+            productId: activeRedownload.productId,
+            title: activeRedownload.title,
+            imageUrl: activeRedownload.imageUrl,
+            creditCost: activeRedownload.creditUsed || 1,
+            formatOptions: redownloadFormatOptions,
+            freeRedownload: true,
+          }));
+        }
+      }
       return sendFreeRedownload(req, res, activeRedownload, {
         includePreviewImage,
       });
@@ -1017,8 +1089,6 @@ export async function getLink(req, res, next) {
         imageUrl: preview.imageUrl,
         creditCost: expectedCreditCost,
         priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
-        formatOptions: sanitizeDownloadFormatOptions(preview.formatOptions),
-        formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
       };
       effectiveProductId = previewPayload.productId;
       logProductId = effectiveProductId;
@@ -1031,6 +1101,20 @@ export async function getLink(req, res, next) {
           downloadFormat,
         );
         if (previewRedownload) {
+          if (!downloadFormat) {
+            const redownloadCache = await ProductCache.findOne({ productId: previewRedownload.productId }).lean();
+            const redownloadFormatOptions = cacheDownloadFormatOptions(redownloadCache);
+            if (redownloadFormatOptions.length > 1) {
+              return res.json(formatSelectionPayload(req, {
+                productId: previewRedownload.productId,
+                title: previewRedownload.title,
+                imageUrl: previewRedownload.imageUrl,
+                creditCost: previewRedownload.creditUsed || 1,
+                formatOptions: redownloadFormatOptions,
+                freeRedownload: true,
+              }));
+            }
+          }
           return sendFreeRedownload(req, res, previewRedownload, {
             includePreviewImage,
           });
@@ -1047,6 +1131,33 @@ export async function getLink(req, res, next) {
         creditRequired: expectedCreditCost,
         credit: creditCheck.credit,
       });
+    }
+
+    if (!downloadFormat) {
+      const formatSelection = await resolveDownloadFormatSelection(
+        url,
+        effectiveProductId,
+        cachePreview,
+        {
+          productId: effectiveProductId,
+          title: cachePreview?.title,
+          imageUrl: cachePreview?.imageUrl,
+          creditCost: expectedCreditCost,
+          priceKnown: cachePreview?.priceKnown,
+        },
+      );
+      const formatOptions = sanitizeDownloadFormatOptions(formatSelection.formatOptions);
+      if (formatOptions.length > 1) {
+        const metadata = formatSelection.metadata || {};
+        const selectionCache = formatSelection.cache || cachePreview;
+        return res.json(formatSelectionPayload(req, {
+          productId: metadata.productId || selectionCache?.productId || effectiveProductId,
+          title: metadata.title || selectionCache?.title || cachePreview?.title,
+          imageUrl: metadata.imageUrl || selectionCache?.imageUrl || cachePreview?.imageUrl,
+          creditCost: expectedCreditCost,
+          formatOptions,
+        }));
+      }
     }
 
     const cachedBeforeDownload = await ProductCache.findOne({

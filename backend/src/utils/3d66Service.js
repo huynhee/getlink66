@@ -1577,23 +1577,20 @@ export async function validate3D66Cookie(cookieValue, modelUrl = "") {
 export async function fetch3D66Preview(url, cookieValue) {
   if (process.env.THREED66_MOCK !== "false") {
     const digest = crypto.createHash("sha256").update(url).digest("hex").slice(0, 16);
-    const formatOptions = [
-      normalizeDownloadFormatOption({ fileFormat: "1", formatVersion: "max2018", rendererType: "4", label: "3Dmax" }, 0, true)
-    ].filter(Boolean);
     return {
       productId: digest,
       title: "Mock 3D66 model",
       imageUrl: "",
       creditCost: 1,
       priceKnown: true,
-      formatOptions,
-      selectedFormat: formatOptions[0] || null,
       sourceUrl: url
     };
   }
 
-  requireCookie(cookieValue);
+  const cookies = requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
+  const popPreview = await previewFromDownloadPopOnly(normalized.toString(), cookieValue, cookies);
+  if (popPreview) return popPreview.metadata;
 
   let browserMetadata = null;
   let html = "";
@@ -1621,6 +1618,11 @@ export async function fetch3D66Preview(url, cookieValue) {
     metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);
   }
 
+  if (!browserMetadata && isWeakMetadata(metadata)) {
+    const context = applyFieldsToContext(siteContext(pageUrl, cookies), fields);
+    ({ fields, metadata } = await enrichFromDownloadPop(fields, metadata, pageUrl, cookieValue, context));
+  }
+
   if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields)) {
     const browserPage = await fetch3D66PageWithBrowserFallback(pageUrl || normalized.toString(), cookieValue);
     if (browserPage) {
@@ -1631,7 +1633,6 @@ export async function fetch3D66Preview(url, cookieValue) {
     }
   }
 
-  ({ fields, metadata } = applySelectedFormat(fields, metadata));
   return metadata;
 }
 
