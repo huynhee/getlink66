@@ -6,6 +6,7 @@ import User from "../models/User.js";
 import {
   fetch3D66Preview,
   fetchFrom3D66,
+  inspect3D66DownloadChoice,
   inspect3D66DownloadFormats,
   inspect3D66Page,
   request3D66File,
@@ -709,26 +710,88 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
   let browserInspection = null;
 
   if (formatOptions.length <= 1) {
-    const inspection = await with3D66Cookie((cookieValue) =>
-      queue3D66Getlink(() => inspect3D66Page(url, cookieValue)),
-    );
-    metadata = inspection?.metadata || metadata;
-    formatOptions = preferLive ? [] : sanitizeDownloadFormatOptions(metadata.formatOptions);
+    const selection = await with3D66Cookie((cookieValue) =>
+      queue3D66Getlink(async () => {
+        let choiceInspection = null;
+        if (preferLive) {
+          try {
+            choiceInspection = await inspect3D66DownloadChoice(url, cookieValue);
+          } catch {
+            // If the lightweight pop API is unavailable, keep the browser path.
+          }
 
-    if (preferLive || formatOptions.length <= 1) {
-      browserInspection = await with3D66Cookie((cookieValue) =>
-        queue3D66Getlink(() => inspect3D66DownloadFormats(url, cookieValue)),
-      );
-      if (browserInspection?.metadata) {
-        metadata = {
-          ...metadata,
-          ...browserInspection.metadata,
+          const choiceOptions = sanitizeDownloadFormatOptions(choiceInspection?.formatOptions);
+          if (choiceOptions.length > 1) {
+            return {
+              choiceInspection,
+              inspection: null,
+              browserInspection: null,
+              formatOptions: choiceOptions,
+              skipBrowser: false,
+            };
+          }
+
+          if (choiceInspection?.hasFormatChoice === false) {
+            return {
+              choiceInspection,
+              inspection: null,
+              browserInspection: null,
+              formatOptions: [],
+              skipBrowser: true,
+            };
+          }
+        }
+
+        const inspection = await inspect3D66Page(url, cookieValue);
+        const inspectedOptions = preferLive
+          ? []
+          : sanitizeDownloadFormatOptions(inspection?.metadata?.formatOptions);
+
+        if (preferLive || inspectedOptions.length <= 1) {
+          const nextBrowserInspection = await inspect3D66DownloadFormats(url, cookieValue);
+          return {
+            choiceInspection,
+            inspection,
+            browserInspection: nextBrowserInspection,
+            formatOptions: sanitizeDownloadFormatOptions(
+              nextBrowserInspection?.formatOptions || nextBrowserInspection?.metadata?.formatOptions,
+            ),
+            skipBrowser: false,
+          };
+        }
+
+        return {
+          choiceInspection,
+          inspection,
+          browserInspection: null,
+          formatOptions: inspectedOptions,
+          skipBrowser: false,
         };
-      }
-      formatOptions = sanitizeDownloadFormatOptions(
-        browserInspection?.formatOptions || browserInspection?.metadata?.formatOptions,
-      );
+      }),
+    );
+    const inspection = selection?.inspection;
+    browserInspection = selection?.browserInspection;
+    if (selection?.choiceInspection?.metadata) {
+      metadata = {
+        ...metadata,
+        ...selection.choiceInspection.metadata,
+      };
     }
+    if (inspection?.metadata) {
+      metadata = {
+        ...metadata,
+        ...inspection.metadata,
+      };
+    }
+    if (browserInspection?.metadata) {
+      metadata = {
+        ...metadata,
+        ...browserInspection.metadata,
+      };
+    }
+    formatOptions = selection?.skipBrowser
+      ? []
+      : sanitizeDownloadFormatOptions(selection?.formatOptions);
 
     if (browserInspection?.fileUrl) {
       targetCache = await upsertProductCache(

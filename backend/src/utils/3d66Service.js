@@ -1413,6 +1413,22 @@ function mergeDownloadPopMetadata(metadata = {}, popData = {}, pageUrl = "", fie
   };
 }
 
+function downloadPopChoiceValue(popData = {}) {
+  const candidates = [
+    popData?.user?.priceInfo?.is_choice,
+    popData?.priceInfo?.is_choice,
+    popData?.resInfo?.is_choice,
+    popData?.is_choice,
+  ];
+  return candidates.find((value) => value !== undefined && value !== null && String(value) !== "");
+}
+
+function hasDownloadFormatChoice(popData = {}) {
+  const choiceValue = downloadPopChoiceValue(popData);
+  if (choiceValue === undefined) return null;
+  return Number(choiceValue) === 1;
+}
+
 function downloadRequestIdSuffix(json = {}) {
   const requestId = String(json.request_id || json.requestId || "").trim();
   return requestId ? ` (${requestId})` : "";
@@ -1766,6 +1782,44 @@ export async function inspect3D66DownloadFormats(url, cookieValue) {
   requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
   return inspect3D66DownloadFormatsWithBrowserFallback(normalized.toString(), cookieValue);
+}
+
+export async function inspect3D66DownloadChoice(url, cookieValue) {
+  const cookies = requireCookie(cookieValue);
+  const normalized = normalizeModelUrl(url);
+  const fields = parseDynamicFields("", normalized.toString());
+  if (!fields.llId) return null;
+
+  const context = applyFieldsToContext(siteContext(normalized.toString(), cookies), fields);
+  const popData = await requestDownloadPop(fields, cookieValue, context);
+  if (!popData) return null;
+
+  const mergedFields = mergeDownloadPopFields(fields, popData);
+  const metadata = mergeDownloadPopMetadata(
+    {
+      productId: fields.llId,
+      title: "3D66 model",
+      imageUrl: "",
+      creditCost: 1,
+      priceKnown: false,
+      sourceUrl: normalized.toString(),
+    },
+    popData,
+    normalized.toString(),
+    mergedFields,
+  );
+  const formatOptions = uniqueFormatOptions([
+    ...(mergedFields.formatOptions || []),
+    ...(metadata.formatOptions || []),
+  ]);
+
+  return {
+    hasFormatChoice: hasDownloadFormatChoice(popData),
+    choiceValue: downloadPopChoiceValue(popData),
+    fields: mergedFields,
+    metadata,
+    formatOptions,
+  };
 }
 
 export async function fetchFrom3D66(url, cookieValue, options = {}) {
