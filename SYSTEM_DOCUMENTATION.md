@@ -1,0 +1,1479 @@
+# Tai lieu he thong Get Link 3D66
+
+Cap nhat: 2026-06-18  
+Pham vi doc: toan bo source backend, frontend, route, controller, model, middleware, utility, cau hinh mau va public assets trong repo.
+
+Luu y bao mat: tai lieu nay khong sao chep gia tri that trong `backend/.env`. Cac muc cau hinh duoc mo ta theo ten bien trong `backend/.env.example`.
+
+## 1. Tong quan
+
+Day la he thong full-stack cho dich vu 3DIPL/Getlink 3D66. Nguoi dung dang nhap bang Google, nap credit qua SePay, dung credit de tao link tai model tu 3D66, sau do tai file qua backend proxy. He thong co admin panel de quan ly user, credit, goi nap, voucher, cookie 3D66, bai huong dan, thong bao, log va cac tham so runtime lien quan den 3D66.
+
+Muc tieu nghiep vu chinh:
+
+- Xac thuc nguoi dung bang Google OAuth.
+- Luu credit cho tung user.
+- Kiem tra thong tin model 3D66: product id, ten, anh, gia credit.
+- Tru credit an toan khi user tao getlink.
+- Luu lich su getlink va cho phep tai lai mien phi trong cua so thoi gian/gioi han cau hinh.
+- Tao checkout SePay cho cac goi nap credit.
+- Nhan IPN/webhook de duyet topup va cong credit.
+- Ho tro voucher giam gia hoac cong credit bonus.
+- Ho tro chuong trinh gioi thieu ban be.
+- Quan tri cookie 3D66, fallback Playwright va hang doi request de giam nguy co bi 3D66 chan.
+- Hien thi frontend React cho user va admin.
+
+## 2. Cau truc thu muc
+
+```text
+.
+|-- package.json
+|-- backend/
+|   |-- server.js
+|   |-- package.json
+|   |-- .env.example
+|   `-- src/
+|       |-- config/
+|       |-- controllers/
+|       |-- middleware/
+|       |-- models/
+|       |-- routes/
+|       `-- utils/
+`-- frontend/
+    |-- index.html
+    |-- package.json
+    |-- public/
+    |-- dist/
+    `-- src/
+        |-- api.js
+        |-- App.jsx
+        |-- i18n.js
+        |-- styles.css
+        |-- components/
+        |-- pages/
+        `-- utils/
+```
+
+Root `package.json` chi dong vai tro orchestration:
+
+- `npm run install:all`: cai dependencies cho backend va frontend.
+- `npm run dev`: chay backend va frontend song song bang `concurrently`.
+- `npm start`: start backend.
+
+Backend va frontend la 2 package rieng:
+
+- Backend: Node.js ESM, Express, Mongoose, Passport Google OAuth, JWT, Playwright, SePay SDK, Pino.
+- Frontend: React 18, Vite, lucide-react.
+
+## 3. Backend
+
+### 3.1 Entry point `backend/server.js`
+
+`server.js` khoi tao Express app va thuc hien cac viec sau:
+
+- Load `.env` bang `dotenv`.
+- Kiem tra cac secret bat buoc trong production:
+  - `JWT_SECRET`
+  - `CSRF_HMAC_SECRET`
+  - `COOKIE_SIGNATURE_SECRET`
+  - `DOWNLOAD_TOKEN_SECRET`
+  - `COOKIE_ENCRYPTION_KEY`
+  - `CLIENT_URL`
+  - `PUBLIC_BASE_URL`
+  - Cac bien SePay neu `SEPAY_ENABLED` khac `false`.
+- Ket noi MongoDB qua `connectDb()`.
+- Import model/controller/route sau khi DB san sang.
+- Goi `ensureTopupIndexes()` de loai index cu khong con phu hop.
+- Goi `initializeSettings()` de tao/cap nhat document settings mac dinh va apply runtime env.
+- Cau hinh Express security:
+  - `helmet`
+  - CSP trong production
+  - HSTS trong production
+  - `compression`
+  - `permissions-policy`
+  - JSON body limit qua `JSON_BODY_LIMIT`
+  - CORS voi allowlist tu `CLIENT_URL`, localhost va `CORS_ORIGINS`
+  - signed cookie parser bang `COOKIE_SIGNATURE_SECRET`
+- Cau hinh Passport Google OAuth neu co `GOOGLE_CLIENT_ID` va `GOOGLE_CLIENT_SECRET`.
+- Mount middleware chung:
+  - `jwtAuth`
+  - `requestGuard`
+  - `csrfProtection`
+- Mount route:
+  - `/health`
+  - `/api/user`
+  - `/api/auth`
+  - `/api`
+  - `/api/admin`
+- Global error handler:
+  - Log loi server bang Pino.
+  - Gui Telegram alert neu la loi 5xx.
+  - An message noi bo trong production.
+
+### 3.2 Database va memory fallback
+
+File `backend/src/config/db.js` ket noi MongoDB bang `MONGO_URI`.
+
+Neu khong co `MONGO_URI` hoac MongoDB khong ket noi duoc:
+
+- Neu `ALLOW_MEMORY_DB=true` va khong phai production, he thong dung memory store.
+- Neu production ma `ALLOW_MEMORY_DB=true`, server throw error.
+- Neu khong cho phep memory DB, server throw error.
+
+`backend/src/config/memoryStore.js` la in-memory model adapter cho dev/test local. Adapter nay mo phong mot phan API Mongoose:
+
+- `create`
+- `insertMany`
+- `find`
+- `findOne`
+- `findById`
+- `findOneAndUpdate`
+- `findByIdAndUpdate`
+- `findByIdAndDelete`
+- `findOneAndDelete`
+- `countDocuments`
+- `exists`
+- `deleteMany`
+- chain helpers: `sort`, `limit`, `select`, `lean`, `populate`
+
+Memory store khong thay the MongoDB production. No chi dung khi cau hinh dev cho phep.
+
+### 3.3 Models
+
+#### `User`
+
+Luu tai khoan Google va credit:
+
+- `email`, `name`, `avatar`
+- `role`: `user` hoac `admin`
+- `credit`
+- referral:
+  - `referralCode`
+  - `referredBy`
+  - `referralRewardedAt`
+- 2FA:
+  - `twoFactorSecret`
+  - `isTwoFactorEnabled`
+- ban:
+  - `isBanned`
+  - `banReason`
+  - `bannedAt`
+  - `bannedBy`
+
+#### `Getlink`
+
+Luu lich su user tao link:
+
+- `userId`
+- `productId`
+- `fileUrl`
+- `sourceUrl`
+- `title`
+- `imageUrl`
+- `creditUsed`
+- `initialDownloadAt`
+- `redownloadCount`
+- `lastRedownloadAt`
+
+Co index theo user, product va createdAt de truy van lich su va admin.
+
+#### `ProductCache`
+
+Cache metadata/file link cua 3D66:
+
+- `productId`
+- `fileUrl`
+- `sourceUrl`
+- `title`
+- `imageUrl`
+- `creditCost`
+- `priceKnown`
+- `isPurchased`
+
+Cache giup tranh mua/lay lai link khong can thiet va tang toc preview.
+
+#### `Topup`
+
+Luu giao dich nap credit:
+
+- `userId`
+- `packageId`
+- `originalAmount`
+- `discountAmount`
+- `voucherCode`
+- `voucherDiscountPercent`
+- `voucherCreditBonus`
+- `amount`
+- `credit`
+- `type`: `manual`, `auto`, `fake`, `vnpay`, `vietqr`, `sepay`
+- `status`: `pending`, `approved`, `rejected`
+- `paymentCode`
+- `qrUrl`
+- `checkoutUrl`
+- `gatewayProvider`
+- thong tin ngan hang/gateway
+- `expiresAt`, `paidAt`, `canceledAt`
+- `gatewayTransactionId`
+- `gatewayPayload`
+
+Index quan trong:
+
+- Unique partial index `paymentCode` khi `status=pending` de tranh 2 don dang cho cung ma thanh toan.
+- Index theo user, status, paidAt va voucher.
+
+#### `TopupPackage`
+
+Goi nap credit:
+
+- `name`
+- `price`
+- `credit`
+- `salePercent`
+- `salePrice`
+- `maxTopupsPerUser`
+- `badge`
+- `features`
+- `isActive`
+- `sortOrder`
+
+Backend co default packages STARTER/BASIC/PRO/TEAM va co co che sync lai neu `SYNC_DEFAULT_TOPUP_PACKAGES` khong phai `false`.
+
+#### `Voucher`
+
+Ma voucher:
+
+- `code`
+- `description`
+- `creditBonus`
+- `discountPercent`
+- `usageLimit`
+- `perUserLimit`
+- `applicablePackageIds`
+- `usedCount`
+- `expireAt`
+
+Voucher co the giam gia goi nap hoac cong credit bonus khi topup duoc approve.
+
+#### `VoucherRedemption`
+
+Luu slot redeem voucher theo user:
+
+- `userId`
+- `voucherCode`
+- `topupId`
+- `slot`
+
+Index unique:
+
+- `topupId`
+- `userId + voucherCode + slot`
+
+Dung de tranh voucher bi dung qua `perUserLimit` trong race condition.
+
+#### `Cookie`
+
+Luu cookie 3D66 da ma hoa:
+
+- `value`
+- `label`
+- `isActive`
+- `status`: `active`, `warning`, `cooldown`, `disabled`
+- `failureCount`, `useCount`
+- `cooldownUntil`
+- `lastUsedAt`
+- `lastErrorAt`
+- `lastErrorMessage`
+- `lastTestAt`
+- `lastTestOk`
+- `lastTestMessage`
+
+Cookie can co cac key 3D66 bat buoc: `PHPSESSID`, `login_token`, `login_sign`.
+
+#### `SiteSetting`
+
+Luu text trang chu va tham so runtime:
+
+- Text landing page: hero, pricing, guide, CTA, footer.
+- Referral mode: `both`, `referrer_only`, `off`.
+- Tham so 3D66:
+  - concurrency getlink/preview/refresh
+  - paytype value
+  - request interval
+  - browser fallback flags
+  - timeout
+  - cookie failure/cooldown
+  - download concurrency limits
+  - redownload window/limit
+
+Khi settings duoc load/cap nhat, backend apply cac field runtime vao `process.env`.
+
+#### `Notification`
+
+Thong bao user:
+
+- `title`
+- `body`
+- `displayType`: `dropdown`, `fullscreen`
+- `imageUrl`
+- `actionLabel`, `actionUrl`
+- `targetType`: `all`, `users`
+- `userIds`
+- `readBy`
+- `createdBy`
+- `isActive`
+- `startsAt`, `expiresAt`
+
+#### `GuideArticle`
+
+Bai huong dan:
+
+- `title`
+- `slug`
+- `summary`
+- `coverImage`
+- `content`
+- `language`: `vi`, `en`
+- `isPublished`
+- `sortOrder`
+
+#### `Referral`
+
+Luu thuong gioi thieu:
+
+- `referrerId`
+- `referredUserId`
+- `referralCode`
+- `rewardCredit`
+- `referrerRewardCredit`
+- `referredRewardCredit`
+- `rewardMode`: `both`, `referrer_only`
+- `status`: `rewarded`, `ignored`
+- `rewardedAt`
+
+#### `AuditLog`
+
+Luu audit admin action:
+
+- `actor`, `actorEmail`
+- `action`
+- `target`, `targetId`
+- `details`
+- `ip`, `userAgent`
+- `statusCode`
+
+#### `SystemLog`
+
+Luu log he thong:
+
+- `type`: `getlink`, `download`, `cookie`, `payment`, `security`, `system`
+- `level`: `info`, `warn`, `error`
+- `message`
+- `userId`
+- `productId`
+- `historyId`
+- `status`
+- `ip`
+- `path`
+- `details`
+
+### 3.4 Middleware
+
+#### `jwtAuth`
+
+Dung JWT trong httpOnly cookies:
+
+- `accessToken`: 15 phut.
+- `refreshToken`: 7 ngay.
+- Token co `tokenType`, `id`, `is2FAVerified`, `fp`, `loginAt`.
+- Fingerprint dua tren User-Agent va tuy chon IP:
+  - `SESSION_FINGERPRINT_BIND_IP`
+  - `SESSION_FINGERPRINT_ENFORCE`
+- Neu access het han va refresh hop le, middleware rotate token.
+- Neu fingerprint thay doi:
+  - mac dinh rotate token moi.
+  - neu enforce bat, clear cookie va tra 401.
+
+#### `csrfProtection`
+
+Bao ve request ghi:
+
+- Safe methods: `GET`, `HEAD`, `OPTIONS`.
+- Skip paths:
+  - `/api/auth/csrf`
+  - `/api/payments/vietqr/webhook`
+  - `/api/payments/sepay/ipn`
+- Backend tao `csrfSecret` httpOnly cookie.
+- Frontend goi `/api/auth/csrf`, nhan HMAC token va gui header `x-csrf-token`.
+
+#### `requestGuard`
+
+Chan payload/query nguy hiem:
+
+- Key bat dau bang `$`.
+- Key co dau `.`.
+- `__proto__`, `prototype`, `constructor`.
+
+Muc tieu: giam rui ro prototype pollution va NoSQL injection.
+
+#### `createRateLimit`
+
+Rate limiter in-memory theo bucket:
+
+- Cau hinh per route bang `windowMs`, `max`, `keyPrefix`.
+- Default key la user id hoac IP.
+- `RATE_LIMIT_MAX_BUCKETS` gioi han so bucket.
+- Tra headers:
+  - `x-ratelimit-limit`
+  - `x-ratelimit-remaining`
+  - `x-ratelimit-reset`
+  - `retry-after` khi bi limit.
+
+#### `requireAuth`
+
+Yeu cau `req.user` va `req.isAuthenticated()` hop le.
+
+#### `adminOnly`
+
+Admin hop le khi:
+
+- `req.user.role === "admin"`
+- Email nam trong `ADMIN_EMAILS`
+- Neu admin da bat 2FA thi JWT session phai co `is2FAVerified`.
+
+#### `requireFreshLogin`
+
+Bao ve hanh dong nhay cam, hien dung cho setup/enable 2FA. Yeu cau `loginAt` trong JWT con moi hon gioi han, mac dinh 5 phut.
+
+#### `requireNotBanned`
+
+Chan user bi ban dung getlink.
+
+#### `webhookIpGuard`
+
+Bao ve VietQR webhook theo IP allowlist:
+
+- `VIETQR_WEBHOOK_IPS`
+- `VIETQR_WEBHOOK_REQUIRE_IP_ALLOWLIST`
+
+Neu allowlist rong va require flag false, webhook van cho qua nhung controller van check secret.
+
+#### `auditAdmin`
+
+Ghi `AuditLog` cho route admin write. Body duoc sanitize de redacted field nhay cam nhu password, secret, token, cookie, value.
+
+## 4. Backend routes va API
+
+### 4.1 Auth routes `/api/auth`
+
+| Method | Path | Middleware | Y nghia |
+|---|---|---|---|
+| GET | `/google` | auth rate limit | Bat dau Google OAuth, luu `returnTo` va referral code tam vao cookie |
+| GET | `/google/callback` | Passport | Tao JWT cookies va redirect ve frontend |
+| GET | `/csrf` | none | Cap CSRF token |
+| POST | `/logout` | CSRF | Clear auth cookies |
+| GET | `/user` | JWT optional | Lay user hien tai |
+| POST | `/2fa/generate` | auth, fresh login, rate limit | Tao TOTP secret va QR |
+| POST | `/2fa/enable` | auth, fresh login, rate limit | Verify TOTP va bat 2FA |
+| POST | `/2fa/verify` | auth, rate limit | Verify TOTP trong login session admin |
+
+Google OAuth callback:
+
+- Tao user moi neu email chua ton tai.
+- Role admin duoc gan neu email nam trong `ADMIN_EMAILS`.
+- Tao referral code neu chua co.
+- Neu user moi co `oauthReferralCode`, goi `awardReferralSignup`.
+
+### 4.2 Getlink routes `/api`
+
+| Method | Path | Middleware | Y nghia |
+|---|---|---|---|
+| POST | `/getlink/preview` | auth, not banned, rate limit user+IP | Lay metadata model: productId, title, image, creditCost |
+| POST | `/getlink/inspect` | auth, admin | Debug/inspect trang 3D66 |
+| POST | `/getlink` | auth, not banned, rate limit user+IP | Tao download link, tru credit |
+| GET | `/getlink/download/:id` | download rate limit | Proxy stream file 3D66 |
+| GET | `/getlink/preview-image/:id` | download rate limit | Proxy tai anh preview |
+| GET | `/getlink/history` | auth | Lich su getlink cua user |
+
+### 4.3 Topup routes `/api`
+
+| Method | Path | Middleware | Y nghia |
+|---|---|---|---|
+| GET | `/credit` | auth | Lay credit hien tai |
+| GET | `/topup/packages` | public | Lay goi nap active |
+| POST | `/topup` | auth, rate limit user+IP | Tao don nap SePay |
+| GET | `/topup/history` | auth | Lich su nap cua user |
+| GET | `/topup/:id/status` | auth, rate limit | Poll trang thai topup |
+| POST | `/topup/:id/cancel` | auth, rate limit | Huy don SePay pending |
+
+### 4.4 Payment routes `/api/payments`
+
+| Method | Path | Middleware | Y nghia |
+|---|---|---|---|
+| POST | `/vietqr/webhook` | IP guard, rate limit | Nhan webhook VietQR/transaction provider |
+| POST | `/sepay/ipn` | rate limit | Nhan IPN SePay |
+
+SePay IPN yeu cau:
+
+- Content-Type JSON.
+- Header `x-secret-key` bang `SEPAY_SECRET_KEY`.
+- `notification_type === "ORDER_PAID"`.
+- `transaction_status === "APPROVED"`.
+- `order_invoice_number` trung `paymentCode` topup pending.
+- Amount >= `topup.amount`.
+
+VietQR webhook yeu cau:
+
+- Content-Type JSON.
+- Secret trong `Authorization: Bearer`, `x-webhook-secret` hoac `x-vietqr-secret`.
+- Noi dung giao dich co ma dang `NAP...` hoac `3D66...`.
+- Amount >= topup amount.
+
+### 4.5 Voucher routes `/api`
+
+| Method | Path | Middleware | Y nghia |
+|---|---|---|---|
+| POST | `/voucher/apply` | auth, rate limit | Kiem tra voucher truoc khi tao topup |
+
+Endpoint nay khong leak `usageLimit`, `usedCount`, `_id`, `createdAt`.
+
+### 4.6 Settings routes `/api`
+
+| Method | Path | Middleware | Y nghia |
+|---|---|---|---|
+| GET | `/settings` | public | Lay homepage text va runtime settings |
+| POST | `/settings` | auth, admin | Cap nhat settings |
+
+### 4.7 Guide routes `/api`
+
+| Method | Path | Middleware | Y nghia |
+|---|---|---|---|
+| GET | `/guides` | public | Lay danh sach bai huong dan published theo ngon ngu |
+| GET | `/guides/:slug` | public | Lay mot bai published |
+
+### 4.8 Notification routes `/api`
+
+| Method | Path | Middleware | Y nghia |
+|---|---|---|---|
+| GET | `/notifications` | auth | Lay thong bao active cho user |
+| POST | `/notifications/:id/read` | auth | Danh dau da doc |
+
+### 4.9 Referral routes `/api`
+
+| Method | Path | Middleware | Y nghia |
+|---|---|---|---|
+| GET | `/referral/me` | auth | Link/referral summary cua user |
+| GET | `/referral/history` | auth | Lich su thuong referral |
+
+### 4.10 System route `/api`
+
+| Method | Path | Middleware | Y nghia |
+|---|---|---|---|
+| GET | `/system/3d66-status` | public | Check cookie pool va trang thai san sang tai 3D66 |
+
+### 4.11 Admin routes `/api/admin`
+
+Tat ca admin routes dung `requireAuth` va `adminOnly`.
+
+| Method | Path | Y nghia |
+|---|---|---|
+| GET | `/overview` | KPI tong quan, revenue chart, cookie/queue status |
+| GET | `/users` | Danh sach user co search/sort/pagination |
+| GET | `/users/:id/credit-history` | Lich su credit cua user |
+| POST | `/users/:id/ban` | Ban user |
+| POST | `/users/:id/unban` | Go ban user |
+| GET | `/referrals` | Danh sach referral admin |
+| GET | `/audit-logs` | Audit admin actions |
+| GET | `/system-logs` | System logs |
+| GET | `/getlinks` | Lich su getlink admin |
+| GET | `/topups` | Lich su topup admin |
+| POST | `/add-credit` | Cong credit thu cong |
+| POST | `/set-credit` | Set credit user |
+| GET | `/cookies` | Danh sach cookie 3D66 da mask |
+| GET | `/cookies/status` | Cookie pool status |
+| POST | `/cookie` | Luu cookie 3D66 moi |
+| POST | `/cookie/test` | Test cookie raw hoac moi nhat |
+| POST | `/cookies/:id/test` | Test cookie da luu |
+| DELETE | `/cookies/:id` | Xoa cookie |
+| POST | `/voucher` | Tao voucher |
+| GET | `/vouchers` | List voucher |
+| PUT | `/vouchers/:id` | Update voucher |
+| DELETE | `/vouchers/:id` | Delete voucher |
+| GET | `/notifications` | List notification admin |
+| POST | `/notifications` | Tao notification |
+| PUT | `/notifications/:id` | Update notification |
+| DELETE | `/notifications/:id` | Delete notification |
+| GET | `/topup-packages` | List goi nap |
+| POST | `/topup-packages` | Tao goi nap |
+| POST | `/topup-packages/reorder` | Doi thu tu goi nap |
+| PUT | `/topup-packages/:id` | Update goi nap |
+| DELETE | `/topup-packages/:id` | Delete goi nap |
+| GET | `/articles` | List bai guide admin |
+| POST | `/articles` | Tao bai guide |
+| PUT | `/articles/:id` | Update bai guide |
+| DELETE | `/articles/:id` | Delete bai guide |
+
+## 5. Luong nghiep vu chinh
+
+### 5.1 Dang nhap Google
+
+1. Frontend tao URL `/api/auth/google?returnTo=...&ref=...`.
+2. Backend validate `returnTo` va referral code, luu cookie tam.
+3. Passport redirect sang Google.
+4. Google callback tra profile ve backend.
+5. Backend tim user theo email:
+   - Chua co: tao user credit 0.
+   - Da co: update role/name/avatar.
+6. Role admin duoc gan theo `ADMIN_EMAILS`.
+7. Tao referral code neu chua co.
+8. User moi co referral cookie thi goi `awardReferralSignup`.
+9. Backend tao `accessToken` va `refreshToken` httpOnly cookie.
+10. Redirect ve frontend.
+
+### 5.2 Admin 2FA
+
+1. Admin vao `/admin`.
+2. `adminOnly` kiem tra role/email.
+3. Neu admin da bat 2FA nhung JWT chua verify, backend tra `403 code=2FA_REQUIRED`.
+4. Frontend hien modal nhap OTP.
+5. POST `/api/auth/2fa/verify` thanh cong thi backend generate token moi co `is2FAVerified=true`.
+
+Bat 2FA:
+
+1. Admin goi `/api/auth/2fa/generate`.
+2. Middleware yeu cau auth va fresh login.
+3. Backend tao TOTP secret, QR code, luu secret tam trong httpOnly cookie `temp2FASecret`.
+4. Admin scan QR va nhap OTP.
+5. POST `/api/auth/2fa/enable`.
+6. Backend verify OTP, luu `twoFactorSecret`, set `isTwoFactorEnabled=true`, log security event va rotate JWT verified.
+
+### 5.3 Preview model 3D66
+
+1. User nhap URL 3D66 tren `GetlinkBox`.
+2. Frontend POST `/api/getlink/preview`.
+3. Backend validate URL va extract product id.
+4. Neu `ProductCache` da co title/gia tin cay, tra cache.
+5. Neu chua co, backend chon cookie 3D66 bang `with3D66Cookie`.
+6. Request vao queue preview.
+7. `fetch3D66Preview` lay metadata:
+   - Neu `THREED66_MOCK !== "false"`: tra mock metadata.
+   - Neu production/real mode: uu tien download pop API, fetch HTML, parse dynamic fields, parse metadata, fallback Playwright khi can.
+8. Cache metadata vao `ProductCache`.
+9. Tra productId, title, imageUrl, creditCost.
+
+### 5.4 Tao getlink va tru credit
+
+1. Frontend goi POST `/api/getlink` voi `url` va `includePreviewImage`.
+2. Backend validate URL.
+3. Lay `productId`.
+4. Tao lock theo `userId:productId` trong Set de chan request dong thoi cung user/cung model.
+5. Tim lich su tai lai mien phi con hop le:
+   - Neu co, tra downloadUrl khong tru credit.
+6. Lay/refresh preview metadata de biet credit can tru.
+7. Check user credit.
+8. Resolve product cache:
+   - Neu cache fresh co `fileUrl`, dung cache.
+   - Neu chua co hoac het han, goi `fetchFrom3D66` de mua/lay file URL.
+   - Co per-product lock de tranh nhieu task refresh cung product.
+9. Kiem tra lai redownload sau khi cache xong de tranh race.
+10. Tru credit bang atomic update `credit >= amount`.
+11. Tao `Getlink` record voi `fileUrl`, `sourceUrl`, metadata va `creditUsed`.
+12. Tao download token HMAC va public URL:
+    - `/api/getlink/download/:id?t=...`
+    - neu user chon anh preview: `/api/getlink/preview-image/:id?t=...`
+13. Tra URL va credit moi cho frontend.
+
+### 5.5 Download file
+
+1. Browser/IDM mo `/api/getlink/download/:id?t=...`.
+2. Backend validate id va lay history.
+3. Cho phep neu:
+   - User dang dang nhap la owner; hoac
+   - Token HMAC hop le va chua het han.
+4. Ap dung gioi han dong thoi:
+   - `MAX_GLOBAL_DOWNLOADS`
+   - `MAX_DOWNLOADS_PER_USER`
+   - `MAX_DOWNLOADS_PER_IP`
+5. Kiem tra cua so tai lai:
+   - `GETLINK_REDOWNLOAD_DAYS`
+   - `GETLINK_REDOWNLOAD_LIMIT`
+6. Ho tro range request:
+   - Partial download gan nhau trong `PARTIAL_DOWNLOAD_SESSION_MS` khong tinh them luot moi.
+7. Neu `fileUrl` het han hoac upstream tra 401/403/404/410/419, backend refresh bang sourceUrl.
+8. Request file tu 3D66 voi cookie hop le.
+9. Kiem tra upstream co ve file stream, khong phai HTML/JSON.
+10. Proxy headers va stream body ve client.
+11. Neu loi truoc khi stream thanh cong, rollback `initialDownloadAt` hoac `redownloadCount` da reserve.
+
+### 5.6 Nap credit SePay
+
+1. Frontend load `/api/topup/packages`.
+2. User chon goi va co the apply voucher.
+3. Frontend POST `/api/topup`.
+4. Backend:
+   - Expire cac SePay topup pending da qua han.
+   - Validate body.
+   - Lay package.
+   - Check `maxTopupsPerUser`.
+   - Check voucher neu co.
+   - Tinh `originalAmount`, `discountAmount`, `amount`, `credit`.
+   - Tao topup pending voi `gatewayProvider=sepay`, `expiresAt=30 phut`.
+   - Tao `paymentCode` bang CSPRNG, retry neu collision.
+   - Tao SePay checkout fields va `checkoutUrl`.
+5. Frontend submit form an toi checkout URL cua SePay.
+6. Sau redirect success/error/cancel, frontend poll `/api/topup/:id/status` hoac cancel pending.
+7. SePay goi IPN `/api/payments/sepay/ipn`.
+8. Backend verify secret, status, amount va duplicate transaction.
+9. Goi `approvePendingTopup`.
+10. `approvePendingTopup` dung Mongo transaction neu co MongoDB:
+    - Check package limit.
+    - Claim voucher usage neu co.
+    - Update topup pending thanh approved.
+    - Cong credit user.
+    - Gui Telegram notification.
+
+### 5.7 Voucher
+
+Apply voucher:
+
+1. User nhap code.
+2. Frontend POST `/api/voucher/apply`.
+3. Backend validate code/package.
+4. Check voucher ton tai, chua het han, chua het luot.
+5. Check applicable packages.
+6. Check user da dung qua `perUserLimit` chua.
+7. Tra safe voucher payload cho frontend.
+
+Redeem voucher:
+
+1. Voucher chua tang `usedCount` khi apply.
+2. Khi topup duoc approve, `approvePendingTopup` goi `claimVoucherUsage`.
+3. Backend tang `usedCount` atomic voi dieu kien chua het luot.
+4. Tao `VoucherRedemption` theo slot.
+5. Neu loi hoac vuot limit, rollback counter.
+
+### 5.8 Referral
+
+1. User vao link `/?ref=CODE`.
+2. Khi bam Google login, frontend gan `ref` vao URL OAuth.
+3. Backend luu code vao `oauthReferralCode`.
+4. Khi Google callback tao user moi, backend goi `awardReferralSignup`.
+5. Service:
+   - Doc `referralMode` tu settings.
+   - Neu `off`, bo qua.
+   - Tim referrer theo code.
+   - Khong cho self-referral.
+   - Tao `Referral`.
+   - Cong credit referrer va co the cong credit user moi.
+   - Neu cap nhat credit that bai, rollback referral/user fields.
+   - Tao notification cho referrer va referred user neu co.
+
+### 5.9 Notification
+
+Admin tao notification:
+
+- Target all user hoac danh sach email.
+- Kieu dropdown hoac fullscreen.
+- Co optional image/action URL/start/expires.
+
+User frontend:
+
+- Navbar poll `/api/notifications` moi 60 giay.
+- Dropdown chi dem unread notification khong phai fullscreen.
+- Fullscreen notification hien overlay, co the dong trong session.
+- Mark read goi `/api/notifications/:id/read`.
+
+## 6. Tich hop 3D66
+
+### 6.1 Cookie pool
+
+`3d66CookiePool.js` quan ly cookie:
+
+- Cookie duoc lay tu Mongo, decrypt bang AES-GCM.
+- Cookie hop le can co:
+  - `PHPSESSID`
+  - `login_token`
+  - `login_sign`
+- Cookie bi loai neu:
+  - `isActive=false`
+  - `status=disabled`
+  - dang cooldown
+  - thieu key bat buoc
+- Thu tu uu tien:
+  - failure count thap hon
+  - last used cu hon
+  - updated moi hon
+- Moi request sang 3D66 duoc throttle bang `THREED66_REQUEST_INTERVAL_MS`.
+- Neu loi co the switch cookie, service danh dau cookie warning/cooldown.
+- Sau `THREED66_COOKIE_MAX_FAILURES`, cookie vao cooldown `THREED66_COOKIE_COOLDOWN_MS`.
+- Khi tat ca cookie loi, gui Telegram alert voi cooldown rieng.
+
+### 6.2 HTTP/API path
+
+`3d66Service.js` xu ly:
+
+- Validate URL chi cho phep `3d66.com` hoac subdomain.
+- Validate download URL chi cho phep host 3D66 va HTTPS.
+- Fetch model page voi headers giong browser.
+- Parse:
+  - title
+  - preview image
+  - price/credit cost
+  - dynamic fields: `llId`, `token`, `upTime`, `sign`, `actionId`, context fields
+- Goi download pop endpoint de enrich metadata.
+- Build payload cho download handle endpoint.
+- Extract file URL tu JSON response.
+- Request file stream voi cookie va referer.
+
+Mock mode:
+
+- Neu `THREED66_MOCK !== "false"`, preview va fetch tra mock data, khong goi 3D66 that.
+- `.env.example` hien dang dat `THREED66_MOCK=true`.
+
+### 6.3 Playwright browser fallback
+
+`3d66BrowserService.js` dung Playwright khi:
+
+- `THREED66_BROWSER_ALWAYS=true`
+- HTML/API path yeu cau fallback
+- Trang co challenge/script-only shell
+- Thieu dynamic fields can de download
+- Download handle loi va `THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK=true`
+
+Co guard SSRF:
+
+- Playwright chi navigate URL thuoc `3d66.com` hoac subdomain.
+
+Browser lifecycle:
+
+- Dung shared Chromium instance.
+- Cau hinh:
+  - `THREED66_BROWSER_HEADLESS`
+  - `THREED66_BROWSER_CONCURRENCY`
+  - `THREED66_BROWSER_QUEUE_MAX`
+  - `THREED66_BROWSER_MAX_TASKS`
+  - `THREED66_BROWSER_MAX_AGE_MS`
+  - `THREED66_BROWSER_BLOCK_ASSETS`
+  - `THREED66_BROWSER_WAIT_UNTIL`
+  - `THREED66_BROWSER_POST_COMMIT_WAIT_MS`
+  - `THREED66_BROWSER_WAIT_NETWORKIDLE`
+- Tu recycle browser theo so task hoac tuoi browser.
+- Co queue rieng cho task browser.
+
+## 7. Frontend
+
+### 7.1 Entry va routing
+
+Frontend la React/Vite app.
+
+Entry:
+
+- `frontend/index.html`
+- `frontend/src/App.jsx`
+
+Routing duoc lam thu cong bang `window.history.pushState` va `popstate`, khong dung React Router.
+
+Mapping path:
+
+- `/`: public landing/login page.
+- `/getlink`: dashboard getlink cho user.
+- `/topup`: nap credit.
+- `/history`: lich su tong hop.
+- `/invite`: referral.
+- `/admin`: admin panel.
+- `/guide`: public guide.
+- `/privacy` hoac `/chinh-sach-bao-mat`: privacy page.
+- `/terms` hoac `/dieu-khoan-su-dung`: terms page.
+
+Neu path khong khop, default ve `getlink`.
+
+### 7.2 API wrapper
+
+`frontend/src/api.js`:
+
+- `API_URL = VITE_API_URL || http://localhost:5000`.
+- `api(path, options)`:
+  - Luon gui `credentials: include`.
+  - Mac dinh `Content-Type: application/json`.
+  - Voi request ghi, tu lay CSRF token tu `/api/auth/csrf`.
+  - Neu backend tra `403 Invalid CSRF token`, clear cache token va retry mot lan.
+  - Throw `Error(data.message || "Request failed")` neu response khong OK.
+
+Download file khong di qua `api()` ma mo URL truc tiep vi link co HMAC token rieng.
+
+### 7.3 `App.jsx`
+
+Quan ly state chinh:
+
+- `user`
+- `page`
+- `path`
+- `language`
+- loading
+- ban overlay
+
+Luon goi `/api/auth/user` luc load de lay user.
+
+Admin path:
+
+- Hien Navbar admin.
+- Neu chua dang nhap: Login admin mode.
+- Neu admin da bat 2FA va session chua verify: hien modal OTP.
+- Neu role admin: hien Admin page.
+- Neu user thuong: hien admin required.
+
+Public home:
+
+- Hien landing/login.
+
+Authenticated user pages:
+
+- `Home`
+- `Topup`
+- `History`
+- `Invite`
+
+Public pages:
+
+- `Guide`
+- `Privacy`
+- `Terms`
+
+### 7.4 Navbar
+
+`Navbar.jsx`:
+
+- Brand `3DiPL`.
+- Tabs user:
+  - getlink
+  - topup
+  - invite
+  - history
+  - guide
+- Account menu:
+  - credit
+  - admin link neu role admin
+  - language toggle `VI/EN`
+  - logout
+- Notification menu:
+  - poll `/api/notifications` moi 60 giay
+  - unread badge
+  - fullscreen overlay
+  - favicon badge qua `faviconProgress.js`
+- Login button:
+  - Tao Google OAuth URL kem `returnTo` va `ref` neu URL co query referral.
+
+### 7.5 Landing/Login page
+
+`Login.jsx` vua la landing page public, vua la admin login panel khi `adminMode=true`.
+
+Public mode:
+
+- Load `/api/settings` de lay text trang chu.
+- Load `/api/topup/packages` de hien pricing.
+- Load `/api/system/3d66-status`.
+- Load `/api/guides?language=...`.
+- Neu user da login, load `/api/referral/me`.
+- Demo getlink input:
+  - Kiem tra link co `3d66.com`.
+  - Neu user chua login, redirect OAuth.
+  - Neu user da login, vao `/getlink?url=...`.
+- Pricing cards link den `/topup` hoac OAuth.
+- Guide preview tren homepage.
+- CTA va footer.
+
+Admin mode:
+
+- Hien panel dang nhap Google vao `/admin`.
+
+### 7.6 Home/Getlink
+
+`Home.jsx`:
+
+- Hien thong tin account va credit.
+- Hien banner huong dan DNS.
+- Mount `GetlinkBox`.
+- Load lich su getlink va topup.
+- Hien lich su tai gan day va topup gan day.
+- Neu user bi ban, truyen `disabledReason` vao `GetlinkBox`.
+
+`GetlinkBox.jsx`:
+
+- Load `/api/system/3d66-status`.
+- User paste/nhap link 3D66.
+- Step 1: POST `/api/getlink/preview`.
+- Hien model info va gia credit.
+- Step 2: POST `/api/getlink`.
+- Cap nhat credit user.
+- Hien download link va copy button.
+- Neu chon download preview image, auto trigger tai anh preview.
+- Co progress bar va dynamic favicon progress.
+
+### 7.7 Topup
+
+`Topup.jsx`:
+
+- Load packages.
+- User chon package.
+- User apply voucher qua `/api/voucher/apply`.
+- Tinh gia sau sale/voucher va credit sau bonus.
+- POST `/api/topup` tao topup SePay.
+- Luu pending topup id trong `sessionStorage`.
+- Submit hidden form toi SePay checkout.
+- Sau redirect `?payment=success/error/cancel`:
+  - Poll `/api/topup/:id/status`.
+  - Hoac cancel pending neu error/cancel.
+- Neu dang o trang va co pending payment, poll status moi 5 giay.
+
+### 7.8 History
+
+`History.jsx` load song song:
+
+- `/api/getlink/history`
+- `/api/topup/history`
+- `/api/referral/history`
+
+Gop thanh mot timeline, filter:
+
+- all
+- download
+- topup
+- referral
+
+Download history hien redownload link neu con hop le.
+
+### 7.9 Invite
+
+`Invite.jsx`:
+
+- Load `/api/referral/me`.
+- Load `/api/referral/history`.
+- Hien referral code, referral URL, so luot moi, credit da nhan.
+- Copy/share referral URL bang Clipboard/Web Share API.
+- Neu referral mode `off`, hien empty state.
+
+### 7.10 Guide
+
+`Guide.jsx`:
+
+- Load `/api/guides?language=...`.
+- Chon bai theo sidebar.
+- Hien coverImage, summary, content.
+
+`GuideContent.jsx` render content text voi syntax nhe:
+
+- `# Heading`
+- `## Subheading`
+- `- list item`
+- `![alt](https://image)`
+- `@[youtube](https://youtu.be/...)` hoac youtube.com URL, embed qua youtube-nocookie.
+
+### 7.11 Admin panel
+
+`Admin.jsx` la man hinh lon gom nhieu section.
+
+Data load ban dau:
+
+- `/api/admin/overview`
+- `/api/admin/topup-packages`
+- `/api/admin/vouchers`
+- `/api/admin/cookies`
+- `/api/admin/cookies/status`
+- `/api/admin/system-logs`
+- `/api/admin/articles`
+- `/api/admin/notifications`
+- `/api/admin/referrals`
+- `/api/settings`
+
+Section chinh:
+
+- Overview:
+  - Revenue today/week/total.
+  - Getlink today/week.
+  - New users.
+  - Cookie health.
+  - Queue status.
+  - Pending payments.
+  - Product cache.
+  - Revenue chart theo day/month/year.
+  - Recent getlinks/topups/top packages.
+- Data:
+  - Logs.
+  - Users.
+  - Referrals.
+  - Getlink history.
+  - Topup history.
+- Packages:
+  - Create/update/delete/reorder packages.
+- Vouchers:
+  - Create/update/delete vouchers.
+  - Applicable packages.
+- Notifications:
+  - Create/update/delete dropdown/fullscreen notification.
+- Homepage text:
+  - Edit hero, pricing, referral text, guide text, CTA, footer.
+- Articles:
+  - Uses `AdminArticles.jsx` CRUD guide articles.
+- 3D66 settings:
+  - Runtime concurrency, paytype, request interval, Playwright mode, timeout, cookie cooldown, redownload limits.
+- Cookie:
+  - Save/test/delete 3D66 cookies.
+  - View cookie pool health.
+- Security:
+  - 2FA setup/enable for admin.
+
+Data tables co search/pagination:
+
+- Users: search, sort, page.
+- Getlinks: search, page.
+- Topups: search, status, page.
+
+Admin write actions duoc backend audit qua `auditAdmin`.
+
+### 7.12 Static assets va SEO
+
+`frontend/public`:
+
+- `3dipl-d.jpg`
+- `3dipl-icon.svg`
+- favicons
+- `robots.txt`
+- `sitemap.xml`
+
+`robots.txt`:
+
+- Allow all.
+- Disallow `/admin`.
+- Disallow `/api/`.
+- Sitemap tai `https://3dipl.org/sitemap.xml`.
+
+`index.html` co meta SEO/OpenGraph/Twitter cho domain `https://3dipl.org/`.
+
+## 8. Bao mat va chong abuse
+
+### 8.1 Auth/session
+
+- JWT nam trong httpOnly cookie.
+- Access token ngan han, refresh token dai han.
+- Fingerprint theo User-Agent va tuy chon IP.
+- Admin access phu thuoc role va `ADMIN_EMAILS`, khong chi dua vao DB role.
+- Admin 2FA bat buoc neu user da enable.
+- 2FA setup yeu cau fresh login.
+
+### 8.2 CSRF
+
+- Tat ca request ghi qua frontend can CSRF token.
+- Token la HMAC cua httpOnly `csrfSecret`.
+- Webhook payment duoc skip CSRF nhung co secret/IP guard rieng.
+
+### 8.3 Input validation
+
+- `requestGuard` chan key nguy hiem trong body/query.
+- Controllers dung `rejectUnknownKeys` de khong chap nhan body thua field.
+- `isSafeId` phu thuoc MongoDB hay memory DB.
+- Voucher code regex: `^[A-Z0-9_-]{3,32}$`.
+- Referral code regex: `^[A-Z0-9]{6,24}$`.
+- URL 3D66 chi cho host 3d66.com/subdomain.
+- Playwright fallback co SSRF guard rieng.
+- Notification/action/guide image URL duoc normalize.
+- Guide content chi render syntax rieng, khong render HTML raw.
+
+### 8.4 Credit safety
+
+- Tru credit bang atomic query `{ credit: { $gte: amount } }`.
+- Add credit admin co max per action va max stored credit.
+- Manual credit tao Topup type `manual` de co lich su.
+- Getlink co lock per user/product de tranh double charge.
+- Product cache co lock per product de tranh duplicate 3D66 purchase/fetch.
+
+### 8.5 Payment safety
+
+- Pending `paymentCode` co unique partial index.
+- Payment code dung CSPRNG.
+- SePay IPN verify `x-secret-key`.
+- VietQR webhook verify secret va optional IP allowlist.
+- Duplicate transaction check theo `gatewayTransactionId`.
+- Amount webhook phai >= topup amount.
+- Voucher redeem chi claim khi topup approved.
+- `approvePendingTopup` dung transaction MongoDB neu khong phai memory DB.
+
+### 8.6 Download safety
+
+- Download URL co token HMAC TTL mac dinh 15 phut.
+- Owner dang nhap co the download khong can token.
+- IDM/browser khong can cookie auth neu token hop le.
+- Download chi trong redownload window.
+- Gioi han download dong thoi global/user/IP.
+- Backend khong expose `fileUrl` trong history response.
+- Proxy stream set `cache-control: no-store`.
+
+### 8.7 Logging va alert
+
+- Pino logger redact cookie/authorization/secret/value.
+- `SystemLog` loai bo `cookie`, `cookieValue`, `fileUrl`, `headers` khoi details.
+- Telegram alert cho:
+  - topup approved
+  - server error 5xx
+  - 3D66 cookies unavailable
+- Telegram co dedupe window.
+
+## 9. Cau hinh moi truong quan trong
+
+### 9.1 Server
+
+- `PORT`
+- `NODE_ENV`
+- `CLIENT_URL`
+- `PUBLIC_BASE_URL`
+- `TRUST_PROXY`
+- `JSON_BODY_LIMIT`
+- `LOG_LEVEL`
+
+Production can:
+
+- `CLIENT_URL` la HTTPS URL.
+- `PUBLIC_BASE_URL` la HTTPS URL.
+- Tat ca secret co do dai toi thieu 32 ky tu.
+
+### 9.2 Database
+
+- `MONGO_URI`
+- `MONGO_SERVER_SELECTION_TIMEOUT_MS`
+- `MONGO_MAX_POOL_SIZE`
+- `MONGO_MIN_POOL_SIZE`
+- `ALLOW_MEMORY_DB`
+
+### 9.3 Auth
+
+- `JWT_SECRET`
+- `CSRF_HMAC_SECRET`
+- `COOKIE_SIGNATURE_SECRET`
+- `DOWNLOAD_TOKEN_SECRET`
+- `COOKIE_ENCRYPTION_KEY`
+- `ADMIN_EMAILS`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `SESSION_FINGERPRINT_BIND_IP`
+- `SESSION_FINGERPRINT_ENFORCE`
+- 2FA rate limits:
+  - `TWO_FA_TOTP_WINDOW`
+  - `TWO_FA_VERIFY_RATE_WINDOW_MS`
+  - `TWO_FA_VERIFY_RATE_LIMIT`
+  - `TWO_FA_SETUP_RATE_WINDOW_MS`
+  - `TWO_FA_SETUP_RATE_LIMIT`
+
+### 9.4 3D66
+
+- `THREED66_MOCK`
+- `THREED66_DOWNLOAD_ENDPOINT`
+- `THREED66_DOWNLOAD_POP_ENDPOINT` (duoc code doc neu co)
+- `THREED66_ORIGIN`
+- `THREED66_TIMEOUT_MS`
+- `THREED66_REQUEST_INTERVAL_MS`
+- `THREED66_GETLINK_CONCURRENCY`
+- `THREED66_PREVIEW_CONCURRENCY`
+- `THREED66_REFRESH_CONCURRENCY`
+- `THREED66_GETLINK_QUEUE_MAX`
+- `THREED66_PREVIEW_QUEUE_MAX`
+- `THREED66_REFRESH_QUEUE_MAX`
+- `THREED66_PAYTYPE_VALUE`
+- `THREED66_SITE_CONTEXTS`
+- `THREED66_DOWNLOAD_SEND_ORIGIN`
+- `THREED66_COOKIE_MAX_FAILURES`
+- `THREED66_COOKIE_COOLDOWN_MS`
+
+Browser fallback:
+
+- `THREED66_BROWSER_HEADLESS`
+- `THREED66_BROWSER_CONCURRENCY`
+- `THREED66_BROWSER_QUEUE_MAX`
+- `THREED66_BROWSER_MAX_TASKS`
+- `THREED66_BROWSER_MAX_AGE_MS`
+- `THREED66_BROWSER_ALWAYS`
+- `THREED66_BROWSER_BLOCK_ASSETS`
+- `THREED66_BROWSER_WAIT_UNTIL`
+- `THREED66_BROWSER_POST_COMMIT_WAIT_MS`
+- `THREED66_BROWSER_WAIT_NETWORKIDLE`
+- `THREED66_DISABLE_BROWSER_PAGE_FALLBACK`
+- `THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK`
+- `THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK`
+
+### 9.5 Credit/pricing/download
+
+- `VND_PER_CNY`
+- `WEB_CREDIT_PER_CNY`
+- `REFERRAL_REWARD_CREDIT`
+- `GETLINK_REDOWNLOAD_DAYS`
+- `GETLINK_REDOWNLOAD_LIMIT`
+- `MAX_DOWNLOADS_PER_USER`
+- `MAX_DOWNLOADS_PER_IP`
+- `MAX_GLOBAL_DOWNLOADS`
+- `MIN_TOPUP_AMOUNT`
+- `MAX_MANUAL_CREDIT`
+- `MAX_STORED_CREDIT`
+- `MAX_VOUCHER_DISCOUNT_PERCENT`
+
+### 9.6 Payment
+
+VietQR:
+
+- `VIETQR_BANK_ID`
+- `VIETQR_ACCOUNT_NO`
+- `VIETQR_ACCOUNT_NAME`
+- `VIETQR_TEMPLATE`
+- `VIETQR_IMAGE_HOST`
+- `VIETQR_IMAGE_EXT`
+- `VIETQR_WEBHOOK_SECRET`
+- `VIETQR_WEBHOOK_IPS`
+- `VIETQR_WEBHOOK_REQUIRE_IP_ALLOWLIST`
+
+SePay:
+
+- `SEPAY_ENABLED`
+- `SEPAY_ENV`
+- `SEPAY_MERCHANT_ID`
+- `SEPAY_SECRET_KEY`
+- `SEPAY_PAYMENT_METHOD`
+- `SEPAY_SUCCESS_URL`
+- `SEPAY_ERROR_URL`
+- `SEPAY_CANCEL_URL`
+
+### 9.7 Telegram
+
+- `TELEGRAM_NOTIFICATIONS_ENABLED`
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+- `TELEGRAM_COOKIE_ALERT_COOLDOWN_MS`
+- `TELEGRAM_DEDUP_WINDOW_MS`
+
+## 10. Van hanh local
+
+Cai dependencies:
+
+```bash
+npm run install:all
+```
+
+Chay dev backend + frontend:
+
+```bash
+npm run dev
+```
+
+Chay backend:
+
+```bash
+npm start
+```
+
+Backend mac dinh:
+
+```text
+http://localhost:5000
+```
+
+Frontend Vite mac dinh:
+
+```text
+http://localhost:5173
+```
+
+Build frontend:
+
+```bash
+npm run build --prefix frontend
+```
+
+Production can dam bao:
+
+- MongoDB dang chay va `MONGO_URI` dung.
+- Google OAuth callback tro ve `/api/auth/google/callback`.
+- `CLIENT_URL` va `PUBLIC_BASE_URL` la HTTPS.
+- SePay dashboard cau hinh IPN URL: `https://<api-domain>/api/payments/sepay/ipn`.
+- Neu dung Playwright fallback, can cai browser Chromium cho Playwright.
+
+## 11. Cac diem can luu y
+
+### 11.1 Encoding text
+
+Nhieu chuoi tieng Viet trong source hien thi dang mojibake khi doc qua terminal. App co the van hien dung neu file/browser encoding khop, nhung khi sua text can kiem tra lai encoding UTF-8 de tranh nhan doi loi.
+
+### 11.2 Session legacy
+
+`sessionIntegrity.js` ton tai nhung khong duoc mount trong `server.js`. He thong hien tai dung JWT cookie thay vi Express session.
+
+### 11.3 VietQR code con ton tai nhung luong topup mac dinh la SePay
+
+Code co `vietqr.js` va `/api/payments/vietqr/webhook`, nhung `createTopup` hien set `type = "sepay"` va tao SePay checkout. VietQR co ve la luong cu/du phong.
+
+### 11.4 `dist/` la build output
+
+`frontend/dist` co asset build san, nhung `.gitignore` ignore `dist/`. Khi phan tich source, nen uu tien `frontend/src` va `frontend/public`.
+
+### 11.5 Rate limit va queue la in-memory
+
+Rate limiter, 3D66 request throttle, product locks, user/product locks va download counters deu nam trong memory cua process Node. Neu scale nhieu instance, can dua cac lock/rate limit/counter quan trong sang Redis hoac mot shared store.
+
+### 11.6 Download token phu thuoc `PUBLIC_BASE_URL`
+
+Neu production khong set `PUBLIC_BASE_URL`, backend fallback tu `req.protocol + Host`. Code da ghi chu day chi nen dung dev vi co rui ro Host header injection.
+
+## 12. Tom tat theo module file
+
+### Backend config
+
+- `src/config/db.js`: ket noi Mongo, memory fallback.
+- `src/config/memoryStore.js`: adapter model in-memory.
+- `src/config/secrets.js`: lay secret voi fallback dev.
+
+### Backend controllers
+
+- `authController.js`: Google OAuth, logout, current user, CSRF alias, TOTP 2FA.
+- `getlinkController.js`: preview, inspect, create getlink, download proxy, preview image download, history.
+- `topupController.js`: packages, create SePay topup, history/status/cancel.
+- `paymentController.js`: VietQR webhook va SePay IPN.
+- `voucherController.js`: apply voucher.
+- `referralController.js`: referral summary va history.
+- `settingsController.js`: site settings va runtime 3D66 settings.
+- `systemController.js`: public 3D66 cookie/system status.
+- `guideController.js`: public/admin guide articles.
+- `notificationController.js`: user/admin notifications.
+- `adminController.js`: dashboard, user/credit, cookie, voucher, package, logs, topups/getlinks.
+
+### Backend utils
+
+- `3d66Service.js`: HTTP/API integration voi 3D66, parse metadata va download URL.
+- `3d66BrowserService.js`: Playwright fallback.
+- `3d66CookiePool.js`: cookie selection, status, failure/cooldown.
+- `3d66Queue.js`: concurrency queues.
+- `asyncLimiter.js`: queue primitive.
+- `creditService.js`: atomic add/deduct credit.
+- `downloadToken.js`: HMAC token cho download.
+- `parse3d66.js`: extract product id tu URL.
+- `pricingService.js`: credit conversion/normalization.
+- `secretBox.js`: AES-256-GCM encrypt/decrypt cookie values.
+- `validators.js`: id, voucher, number, string, HTML stripping.
+- `sepay.js`: SePay SDK fields/checkout URL.
+- `vietqr.js`: VietQR config va payment code.
+- `topupApprovalService.js`: approve topup trong transaction, voucher redeem, add credit.
+- `topupExpiryService.js`: expire pending SePay topups.
+- `referralService.js`: referral code/reward/summary.
+- `logger.js`: Pino logger, security/audit event.
+- `systemLog.js`: persistent system log.
+- `telegramNotifier.js`: Telegram notifications.
+
+### Frontend
+
+- `api.js`: API wrapper va CSRF.
+- `App.jsx`: routing/state chinh.
+- `Navbar.jsx`: tabs, auth links, notifications, language.
+- `Login.jsx`: landing page va admin login.
+- `Home.jsx`: user dashboard/getlink history.
+- `GetlinkBox.jsx`: preview/getlink UX.
+- `Topup.jsx`: package selection, voucher, SePay checkout polling.
+- `History.jsx`: unified history.
+- `Invite.jsx`: referral page.
+- `Guide.jsx` va `GuideContent.jsx`: public guide rendering.
+- `Admin.jsx`: admin dashboard va management sections.
+- `AdminArticles.jsx`: guide article CRUD.
+- `faviconProgress.js`: favicon progress/badge.
+- `styles.css`: toan bo visual style.
