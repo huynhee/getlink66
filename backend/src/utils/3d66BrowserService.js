@@ -854,6 +854,37 @@ export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue) {
       };
     }
 
+    if (result?.type === "response") {
+      try {
+        const { json, fileUrl } = await parseDownloadHandleResponse(result.response);
+        return {
+          fileUrl,
+          productId: metadata.dynamicFields?.llId || metadata.productId,
+          sourceUrl: page.url(),
+          title: metadata.title,
+          imageUrl: metadata.imageUrl,
+          creditCost: metadata.creditCost || 1,
+          metadata,
+          formatOptions: [],
+          pageUrl: page.url(),
+          cookieValue: serializeCookies(browserCookies) || cookieValue,
+          response: json,
+          usedBrowser: true,
+          terminalType: "response",
+        };
+      } catch (error) {
+        return {
+          metadata,
+          formatOptions: [],
+          pageUrl: page.url(),
+          cookieValue: serializeCookies(browserCookies) || cookieValue,
+          usedBrowser: true,
+          terminalType: "response",
+          responseError: error.message,
+        };
+      }
+    }
+
     return {
       metadata,
       formatOptions: [],

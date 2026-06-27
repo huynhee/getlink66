@@ -705,6 +705,7 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
   let metadata = fallbackMetadata || {};
   let formatOptions = cacheDownloadFormatOptions(cache);
   let targetCache = cache;
+  let browserInspection = null;
 
   if (formatOptions.length <= 1) {
     const inspection = await with3D66Cookie((cookieValue) =>
@@ -714,7 +715,7 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
     formatOptions = sanitizeDownloadFormatOptions(metadata.formatOptions);
 
     if (formatOptions.length <= 1) {
-      const browserInspection = await with3D66Cookie((cookieValue) =>
+      browserInspection = await with3D66Cookie((cookieValue) =>
         queue3D66Getlink(() => inspect3D66DownloadFormats(url, cookieValue)),
       );
       if (browserInspection?.metadata) {
@@ -728,7 +729,32 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
       );
     }
 
-    if (formatOptions.length > 1) {
+    if (browserInspection?.fileUrl) {
+      targetCache = await upsertProductCache(
+        {
+          productId: browserInspection.productId || metadata.productId || productId,
+          fileUrl: browserInspection.fileUrl,
+          sourceUrl: browserInspection.sourceUrl || browserInspection.pageUrl || inspection?.pageUrl || url,
+          title: browserInspection.title || metadata.title || cache?.title || fallbackMetadata.title,
+          imageUrl: browserInspection.imageUrl || metadata.imageUrl || cache?.imageUrl || fallbackMetadata.imageUrl,
+          creditCost: normalizeDownloadCreditCost(
+            browserInspection.creditCost || metadata.creditCost || cache?.creditCost || fallbackMetadata.creditCost,
+            1,
+          ),
+          priceKnown: Boolean(
+            browserInspection.priceKnown ||
+              metadata.priceKnown ||
+              cache?.priceKnown ||
+              fallbackMetadata.priceKnown ||
+              Number(browserInspection.creditCost || metadata.creditCost || cache?.creditCost || fallbackMetadata.creditCost || 0) > 1,
+          ),
+          formatOptions,
+          formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
+          isPurchased: true,
+        },
+        cache,
+      );
+    } else if (formatOptions.length > 1) {
       targetCache = await upsertProductCache(
         {
           productId: metadata.productId || productId,
@@ -1190,6 +1216,15 @@ export async function getLink(req, res, next) {
       cachePreview = await upsertProductCache(previewPayload, cachePreview);
     }
 
+    const preFormatCreditCheck = await hasEnoughCredit(req.user._id, expectedCreditCost);
+    if (!preFormatCreditCheck.ok) {
+      return res.status(402).json({
+        message: `Không đủ credit. Cần ${expectedCreditCost} credit.`,
+        creditRequired: expectedCreditCost,
+        credit: preFormatCreditCheck.credit,
+      });
+    }
+
     if (!downloadFormat) {
       const formatSelection = await resolveDownloadFormatSelection(
         url,
@@ -1204,6 +1239,11 @@ export async function getLink(req, res, next) {
         },
       );
       const formatOptions = sanitizeDownloadFormatOptions(formatSelection.formatOptions);
+      if (formatSelection.cache) {
+        cachePreview = formatSelection.cache;
+        effectiveProductId = cachePreview.productId || effectiveProductId;
+        logProductId = effectiveProductId;
+      }
       if (formatOptions.length > 1) {
         const metadata = formatSelection.metadata || {};
         const selectionCache = formatSelection.cache || cachePreview;
