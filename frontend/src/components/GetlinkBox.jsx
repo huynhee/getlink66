@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, ArrowDownToLine, Copy, Check, ClipboardPaste, Search, ImageDown, X } from "lucide-react";
 import { api } from "../api.js";
 import { translations } from "../i18n.js";
@@ -203,7 +204,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
           productId: data.productId || preview?.productId,
           creditCost: data.creditCost || preview?.creditCost
         });
-        finishProgress(language === "vi" ? "Chon dinh dang file" : "Choose file format");
+        finishProgress(language === "vi" ? "Chọn định dạng file" : "Choose file format");
         return;
       }
       setPendingFormatSelection(null);
@@ -421,12 +422,12 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
           )}
         </div>
       )}
-      {pendingFormatSelection && pendingFormatOptions.length > 1 && (
+      {pendingFormatSelection && pendingFormatOptions.length > 1 && typeof document !== "undefined" && createPortal((
         <div className="redownloadFormatOverlay" role="dialog" aria-modal="true">
           <div className="redownloadFormatCard">
             <div className="redownloadFormatHeader">
               <div>
-                <span>{language === "vi" ? "Chon dinh dang file" : "Choose file format"}</span>
+                <span>{language === "vi" ? "Chọn định dạng file" : "Choose file format"}</span>
                 <strong>{pendingFormatSelection.title || pendingFormatSelection.productId}</strong>
               </div>
               <button
@@ -441,7 +442,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
 
             <div className="formatSelectorHeader">
               <span>{t.fileFormat}</span>
-              <span>{language === "vi" ? "Dung luong nen" : "Package size"}</span>
+              <span>{language === "vi" ? "Dung lượng nén" : "Package size"}</span>
             </div>
             <div className="formatOptionList">
               {pendingFormatOptions.map((option) => {
@@ -474,16 +475,16 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
                 onClick={() => setPendingFormatSelection(null)}
                 disabled={confirming}
               >
-                {language === "vi" ? "Huy" : "Cancel"}
+                {language === "vi" ? "Hủy" : "Cancel"}
               </button>
               <button type="button" onClick={() => confirmDownload(selectedFormat)} disabled={confirming || !selectedFormat}>
                 {confirming ? <Loader2 size={16} className="spin" /> : <ArrowDownToLine size={16} />}
-                {language === "vi" ? "Xac nhan tai" : "Confirm download"}
+                {language === "vi" ? "Xác nhận tải" : "Confirm download"}
               </button>
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </section>
   );
 }

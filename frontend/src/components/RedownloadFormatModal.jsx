@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, Download, Loader2, X } from "lucide-react";
 import { api } from "../api.js";
 
@@ -36,7 +37,7 @@ export default function RedownloadFormatModal({ item, language = "vi", onClose, 
     [options, selectedKey],
   );
 
-  if (!item || !options.length) return null;
+  if (!item || !options.length || typeof document === "undefined") return null;
 
   async function submit() {
     if (!selectedFormat || loading) return;
@@ -57,7 +58,7 @@ export default function RedownloadFormatModal({ item, language = "vi", onClose, 
     }
   }
 
-  return (
+  return createPortal((
     <div className="redownloadFormatOverlay" role="dialog" aria-modal="true">
       <div className="redownloadFormatCard">
         <div className="redownloadFormatHeader">
@@ -112,5 +113,5 @@ export default function RedownloadFormatModal({ item, language = "vi", onClose, 
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }
