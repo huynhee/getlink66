@@ -199,6 +199,49 @@ function cacheMatchesModelUrl(cache = {}, sourceUrl = "") {
   return false;
 }
 
+function downloadFormatKey(format = {}) {
+  const key = String(format?.key || "").trim();
+  if (key) return key;
+  const fileFormat = String(format?.fileFormat || format?.file_format || "").trim();
+  const formatVersion = String(format?.formatVersion || format?.format_version || "").trim();
+  const rendererType = String(format?.rendererType || format?.renderer_type || "").trim();
+  if (!fileFormat && !formatVersion && !rendererType) return "";
+  return [fileFormat, formatVersion, rendererType].join("|");
+}
+
+function normalizeDownloadFormatRequest(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const key = String(value.key || "").trim();
+  const fileFormat = String(value.fileFormat || value.file_format || "").trim();
+  const formatVersion = String(value.formatVersion || value.format_version || "").trim();
+  const rendererType = String(value.rendererType || value.renderer_type || "").trim();
+  const label = String(value.label || "").trim().slice(0, 120);
+  const rendererLabel = String(value.rendererLabel || value.renderer_label || "").trim().slice(0, 80);
+  const size = String(value.size || "").trim().slice(0, 60);
+  const normalized = { key, fileFormat, formatVersion, rendererType, rendererLabel, label, size };
+  return downloadFormatKey(normalized) ? normalized : null;
+}
+
+function cacheMatchesDownloadFormat(cache = {}, requestedFormat = null) {
+  const requestedKey = downloadFormatKey(requestedFormat);
+  if (!requestedKey) return true;
+  return String(cache?.downloadFormatKey || "") === requestedKey;
+}
+
+function cacheFormatPatch(selectedFormat = null) {
+  if (!selectedFormat) return {};
+  const key = downloadFormatKey(selectedFormat);
+  return {
+    downloadFormatKey: key,
+    fileFormat: String(selectedFormat.fileFormat || ""),
+    formatVersion: String(selectedFormat.formatVersion || ""),
+    rendererType: String(selectedFormat.rendererType || ""),
+    rendererLabel: String(selectedFormat.rendererLabel || ""),
+    formatLabel: String(selectedFormat.label || ""),
+    formatSize: String(selectedFormat.size || ""),
+  };
+}
+
 function historyMatchesProductIdentity(history, productIds = [], sourceUrl = "") {
   const candidateIds = new Set(uniqueProductIds(productIds));
   if (candidateIds.has(String(history?.productId || ""))) return true;
@@ -211,8 +254,24 @@ function historyMatchesProductIdentity(history, productIds = [], sourceUrl = "")
   return Boolean(currentKey && historyKey && currentKey === historyKey);
 }
 
+function historyMatchesDownloadFormat(history = {}, requestedFormat = null) {
+  const requestedKey = downloadFormatKey(requestedFormat);
+  if (!requestedKey) return true;
+  return String(history?.downloadFormat?.key || "") === requestedKey;
+}
+
+function findDownloadFormatOption(formatOptions = [], requestedFormat = null) {
+  const requestedKey = downloadFormatKey(requestedFormat);
+  if (!requestedKey) return null;
+  return (
+    (Array.isArray(formatOptions) ? formatOptions : []).find(
+      (option) => downloadFormatKey(option) === requestedKey,
+    ) || null
+  );
+}
+
 function readUrlRequest(req, res) {
-  const unknownKey = rejectUnknownKeys(req.body, ["url", "includePreviewImage"]);
+  const unknownKey = rejectUnknownKeys(req.body, ["url", "includePreviewImage", "downloadFormat"]);
   if (unknownKey) {
     res.status(400).json({ message: "Invalid getlink request" });
     return null;
@@ -248,7 +307,7 @@ function isClientDownloadAbort(error, signal) {
   );
 }
 
-async function findActiveRedownload(userId, productIds, sourceUrl = "") {
+async function findActiveRedownload(userId, productIds, sourceUrl = "", requestedFormat = null) {
   const candidates = uniqueProductIds([
     productIds,
     productIdsFromModelUrl(sourceUrl),
@@ -263,7 +322,8 @@ async function findActiveRedownload(userId, productIds, sourceUrl = "") {
     histories.find(
       (history) =>
         canRedownload(history) &&
-        historyMatchesProductIdentity(history, candidates, sourceUrl),
+        historyMatchesProductIdentity(history, candidates, sourceUrl) &&
+        historyMatchesDownloadFormat(history, requestedFormat),
     ) || null
   );
 }
@@ -308,8 +368,11 @@ function publicPreviewImageUrl(req, historyId) {
 function publicHistoryItem(req, item) {
   const doc = item.toObject ? item.toObject() : item;
   const allowed = canRedownload(doc);
+  const formatOptions = Array.isArray(doc.formatOptions) ? doc.formatOptions : [];
   return {
     ...doc,
+    formatOptions,
+    hasDownloadFormats: formatOptions.length > 0,
     fileUrl: undefined,
     downloadUrl: allowed ? publicDownloadUrl(req, doc._id) : null,
     previewImageDownloadUrl:
@@ -339,6 +402,7 @@ function sendFreeRedownload(req, res, history, options = {}) {
     productId: history.productId,
     title: history.title,
     imageUrl: history.imageUrl,
+    selectedFormat: history.downloadFormat || null,
     credit: req.user.credit,
     cached: true,
     creditUsed: 0,
@@ -621,9 +685,15 @@ function looksLikeDownloadFile(upstream) {
   );
 }
 
-async function resolveProductCache(productId, url) {
+async function resolveProductCache(productId, url, downloadFormat = null) {
   const existing = await ProductCache.findOne({ productId });
-  if (isCacheFresh(existing) && cacheMatchesModelUrl(existing, url)) return existing;
+  if (
+    isCacheFresh(existing) &&
+    cacheMatchesModelUrl(existing, url) &&
+    cacheMatchesDownloadFormat(existing, downloadFormat)
+  ) {
+    return existing;
+  }
 
   if (!productLocks.has(productId)) {
     if (productLocks.size >= MAX_PRODUCT_LOCKS) {
@@ -635,10 +705,16 @@ async function resolveProductCache(productId, url) {
       productId,
       (async () => {
         const cached = await ProductCache.findOne({ productId });
-        if (isCacheFresh(cached) && cacheMatchesModelUrl(cached, url)) return cached;
+        if (
+          isCacheFresh(cached) &&
+          cacheMatchesModelUrl(cached, url) &&
+          cacheMatchesDownloadFormat(cached, downloadFormat)
+        ) {
+          return cached;
+        }
 
         const download = await with3D66Cookie((cookieValue) =>
-          queue3D66Getlink(() => fetchFrom3D66(url, cookieValue)),
+          queue3D66Getlink(() => fetchFrom3D66(url, cookieValue, { downloadFormat })),
         );
         const fileUrl =
           typeof download === "string" ? download : download.fileUrl;
@@ -649,34 +725,43 @@ async function resolveProductCache(productId, url) {
           cacheProductId !== productId
             ? await ProductCache.findOne({ productId: cacheProductId })
             : null;
-        if (isCacheFresh(resolvedCache) && cacheMatchesModelUrl(resolvedCache, url)) return resolvedCache;
+        if (
+          isCacheFresh(resolvedCache) &&
+          cacheMatchesModelUrl(resolvedCache, url) &&
+          cacheMatchesDownloadFormat(resolvedCache, downloadFormat)
+        ) {
+          return resolvedCache;
+        }
 
-        const staleCache = [resolvedCache, cached, existing].find((cache) =>
+        const metadataCache = [resolvedCache, cached, existing].find((cache) =>
           cacheMatchesModelUrl(cache, url),
         );
+        const writableCache = resolvedCache || cached || existing;
         const creditCost = normalizeDownloadCreditCost(
-          metadata.creditCost || staleCache?.creditCost,
+          metadata.creditCost || metadataCache?.creditCost,
           1,
         );
         const priceKnown = Boolean(
           metadata.priceKnown ||
-            staleCache?.priceKnown ||
-            Number(metadata.creditCost || staleCache?.creditCost || 0) > 1,
+            metadataCache?.priceKnown ||
+            Number(metadata.creditCost || metadataCache?.creditCost || 0) > 1,
         );
         const cachePayload = {
           productId: cacheProductId,
           fileUrl,
           sourceUrl: metadata.sourceUrl || url,
-          title: metadata.title || staleCache?.title,
-          imageUrl: metadata.imageUrl || staleCache?.imageUrl,
+          title: metadata.title || metadataCache?.title,
+          imageUrl: metadata.imageUrl || metadataCache?.imageUrl,
           creditCost,
           priceKnown,
+          formatOptions: metadata.formatOptions || metadataCache?.formatOptions || [],
+          ...cacheFormatPatch(metadata.selectedFormat),
           isPurchased: true,
         };
 
-        if (staleCache?._id) {
+        if (writableCache?._id) {
           const updated = await ProductCache.findByIdAndUpdate(
-            staleCache._id,
+            writableCache._id,
             cachePayload,
             { new: true },
           );
@@ -687,7 +772,11 @@ async function resolveProductCache(productId, url) {
           return await ProductCache.create(cachePayload);
         } catch (error) {
           if (error.code !== 11000) throw error;
-          return ProductCache.findOne({ productId: cacheProductId });
+          return ProductCache.findOneAndUpdate(
+            { productId: cacheProductId },
+            { $set: cachePayload },
+            { new: true },
+          );
         }
       })().finally(() => {
         productLocks.delete(productId);
@@ -724,6 +813,7 @@ export async function previewGetlink(req, res, next) {
         title: cache.title || cache.productId,
         imageUrl: cache.imageUrl || "",
         creditCost: normalizeDownloadCreditCost(cache.creditCost, 1),
+        formatOptions: Array.isArray(cache.formatOptions) ? cache.formatOptions : [],
         cached: isCacheFresh(cache),
       });
     }
@@ -749,6 +839,7 @@ export async function previewGetlink(req, res, next) {
       imageUrl: preview.imageUrl,
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
       priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
+      formatOptions: preview.formatOptions || [],
     };
     await upsertProductCache(previewPayload, cache);
     res.json({
@@ -756,6 +847,8 @@ export async function previewGetlink(req, res, next) {
       title: preview.title,
       imageUrl: preview.imageUrl,
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
+      formatOptions: preview.formatOptions || [],
+      selectedFormat: preview.selectedFormat || null,
       cached: false,
       metadataIncomplete: isFallbackMetadata(
         preview,
@@ -812,6 +905,7 @@ export async function getLink(req, res, next) {
     const url = readUrlRequest(req, res);
     if (!url) return;
     const includePreviewImage = normalizeBooleanFlag(req.body?.includePreviewImage);
+    const downloadFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
 
     const productId = extractProductId(url);
     let effectiveProductId = productId;
@@ -839,6 +933,7 @@ export async function getLink(req, res, next) {
       req.user._id,
       productId,
       url,
+      downloadFormat,
     );
     if (activeRedownload) {
       return sendFreeRedownload(req, res, activeRedownload, {
@@ -882,6 +977,7 @@ export async function getLink(req, res, next) {
         imageUrl: preview.imageUrl,
         creditCost: expectedCreditCost,
         priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
+        formatOptions: preview.formatOptions || [],
       };
       effectiveProductId = previewPayload.productId;
       logProductId = effectiveProductId;
@@ -891,6 +987,7 @@ export async function getLink(req, res, next) {
           req.user._id,
           [productId, previewPayload.productId],
           url,
+          downloadFormat,
         );
         if (previewRedownload) {
           return sendFreeRedownload(req, res, previewRedownload, {
@@ -911,17 +1008,21 @@ export async function getLink(req, res, next) {
       });
     }
 
-    const hadCache = Boolean(
-      await ProductCache.exists({
+    const cachedBeforeDownload = await ProductCache.findOne({
         productId: effectiveProductId,
         fileUrl: { $ne: "" },
-      }),
+      });
+    const hadCache = Boolean(
+      cachedBeforeDownload &&
+        cacheMatchesModelUrl(cachedBeforeDownload, url) &&
+        cacheMatchesDownloadFormat(cachedBeforeDownload, downloadFormat),
     );
-    const cache = await resolveProductCache(effectiveProductId, url);
+    const cache = await resolveProductCache(effectiveProductId, url, downloadFormat);
     const cachedRedownload = await findActiveRedownload(
       req.user._id,
       [productId, effectiveProductId, cache.productId],
       url,
+      downloadFormat,
     );
     if (cachedRedownload) {
       return sendFreeRedownload(req, res, cachedRedownload, {
@@ -960,6 +1061,15 @@ export async function getLink(req, res, next) {
       title: cache.title,
       imageUrl: cache.imageUrl,
       creditUsed: creditCost,
+      downloadFormat: {
+        key: cache.downloadFormatKey || "",
+        label: cache.formatLabel || "",
+        fileFormat: cache.fileFormat || "",
+        formatVersion: cache.formatVersion || "",
+        rendererType: cache.rendererType || "",
+        rendererLabel: cache.rendererLabel || "",
+        size: cache.formatSize || "",
+      },
     });
     const downloadUrl = publicDownloadUrl(req, history._id);
     const previewImageDownloadUrl =
@@ -974,6 +1084,15 @@ export async function getLink(req, res, next) {
       productId: cache.productId,
       title: cache.title,
       imageUrl: cache.imageUrl,
+      selectedFormat: {
+        key: cache.downloadFormatKey || "",
+        label: cache.formatLabel || "",
+        fileFormat: cache.fileFormat || "",
+        formatVersion: cache.formatVersion || "",
+        rendererType: cache.rendererType || "",
+        rendererLabel: cache.rendererLabel || "",
+        size: cache.formatSize || "",
+      },
       credit: user.credit,
       cached: hadCache,
       creditUsed: creditCost,
@@ -998,11 +1117,14 @@ export async function getLink(req, res, next) {
   }
 }
 
-async function refreshHistoryDownload(history, cookieValue) {
+async function refreshHistoryDownload(history, cookieValue, downloadFormatOverride = null) {
   if (!history.sourceUrl) return history;
+  const requestedFormat = downloadFormatOverride || history.downloadFormat || null;
 
   const download = await queue3D66Refresh(() =>
-    fetchFrom3D66(history.sourceUrl, cookieValue),
+    fetchFrom3D66(history.sourceUrl, cookieValue, {
+      downloadFormat: requestedFormat,
+    }),
   );
   const updatedFields = {
     fileUrl: typeof download === "string" ? download : download.fileUrl,
@@ -1014,6 +1136,10 @@ async function refreshHistoryDownload(history, cookieValue) {
     imageUrl:
       (typeof download === "string" ? "" : download.imageUrl) ||
       history.imageUrl,
+    downloadFormat:
+      (typeof download === "string" ? null : download.selectedFormat) ||
+      requestedFormat ||
+      history.downloadFormat,
     creditUsed: history.creditUsed,
   };
 
@@ -1024,11 +1150,111 @@ async function refreshHistoryDownload(history, cookieValue) {
       sourceUrl: updatedFields.sourceUrl,
       title: updatedFields.title,
       imageUrl: updatedFields.imageUrl,
+      ...cacheFormatPatch(updatedFields.downloadFormat),
       isPurchased: true,
     });
   }
 
   return Getlink.findByIdAndUpdate(history._id, updatedFields, { new: true });
+}
+
+export async function prepareRedownload(req, res, next) {
+  try {
+    const unknownKey = rejectUnknownKeys(req.body || {}, ["downloadFormat"]);
+    if (unknownKey) {
+      return res.status(400).json({ message: "Invalid redownload request" });
+    }
+    if (!isSafeId(req.params.id)) {
+      return res.status(400).json({ message: "Invalid download id" });
+    }
+
+    const history = await Getlink.findById(req.params.id);
+    if (!history) {
+      return res.status(404).json({ message: "Download not found" });
+    }
+    if (String(history.userId) !== String(req.user._id)) {
+      securityEvent("DOWNLOAD_HISTORY_FORBIDDEN", {
+        userId: String(req.user._id),
+        ownerId: String(history.userId),
+        historyId: String(history._id),
+        ip: req.ip,
+      });
+      return res.status(403).json({ message: "Download not found" });
+    }
+    if (!isWithinRedownloadWindow(history)) {
+      return res.status(403).json({
+        message: `Free redownload expired after ${redownloadWindowDays()} days. Please getlink this model again.`,
+        canRedownload: false,
+        redownloadExpiresAt: redownloadExpiresAt(history),
+      });
+    }
+    if (!canRedownload(history)) {
+      return res.status(429).json({
+        message: `Download limit reached. You can download this file ${redownloadLimit()} times within ${redownloadWindowDays()} days.`,
+        canRedownload: false,
+        redownloadLimit: redownloadLimit(),
+      });
+    }
+
+    const cache = await ProductCache.findOne({ productId: history.productId }).lean();
+    const formatOptions = Array.isArray(cache?.formatOptions) ? cache.formatOptions : [];
+    const requestedFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
+    let selectedFormat = requestedFormat;
+
+    if (requestedFormat) {
+      if (!formatOptions.length) {
+        return res.status(400).json({ message: "Model này không có lựa chọn định dạng file." });
+      }
+      selectedFormat = findDownloadFormatOption(formatOptions, requestedFormat);
+      if (!selectedFormat) {
+        return res.status(400).json({ message: "Định dạng file đã chọn không còn khả dụng trên 3D66." });
+      }
+    }
+
+    const currentFormatKey = downloadFormatKey(history.downloadFormat);
+    const selectedFormatKey = downloadFormatKey(selectedFormat);
+    const activeHistory =
+      selectedFormatKey && selectedFormatKey !== currentFormatKey
+        ? await with3D66Cookie((cookieValue) =>
+            refreshHistoryDownload(history, cookieValue, selectedFormat),
+          )
+        : history;
+    const downloadUrl = publicDownloadUrl(req, activeHistory._id);
+
+    return res.json({
+      url: downloadUrl,
+      downloadUrl,
+      previewImageDownloadUrl: activeHistory.imageUrl ? publicPreviewImageUrl(req, activeHistory._id) : null,
+      productId: activeHistory.productId,
+      title: activeHistory.title,
+      imageUrl: activeHistory.imageUrl,
+      selectedFormat: activeHistory.downloadFormat || selectedFormat || null,
+      formatOptions,
+      canRedownload: true,
+      redownloadExpiresAt: redownloadExpiresAt(activeHistory),
+      redownloadCount: Number(activeHistory.redownloadCount || 0),
+      redownloadLimit: redownloadLimit(),
+      redownloadRemaining: Math.max(
+        0,
+        redownloadLimit() - Number(activeHistory.redownloadCount || 0),
+      ),
+    });
+  } catch (error) {
+    if (shouldWriteSystemError(error)) {
+      await writeSystemLog({
+        type: "download",
+        level: "error",
+        message: error.message,
+        userId: req.user?._id,
+        historyId: req.params?.id,
+        ip: req.ip,
+        path: req.path,
+        status: error.status,
+        details: { stage: "prepare-redownload" },
+      });
+    }
+    next(error);
+  }
 }
 
 async function openDownloadResponse(history, req, signal) {
@@ -1507,8 +1733,23 @@ export async function getlinkHistory(req, res, next) {
       .sort({ createdAt: -1 })
       .limit(50)
       .lean();
+    const productIds = [
+      ...new Set(history.map((item) => String(item.productId || "")).filter(Boolean)),
+    ];
+    const caches = productIds.length
+      ? await ProductCache.find({ productId: { $in: productIds } })
+          .select("productId formatOptions")
+          .lean()
+      : [];
+    const cacheByProductId = new Map(caches.map((cache) => [String(cache.productId), cache]));
     res.json({
-      history: history.map((item) => publicHistoryItem(req, item)),
+      history: history.map((item) =>
+        publicHistoryItem(req, {
+          ...item,
+          formatOptions:
+            cacheByProductId.get(String(item.productId || ""))?.formatOptions || [],
+        }),
+      ),
     });
   } catch (error) {
     next(error);

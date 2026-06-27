@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import GetlinkBox from "../components/GetlinkBox.jsx";
+import RedownloadFormatModal from "../components/RedownloadFormatModal.jsx";
 import { Coins, FileDown, Download, LifeBuoy, Lock, ArrowRightLeft } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
@@ -29,6 +30,7 @@ export default function Home({ user, onUserChange, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const [getlinkHistory, setGetlinkHistory] = useState([]);
   const [topupHistory, setTopupHistory] = useState([]);
+  const [redownloadItem, setRedownloadItem] = useState(null);
   const initialUrl = new URLSearchParams(window.location.search).get("url") || "";
   const redownloadText = language === "vi" ? "Tải lại" : "Redownload";
 
@@ -46,6 +48,32 @@ export default function Home({ user, onUserChange, language = "vi" }) {
       return `${compactRemainingLabel(item.redownloadExpiresAt, language)} - ${redownloadUsageLabel(item, language)}`;
     }
     return `${language === "vi" ? "hết hạn" : "expired"} - ${redownloadUsageLabel(item)}`;
+  }
+
+  function handleRedownloadPrepared(historyId, data) {
+    setGetlinkHistory((items) =>
+      items.map((item) =>
+        item._id === historyId
+          ? {
+              ...item,
+              downloadUrl: data.downloadUrl || item.downloadUrl,
+              previewImageDownloadUrl: data.previewImageDownloadUrl || item.previewImageDownloadUrl,
+              downloadFormat: data.selectedFormat || item.downloadFormat,
+              formatOptions: data.formatOptions || item.formatOptions,
+              redownloadCount: data.redownloadCount ?? item.redownloadCount,
+              redownloadRemaining: data.redownloadRemaining ?? item.redownloadRemaining,
+              redownloadExpiresAt: data.redownloadExpiresAt || item.redownloadExpiresAt,
+            }
+          : item,
+      ),
+    );
+  }
+
+  function handleRedownloadClick(event, item) {
+    if (item.canRedownload && Array.isArray(item.formatOptions) && item.formatOptions.length > 1) {
+      event.preventDefault();
+      setRedownloadItem(item);
+    }
   }
 
   useEffect(() => {
@@ -109,7 +137,13 @@ export default function Home({ user, onUserChange, language = "vi" }) {
                 <span style={{ color: "var(--text-primary)" }}>{item.productId}</span>
                 <div className="historyDownloadCell">
                   {item.canRedownload ? (
-                    <a href={item.downloadUrl || buildApiUrl(`/api/getlink/download/${item._id}`)} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                    <a
+                      href={item.downloadUrl || buildApiUrl(`/api/getlink/download/${item._id}`)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontSize: 12 }}
+                      onClick={(event) => handleRedownloadClick(event, item)}
+                    >
                       {redownloadText}
                       <Download size={10} style={{ marginLeft: 4, verticalAlign: "-1px" }} />
                     </a>
@@ -164,6 +198,12 @@ export default function Home({ user, onUserChange, language = "vi" }) {
           </div>
         </section>
       </div>
+      <RedownloadFormatModal
+        item={redownloadItem}
+        language={language}
+        onClose={() => setRedownloadItem(null)}
+        onDone={handleRedownloadPrepared}
+      />
     </div>
   );
 }

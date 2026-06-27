@@ -17,6 +17,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   const [preview, setPreview] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [includePreviewImage, setIncludePreviewImage] = useState(false);
+  const [selectedFormatKey, setSelectedFormatKey] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -28,6 +29,13 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   const resetTimerRef = useRef(null);
   const cursorText = url || t.getlinkPlaceholder;
   const cursorX = Math.min(cursorText.length * 8.4, 520);
+  const formatOptions = Array.isArray(preview?.formatOptions) ? preview.formatOptions : [];
+  const selectedFormat =
+    formatOptions.find((option) => option.key === selectedFormatKey) ||
+    formatOptions.find((option) => option.isDefault) ||
+    formatOptions[0] ||
+    preview?.selectedFormat ||
+    null;
 
   useEffect(() => {
     if (initialUrl) setUrl(initialUrl);
@@ -111,6 +119,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     setPreviewImageDownloadUrl("");
     setPreview(null);
     setPreviewUrl("");
+    setSelectedFormatKey("");
     if (disabledReason) {
       setError(disabledReason);
       return;
@@ -128,6 +137,9 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
         body: JSON.stringify({ url })
       });
       setPreview(data);
+      const nextFormats = Array.isArray(data.formatOptions) ? data.formatOptions : [];
+      const defaultFormat = nextFormats.find((option) => option.isDefault) || nextFormats[0] || data.selectedFormat;
+      setSelectedFormatKey(defaultFormat?.key || "");
       setPreviewUrl(url);
       finishProgress(language === "vi" ? "Đã lấy thông tin model" : "Model info loaded");
     } catch (err) {
@@ -154,7 +166,18 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
         method: "POST",
         body: JSON.stringify({
           url: previewUrl || url,
-          includePreviewImage
+          includePreviewImage,
+          downloadFormat: selectedFormat
+            ? {
+                key: selectedFormat.key,
+                fileFormat: selectedFormat.fileFormat,
+                formatVersion: selectedFormat.formatVersion,
+                rendererType: selectedFormat.rendererType,
+                rendererLabel: selectedFormat.rendererLabel,
+                label: selectedFormat.label,
+                size: selectedFormat.size
+              }
+            : undefined
         })
       });
       setResult(data.downloadUrl || data.url);
@@ -164,7 +187,9 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
         title: data.title || preview?.title,
         imageUrl: data.imageUrl || preview?.imageUrl,
         productId: data.productId || preview?.productId,
-        creditCost: data.creditUsed || preview?.creditCost
+        creditCost: data.creditUsed || preview?.creditCost,
+        selectedFormat: data.selectedFormat || selectedFormat,
+        formatOptions: preview?.formatOptions || []
       });
       onCreditChange(data.credit);
       if (includePreviewImage && data.previewImageDownloadUrl) {
@@ -209,6 +234,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
 
       setUrl(pasted);
       setPreview(null);
+      setSelectedFormatKey("");
       setResult("");
       setPreviewImageDownloadUrl("");
       setProgress(0);
@@ -233,6 +259,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               onChange={(event) => {
                 setUrl(event.target.value);
                 setPreview(null);
+                setSelectedFormatKey("");
                 setResult("");
                 setPreviewImageDownloadUrl("");
                 setProgress(0);
@@ -294,10 +321,36 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               <p className="muted" style={{ margin: 0 }}>{t.price}: {preview.creditCost || 1} credit</p>
             </div>
           </div>
+          {formatOptions.length > 0 && (
+            <div className="formatSelector" aria-label={t.fileFormat}>
+              <span>{t.fileFormat}</span>
+              <div className="formatOptionGrid">
+                {formatOptions.map((option) => {
+                  const active = option.key === selectedFormat?.key;
+                  const versionText = [
+                    option.formatVersion ? `${t.formatVersion}: ${option.formatVersion}` : "",
+                    option.rendererLabel ? `${t.rendererType}: ${option.rendererLabel}` : ""
+                  ].filter(Boolean).join(" / ");
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={`formatOption ${active ? "active" : ""}`}
+                      onClick={() => setSelectedFormatKey(option.key)}
+                    >
+                      <strong>{option.label || option.fileFormat || t.fileFormat}</strong>
+                      {versionText && <small>{versionText}</small>}
+                      {option.size && <em>{option.size}</em>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {!result && (
             <button type="button" onClick={confirmDownload} disabled={confirming || Boolean(disabledReason)} style={{ marginTop: 14 }}>
               {confirming ? <Loader2 size={18} className="spin" /> : <ArrowDownToLine size={18} />}
-              {confirming ? t.processing : `${t.confirmDownload} - ${preview.creditCost || 1} credit`}
+              {confirming ? t.processing : `${t.confirmDownload}${selectedFormat?.label ? ` ${selectedFormat.label}` : ""} - ${preview.creditCost || 1} credit`}
             </button>
           )}
         </div>

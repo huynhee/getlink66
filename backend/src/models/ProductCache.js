@@ -10,6 +10,14 @@ const productCacheSchema = new mongoose.Schema(
     imageUrl: String,
     creditCost: { type: Number, default: 1 },
     priceKnown: { type: Boolean, default: false },
+    formatOptions: { type: Array, default: [] },
+    downloadFormatKey: { type: String, default: "" },
+    fileFormat: { type: String, default: "" },
+    formatVersion: { type: String, default: "" },
+    rendererType: { type: String, default: "" },
+    rendererLabel: { type: String, default: "" },
+    formatLabel: { type: String, default: "" },
+    formatSize: { type: String, default: "" },
     isPurchased: { type: Boolean, default: true }
   },
   { timestamps: true }

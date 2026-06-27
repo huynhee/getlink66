@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowRightLeft, Download, FileDown, Gift, LifeBuoy, Lock } from "lucide-react";
+import RedownloadFormatModal from "../components/RedownloadFormatModal.jsx";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
 
@@ -42,6 +43,7 @@ export default function History({ language = "vi" }) {
   const [referralHistory, setReferralHistory] = useState([]);
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [redownloadItem, setRedownloadItem] = useState(null);
   const redownloadText = language === "vi" ? "Tải lại" : "Redownload";
 
   useEffect(() => {
@@ -89,6 +91,32 @@ export default function History({ language = "vi" }) {
     return `${language === "vi" ? "hết hạn" : "expired"} - ${redownloadUsageLabel(item, language)}`;
   }
 
+  function handleRedownloadPrepared(historyId, data) {
+    setDownloadHistory((items) =>
+      items.map((item) =>
+        item._id === historyId
+          ? {
+              ...item,
+              downloadUrl: data.downloadUrl || item.downloadUrl,
+              previewImageDownloadUrl: data.previewImageDownloadUrl || item.previewImageDownloadUrl,
+              downloadFormat: data.selectedFormat || item.downloadFormat,
+              formatOptions: data.formatOptions || item.formatOptions,
+              redownloadCount: data.redownloadCount ?? item.redownloadCount,
+              redownloadRemaining: data.redownloadRemaining ?? item.redownloadRemaining,
+              redownloadExpiresAt: data.redownloadExpiresAt || item.redownloadExpiresAt,
+            }
+          : item,
+      ),
+    );
+  }
+
+  function handleRedownloadClick(event, item) {
+    if (item.canRedownload && Array.isArray(item.formatOptions) && item.formatOptions.length > 1) {
+      event.preventDefault();
+      setRedownloadItem(item);
+    }
+  }
+
   function renderDownloadRow(item) {
     return (
       <>
@@ -98,7 +126,12 @@ export default function History({ language = "vi" }) {
         </span>
         <div className="historyDownloadCell">
           {item.canRedownload ? (
-            <a href={item.downloadUrl || buildApiUrl(`/api/getlink/download/${item._id}`)} target="_blank" rel="noreferrer">
+            <a
+              href={item.downloadUrl || buildApiUrl(`/api/getlink/download/${item._id}`)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(event) => handleRedownloadClick(event, item)}
+            >
               {redownloadText}
               <Download size={12} style={{ marginLeft: 6, verticalAlign: "-1px", opacity: 0.6 }} />
             </a>
@@ -215,6 +248,12 @@ export default function History({ language = "vi" }) {
           </p>
         )}
       </div>
+      <RedownloadFormatModal
+        item={redownloadItem}
+        language={language}
+        onClose={() => setRedownloadItem(null)}
+        onDone={handleRedownloadPrepared}
+      />
     </section>
   );
 }

@@ -5,6 +5,7 @@ import {
   getLink,
   getlinkHistory,
   inspectGetlink,
+  prepareRedownload,
   previewGetlink,
 } from "../controllers/getlinkController.js";
 import { adminOnly } from "../middleware/adminOnly.js";
@@ -32,6 +33,7 @@ const getlinkIpLimit = createRateLimit({
 router.post("/getlink/preview", requireAuth, requireNotBanned, previewLimit, previewIpLimit, previewGetlink);
 router.post("/getlink/inspect", requireAuth, adminOnly, previewLimit, inspectGetlink);
 router.post("/getlink", requireAuth, requireNotBanned, getlinkLimit, getlinkIpLimit, getLink);
+router.post("/getlink/redownload/:id", requireAuth, requireNotBanned, getlinkLimit, getlinkIpLimit, prepareRedownload);
 router.get("/getlink/download/:id", downloadLimit, downloadGetlink);
 router.get("/getlink/preview-image/:id", downloadLimit, downloadGetlinkPreviewImage);
 router.get("/getlink/history", requireAuth, getlinkHistory);

@@ -3379,6 +3379,117 @@ label {
   font-size: 12px;
 }
 
+.formatSelector {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.formatOptionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.formatOption {
+  display: grid;
+  gap: 4px;
+  min-height: 70px;
+  padding: 10px;
+  border: 1px solid rgba(0, 229, 255, 0.18);
+  background: rgba(0, 229, 255, 0.035);
+  color: var(--text-secondary);
+  text-align: left;
+  font-family: var(--font-mono);
+  clip-path: var(--cyber-cut-sm);
+}
+
+.formatOption:hover:not(:disabled),
+.formatOption.active {
+  border-color: var(--neon-green);
+  background: rgba(0, 255, 136, 0.08);
+  color: var(--text-primary);
+  box-shadow: 0 0 18px rgba(0, 255, 136, 0.12);
+}
+
+.formatOption strong {
+  color: inherit;
+  font-size: 13px;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.formatOption small,
+.formatOption em {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.redownloadFormatOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background:
+    linear-gradient(rgba(0, 0, 0, 0.74), rgba(0, 0, 0, 0.84)),
+    var(--grid-bg);
+}
+
+.redownloadFormatCard {
+  width: min(620px, 100%);
+  max-height: min(84vh, 720px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid rgba(0, 255, 136, 0.38);
+  background:
+    linear-gradient(180deg, rgba(10, 12, 20, 0.98), rgba(3, 8, 8, 0.98)),
+    var(--scanlines);
+  box-shadow: 0 0 36px rgba(0, 255, 136, 0.16);
+  clip-path: var(--cyber-cut);
+}
+
+.redownloadFormatHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.redownloadFormatHeader span {
+  display: block;
+  color: var(--neon-cyan);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.redownloadFormatHeader strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.redownloadFormatActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.redownloadFormatActions .ghostButton {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
 .inputWrapper {
   display: flex;
   gap: 0;

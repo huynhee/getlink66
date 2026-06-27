@@ -267,6 +267,7 @@ function applyFieldsToContext(context, fields = {}) {
   if (fields.accessSourcePage) context.accessSourcePage = String(fields.accessSourcePage);
   if (fields.formatVersion) context.formatVersion = String(fields.formatVersion);
   if (fields.rendererType) context.rendererType = String(fields.rendererType);
+  if (fields.selectedFormat) context.selectedFormat = fields.selectedFormat;
   return context;
 }
 
@@ -375,6 +376,268 @@ function cleanTitle(value = "") {
     .trim();
 
   return title;
+}
+
+function normalizeFormatText(value = "") {
+  return decodeHtml(String(value || "").replace(/\s+/g, " ").trim());
+}
+
+function downloadFormatKey(format = {}) {
+  const key = String(format.key || "").trim();
+  if (key) return key;
+  const fileFormat = String(format.fileFormat || format.file_format || "").trim();
+  const formatVersion = String(format.formatVersion || format.format_version || "").trim();
+  const rendererType = String(format.rendererType || format.renderer_type || "").trim();
+  return [fileFormat, formatVersion, rendererType].join("|");
+}
+
+function formatNameFromCode(fileFormat = "") {
+  const code = String(fileFormat || "");
+  return {
+    1: "3Dmax",
+    3: "OBJ",
+    14: "FBX",
+  }[code] || (code ? `Format ${code}` : "Default");
+}
+
+function rendererNameFromCode(rendererType = "") {
+  const code = String(rendererType || "");
+  return {
+    0: "",
+    3: "Corona",
+    4: "Vray",
+  }[code] || (code ? `Renderer ${code}` : "");
+}
+
+function normalizeDownloadFormatOption(option = {}, index = 0, isDefault = false) {
+  const keyParts = String(option.key || "").split("|");
+  const fileFormat = String(
+    option.fileFormat ??
+      option.file_format ??
+      option.fileFormatCode ??
+      option.file_format_code ??
+      option.format ??
+      option.formatCode ??
+      option.format_code ??
+      keyParts[0] ??
+      "",
+  ).trim();
+  const formatVersion = String(
+    option.formatVersion ?? option.format_version ?? option.version ?? keyParts[1] ?? "",
+  ).trim();
+  const rendererType = String(
+    option.rendererType ??
+      option.renderer_type ??
+      option.renderType ??
+      option.render_type ??
+      option.rendererCode ??
+      option.renderer_code ??
+      keyParts[2] ??
+      "",
+  ).trim();
+  if (!fileFormat && !formatVersion && !rendererType) return null;
+
+  const baseLabel = normalizeFormatText(
+    option.label ||
+      option.name ||
+      option.title ||
+      option.fileFormatName ||
+      option.file_format_name ||
+      option.formatName ||
+      option.format_name ||
+      formatNameFromCode(fileFormat),
+  );
+  const rendererLabel = normalizeFormatText(
+    option.rendererLabel ||
+      option.rendererName ||
+      option.renderer_name ||
+      option.renderName ||
+      option.render_name ||
+      rendererNameFromCode(rendererType),
+  );
+  const size = normalizeFormatText(
+    option.size || option.fileSize || option.file_size || option.zip_size || option.package_size || "",
+  );
+  const key = downloadFormatKey({ fileFormat, formatVersion, rendererType });
+
+  return {
+    key,
+    fileFormat,
+    formatVersion,
+    rendererType,
+    label: baseLabel,
+    rendererLabel,
+    size,
+    isDefault: Boolean(isDefault || option.isDefault || option.active || index === 0),
+  };
+}
+
+function uniqueFormatOptions(options = []) {
+  const seen = new Set();
+  return options.filter(Boolean).filter((option) => {
+    if (!option.key || seen.has(option.key)) return false;
+    seen.add(option.key);
+    return true;
+  });
+}
+
+function hasFormatOptionFields(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const hasStructuredKey =
+    Object.prototype.hasOwnProperty.call(value, "key") && String(value.key || "").includes("|");
+  return hasStructuredKey || [
+    "fileFormat",
+    "file_format",
+    "fileFormatCode",
+    "file_format_code",
+    "fileFormatName",
+    "file_format_name",
+    "format",
+    "formatCode",
+    "format_code",
+    "formatName",
+    "format_name",
+    "formatVersion",
+    "format_version",
+    "rendererType",
+    "renderer_type",
+    "renderType",
+    "render_type",
+    "rendererCode",
+    "renderer_code",
+    "rendererLabel",
+    "rendererName",
+    "renderer_name",
+  ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function parseFormatOptionsFromDetail(detailRes = {}) {
+  return formatOptionsFromAny(detailRes);
+}
+
+function formatSpanValue(item = "", keywordPattern = null) {
+  const spans = String(item).matchAll(/<span\b[^>]*title=["']([^"']*)["'][^>]*>([\s\S]*?)<\/span>/gi);
+  for (const span of spans) {
+    const title = normalizeFormatText(span[1]);
+    const text = normalizeFormatText(stripTags(span[2]));
+    if (!keywordPattern || keywordPattern.test(text)) {
+      return title || normalizeFormatText(text.replace(/^[^:：]+[:：]\s*/, ""));
+    }
+  }
+  return "";
+}
+
+function parseFormatOptionsFromHtml(html = "") {
+  const options = [];
+  const itemPattern = /<li\b(?=[^>]*class=["'][^"']*pop-bd-item[^"']*["'])[^>]*>[\s\S]*?<\/li>/gi;
+  let match;
+  while ((match = itemPattern.exec(html))) {
+    const item = match[0];
+    const openTag = item.match(/<li\b[^>]*>/i)?.[0] || "";
+    const active = /\bactive\b/i.test(attrValue(openTag, "class"));
+    const titleBlock = firstMatch(item, [
+      /<div\b(?=[^>]*class=["'][^"']*bd-title[^"']*["'])[^>]*>[\s\S]*?<\/i>\s*([\s\S]*?)<\/div>/i,
+      /<div\b(?=[^>]*class=["'][^"']*bd-title[^"']*["'])[^>]*>([\s\S]*?)<\/div>/i,
+    ]);
+    options.push(
+      normalizeDownloadFormatOption(
+        {
+          fileFormat: attrValue(openTag, "data-file_format"),
+          formatVersion: attrValue(openTag, "data-format_version") || formatSpanValue(item, /\u7248\u672c|version/i),
+          rendererType: attrValue(openTag, "data-renderer_type"),
+          rendererLabel: formatSpanValue(item, /\u6e32\u67d3\u5668|renderer/i),
+          label: stripTags(titleBlock).replace(/^✓\s*/, ""),
+          size: stripTags(
+            firstMatch(item, [
+              /<div\b(?=[^>]*class=["'][^"']*right-file-size[^"']*["'])[^>]*>([\s\S]*?)<\/div>/i,
+            ]),
+          ),
+          active,
+        },
+        options.length,
+        active,
+      ),
+    );
+  }
+  return options.filter(Boolean);
+}
+
+function formatOptionsFromAny(value, depth = 0) {
+  if (depth > 5 || value === null || value === undefined) return [];
+  if (typeof value === "string") {
+    return /pop-bd-item|data-file_format|download-file-format-pop/i.test(value)
+      ? parseFormatOptionsFromHtml(value)
+      : [];
+  }
+  if (Array.isArray(value)) {
+    const direct = value
+      .map((item, index) => (hasFormatOptionFields(item) ? normalizeDownloadFormatOption(item, index, index === 0) : null))
+      .filter(Boolean);
+    if (direct.length) return direct;
+    return uniqueFormatOptions(value.flatMap((item) => formatOptionsFromAny(item, depth + 1)));
+  }
+  if (typeof value !== "object") return [];
+
+  const current = normalizeDownloadFormatOption(value, 0, false);
+  const options = hasFormatOptionFields(value) && current ? [current] : [];
+
+  for (const nested of Object.values(value)) {
+    options.push(...formatOptionsFromAny(nested, depth + 1));
+  }
+  return uniqueFormatOptions(options);
+}
+
+function formatOptionsFromPage(html = "", detailRes = {}) {
+  const options = uniqueFormatOptions([
+    ...parseFormatOptionsFromHtml(html),
+    ...parseFormatOptionsFromDetail(detailRes),
+  ]);
+  const defaultIndex = options.findIndex((option) => option.isDefault);
+  if (defaultIndex > 0) {
+    const [defaultOption] = options.splice(defaultIndex, 1);
+    options.unshift(defaultOption);
+  }
+  return options.map((option, index) => ({
+    ...option,
+    isDefault: index === 0 || option.isDefault,
+  }));
+}
+
+function selectedOrDefaultFormat(formatOptions = [], requestedFormat = null) {
+  const options = uniqueFormatOptions(formatOptions);
+  if (!options.length && !requestedFormat) return null;
+  const requested = requestedFormat ? normalizeDownloadFormatOption(requestedFormat, 0, false) : null;
+  if (requested) {
+    const exact = options.find((option) => option.key === requested.key);
+    if (exact) return exact;
+    if (!options.length) return requested;
+    throw httpError("Định dạng file đã chọn không còn khả dụng trên 3D66.", 400, {
+      code: "THREED66_FORMAT_UNAVAILABLE",
+      requestedFormat: requested,
+      formatOptions: options,
+    });
+  }
+  return options.find((option) => option.isDefault) || options[0] || null;
+}
+
+function applySelectedFormat(fields = {}, metadata = {}, requestedFormat = null) {
+  const options = metadata.formatOptions || fields.formatOptions || [];
+  const selected = selectedOrDefaultFormat(options, requestedFormat);
+  if (!selected) return { fields, metadata };
+  return {
+    fields: {
+      ...fields,
+      fileFormat: selected.fileFormat || fields.fileFormat,
+      formatVersion: selected.formatVersion,
+      rendererType: selected.rendererType,
+      selectedFormat: selected,
+    },
+    metadata: {
+      ...metadata,
+      formatOptions: options,
+      selectedFormat: selected,
+    },
+  };
 }
 
 function firstTagWithClass(html = "", tag = "", className = "") {
@@ -545,6 +808,7 @@ function hasKnownCreditCostInHtml(html = "") {
 function parseModelMetadata(html, pageUrl, fields = {}) {
   const detailData = parseDetailData(html);
   const detailRes = detailResFromData(detailData);
+  const formatOptions = formatOptionsFromPage(html, detailRes);
   const detailImages = Array.isArray(detailRes.res_img) ? detailRes.res_img : [];
   const coverItem =
     detailImages.find((item) => Number(item?.img_type) === 1 && item?.is_cover) ||
@@ -625,6 +889,7 @@ function parseModelMetadata(html, pageUrl, fields = {}) {
     imageUrl: absoluteUrl(rawImage, pageUrl),
     creditCost: extractCreditCostFromHtml(html),
     priceKnown: hasKnownCreditCostInHtml(html),
+    formatOptions,
     sourceUrl: pageUrl
   };
 }
@@ -643,6 +908,8 @@ function parseDynamicFields(html, pageUrl) {
   const firstFileFormat = Array.isArray(detailRes.down_file_format)
     ? detailRes.down_file_format[0] || {}
     : {};
+  const formatOptions = formatOptionsFromPage(html, detailRes);
+  const defaultFormat = formatOptions.find((option) => option.isDefault) || formatOptions[0] || {};
 
   return {
     llId:
@@ -693,14 +960,16 @@ function parseDynamicFields(html, pageUrl) {
     algorithmVersion: param("algorithm_version", "a_v"),
     accessSourceSite: param("access_source_site"),
     accessSourcePage: param("access_source_page"),
-    fileFormat: firstFileFormat.file_format ? String(firstFileFormat.file_format) : "",
-    rendererType: firstFileFormat.renderer_type ? String(firstFileFormat.renderer_type) : "",
+    fileFormat: defaultFormat.fileFormat || (firstFileFormat.file_format ? String(firstFileFormat.file_format) : ""),
+    rendererType: defaultFormat.rendererType || (firstFileFormat.renderer_type ? String(firstFileFormat.renderer_type) : ""),
     formatVersion:
+      defaultFormat.formatVersion ||
       firstFileFormat.format_version ||
       firstMatch(source, [
         /["']format_version["']\s*:\s*["']([^"']+)["']/i,
         /format_version\s*=\s*["']([^"']+)["']/i
-      ])
+      ]),
+    formatOptions
   };
 }
 
@@ -763,6 +1032,13 @@ async function fetchModelPage(url, cookieValue) {
 }
 
 function buildDownloadPayload(fields, urls, cookies, context) {
+  const selectedFormat = fields.selectedFormat || context.selectedFormat || null;
+  const rendererType = selectedFormat
+    ? String(selectedFormat.rendererType || "")
+    : context.rendererType || process.env.THREED66_RENDERER_TYPE || "4";
+  const formatVersion = selectedFormat
+    ? String(selectedFormat.formatVersion || "")
+    : context.formatVersion || fields.formatVersion || process.env.THREED66_FORMAT_VERSION || "max2018";
   const payload = new URLSearchParams({
     action: "user_pay_download",
     rartype: "1",
@@ -804,8 +1080,8 @@ function buildDownloadPayload(fields, urls, cookies, context) {
     is_commercial: "false",
     voucher_id: fields.voucherId || "",
     file_format: context.fileFormat,
-    renderer_type: process.env.THREED66_RENDERER_TYPE || context.rendererType || "4",
-    format_version: process.env.THREED66_FORMAT_VERSION || context.formatVersion || fields.formatVersion || "max2018",
+    renderer_type: rendererType,
+    format_version: formatVersion,
     ab: fields.ab || "",
     algorithm_type: fields.algorithmType || "",
     algorithm_version: fields.algorithmVersion || "",
@@ -938,6 +1214,8 @@ function mergeBrowserMetadata(metadata = {}, browserMetadata = {}, fields = {}) 
     imageUrl: browserMetadata.imageUrl || metadata.imageUrl || "",
     creditCost: browserCost > 0 ? browserCost : metadata.creditCost || 1,
     priceKnown: Boolean(browserMetadata.priceKnown || metadata.priceKnown || browserCost > 1),
+    formatOptions: metadata.formatOptions || browserMetadata.formatOptions || fields.formatOptions || [],
+    selectedFormat: metadata.selectedFormat || browserMetadata.selectedFormat || fields.selectedFormat || null,
     sourceUrl: browserMetadata.sourceUrl || metadata.sourceUrl || ""
   };
 }
@@ -997,6 +1275,10 @@ function mergeDownloadPopFields(fields = {}, popData = {}) {
   const resInfo = popData.resInfo || {};
   const priceInfo = popData.user?.priceInfo || {};
   const discount = priceInfo.discount_arr || {};
+  const formatOptions = uniqueFormatOptions([
+    ...(fields.formatOptions || []),
+    ...formatOptionsFromAny(popData),
+  ]);
   const isDirectDownload =
     Number(popData.is_direct_download || 0) === 1 ||
     [3, 4].includes(Number(popData.download_status || 0));
@@ -1009,19 +1291,33 @@ function mergeDownloadPopFields(fields = {}, popData = {}) {
     needtype: fields.needtype || (isDirectDownload ? "1" : configuredPaytypeValue()),
     couponId: fields.couponId || discount.coupon_id || "",
     voucherId: fields.voucherId || discount.voucher_id || "",
-    packageId: fields.packageId || (discount.package_id ? String(discount.package_id) : "")
+    packageId: fields.packageId || (discount.package_id ? String(discount.package_id) : ""),
+    formatOptions,
+    selectedFormat: fields.selectedFormat || formatOptions.find((option) => option.isDefault) || formatOptions[0] || null,
   };
 }
 
 function mergeDownloadPopMetadata(metadata = {}, popData = {}, pageUrl = "", fields = {}) {
   const resInfo = popData.resInfo || {};
   const popCost = Number(resInfo.res_price || extractCreditCost(popData) || 0);
+  const formatOptions = uniqueFormatOptions([
+    ...(metadata.formatOptions || []),
+    ...(fields.formatOptions || []),
+    ...formatOptionsFromAny(popData),
+  ]);
   return {
     productId: metadata.productId || resInfo.sof || fields.llId || "",
     title: resInfo.res_name || metadata.title || fields.llId || "3D66 model",
     imageUrl: absoluteUrl(resInfo.img, pageUrl) || metadata.imageUrl || "",
     creditCost: popCost > 0 ? popCost : metadata.creditCost || 1,
     priceKnown: Boolean(popCost > 0 || metadata.priceKnown),
+    formatOptions,
+    selectedFormat:
+      metadata.selectedFormat ||
+      fields.selectedFormat ||
+      formatOptions.find((option) => option.isDefault) ||
+      formatOptions[0] ||
+      null,
     sourceUrl: metadata.sourceUrl || pageUrl
   };
 }
@@ -1204,12 +1500,17 @@ export async function validate3D66Cookie(cookieValue, modelUrl = "") {
 export async function fetch3D66Preview(url, cookieValue) {
   if (process.env.THREED66_MOCK !== "false") {
     const digest = crypto.createHash("sha256").update(url).digest("hex").slice(0, 16);
+    const formatOptions = [
+      normalizeDownloadFormatOption({ fileFormat: "1", formatVersion: "max2018", rendererType: "4", label: "3Dmax" }, 0, true)
+    ].filter(Boolean);
     return {
       productId: digest,
       title: "Mock 3D66 model",
       imageUrl: "",
       creditCost: 1,
       priceKnown: true,
+      formatOptions,
+      selectedFormat: formatOptions[0] || null,
       sourceUrl: url
     };
   }
@@ -1217,7 +1518,6 @@ export async function fetch3D66Preview(url, cookieValue) {
   const cookies = requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
   const popPreview = await previewFromDownloadPopOnly(normalized.toString(), cookieValue, cookies);
-  if (popPreview) return popPreview.metadata;
 
   let browserMetadata = null;
   let html = "";
@@ -1232,6 +1532,7 @@ export async function fetch3D66Preview(url, cookieValue) {
   }
   if (!browserMetadata) {
     ({ html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
+      if (popPreview && !shouldFallbackToBrowserPage(error)) return { html: "", pageUrl: normalized.toString() };
       if (!shouldFallbackToBrowserPage(error)) throw error;
       const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
       browserMetadata = browserPage.metadata;
@@ -1239,7 +1540,7 @@ export async function fetch3D66Preview(url, cookieValue) {
     }));
   }
   let fields = parseDynamicFields(html, pageUrl);
-  let metadata = parseModelMetadata(html, pageUrl, fields);
+  let metadata = html ? parseModelMetadata(html, pageUrl, fields) : popPreview?.metadata || parseModelMetadata(html, pageUrl, fields);
   if (browserMetadata) {
     fields = mergeBrowserFields(fields, browserMetadata);
     metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);
@@ -1260,6 +1561,7 @@ export async function fetch3D66Preview(url, cookieValue) {
     }
   }
 
+  ({ fields, metadata } = applySelectedFormat(fields, metadata));
   return metadata;
 }
 
@@ -1375,9 +1677,14 @@ export async function request3D66File(fileUrl, cookieValue, options = {}) {
   });
 }
 
-export async function fetchFrom3D66(url, cookieValue) {
+export async function fetchFrom3D66(url, cookieValue, options = {}) {
   if (process.env.THREED66_MOCK !== "false") {
     const digest = crypto.createHash("sha256").update(url).digest("hex").slice(0, 16);
+    const selectedFormat = normalizeDownloadFormatOption(
+      options.downloadFormat || { fileFormat: "1", formatVersion: "max2018", rendererType: "4", label: "3Dmax" },
+      0,
+      true,
+    );
     return {
       fileUrl: `https://download.mock-3d66.local/${digest}.zip`,
       productId: digest,
@@ -1385,7 +1692,9 @@ export async function fetchFrom3D66(url, cookieValue) {
       title: "Mock 3D66 model",
       imageUrl: "",
       creditCost: 1,
-      priceKnown: true
+      priceKnown: true,
+      formatOptions: selectedFormat ? [selectedFormat] : [],
+      selectedFormat
     };
   }
 
@@ -1393,7 +1702,12 @@ export async function fetchFrom3D66(url, cookieValue) {
   const normalized = normalizeModelUrl(url);
   let effectiveCookieValue = cookieValue;
   let browserMetadata = null;
-  const popPreview = await previewFromDownloadPopOnly(normalized.toString(), effectiveCookieValue, initialCookies);
+  const requestedFormat = options.downloadFormat
+    ? normalizeDownloadFormatOption(options.downloadFormat, 0, false)
+    : null;
+  const popPreview = requestedFormat
+    ? null
+    : await previewFromDownloadPopOnly(normalized.toString(), effectiveCookieValue, initialCookies);
   let seedFields = popPreview?.fields || null;
   let seedMetadata = popPreview?.metadata || null;
   let html = "";
@@ -1445,6 +1759,8 @@ export async function fetchFrom3D66(url, cookieValue) {
     }
   }
 
+  ({ fields, metadata } = applySelectedFormat(fields, metadata, requestedFormat));
+
   if (!fields.llId || !fields.token || !fields.upTime) {
     if (process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK === "true") {
       validateDynamicFields(fields);
@@ -1477,6 +1793,8 @@ export async function fetchFrom3D66(url, cookieValue) {
     title: metadata.title,
     imageUrl: metadata.imageUrl,
     creditCost: download.creditCost || metadata.creditCost,
+    formatOptions: metadata.formatOptions || [],
+    selectedFormat: metadata.selectedFormat || fields.selectedFormat || null,
     priceKnown: Boolean(
       download.priceKnown ||
         metadata.priceKnown ||
