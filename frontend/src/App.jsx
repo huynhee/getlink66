@@ -27,7 +27,6 @@ function MessengerFloatButton() {
       aria-label="Chat Messenger"
     >
       <MessageCircle size={20} aria-hidden="true" />
-      <span>Messenger</span>
     </a>
   );
 }
