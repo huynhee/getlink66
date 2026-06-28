@@ -2,9 +2,14 @@ import React, { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Download, Loader2, X } from "lucide-react";
 import { api } from "../api.js";
+import { closeDownloadWindow, openDownloadWindow } from "../utils/downloadWindow.js";
 
-function triggerBrowserDownload(downloadUrl) {
+function triggerBrowserDownload(downloadUrl, popup = null) {
   if (!downloadUrl) return;
+  if (popup && !popup.closed) {
+    popup.location.href = downloadUrl;
+    return;
+  }
   const anchor = document.createElement("a");
   anchor.href = downloadUrl;
   anchor.target = "_blank";
@@ -53,15 +58,17 @@ export default function RedownloadFormatModal({ item, language = "vi", onClose, 
     if (!selectedFormat || loading) return;
     setLoading(true);
     setError("");
+    const downloadWindow = openDownloadWindow();
     try {
       const data = await api(`/api/getlink/redownload/${item._id}`, {
         method: "POST",
         body: JSON.stringify({ downloadFormat: selectedFormat }),
       });
       onDone?.(item._id, data);
-      triggerBrowserDownload(data.downloadUrl || data.url);
+      triggerBrowserDownload(data.downloadUrl || data.url, downloadWindow);
       onClose?.();
     } catch (err) {
+      closeDownloadWindow(downloadWindow);
       setError(err.message || (language === "vi" ? "Không chuẩn bị được link tải lại." : "Cannot prepare redownload."));
     } finally {
       setLoading(false);

@@ -3,6 +3,7 @@ import { ArrowRightLeft, Download, FileDown, Gift, LifeBuoy, Lock } from "lucide
 import RedownloadFormatModal from "../components/RedownloadFormatModal.jsx";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
+import { closeDownloadWindow, openDownloadWindow, triggerBrowserDownload } from "../utils/downloadWindow.js";
 
 const FACEBOOK_GROUP_URL = "https://www.facebook.com/groups/960223243551548";
 
@@ -11,17 +12,6 @@ function usableFormatCount(options = []) {
     const fileFormat = String(option.fileFormat || option.file_format || String(option.key || "").split("|")[0] || "").trim();
     return fileFormat && fileFormat !== "0";
   }).length;
-}
-
-function triggerBrowserDownload(downloadUrl) {
-  if (!downloadUrl) return;
-  const anchor = document.createElement("a");
-  anchor.href = downloadUrl;
-  anchor.target = "_blank";
-  anchor.rel = "noreferrer";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
 }
 
 function compactRemainingLabel(expiresAt, language) {
@@ -140,12 +130,14 @@ export default function History({ language = "vi" }) {
     }
 
     setRedownloadPreparingId(item._id);
+    const downloadWindow = openDownloadWindow();
     try {
       const data = await api(`/api/getlink/redownload/${item._id}`, {
         method: "POST",
         body: JSON.stringify({}),
       });
       if (data.requiresFormatSelection) {
+        closeDownloadWindow(downloadWindow);
         setRedownloadItem({
           ...item,
           title: data.title || item.title,
@@ -157,8 +149,12 @@ export default function History({ language = "vi" }) {
         return;
       }
       handleRedownloadPrepared(item._id, data);
-      triggerBrowserDownload(data.downloadUrl || data.url || item.downloadUrl || buildApiUrl(`/api/getlink/download/${item._id}`));
+      triggerBrowserDownload(
+        data.downloadUrl || data.url || item.downloadUrl || buildApiUrl(`/api/getlink/download/${item._id}`),
+        downloadWindow,
+      );
     } catch (err) {
+      closeDownloadWindow(downloadWindow);
       alert(err.message || (language === "vi" ? "Khong chuan bi duoc link tai lai." : "Cannot prepare redownload."));
     } finally {
       setRedownloadPreparingId("");
