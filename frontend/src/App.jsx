@@ -17,6 +17,24 @@ import "./styles.css";
 
 const MESSENGER_URL = "https://m.me/1079508495252841";
 const THEME_STORAGE_KEY = "3dipl-theme";
+const THEME_META_COLORS = {
+  dark: "#07111f",
+  light: "#f5f8fb"
+};
+
+function isValidTheme(value) {
+  return value === "light" || value === "dark";
+}
+
+function getStoredTheme() {
+  if (typeof window === "undefined") return "";
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return isValidTheme(storedTheme) ? storedTheme : "";
+  } catch {
+    return "";
+  }
+}
 
 function getSystemTheme() {
   if (typeof window === "undefined" || !window.matchMedia) return "dark";
@@ -25,13 +43,7 @@ function getSystemTheme() {
 
 function getInitialTheme() {
   if (typeof window === "undefined") return "dark";
-  try {
-    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (storedTheme === "light" || storedTheme === "dark") return storedTheme;
-  } catch {
-    return "dark";
-  }
-  return getSystemTheme();
+  return getStoredTheme() || getSystemTheme();
 }
 
 function applyTheme(nextTheme) {
@@ -40,7 +52,7 @@ function applyTheme(nextTheme) {
   document.documentElement.style.colorScheme = nextTheme;
   const themeMeta = document.querySelector('meta[name="theme-color"]');
   if (themeMeta) {
-    themeMeta.setAttribute("content", nextTheme === "light" ? "#f5f8fb" : "#060b12");
+    themeMeta.setAttribute("content", THEME_META_COLORS[nextTheme] || THEME_META_COLORS.dark);
   }
 }
 
@@ -177,7 +189,15 @@ function App() {
   }
 
   function toggleTheme() {
-    setTheme((current) => (current === "light" ? "dark" : "light"));
+    setTheme((current) => {
+      const nextTheme = current === "light" ? "dark" : "light";
+      try {
+        window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+      } catch {
+        // The visual preference still applies for this session if storage is blocked.
+      }
+      return nextTheme;
+    });
   }
 
   async function refreshUser() {
@@ -210,12 +230,23 @@ function App() {
 
   useEffect(() => {
     applyTheme(theme);
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // Keep the selected theme for this session even if storage is blocked.
-    }
   }, [theme]);
+
+  useEffect(() => {
+    if (getStoredTheme() || typeof window === "undefined" || !window.matchMedia) {
+      return undefined;
+    }
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+    const syncSystemTheme = () => {
+      if (!getStoredTheme()) setTheme(mediaQuery.matches ? "light" : "dark");
+    };
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", syncSystemTheme);
+      return () => mediaQuery.removeEventListener("change", syncSystemTheme);
+    }
+    mediaQuery.addListener(syncSystemTheme);
+    return () => mediaQuery.removeListener(syncSystemTheme);
+  }, []);
 
   useEffect(() => {
     setBanOverlayClosed(false);

@@ -9,16 +9,27 @@
   <meta name="theme-color" content="#050706" />
   <script>
     (function () {
-      try {
-        var savedTheme = localStorage.getItem("3dipl-theme");
-        var theme = savedTheme === "light" || savedTheme === "dark"
-          ? savedTheme
-          : (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-        document.documentElement.dataset.theme = theme;
-        document.documentElement.style.colorScheme = theme;
-      } catch (error) {
-        document.documentElement.dataset.theme = "dark";
-        document.documentElement.style.colorScheme = "dark";
+      var colors = { dark: "#07111f", light: "#f5f8fb" };
+      function isValidTheme(value) {
+        return value === "light" || value === "dark";
+      }
+      function storedTheme() {
+        try {
+          var savedTheme = localStorage.getItem("3dipl-theme");
+          return isValidTheme(savedTheme) ? savedTheme : "";
+        } catch (error) {
+          return "";
+        }
+      }
+      function systemTheme() {
+        return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      }
+      var theme = storedTheme() || systemTheme();
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.style.colorScheme = theme;
+      var themeMeta = document.querySelector('meta[name="theme-color"]');
+      if (themeMeta) {
+        themeMeta.setAttribute("content", colors[theme] || colors.dark);
       }
     })();
   </script>
