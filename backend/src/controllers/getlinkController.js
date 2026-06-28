@@ -1483,13 +1483,6 @@ async function refreshHistoryDownload(history, cookieValue, downloadFormatOverri
   return Getlink.findByIdAndUpdate(history._id, updatedFields, { new: true });
 }
 
-async function refreshHistoryIfStale(history, selectedFormat = null) {
-  if (isCacheFresh(history) || !history.sourceUrl) return history;
-  return with3D66Cookie((cookieValue) =>
-    refreshHistoryDownload(history, cookieValue, selectedFormat),
-  );
-}
-
 export async function prepareRedownload(req, res, next) {
   try {
     const unknownKey = rejectUnknownKeys(req.body || {}, ["downloadFormat"]);
@@ -1595,25 +1588,24 @@ export async function prepareRedownload(req, res, next) {
             refreshHistoryDownload(history, cookieValue, selectedFormat),
           )
         : history;
-    const preparedHistory = await refreshHistoryIfStale(activeHistory, selectedFormat);
-    const downloadUrl = publicDownloadUrl(req, preparedHistory._id);
+    const downloadUrl = publicDownloadUrl(req, activeHistory._id);
 
     return res.json({
       url: downloadUrl,
       downloadUrl,
-      previewImageDownloadUrl: preparedHistory.imageUrl ? publicPreviewImageUrl(req, preparedHistory._id) : null,
-      productId: preparedHistory.productId,
-      title: preparedHistory.title,
-      imageUrl: preparedHistory.imageUrl,
-      selectedFormat: preparedHistory.downloadFormat || selectedFormat || null,
+      previewImageDownloadUrl: activeHistory.imageUrl ? publicPreviewImageUrl(req, activeHistory._id) : null,
+      productId: activeHistory.productId,
+      title: activeHistory.title,
+      imageUrl: activeHistory.imageUrl,
+      selectedFormat: activeHistory.downloadFormat || selectedFormat || null,
       formatOptions,
       canRedownload: true,
-      redownloadExpiresAt: redownloadExpiresAt(preparedHistory),
-      redownloadCount: Number(preparedHistory.redownloadCount || 0),
+      redownloadExpiresAt: redownloadExpiresAt(activeHistory),
+      redownloadCount: Number(activeHistory.redownloadCount || 0),
       redownloadLimit: redownloadLimit(),
       redownloadRemaining: Math.max(
         0,
-        redownloadLimit() - Number(preparedHistory.redownloadCount || 0),
+        redownloadLimit() - Number(activeHistory.redownloadCount || 0),
       ),
     });
   } catch (error) {
