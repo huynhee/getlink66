@@ -1483,6 +1483,13 @@ async function refreshHistoryDownload(history, cookieValue, downloadFormatOverri
   return Getlink.findByIdAndUpdate(history._id, updatedFields, { new: true });
 }
 
+async function refreshHistoryIfStale(history, selectedFormat = null) {
+  if (isCacheFresh(history) || !history.sourceUrl) return history;
+  return with3D66Cookie((cookieValue) =>
+    refreshHistoryDownload(history, cookieValue, selectedFormat),
+  );
+}
+
 export async function prepareRedownload(req, res, next) {
   try {
     const unknownKey = rejectUnknownKeys(req.body || {}, ["downloadFormat"]);
@@ -1526,38 +1533,55 @@ export async function prepareRedownload(req, res, next) {
     const requestedFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
     let selectedFormat = requestedFormat;
 
-    if (!requestedFormat) {
-      const formatSelection = await resolveDownloadFormatSelection(
-        history.sourceUrl,
-        history.productId,
-        cache,
-        {
-          productId: history.productId,
-          title: history.title,
-          imageUrl: history.imageUrl,
-          creditCost: history.creditUsed || 1,
-          priceKnown: true,
-        },
-        { preferLive: true },
-      );
-      formatOptions = sanitizeDownloadFormatOptions(formatSelection.formatOptions);
-      if (formatOptions.length > 1) {
-        return res.json(formatSelectionPayload(req, {
-          productId: history.productId,
-          title: history.title,
-          imageUrl: history.imageUrl,
-          creditCost: history.creditUsed || 1,
-          formatOptions,
-          freeRedownload: true,
-        }));
+    if (!requestedFormat && history.sourceUrl) {
+      try {
+        const formatSelection = await resolveDownloadFormatSelection(
+          history.sourceUrl,
+          history.productId,
+          cache,
+          {
+            productId: history.productId,
+            title: history.title,
+            imageUrl: history.imageUrl,
+            creditCost: history.creditUsed || 1,
+            priceKnown: true,
+          },
+          { preferLive: true },
+        );
+        formatOptions = sanitizeDownloadFormatOptions(formatSelection.formatOptions);
+      } catch (formatError) {
+        await writeSystemLog({
+          type: "download",
+          level: "warn",
+          message: `Could not inspect 3D66 redownload formats: ${formatError.message}`,
+          userId: req.user?._id,
+          historyId: req.params?.id,
+          status: formatError.status,
+          details: { stage: "prepare-redownload-format" },
+        });
       }
+    }
+
+    if (!requestedFormat && formatOptions.length > 1) {
+      return res.json(formatSelectionPayload(req, {
+        productId: history.productId,
+        title: history.title,
+        imageUrl: history.imageUrl,
+        creditCost: history.creditUsed || 1,
+        formatOptions,
+        freeRedownload: true,
+      }));
+    }
+
+    if (requestedFormat && !formatOptions.length) {
+      formatOptions = [requestedFormat];
     }
 
     if (requestedFormat) {
       if (!formatOptions.length) {
         return res.status(400).json({ message: "Model này không có lựa chọn định dạng file." });
       }
-      selectedFormat = findDownloadFormatOption(formatOptions, requestedFormat);
+      selectedFormat = findDownloadFormatOption(formatOptions, requestedFormat) || requestedFormat;
       if (!selectedFormat) {
         return res.status(400).json({ message: "Định dạng file đã chọn không còn khả dụng trên 3D66." });
       }
@@ -1571,24 +1595,25 @@ export async function prepareRedownload(req, res, next) {
             refreshHistoryDownload(history, cookieValue, selectedFormat),
           )
         : history;
-    const downloadUrl = publicDownloadUrl(req, activeHistory._id);
+    const preparedHistory = await refreshHistoryIfStale(activeHistory, selectedFormat);
+    const downloadUrl = publicDownloadUrl(req, preparedHistory._id);
 
     return res.json({
       url: downloadUrl,
       downloadUrl,
-      previewImageDownloadUrl: activeHistory.imageUrl ? publicPreviewImageUrl(req, activeHistory._id) : null,
-      productId: activeHistory.productId,
-      title: activeHistory.title,
-      imageUrl: activeHistory.imageUrl,
-      selectedFormat: activeHistory.downloadFormat || selectedFormat || null,
+      previewImageDownloadUrl: preparedHistory.imageUrl ? publicPreviewImageUrl(req, preparedHistory._id) : null,
+      productId: preparedHistory.productId,
+      title: preparedHistory.title,
+      imageUrl: preparedHistory.imageUrl,
+      selectedFormat: preparedHistory.downloadFormat || selectedFormat || null,
       formatOptions,
       canRedownload: true,
-      redownloadExpiresAt: redownloadExpiresAt(activeHistory),
-      redownloadCount: Number(activeHistory.redownloadCount || 0),
+      redownloadExpiresAt: redownloadExpiresAt(preparedHistory),
+      redownloadCount: Number(preparedHistory.redownloadCount || 0),
       redownloadLimit: redownloadLimit(),
       redownloadRemaining: Math.max(
         0,
-        redownloadLimit() - Number(activeHistory.redownloadCount || 0),
+        redownloadLimit() - Number(preparedHistory.redownloadCount || 0),
       ),
     });
   } catch (error) {
