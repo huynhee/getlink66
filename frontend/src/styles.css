@@ -5424,12 +5424,12 @@ html[data-theme="dark"] {
   --terminal-card: rgba(13, 21, 34, 0.92);
   --border-light: rgba(137, 158, 184, 0.22);
   --border-warm: rgba(137, 158, 184, 0.3);
-  --border-accent: rgba(57, 217, 138, 0.44);
+  --border-accent: rgba(0, 255, 136, 0.52);
   --border: var(--border-light);
-  --accent: #39d98a;
-  --neon-green: #39d98a;
-  --neon-cyan: #38bdf8;
-  --neon-magenta: #f472b6;
+  --accent: #00ff88;
+  --neon-green: #00ff88;
+  --neon-cyan: #00e5ff;
+  --neon-magenta: #ff2bd6;
   --text-primary: #f7fbff;
   --text-secondary: #b7c3d2;
   --text-tertiary: #7e8da3;
@@ -5449,7 +5449,7 @@ html[data-theme="dark"] {
   --shadow-sm: 0 10px 30px rgba(0, 0, 0, 0.22);
   --shadow-md: 0 18px 50px rgba(0, 0, 0, 0.28);
   --shadow-lg: 0 28px 90px rgba(0, 0, 0, 0.34);
-  --focus-ring: rgba(56, 189, 248, 0.62);
+  --focus-ring: rgba(0, 229, 255, 0.72);
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 8px;
@@ -5466,12 +5466,12 @@ html[data-theme="light"] {
   --terminal-card: rgba(255, 255, 255, 0.95);
   --border-light: rgba(33, 55, 85, 0.15);
   --border-warm: rgba(33, 55, 85, 0.22);
-  --border-accent: rgba(15, 159, 110, 0.38);
+  --border-accent: rgba(0, 184, 107, 0.44);
   --border: var(--border-light);
-  --accent: #0f9f6e;
-  --neon-green: #0f9f6e;
-  --neon-cyan: #087fb4;
-  --neon-magenta: #b83280;
+  --accent: #00b86b;
+  --neon-green: #00a862;
+  --neon-cyan: #007fc7;
+  --neon-magenta: #d600b8;
   --text-primary: #122033;
   --text-secondary: #4f6075;
   --text-tertiary: #748299;
@@ -5491,7 +5491,7 @@ html[data-theme="light"] {
   --shadow-sm: 0 10px 26px rgba(39, 61, 84, 0.08);
   --shadow-md: 0 18px 48px rgba(39, 61, 84, 0.12);
   --shadow-lg: 0 26px 80px rgba(39, 61, 84, 0.16);
-  --focus-ring: rgba(8, 127, 180, 0.42);
+  --focus-ring: rgba(0, 127, 199, 0.46);
 }
 
 html {
@@ -5580,18 +5580,20 @@ textarea:focus-visible {
 }
 
 .brandButton {
-  color: var(--text-primary);
-  gap: 9px;
+  color: var(--neon-green);
+  gap: 0;
+  text-shadow: 0 0 16px rgba(57, 217, 138, 0.28);
 }
 
 .brandButton::before {
-  content: "";
-  width: 12px;
-  height: 12px;
-  margin: 0;
-  border-radius: 3px;
-  background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan));
-  box-shadow: 0 0 18px rgba(57, 217, 138, 0.28);
+  content: ">";
+  width: auto;
+  height: auto;
+  margin-right: 8px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--neon-magenta);
 }
 
 .tabs button {
@@ -5601,6 +5603,7 @@ textarea:focus-visible {
 
 .tabs button span,
 .languageToggle,
+.languageSingleToggle,
 .headerLoginButton,
 .adminLink,
 .iconButton,
@@ -5646,8 +5649,29 @@ textarea:focus-visible {
 }
 
 .languageToggle button,
+.languageSingleToggle,
 .themeToggle {
   border-radius: var(--radius-sm);
+}
+
+.languageSingleToggle {
+  flex: 0 0 auto;
+  min-width: 52px;
+  gap: 5px;
+  padding: 0 8px;
+  background: var(--surface-1);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.languageSingleToggle span {
+  color: currentColor;
+}
+
+.languageSingleToggle:hover {
+  color: var(--neon-cyan);
+  border-color: var(--neon-cyan);
 }
 
 .themeToggle {
@@ -5902,10 +5926,7 @@ html[data-theme="light"] input[type="datetime-local"]::-webkit-calendar-picker-i
 }
 
 .landing::before {
-  background-image:
-    linear-gradient(var(--page-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--page-grid-line) 1px, transparent 1px);
-  opacity: 1;
+  display: none;
 }
 
 .signalRail {
@@ -6084,6 +6105,36 @@ html[data-theme="light"] .facebookGroupBanner {
   box-shadow: 0 4px 16px rgba(24, 119, 242, 0.18);
 }
 
+html[data-theme="dark"] .brandButton {
+  text-shadow: 0 0 18px rgba(0, 255, 136, 0.36);
+}
+
+html[data-theme="dark"] .hl-green,
+html[data-theme="dark"] .pricingCard .price.hl-green,
+html[data-theme="dark"] .package strong.hl-green,
+html[data-theme="dark"] .creditBadge strong {
+  text-shadow: 0 0 18px rgba(0, 255, 136, 0.3);
+}
+
+html[data-theme="dark"] .hl-magenta,
+html[data-theme="dark"] .saleOnly::before {
+  text-shadow: 0 0 18px rgba(255, 43, 214, 0.32);
+}
+
+html[data-theme="dark"] .primaryButton,
+html[data-theme="dark"] .loginPanel button,
+html[data-theme="dark"] .inputRow button,
+html[data-theme="dark"] .inputWrapper button,
+html[data-theme="dark"] .headerLoginButton {
+  box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.14), 0 16px 36px rgba(0, 255, 136, 0.24);
+}
+
+html[data-theme="dark"] .eyebrowSignal,
+html[data-theme="dark"] .sectionTitle h3,
+html[data-theme="dark"] .inviteSectionTag {
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.1);
+}
+
 @media (max-width: 900px) {
   .accountMenuContent {
     background: var(--panel-bg);
@@ -6111,6 +6162,7 @@ html[data-theme="light"] .facebookGroupBanner {
   .headerLoginButton,
   .adminLink,
   .languageToggle,
+  .languageSingleToggle,
   .iconButton,
   .themeToggle {
     width: 100%;

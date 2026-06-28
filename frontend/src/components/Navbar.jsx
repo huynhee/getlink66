@@ -1,23 +1,23 @@
 import React, { useEffect, useState } from "react";
-import { Bell, Chrome, LogOut, Menu, Moon, Sun, UserCircle, X } from "lucide-react";
+import { Bell, Chrome, Languages, LogOut, Menu, Moon, Sun, UserCircle, X } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import { translations } from "../i18n.js";
 import { setFaviconNotificationCount } from "../utils/faviconProgress.js";
 
 function LanguageToggle({ language, onLanguageChange }) {
+  const nextLanguage = language === "vi" ? "en" : "vi";
+  const label = language === "vi" ? "Switch to English" : "Chuyển sang tiếng Việt";
   return (
-    <div className="languageToggle" aria-label="Language">
-      {["vi", "en"].map((item) => (
-        <button
-          key={item}
-          type="button"
-          className={language === item ? "active" : ""}
-          onClick={() => onLanguageChange?.(item)}
-        >
-          {item.toUpperCase()}
-        </button>
-      ))}
-    </div>
+    <button
+      type="button"
+      className="iconButton languageSingleToggle"
+      onClick={() => onLanguageChange?.(nextLanguage)}
+      title={label}
+      aria-label={label}
+    >
+      <Languages size={15} aria-hidden="true" />
+      <span>{language.toUpperCase()}</span>
+    </button>
   );
 }
 
