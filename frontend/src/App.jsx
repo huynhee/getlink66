@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { MessageCircle } from "lucide-react";
 import { api } from "./api.js";
 import Navbar from "./components/Navbar.jsx";
 import Login from "./pages/Login.jsx";
@@ -13,6 +14,23 @@ import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
 import { getInitialLanguage, setStoredLanguage, translations } from "./i18n.js";
 import "./styles.css";
+
+const MESSENGER_URL = "https://m.me/1079508495252841";
+
+function MessengerFloatButton() {
+  return (
+    <a
+      className="messengerFloat"
+      href={MESSENGER_URL}
+      target="_blank"
+      rel="noreferrer"
+      aria-label="Chat Messenger"
+    >
+      <MessageCircle size={20} aria-hidden="true" />
+      <span>Messenger</span>
+    </a>
+  );
+}
 
 function FacebookGroupBanner({ language = "vi" }) {
   const t = translations[language] || translations.vi;
@@ -234,5 +252,6 @@ createRoot(document.getElementById("root")).render(
   <>
     <div className="cyber-scanlines" aria-hidden="true" />
     <App />
+    <MessengerFloatButton />
   </>,
 );

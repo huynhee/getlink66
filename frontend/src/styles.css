@@ -5340,3 +5340,70 @@ label {
     justify-content: center;
   }
 }
+
+.messengerFloat {
+  position: fixed;
+  right: clamp(14px, 2vw, 24px);
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  z-index: 1200;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid rgba(0, 204, 255, 0.65);
+  border-radius: 8px;
+  color: #ffffff;
+  background:
+    linear-gradient(135deg, rgba(0, 178, 255, 0.92), rgba(0, 106, 255, 0.92) 55%, rgba(0, 255, 157, 0.84)),
+    rgba(0, 15, 26, 0.92);
+  box-shadow:
+    0 0 26px rgba(0, 178, 255, 0.32),
+    0 10px 30px rgba(0, 0, 0, 0.32),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+
+.messengerFloat::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.messengerFloat:hover {
+  color: #ffffff;
+  filter: brightness(1.08);
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 34px rgba(0, 178, 255, 0.48),
+    0 14px 34px rgba(0, 0, 0, 0.38),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+
+.messengerFloat:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  .messengerFloat {
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    width: 48px;
+    min-height: 48px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .messengerFloat span {
+    display: none;
+  }
+}
