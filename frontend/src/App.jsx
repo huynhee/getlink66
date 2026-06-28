@@ -16,6 +16,33 @@ import { getInitialLanguage, setStoredLanguage, translations } from "./i18n.js";
 import "./styles.css";
 
 const MESSENGER_URL = "https://m.me/1079508495252841";
+const THEME_STORAGE_KEY = "3dipl-theme";
+
+function getSystemTheme() {
+  if (typeof window === "undefined" || !window.matchMedia) return "dark";
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function getInitialTheme() {
+  if (typeof window === "undefined") return "dark";
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (storedTheme === "light" || storedTheme === "dark") return storedTheme;
+  } catch {
+    return "dark";
+  }
+  return getSystemTheme();
+}
+
+function applyTheme(nextTheme) {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.theme = nextTheme;
+  document.documentElement.style.colorScheme = nextTheme;
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) {
+    themeMeta.setAttribute("content", nextTheme === "light" ? "#f5f8fb" : "#060b12");
+  }
+}
 
 function MessengerFloatButton() {
   return (
@@ -138,6 +165,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [path, setPath] = useState(window.location.pathname);
   const [language, setLanguage] = useState(getInitialLanguage);
+  const [theme, setTheme] = useState(getInitialTheme);
   const [banOverlayClosed, setBanOverlayClosed] = useState(false);
   const isAdminPath = path === "/admin";
   const isPublicHome = path === "/";
@@ -146,6 +174,10 @@ function App() {
   function changeLanguage(nextLanguage) {
     setLanguage(nextLanguage);
     setStoredLanguage(nextLanguage);
+  }
+
+  function toggleTheme() {
+    setTheme((current) => (current === "light" ? "dark" : "light"));
   }
 
   async function refreshUser() {
@@ -171,8 +203,19 @@ function App() {
   }
 
   useEffect(() => {
-    refreshUser().finally(() => setLoading(false));
+    refreshUser()
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    applyTheme(theme);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Keep the selected theme for this session even if storage is blocked.
+    }
+  }, [theme]);
 
   useEffect(() => {
     setBanOverlayClosed(false);
@@ -192,7 +235,7 @@ function App() {
   if (isAdminPath) {
     return (
       <div className="appFrame">
-        <Navbar user={user} page="admin" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} adminMode language={language} onLanguageChange={changeLanguage} />
+        <Navbar user={user} page="admin" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} adminMode language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
         <main className="shell">
           {user?.requires2FA && <TwoFactorModal onVerify={refreshUser} language={language} />}
           {!user && <Login onLogin={refreshUser} adminMode returnTo="/admin" language={language} />}
@@ -214,7 +257,7 @@ function App() {
   if (isPublicHome) {
     return (
       <div className="appFrame">
-        <Navbar user={user} page="" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} />
+        <Navbar user={user} page="" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
         <FacebookGroupBanner language={language} />
         <main className="shell">
           <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />
@@ -228,7 +271,7 @@ function App() {
 
   return (
     <div className="appFrame">
-      <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} />
+      <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
       <FacebookGroupBanner language={language} />
       <main className="shell">
         {!user && !["guide", "privacy", "terms"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />}

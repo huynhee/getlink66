@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Bell, Chrome, LogOut, Menu, UserCircle, X } from "lucide-react";
+import { Bell, Chrome, LogOut, Menu, Moon, Sun, UserCircle, X } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import { translations } from "../i18n.js";
 import { setFaviconNotificationCount } from "../utils/faviconProgress.js";
@@ -21,6 +21,22 @@ function LanguageToggle({ language, onLanguageChange }) {
   );
 }
 
+function ThemeToggle({ theme = "dark", onThemeToggle }) {
+  const isLight = theme === "light";
+  const label = isLight ? "Switch to dark mode" : "Switch to light mode";
+  return (
+    <button
+      type="button"
+      className="iconButton themeToggle"
+      onClick={onThemeToggle}
+      title={label}
+      aria-label={label}
+    >
+      {isLight ? <Moon size={17} /> : <Sun size={17} />}
+    </button>
+  );
+}
+
 export default function Navbar({
   user,
   page,
@@ -29,7 +45,9 @@ export default function Navbar({
   onNavigate,
   adminMode = false,
   language = "vi",
-  onLanguageChange
+  onLanguageChange,
+  theme = "dark",
+  onThemeToggle
 }) {
   const t = translations[language] || translations.vi;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -252,6 +270,7 @@ export default function Navbar({
                 </button>
               )}
               <LanguageToggle language={language} onLanguageChange={onLanguageChange} />
+              <ThemeToggle theme={theme} onThemeToggle={onThemeToggle} />
               <button className="iconButton" onClick={logout} title={t.logout}>
                 <LogOut size={17} />
               </button>
@@ -264,6 +283,7 @@ export default function Navbar({
               {t.googleLogin}
             </a>
             <LanguageToggle language={language} onLanguageChange={onLanguageChange} />
+            <ThemeToggle theme={theme} onThemeToggle={onThemeToggle} />
           </div>
         )}
       </div>

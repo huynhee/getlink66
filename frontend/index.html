@@ -7,6 +7,21 @@
   <title>3DIPL - Getlink 3D</title>
   <meta name="description" content="Dịch vụ getlink trung gian tải model 3D Trung Quốc." />
   <meta name="theme-color" content="#050706" />
+  <script>
+    (function () {
+      try {
+        var savedTheme = localStorage.getItem("3dipl-theme");
+        var theme = savedTheme === "light" || savedTheme === "dark"
+          ? savedTheme
+          : (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      } catch (error) {
+        document.documentElement.dataset.theme = "dark";
+        document.documentElement.style.colorScheme = "dark";
+      }
+    })();
+  </script>
   <link rel="canonical" href="https://3dipl.org/" />
   <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />

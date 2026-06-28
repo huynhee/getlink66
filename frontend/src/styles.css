@@ -5410,3 +5410,716 @@ label {
     height: 48px;
   }
 }
+
+/* ==========================================================================
+   UI refresh + light/dark themes
+   ========================================================================== */
+:root,
+html[data-theme="dark"] {
+  --bg-app: #060b12;
+  --bg-card: rgba(13, 21, 34, 0.92);
+  --bg-panel: rgba(13, 21, 34, 0.88);
+  --bg-hover: rgba(28, 42, 63, 0.9);
+  --terminal-bar: rgba(21, 33, 51, 0.92);
+  --terminal-card: rgba(13, 21, 34, 0.92);
+  --border-light: rgba(137, 158, 184, 0.22);
+  --border-warm: rgba(137, 158, 184, 0.3);
+  --border-accent: rgba(57, 217, 138, 0.44);
+  --border: var(--border-light);
+  --accent: #39d98a;
+  --neon-green: #39d98a;
+  --neon-cyan: #38bdf8;
+  --neon-magenta: #f472b6;
+  --text-primary: #f7fbff;
+  --text-secondary: #b7c3d2;
+  --text-tertiary: #7e8da3;
+  --text-muted: var(--text-secondary);
+  --muted: var(--text-secondary);
+  --surface-1: rgba(11, 18, 30, 0.86);
+  --surface-2: rgba(16, 26, 41, 0.82);
+  --surface-3: rgba(24, 38, 59, 0.78);
+  --control-bg: rgba(9, 16, 27, 0.88);
+  --panel-bg: linear-gradient(180deg, rgba(17, 27, 43, 0.94), rgba(10, 17, 29, 0.9));
+  --nav-bg: rgba(7, 12, 21, 0.84);
+  --page-grid-line: rgba(94, 234, 212, 0.04);
+  --scanline-color: rgba(255, 255, 255, 0.035);
+  --scanline-opacity: 0.32;
+  --scroll-track: #07101c;
+  --scroll-thumb: rgba(56, 189, 248, 0.58);
+  --shadow-sm: 0 10px 30px rgba(0, 0, 0, 0.22);
+  --shadow-md: 0 18px 50px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 28px 90px rgba(0, 0, 0, 0.34);
+  --focus-ring: rgba(56, 189, 248, 0.62);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+  --cyber-cut: inset(0 round var(--radius-lg));
+  --cyber-cut-sm: inset(0 round var(--radius-sm));
+}
+
+html[data-theme="light"] {
+  --bg-app: #f5f8fb;
+  --bg-card: rgba(255, 255, 255, 0.92);
+  --bg-panel: rgba(255, 255, 255, 0.9);
+  --bg-hover: #eef5fb;
+  --terminal-bar: #edf3f8;
+  --terminal-card: rgba(255, 255, 255, 0.95);
+  --border-light: rgba(33, 55, 85, 0.15);
+  --border-warm: rgba(33, 55, 85, 0.22);
+  --border-accent: rgba(15, 159, 110, 0.38);
+  --border: var(--border-light);
+  --accent: #0f9f6e;
+  --neon-green: #0f9f6e;
+  --neon-cyan: #087fb4;
+  --neon-magenta: #b83280;
+  --text-primary: #122033;
+  --text-secondary: #4f6075;
+  --text-tertiary: #748299;
+  --text-muted: var(--text-secondary);
+  --muted: var(--text-secondary);
+  --surface-1: rgba(255, 255, 255, 0.92);
+  --surface-2: rgba(246, 250, 253, 0.92);
+  --surface-3: rgba(234, 243, 249, 0.9);
+  --control-bg: rgba(255, 255, 255, 0.96);
+  --panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 252, 255, 0.92));
+  --nav-bg: rgba(255, 255, 255, 0.82);
+  --page-grid-line: rgba(31, 112, 175, 0.065);
+  --scanline-color: rgba(18, 32, 51, 0.02);
+  --scanline-opacity: 0;
+  --scroll-track: #eef4f9;
+  --scroll-thumb: rgba(8, 127, 180, 0.45);
+  --shadow-sm: 0 10px 26px rgba(39, 61, 84, 0.08);
+  --shadow-md: 0 18px 48px rgba(39, 61, 84, 0.12);
+  --shadow-lg: 0 26px 80px rgba(39, 61, 84, 0.16);
+  --focus-ring: rgba(8, 127, 180, 0.42);
+}
+
+html {
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+}
+
+body {
+  color: var(--text-primary);
+  background-color: var(--bg-app);
+  background-image:
+    linear-gradient(var(--page-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--page-grid-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  transition: background-color 0.22s ease, color 0.22s ease;
+}
+
+html::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+  border-left: 1px solid var(--border-light);
+}
+
+html::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--scroll-thumb), rgba(57, 217, 138, 0.52));
+  border-color: var(--scroll-track);
+  box-shadow: none;
+}
+
+.cyber-scanlines::after {
+  opacity: var(--scanline-opacity);
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    var(--scanline-color) 3px,
+    var(--scanline-color) 4px
+  );
+}
+
+h1,
+h2,
+h3,
+h4,
+.hl-magenta,
+.hl-green,
+.footerBrand strong,
+.brandButton {
+  text-shadow: none;
+}
+
+h2 {
+  text-transform: none;
+}
+
+.hl-magenta,
+.hl-green {
+  animation: none;
+}
+
+.glitchTitle::before,
+.glitchTitle::after {
+  display: none;
+}
+
+a {
+  color: var(--neon-cyan);
+}
+
+a:hover {
+  color: var(--neon-green);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.topbar {
+  min-height: 68px;
+  background: var(--nav-bg);
+  border-bottom: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.brandButton {
+  color: var(--text-primary);
+  gap: 9px;
+}
+
+.brandButton::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  border-radius: 3px;
+  background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan));
+  box-shadow: 0 0 18px rgba(57, 217, 138, 0.28);
+}
+
+.tabs button {
+  height: 52px;
+  border-bottom: 0;
+}
+
+.tabs button span,
+.languageToggle,
+.headerLoginButton,
+.adminLink,
+.iconButton,
+.notificationButton,
+.tabletAccountButton,
+.mobileMenuButton,
+.historyFilterBar button,
+.chartControls button,
+.segmentedControl button {
+  clip-path: none;
+  border-radius: var(--radius-sm);
+}
+
+.tabs button span {
+  min-height: 34px;
+  background: var(--surface-1);
+  border-color: var(--border-light);
+  color: var(--text-secondary);
+}
+
+.tabs button:hover,
+.tabs button.active {
+  color: var(--neon-green);
+  background: transparent;
+}
+
+.tabs button:hover span,
+.tabs button.active span {
+  background: color-mix(in srgb, var(--neon-green) 10%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--neon-green) 48%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.accountMenuContent,
+.account {
+  gap: 8px;
+}
+
+.languageToggle {
+  background: var(--surface-1);
+  border-color: var(--border-light);
+  padding: 4px;
+}
+
+.languageToggle button,
+.themeToggle {
+  border-radius: var(--radius-sm);
+}
+
+.themeToggle {
+  flex: 0 0 auto;
+  background: var(--surface-1);
+}
+
+.themeToggle:hover {
+  color: var(--neon-cyan);
+  border-color: var(--neon-cyan);
+}
+
+.notificationButton,
+.iconButton,
+.adminLink,
+.tabletAccountButton,
+.mobileMenuButton {
+  background: var(--surface-1);
+  border-color: var(--border-light);
+  color: var(--text-secondary);
+}
+
+.headerLoginButton {
+  background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan));
+  border-color: transparent;
+  color: #06120d;
+  box-shadow: 0 12px 28px rgba(15, 159, 110, 0.2);
+}
+
+.panel,
+.accountCard,
+.featureGrid article,
+.loginBox,
+.previewPanel,
+.pricingCard,
+.package,
+.voucherCard,
+.inviteTerminalPanel,
+.legalAside,
+.legalArticle,
+.fullscreenNotice,
+.redownloadFormatCard,
+.banOverlayCard {
+  background: var(--panel-bg) !important;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  clip-path: none;
+  box-shadow: var(--shadow-md);
+}
+
+.panel::after,
+.getlinkForm::after,
+.pricingCard::after,
+.package::after,
+.panel:not(.has-window-controls)::before,
+.accountCard::before,
+.featureGrid article::before,
+.loginBox::before,
+.previewPanel::before,
+.package::before,
+.pricingCard::before {
+  display: none;
+}
+
+.panel:not(.has-window-controls)>h2:first-child {
+  padding-left: 0;
+}
+
+.panel,
+.accountCard {
+  overflow: hidden;
+}
+
+.panel:hover,
+.featureGrid article:hover,
+.pricingCard:hover,
+.package:hover,
+.voucherCard:hover,
+.getlinkForm:focus-within {
+  border-color: color-mix(in srgb, var(--neon-green) 52%, var(--border-light));
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+.panel h2,
+.accountCard h2,
+.loginPanel h2,
+.getlinkForm h2,
+.historyPanelHeader h2,
+.inviteHistoryHeader h2 {
+  color: var(--text-primary);
+  text-transform: none;
+}
+
+input,
+select,
+textarea,
+.adminSearchField {
+  background: var(--control-bg);
+  border-color: var(--border-light);
+  border-radius: var(--radius-sm);
+  clip-path: none;
+  color: var(--text-primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--neon-cyan) 18%, transparent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--text-tertiary) 78%, transparent);
+}
+
+html[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator,
+html[data-theme="light"] input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: none;
+}
+
+.googleButton,
+.loginPanel button,
+.inputRow button,
+.smallButton,
+.inputWrapper button,
+.primaryButton,
+.ghostButton {
+  border-radius: var(--radius-sm);
+  clip-path: none;
+  text-transform: none;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+
+.primaryButton,
+.loginPanel button,
+.inputRow button,
+.inputWrapper button {
+  color: #06120d;
+  background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan));
+  border-color: transparent;
+  box-shadow: 0 14px 32px rgba(15, 159, 110, 0.22);
+}
+
+.primaryButton:hover,
+.loginPanel button:hover,
+.inputRow button:hover:not(:disabled),
+.inputWrapper button:hover:not(:disabled) {
+  color: #06120d;
+  background: linear-gradient(135deg, var(--neon-cyan), var(--neon-green));
+  border-color: transparent;
+  box-shadow: 0 18px 42px rgba(8, 127, 180, 0.22);
+}
+
+.googleButton,
+.smallButton,
+.ghostButton {
+  background: var(--surface-1);
+  border-color: var(--border-light);
+  color: var(--text-primary);
+}
+
+.googleButton:hover,
+.smallButton:hover:not(:disabled),
+.ghostButton:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+}
+
+.googleButton::before,
+.loginPanel button::before,
+.inputRow button::before,
+.smallButton::before,
+.inputWrapper button::before,
+.primaryButton::before {
+  display: none;
+}
+
+.signalRail,
+.downloadGuideBanner,
+.referralInvite,
+.topupCheckoutBox,
+.result,
+.statusItem,
+.notificationDropdown,
+.notificationDropdown button,
+.tableRow,
+.formatOption,
+.formatSelector,
+.getlinkProgress,
+.voucherValue,
+.voucherMetaGrid div,
+.voucherPackagePicker,
+.voucherApplies,
+.userCreditHistoryPanel,
+.systemHealthItem,
+.adminActivityItem,
+.packageBarItem,
+.adminKpiCard,
+.overviewHeroStats,
+.cookiePoolCard,
+.runtimeSettingRow,
+.runtimeModeButton,
+.articleSortBadge {
+  background: var(--surface-2);
+  border-color: var(--border-light);
+  border-radius: var(--radius-sm);
+  clip-path: none;
+  box-shadow: none;
+}
+
+.result {
+  border-color: color-mix(in srgb, var(--neon-cyan) 38%, var(--border-light));
+}
+
+.tableRow:hover,
+.formatOption:hover:not(:disabled),
+.formatOption.active,
+.runtimeModeButton.active {
+  background: color-mix(in srgb, var(--neon-green) 8%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--neon-green) 44%, var(--border-light));
+  box-shadow: none;
+}
+
+.badge {
+  border-radius: var(--radius-sm);
+  clip-path: none;
+  background: var(--surface-1);
+}
+
+.badge.success {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 10%, var(--surface-1));
+}
+
+.badge.pending {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-1));
+}
+
+.badge.error {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, var(--surface-1));
+}
+
+.landing {
+  padding-top: var(--space-16);
+}
+
+.landing::before {
+  background-image:
+    linear-gradient(var(--page-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--page-grid-line) 1px, transparent 1px);
+  opacity: 1;
+}
+
+.signalRail {
+  border-color: var(--border-light);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.eyebrowSignal,
+.sectionTitle h3,
+.inviteSectionTag {
+  background: color-mix(in srgb, var(--neon-cyan) 9%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--neon-cyan) 30%, var(--border-light));
+  border-radius: var(--radius-sm);
+  clip-path: none;
+  color: var(--neon-cyan);
+  text-shadow: none;
+}
+
+.eyebrowSignal::before {
+  border-radius: 2px;
+  box-shadow: none;
+}
+
+.heroLeft p,
+.homeGuideSection .sectionTitle p,
+.featureGrid p,
+.guideArticleBody p,
+.legalSection p,
+.fullscreenNoticeContent p {
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+}
+
+.heroSection::after,
+#pricing::before,
+.ctaSection::before,
+.landingFooter::before {
+  background: linear-gradient(90deg, transparent, var(--border-light), transparent);
+}
+
+#pricing::after,
+.ctaSection::after {
+  display: none;
+}
+
+.pricingCard,
+.package {
+  overflow: hidden;
+}
+
+.pricingCard h3,
+.package h3 {
+  color: var(--text-primary);
+}
+
+.pricingCard li {
+  border-bottom-color: var(--border-light);
+}
+
+.priceOriginal {
+  color: var(--text-tertiary);
+}
+
+.saleOnly::before,
+.hl-magenta {
+  color: var(--neon-magenta);
+}
+
+.hl-green,
+.pricingCard .price.hl-green,
+.package strong.hl-green,
+.creditBadge strong,
+.footerBrand strong {
+  color: var(--neon-green);
+}
+
+.creditBadge {
+  background: color-mix(in srgb, var(--neon-green) 10%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--neon-green) 30%, var(--border-light));
+  border-radius: var(--radius-md);
+}
+
+.downloadGuideBanner {
+  color: var(--text-primary);
+  text-shadow: none;
+  animation: none;
+}
+
+.linkInputWrap .pasteInlineButton {
+  background: color-mix(in srgb, var(--neon-cyan) 10%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--neon-cyan) 28%, var(--border-light));
+  color: var(--neon-cyan);
+}
+
+.terminalInput::after {
+  color: var(--neon-cyan);
+}
+
+.terminalInputMirror {
+  color: var(--text-secondary);
+}
+
+.getlinkProgressTrack,
+.packageBarTrack,
+.chartBarTrack {
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.getlinkProgressTrack i,
+.packageBarTrack i,
+.chartBarFill {
+  background: linear-gradient(180deg, var(--neon-cyan), var(--neon-green));
+}
+
+.notificationDropdown {
+  box-shadow: var(--shadow-lg);
+}
+
+.notificationButton span {
+  border-radius: 999px;
+  background: var(--error);
+  color: #ffffff;
+}
+
+.fullscreenNoticeOverlay,
+.redownloadFormatOverlay,
+.banOverlay {
+  background: rgba(5, 10, 18, 0.68);
+}
+
+html[data-theme="light"] .fullscreenNoticeOverlay,
+html[data-theme="light"] .redownloadFormatOverlay,
+html[data-theme="light"] .banOverlay {
+  background: rgba(226, 236, 246, 0.72);
+}
+
+.fullscreenNoticeClose {
+  border-radius: var(--radius-sm);
+  clip-path: none;
+  background: var(--surface-1);
+}
+
+.landingFooter {
+  background: var(--surface-1);
+  border-top-color: var(--border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.footerBrand strong::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan));
+}
+
+.messengerFloat {
+  border-color: color-mix(in srgb, var(--neon-cyan) 60%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+.messengerFloat::after {
+  background: var(--accent);
+}
+
+html[data-theme="light"] .messengerFloat::after {
+  border-color: #ffffff;
+}
+
+html[data-theme="light"] .facebookGroupBanner {
+  box-shadow: 0 4px 16px rgba(24, 119, 242, 0.18);
+}
+
+@media (max-width: 900px) {
+  .accountMenuContent {
+    background: var(--panel-bg);
+    border-color: var(--border-light);
+    border-radius: var(--radius-lg);
+    clip-path: none;
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    min-height: 60px;
+  }
+
+  .brandButton {
+    min-height: 58px;
+  }
+
+  .topbarMenu {
+    border-top-color: var(--border-light);
+  }
+
+  .tabs button span,
+  .headerLoginButton,
+  .adminLink,
+  .languageToggle,
+  .iconButton,
+  .themeToggle {
+    width: 100%;
+  }
+
+  .accountMenuContent,
+  .account.open .accountMenuContent {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+}
