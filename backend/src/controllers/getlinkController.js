@@ -29,6 +29,7 @@ import { securityEvent } from "../utils/logger.js";
 import { writeSystemLog } from "../utils/systemLog.js";
 
 const productLocks = new Map();
+const historyRefreshLocks = new Map();
 const MAX_PRODUCT_LOCKS = 500;
 const PARTIAL_DOWNLOAD_SESSION_MS = 10 * 60 * 1000;
 const MAX_PREVIEW_IMAGE_BYTES = 15 * 1024 * 1024;
@@ -45,6 +46,10 @@ const userProductLocks = new Set();
 
 function userProductLockKey(userId, productId) {
   return `${String(userId)}:${String(productId)}`;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function redownloadWindowMs() {
@@ -271,6 +276,64 @@ function cacheFormatPatch(selectedFormat = null) {
     formatLabel: String(selectedFormat.label || ""),
     formatSize: String(selectedFormat.size || ""),
   };
+}
+
+function downloadFormatFromCache(cache = {}) {
+  return {
+    key: cache.downloadFormatKey || "",
+    label: cache.formatLabel || "",
+    fileFormat: cache.fileFormat || "",
+    formatVersion: cache.formatVersion || "",
+    rendererType: cache.rendererType || "",
+    rendererLabel: cache.rendererLabel || "",
+    size: cache.formatSize || "",
+  };
+}
+
+function refreshLockKey(history = {}, selectedFormat = null) {
+  const formatKey = downloadFormatKey(selectedFormat || history.downloadFormat) || "default";
+  const sourceKey = modelPageKey(history.sourceUrl || "") || String(history.sourceUrl || "");
+  return [
+    String(history.productId || ""),
+    formatKey,
+    sourceKey,
+  ].join(":");
+}
+
+async function useFreshCacheForHistory(history, selectedFormat = null) {
+  const requestedFormat = selectedFormat || history.downloadFormat || null;
+  const cache = await ProductCache.findOne({ productId: history.productId });
+  if (
+    !isCacheFresh(cache) ||
+    !cacheMatchesModelUrl(cache, history.sourceUrl || "") ||
+    !cacheMatchesDownloadFormat(cache, requestedFormat)
+  ) {
+    return null;
+  }
+
+  return Getlink.findByIdAndUpdate(
+    history._id,
+    {
+      fileUrl: cache.fileUrl,
+      sourceUrl: cache.sourceUrl || history.sourceUrl,
+      title: cache.title || history.title,
+      imageUrl: cache.imageUrl || history.imageUrl,
+      downloadFormat: downloadFormatFromCache(cache),
+      creditUsed: history.creditUsed,
+    },
+    { new: true },
+  );
+}
+
+function isDuplicate3D66Operation(error = {}) {
+  const response = error?.details?.response || {};
+  const text = [
+    error?.message,
+    response.msg,
+    response.message,
+    JSON.stringify(response),
+  ].join(" ");
+  return /\u8bf7\u52ff\u91cd\u590d\u64cd\u4f5c|duplicate|repeat\s*operation/i.test(text);
 }
 
 function historyMatchesProductIdentity(history, productIds = [], sourceUrl = "") {
@@ -1148,7 +1211,7 @@ export async function getLink(req, res, next) {
       );
       if (activeRedownloadAnyFormat) {
         activeRedownload = await with3D66Cookie((cookieValue) =>
-          refreshHistoryDownload(activeRedownloadAnyFormat, cookieValue, downloadFormat),
+          refreshHistoryDownloadLocked(activeRedownloadAnyFormat, cookieValue, downloadFormat),
         );
       }
     }
@@ -1241,7 +1304,7 @@ export async function getLink(req, res, next) {
           );
           if (previewRedownloadAnyFormat) {
             previewRedownload = await with3D66Cookie((cookieValue) =>
-              refreshHistoryDownload(previewRedownloadAnyFormat, cookieValue, downloadFormat),
+              refreshHistoryDownloadLocked(previewRedownloadAnyFormat, cookieValue, downloadFormat),
             );
           }
         }
@@ -1483,6 +1546,42 @@ async function refreshHistoryDownload(history, cookieValue, downloadFormatOverri
   return Getlink.findByIdAndUpdate(history._id, updatedFields, { new: true });
 }
 
+async function refreshHistoryDownloadLocked(history, cookieValue, downloadFormatOverride = null) {
+  if (!history.sourceUrl) return history;
+  const requestedFormat = downloadFormatOverride || history.downloadFormat || null;
+  const cachedHistory = await useFreshCacheForHistory(history, requestedFormat);
+  if (cachedHistory) return cachedHistory;
+
+  const key = refreshLockKey(history, requestedFormat);
+  const existingLock = historyRefreshLocks.get(key);
+  if (existingLock) {
+    await existingLock.catch(() => null);
+    const latestHistory = await Getlink.findById(history._id);
+    if (latestHistory && isCacheFresh(latestHistory)) return latestHistory;
+    const latestCachedHistory = await useFreshCacheForHistory(latestHistory || history, requestedFormat);
+    if (latestCachedHistory) return latestCachedHistory;
+  }
+
+  const refreshPromise = refreshHistoryDownload(history, cookieValue, requestedFormat);
+  historyRefreshLocks.set(key, refreshPromise);
+  try {
+    return await refreshPromise;
+  } catch (error) {
+    if (isDuplicate3D66Operation(error)) {
+      await delay(1500);
+      const latestHistory = await Getlink.findById(history._id);
+      if (latestHistory && isCacheFresh(latestHistory)) return latestHistory;
+      const latestCachedHistory = await useFreshCacheForHistory(latestHistory || history, requestedFormat);
+      if (latestCachedHistory) return latestCachedHistory;
+    }
+    throw error;
+  } finally {
+    if (historyRefreshLocks.get(key) === refreshPromise) {
+      historyRefreshLocks.delete(key);
+    }
+  }
+}
+
 export async function prepareRedownload(req, res, next) {
   try {
     const unknownKey = rejectUnknownKeys(req.body || {}, ["downloadFormat"]);
@@ -1585,7 +1684,7 @@ export async function prepareRedownload(req, res, next) {
     const activeHistory =
       selectedFormatKey && selectedFormatKey !== currentFormatKey
         ? await with3D66Cookie((cookieValue) =>
-            refreshHistoryDownload(history, cookieValue, selectedFormat),
+            refreshHistoryDownloadLocked(history, cookieValue, selectedFormat),
           )
         : history;
     const downloadUrl = publicDownloadUrl(req, activeHistory._id);
@@ -1630,7 +1729,7 @@ async function openDownloadResponse(history, req, signal) {
   return with3D66Cookie(async (cookieValue) => {
     let activeHistory = history;
     if (!isCacheFresh(activeHistory)) {
-      activeHistory = await refreshHistoryDownload(activeHistory, cookieValue);
+      activeHistory = await refreshHistoryDownloadLocked(activeHistory, cookieValue);
     }
 
     let upstream = await request3D66File(activeHistory.fileUrl, cookieValue, {
@@ -1640,7 +1739,7 @@ async function openDownloadResponse(history, req, signal) {
     });
 
     if (isRefreshableStatus(upstream.status) && activeHistory.sourceUrl) {
-      activeHistory = await refreshHistoryDownload(activeHistory, cookieValue);
+      activeHistory = await refreshHistoryDownloadLocked(activeHistory, cookieValue);
       upstream = await request3D66File(activeHistory.fileUrl, cookieValue, {
         sourceUrl: activeHistory.sourceUrl,
         range: req.get("range"),
