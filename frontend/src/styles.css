@@ -5924,6 +5924,30 @@ html[data-theme="light"] input[type="datetime-local"]::-webkit-calendar-picker-i
   background: color-mix(in srgb, var(--error) 10%, var(--surface-1));
 }
 
+.coinAmount {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.coinIcon {
+  flex: 0 0 auto;
+  color: var(--neon-green);
+  stroke-width: 2.4;
+  vertical-align: -0.18em;
+}
+
+.coinAmount.compact {
+  gap: 4px;
+}
+
+.coinAmount.large .coinIcon {
+  width: 22px;
+  height: 22px;
+}
+
 .landing {
   padding-top: var(--space-16);
 }

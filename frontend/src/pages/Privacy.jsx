@@ -6,7 +6,7 @@ const privacyContent = {
   vi: {
     eyebrow: "privacy policy",
     title: "Chính Sách Bảo Mật",
-    intro: "Trang này mô tả cách 3DiPL thu thập, sử dụng, bảo vệ và lưu trữ dữ liệu khi bạn đăng nhập, nạp credit hoặc sử dụng dịch vụ getlink 3D66.",
+    intro: "Trang này mô tả cách 3DiPL thu thập, sử dụng, bảo vệ và lưu trữ dữ liệu khi bạn đăng nhập, nạp coin hoặc sử dụng dịch vụ getlink 3D66.",
     updated: "Cập nhật: 18/05/2026",
     asideTitle: "Bảo vệ dữ liệu",
     asideBody: "Chỉ thu thập dữ liệu cần thiết cho đăng nhập, thanh toán, tải file và hỗ trợ vận hành.",
@@ -18,21 +18,21 @@ const privacyContent = {
         title: "1. Thông tin chúng tôi thu thập",
         body: [
           "Khi bạn đăng nhập và sử dụng 3DiPL, hệ thống có thể lưu thông tin tài khoản Google như email, tên hiển thị và ảnh đại diện để xác thực người dùng.",
-          "Hệ thống cũng lưu số dư credit, lịch sử nạp tiền, lịch sử getlink, trạng thái đơn nạp và các log kỹ thuật cần thiết để vận hành dịch vụ."
+          "Hệ thống cũng lưu số dư coin, lịch sử nạp tiền, lịch sử getlink, trạng thái đơn nạp và các log kỹ thuật cần thiết để vận hành dịch vụ."
         ]
       },
       {
         title: "2. Mục đích sử dụng dữ liệu",
         body: [
-          "Dữ liệu được dùng để đăng nhập, cộng/trừ credit, tạo link tải, xử lý thanh toán, chống gian lận, hỗ trợ người dùng và gửi thông báo vận hành khi cần.",
+          "Dữ liệu được dùng để đăng nhập, cộng/trừ coin, tạo link tải, xử lý thanh toán, chống gian lận, hỗ trợ người dùng và gửi thông báo vận hành khi cần.",
           "Các thông tin kỹ thuật như IP, thời điểm truy cập và lỗi hệ thống giúp chúng tôi bảo vệ tài khoản, phát hiện lạm dụng và cải thiện độ ổn định của dịch vụ."
         ]
       },
       {
         title: "3. Thanh toán và webhook",
         body: [
-          "Khi bạn nạp credit, hệ thống có thể xử lý nội dung chuyển khoản, mã giao dịch, số tiền, trạng thái thanh toán và dữ liệu callback từ nhà cung cấp thanh toán.",
-          "Thông tin này chỉ dùng để đối soát giao dịch, tự động cộng credit hoặc hỗ trợ kiểm tra thủ công nếu thanh toán chưa được xác nhận."
+          "Khi bạn nạp coin, hệ thống có thể xử lý nội dung chuyển khoản, mã giao dịch, số tiền, trạng thái thanh toán và dữ liệu callback từ nhà cung cấp thanh toán.",
+          "Thông tin này chỉ dùng để đối soát giao dịch, tự động cộng coin hoặc hỗ trợ kiểm tra thủ công nếu thanh toán chưa được xác nhận."
         ]
       },
       {
@@ -67,7 +67,7 @@ const privacyContent = {
   en: {
     eyebrow: "privacy policy",
     title: "Privacy Policy",
-    intro: "This page explains how 3DiPL collects, uses, protects, and stores data when you sign in, top up credit, or use the 3D66 getlink service.",
+    intro: "This page explains how 3DiPL collects, uses, protects, and stores data when you sign in, top up coins, or use the 3D66 getlink service.",
     updated: "Updated: 05/18/2026",
     asideTitle: "Data protection",
     asideBody: "We only collect data needed for sign-in, payment, file downloads, and service operations.",
@@ -79,21 +79,21 @@ const privacyContent = {
         title: "1. Information we collect",
         body: [
           "When you sign in and use 3DiPL, the system may store Google account information such as email, display name, and avatar for user authentication.",
-          "The system also stores credit balance, top-up history, getlink history, top-up order status, and technical logs required to operate the service."
+          "The system also stores coin balance, top-up history, getlink history, top-up order status, and technical logs required to operate the service."
         ]
       },
       {
         title: "2. How we use data",
         body: [
-          "Data is used for sign-in, credit balance updates, download link generation, payment processing, fraud prevention, user support, and operational notifications when needed.",
+          "Data is used for sign-in, coin balance updates, download link generation, payment processing, fraud prevention, user support, and operational notifications when needed.",
           "Technical information such as IP address, access time, and system errors helps us protect accounts, detect abuse, and improve service stability."
         ]
       },
       {
         title: "3. Payments and webhooks",
         body: [
-          "When you top up credit, the system may process transfer content, transaction code, amount, payment status, and callback data from payment providers.",
-          "This information is used only for transaction reconciliation, automatic crediting, or manual support when a payment has not been confirmed."
+          "When you top up coins, the system may process transfer content, transaction code, amount, payment status, and callback data from payment providers.",
+          "This information is used only for transaction reconciliation, automatic coin updates, or manual support when a payment has not been confirmed."
         ]
       },
       {

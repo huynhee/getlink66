@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Bell, Chrome, LogOut, Menu, Moon, Sun, UserCircle, X } from "lucide-react";
 import { API_URL, api } from "../api.js";
+import CoinAmount from "./CoinAmount.jsx";
 import { translations } from "../i18n.js";
 import { setFaviconNotificationCount } from "../utils/faviconProgress.js";
 
@@ -258,11 +259,11 @@ export default function Navbar({
             </div>
             <button type="button" className="tabletAccountButton" onClick={toggleAccountMenu} aria-label="Account" aria-expanded={accountOpen}>
               <UserCircle size={16} />
-              <strong>{user.credit}</strong>
+              <strong><CoinAmount value={user.credit} className="compact" /></strong>
             </button>
             <div className="accountMenuContent">
               <span>{user.name}</span>
-              <strong>{user.credit} credit</strong>
+              <strong><CoinAmount value={user.credit} /></strong>
               {user.role === "admin" && (
                 <button className="adminLink" onClick={() => goPath("/admin")}>
                   {t.admin}

@@ -6,22 +6,22 @@ const termsContent = {
   vi: {
     eyebrow: "terms of service",
     title: "Điều Khoản Sử Dụng",
-    intro: "Các điều khoản dưới đây áp dụng cho việc đăng nhập, nạp credit và sử dụng dịch vụ getlink 3D66 trên 3DiPL.",
+    intro: "Các điều khoản dưới đây áp dụng cho việc đăng nhập, nạp coin và sử dụng dịch vụ getlink 3D66 trên 3DiPL.",
     updated: "Cập nhật: 18/05/2026",
     asideTitle: "Quy định chính",
     home: "Về trang chủ",
     bullets: [
       "Sử dụng đúng mục đích hợp pháp.",
-      "Credit dùng cho lượt getlink trong hệ thống.",
+      "Coin dùng cho lượt getlink trong hệ thống.",
       "Không khai thác lỗi hoặc gây quá tải dịch vụ."
     ],
-    warning: "Nếu bạn không đồng ý với điều khoản này, hãy ngừng sử dụng dịch vụ trước khi nạp credit hoặc tạo yêu cầu getlink mới.",
+    warning: "Nếu bạn không đồng ý với điều khoản này, hãy ngừng sử dụng dịch vụ trước khi nạp coin hoặc tạo yêu cầu getlink mới.",
     contact: "Các giao dịch nạp tiền được đối soát theo lịch sử thanh toán và log hệ thống.",
     sections: [
       {
         title: "1. Phạm vi dịch vụ",
         body: [
-          "3DiPL cung cấp dịch vụ trung gian hỗ trợ người dùng tạo link tải model từ 3D66 bằng credit trả trước.",
+          "3DiPL cung cấp dịch vụ trung gian hỗ trợ người dùng tạo link tải model từ 3D66 bằng coin trả trước.",
           "Dịch vụ phụ thuộc vào tình trạng tài khoản nguồn, hệ thống 3D66, cache, kết nối mạng và các giới hạn kỹ thuật tại từng thời điểm."
         ]
       },
@@ -40,11 +40,11 @@ const termsContent = {
         ]
       },
       {
-        title: "4. Credit, nạp tiền và hoàn tiền",
+        title: "4. Coin, nạp tiền và hoàn tiền",
         body: [
-          "Credit được dùng để thanh toán lượt getlink trong hệ thống. Giá gói, tỷ lệ quy đổi và chương trình khuyến mại có thể thay đổi tùy thời điểm.",
+          "Coin được dùng để thanh toán lượt getlink trong hệ thống. Giá gói, tỷ lệ quy đổi và chương trình khuyến mại có thể thay đổi tùy thời điểm.",
           "Giao dịch chuyển khoản sai nội dung, sai số tiền hoặc thiếu mã đối soát có thể cần kiểm tra thủ công và xử lý chậm hơn.",
-          "Credit đã dùng cho lượt getlink thành công thường không hoàn lại, trừ trường hợp lỗi hệ thống được quản trị viên xác nhận hoặc theo yêu cầu pháp luật."
+          "Coin đã dùng cho lượt getlink thành công thường không hoàn lại, trừ trường hợp lỗi hệ thống được quản trị viên xác nhận hoặc theo yêu cầu pháp luật."
         ]
       },
       {
@@ -58,7 +58,7 @@ const termsContent = {
         title: "6. Giới hạn trách nhiệm",
         body: [
           "Dịch vụ được cung cấp theo hiện trạng. 3DiPL không chịu trách nhiệm cho thiệt hại gián tiếp, mất dữ liệu, mất lợi nhuận hoặc tranh chấp bản quyền phát sinh từ việc sử dụng model tải về.",
-          "Trong phạm vi pháp luật cho phép, trách nhiệm tối đa của 3DiPL được giới hạn ở giá trị credit người dùng đã thanh toán và chưa sử dụng trong hệ thống."
+          "Trong phạm vi pháp luật cho phép, trách nhiệm tối đa của 3DiPL được giới hạn ở giá trị coin người dùng đã thanh toán và chưa sử dụng trong hệ thống."
         ]
       },
       {
@@ -73,22 +73,22 @@ const termsContent = {
   en: {
     eyebrow: "terms of service",
     title: "Terms of Service",
-    intro: "These terms apply to signing in, topping up credit, and using the 3D66 getlink service on 3DiPL.",
+    intro: "These terms apply to signing in, topping up coins, and using the 3D66 getlink service on 3DiPL.",
     updated: "Updated: 05/18/2026",
     asideTitle: "Key rules",
     home: "Back to home",
     bullets: [
       "Use the service only for lawful purposes.",
-      "Credit is used for getlink requests in the system.",
+      "Coins are used for getlink requests in the system.",
       "Do not exploit bugs or overload the service."
     ],
-    warning: "If you do not agree with these terms, stop using the service before topping up credit or creating a new getlink request.",
+    warning: "If you do not agree with these terms, stop using the service before topping up coins or creating a new getlink request.",
     contact: "Top-up transactions are reconciled using payment history and system logs.",
     sections: [
       {
         title: "1. Service scope",
         body: [
-          "3DiPL provides an intermediary service that helps users create download links for 3D66 models using prepaid credit.",
+          "3DiPL provides an intermediary service that helps users create download links for 3D66 models using prepaid coins.",
           "The service depends on source account status, the 3D66 system, cache, network connectivity, and technical limits at each point in time."
         ]
       },
@@ -107,11 +107,11 @@ const termsContent = {
         ]
       },
       {
-        title: "4. Credit, top-ups, and refunds",
+        title: "4. Coins, top-ups, and refunds",
         body: [
-          "Credit is used to pay for getlink requests in the system. Package prices, conversion rates, and promotions may change over time.",
+          "Coins are used to pay for getlink requests in the system. Package prices, conversion rates, and promotions may change over time.",
           "Transfers with incorrect content, incorrect amount, or missing reconciliation code may require manual review and may be processed more slowly.",
-          "Credit used for successful getlink requests is generally non-refundable, except when a system error is confirmed by an administrator or required by law."
+          "Coins used for successful getlink requests are generally non-refundable, except when a system error is confirmed by an administrator or required by law."
         ]
       },
       {
@@ -125,7 +125,7 @@ const termsContent = {
         title: "6. Limitation of liability",
         body: [
           "The service is provided as is. 3DiPL is not responsible for indirect damages, data loss, lost profit, or copyright disputes arising from downloaded models.",
-          "To the extent permitted by law, 3DiPL's maximum liability is limited to the value of credit the user has paid for and not yet used in the system."
+          "To the extent permitted by law, 3DiPL's maximum liability is limited to the value of coins the user has paid for and not yet used in the system."
         ]
       },
       {

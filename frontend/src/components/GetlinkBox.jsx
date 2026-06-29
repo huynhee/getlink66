@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, ArrowDownToLine, Copy, Check, ClipboardPaste, Search, ImageDown, X } from "lucide-react";
+import CoinAmount from "./CoinAmount.jsx";
 import { api } from "../api.js";
 import { translations } from "../i18n.js";
 import {
@@ -357,7 +358,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
             <div style={{ minWidth: 0 }}>
               <strong style={{ display: "block", overflowWrap: "anywhere" }}>{preview.title || preview.productId}</strong>
               <p className="muted" style={{ margin: "6px 0" }}>{t.productCode}: {preview.productId}</p>
-              <p className="muted" style={{ margin: 0 }}>{t.price}: {preview.creditCost || 1} credit</p>
+              <p className="muted" style={{ margin: 0 }}>{t.price}: <CoinAmount value={preview.creditCost || 1} /></p>
             </div>
           </div>
           {canChooseFormat && (
@@ -396,7 +397,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               {confirming ? <Loader2 size={18} className="spin" /> : <ArrowDownToLine size={18} />}
               {confirming
                 ? t.processing
-                : `${t.confirmDownload} - ${preview.creditCost || 1} credit`}
+                : <>{t.confirmDownload} - <CoinAmount value={preview.creditCost || 1} /></>}
             </button>
           )}
         </div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Check, Coins, Copy, Gift, Link2, Share2, UserPlus, Users } from "lucide-react";
+import CoinAmount from "../components/CoinAmount.jsx";
 import { api } from "../api.js";
 
 export default function Invite({ language = "vi" }) {
@@ -105,11 +106,11 @@ export default function Invite({ language = "vi" }) {
   const rewardText =
     summary.mode === "referrer_only"
       ? isVi
-        ? `Mỗi người đăng ký thành công giúp bạn nhận ${summary.rewardCredit} credit.`
-        : `Each successful signup gives you ${summary.rewardCredit} credit.`
+        ? <>Mỗi người đăng ký thành công giúp bạn nhận <CoinAmount value={summary.rewardCredit} />.</>
+        : <>Each successful signup gives you <CoinAmount value={summary.rewardCredit} />.</>
       : isVi
-        ? `Mỗi lượt đăng ký thành công: cả hai nhận ${summary.rewardCredit} credit.`
-        : `Each successful signup gives both users ${summary.rewardCredit} credit.`;
+        ? <>Mỗi lượt đăng ký thành công: cả hai nhận <CoinAmount value={summary.rewardCredit} />.</>
+        : <>Each successful signup gives both users <CoinAmount value={summary.rewardCredit} />.</>;
 
   return (
     <div className="stack invitePage">
@@ -120,7 +121,7 @@ export default function Invite({ language = "vi" }) {
           </span>
           <h1>
             <span>{isVi ? "Mời bạn" : "Invite"}</span>
-            <strong>{isVi ? "Nhận credit" : "Earn credit"}</strong>
+            <strong>{isVi ? "Nhận" : "Earn"} <Coins size={28} /></strong>
           </h1>
           <p>{rewardText}</p>
           <div className="inviteTerminalStatus">
@@ -136,12 +137,12 @@ export default function Invite({ language = "vi" }) {
           <div>
             <Gift size={18} />
             <span>{isVi ? "Đã nhận" : "Earned"}</span>
-            <strong>{earnedCredit} credit</strong>
+            <strong><CoinAmount value={earnedCredit} /></strong>
           </div>
           <div>
             <Coins size={18} />
             <span>{isVi ? "Thưởng mỗi lượt" : "Reward per invite"}</span>
-            <strong>{summary.rewardCredit} credit</strong>
+            <strong><CoinAmount value={summary.rewardCredit} /></strong>
           </div>
         </div>
       </section>
@@ -178,8 +179,8 @@ export default function Invite({ language = "vi" }) {
           <p className="inviteLinkHint">
             <span>&gt;</span>{" "}
             {isVi
-              ? "Gửi link này cho bạn bè. Credit được cộng tự động khi đăng ký thành công."
-              : "Send this link to friends. Credit is added automatically after successful signup."}
+                ? "Gửi link này cho bạn bè. Coin được cộng tự động khi đăng ký thành công."
+                : "Send this link to friends. Coin is added automatically after successful signup."}
           </p>
         </div>
       </section>
@@ -211,7 +212,7 @@ export default function Invite({ language = "vi" }) {
                     ? "Đã mời bạn"
                     : "Invited you"}
               </span>
-              <strong>+{item.credit} credit</strong>
+              <strong><CoinAmount value={item.credit} prefix="+" /></strong>
               <time>{new Date(item.createdAt).toLocaleString(isVi ? "vi-VN" : "en-US")}</time>
             </div>
           ))}

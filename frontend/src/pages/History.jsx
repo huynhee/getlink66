@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowRightLeft, Download, FileDown, Gift, LifeBuoy, Lock } from "lucide-react";
+import CoinAmount from "../components/CoinAmount.jsx";
 import RedownloadFormatModal from "../components/RedownloadFormatModal.jsx";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
@@ -34,8 +35,8 @@ function redownloadUsageLabel(item, language) {
 }
 
 function topupTitle(item, t) {
-  if (item.type === "manual" && !item.packageId) return t.adminCredit || "Admin cộng credit";
-  return `${t.packagePrefix || "Gói"} ${item.packageId?.name || "Credit"}`;
+  if (item.type === "manual" && !item.packageId) return t.adminCredit || "Admin cộng coin";
+  return `${t.packagePrefix || "Gói"} ${item.packageId?.name || "Coin"}`;
 }
 
 function topupStatusLabel(item, t) {
@@ -203,7 +204,7 @@ export default function History({ language = "vi" }) {
           {topupTitle(item, t)}
         </span>
         <div className="historyDownloadCell">
-          <strong>+{item.credit} credit</strong>
+          <strong><CoinAmount value={item.credit} prefix="+" /></strong>
           <small className="historyMeta">
             {Number(item.amount || 0).toLocaleString("vi-VN")}đ
           </small>
@@ -228,11 +229,11 @@ export default function History({ language = "vi" }) {
           {language === "vi" ? "Mời bạn bè" : "Referral"}
         </span>
         <div className="historyDownloadCell">
-          <strong>+{item.credit} credit</strong>
+          <strong><CoinAmount value={item.credit} prefix="+" /></strong>
           <small className="historyMeta">{label}</small>
         </div>
         <div className="historyStatusTime">
-          <span className="badge success">{language === "vi" ? "Đã cộng" : "Credited"}</span>
+          <span className="badge success">{language === "vi" ? "Đã cộng" : "Added"}</span>
           <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
         </div>
       </>
@@ -252,7 +253,7 @@ export default function History({ language = "vi" }) {
           {[
             ["all", language === "vi" ? "Tất cả" : "All"],
             ["download", language === "vi" ? "Tải model" : "Downloads"],
-            ["topup", language === "vi" ? "Nạp credit" : "Top-ups"],
+            ["topup", language === "vi" ? "Nạp coin" : "Top-ups"],
             ["referral", language === "vi" ? "Mời bạn" : "Referral"],
           ].map(([value, label]) => (
             <button

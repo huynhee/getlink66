@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
+import CoinAmount, { CoinIcon } from "../components/CoinAmount.jsx";
 import GetlinkBox from "../components/GetlinkBox.jsx";
 import RedownloadFormatModal from "../components/RedownloadFormatModal.jsx";
-import { Coins, FileDown, Download, LifeBuoy, Lock, ArrowRightLeft } from "lucide-react";
+import { FileDown, Download, LifeBuoy, Lock, ArrowRightLeft } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
 import { closeDownloadWindow, openDownloadWindow, triggerBrowserDownload } from "../utils/downloadWindow.js";
@@ -49,7 +50,7 @@ export default function Home({ user, onUserChange, language = "vi" }) {
 
   function topupTitle(item) {
     if (item.type === "manual" && !item.packageId) return t.adminCredit;
-    return `${t.packagePrefix} ${item.packageId?.name || "Credit"}`;
+    return `${t.packagePrefix} ${item.packageId?.name || "Coin"}`;
   }
 
   function redownloadMeta(item) {
@@ -140,9 +141,8 @@ export default function Home({ user, onUserChange, language = "vi" }) {
           </div>
         </div>
         <div className="creditBadge">
-          <Coins size={22} color="var(--neon-green)" />
+          <CoinIcon size={22} />
           <strong>{user.credit}</strong>
-          <span>credit</span>
         </div>
       </section>
 
@@ -221,7 +221,7 @@ export default function Home({ user, onUserChange, language = "vi" }) {
             {topupHistory.map((item) => (
               <div className="tableRow" key={item._id}>
                 <span style={{ color: "var(--text-primary)" }}>{topupTitle(item)}</span>
-                <strong>+{item.credit} credit</strong>
+                <strong><CoinAmount value={item.credit} prefix="+" /></strong>
                 <span>
                   {item.status === "approved" ? (
                     <span className="badge success">{t.success}</span>
