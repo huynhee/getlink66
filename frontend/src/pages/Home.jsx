@@ -146,16 +146,6 @@ export default function Home({ user, onUserChange, language = "vi" }) {
         </div>
       </section>
 
-      <a
-        className="downloadGuideBanner"
-        href="https://youtu.be/A5aKNAPGrBk"
-        target="_blank"
-        rel="noreferrer"
-      >
-        <strong>hướng dẫn đổi dns google để tải tốc độ cao</strong>
-        <span>bấm vào đây để xem</span>
-      </a>
-
       <GetlinkBox
         onCreditChange={updateCredit}
         initialUrl={initialUrl}
