@@ -43,13 +43,13 @@ const emptyNotification = {
 const referralModeOptions = [
   {
     value: "both",
-    vi: "Cả hai cùng nhận coin",
-    en: "Both users receive coins",
+    vi: "Cả hai cùng nhận credit",
+    en: "Both users receive credit",
   },
   {
     value: "referrer_only",
     vi: "Chỉ người giới thiệu nhận",
-    en: "Only referrer receives coins",
+    en: "Only referrer receives credit",
   },
   {
     value: "off",
@@ -97,13 +97,13 @@ const defaultSiteSettings = {
   referralTitleReferrerOnly: "Giới thiệu bạn bè để +1 lượt tải.",
   pricingEyebrow: "Bảng giá",
   pricingTitle: "Chọn gói phù hợp",
-  pricingNote: "Nạp coin tự động, cộng coin ngay sau khi chọn gói.",
+  pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
   guideEyebrow: "Hướng dẫn",
   guideTitle: "Bài hướng dẫn",
-  guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp coin và tải lại file đã mua.",
+  guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
   ctaTitle: "Sẵn sàng bắt đầu?",
-  ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý coin của bạn.",
-  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý coin của bạn.",
+  ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
+  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
   footerTagline: "Hỗ trợ 24/7",
   threed66GetlinkConcurrency: 1,
   threed66PreviewConcurrency: 1,
@@ -754,9 +754,9 @@ export default function Admin({ user, language = "vi" }) {
       icon: Gauge,
     },
     {
-      label: l("Coin user còn", "User coin balance"),
+      label: l("Credit user còn", "User credit balance"),
       value: formatNumber(overview?.totalCredit, locale),
-      detail: l(`${formatNumber(overview?.totalCreditSpent, locale)} coin đã trừ`, `${formatNumber(overview?.totalCreditSpent, locale)} coin spent`),
+      detail: l(`${formatNumber(overview?.totalCreditSpent, locale)} credit đã trừ`, `${formatNumber(overview?.totalCreditSpent, locale)} credit spent`),
       icon: Wallet,
     },
     {
@@ -971,7 +971,7 @@ export default function Admin({ user, language = "vi" }) {
     {
       field: "getlinkRedownloadDays",
       label: l("Số ngày tải lại miễn phí", "Free redownload days"),
-      help: l("User được tải lại file đã getlink trong bao nhiêu ngày mà không bị trừ coin lại.", "How many days users can redownload a getlinked file without being charged again."),
+      help: l("User được tải lại file đã getlink trong bao nhiêu ngày mà không bị trừ credit lại.", "How many days users can redownload a getlinked file without being charged again."),
       type: "number",
       min: 1,
       max: 30,
@@ -1204,13 +1204,13 @@ export default function Admin({ user, language = "vi" }) {
             </div>
 
             <div className="panel">
-              <h3><CreditCard size={16} /> {l("Nạp coin mới nhất", "Latest top-ups")}</h3>
+              <h3><CreditCard size={16} /> {l("Nạp credit mới nhất", "Latest top-ups")}</h3>
               <div className="adminActivityList">
                 {recentTopups.map((item) => (
                   <div className={`adminActivityItem ${item.status}`} key={item._id}>
                     <CreditCard size={16} />
                     <div>
-                      <strong>{item.packageName || item.type || l("Nạp coin", "Coin top-up")}</strong>
+                      <strong>{item.packageName || item.type || l("Nạp credit", "Credit top-up")}</strong>
                       <span>{item.userEmail || item.userName || l("Không rõ user", "Unknown user")}</span>
                     </div>
                     <small>{formatMoney(item.amount)} · {item.status}</small>
@@ -1249,7 +1249,7 @@ export default function Admin({ user, language = "vi" }) {
             <div className="inputRow">
               <input value={packageForm.name} onChange={(e) => setPackageForm({ ...packageForm, name: e.target.value })} placeholder={l("Tên gói, ví dụ: GÓI STARTER", "Package name, e.g. STARTER PACKAGE")} />
               <input type="number" value={packageForm.price} onChange={(e) => setPackageForm({ ...packageForm, price: e.target.value })} placeholder={t.price} />
-              <input type="number" value={packageForm.credit} onChange={(e) => setPackageForm({ ...packageForm, credit: e.target.value })} placeholder="Coin" />
+              <input type="number" value={packageForm.credit} onChange={(e) => setPackageForm({ ...packageForm, credit: e.target.value })} placeholder="Credit" />
             </div>
             <div className="inputRow">
               <input type="number" value={packageForm.salePercent} onChange={(e) => setPackageForm({ ...packageForm, salePercent: e.target.value })} placeholder={l("Sale %, ví dụ 20", "Sale %, e.g. 20")} />
@@ -1339,7 +1339,7 @@ export default function Admin({ user, language = "vi" }) {
                     {l("Giá nhập tay sau sale", "Manual final sale price")}: {Number(pkg.salePrice).toLocaleString(locale)}đ
                   </span>
                 )}
-                <span><CoinAmount value={pkg.credit} /></span>
+                <span>{pkg.credit} CREDIT</span>
                 <span className="muted">
                   {Number(pkg.maxTopupsPerUser || 0) > 0
                     ? l(`Giới hạn ${pkg.maxTopupsPerUser} lần/tài khoản`, `Limit ${pkg.maxTopupsPerUser} times/account`)
@@ -1392,7 +1392,7 @@ export default function Admin({ user, language = "vi" }) {
             </div>
             <div className="inputRow">
               <input type="number" value={voucherForm.discountPercent} onChange={(e) => setVoucherForm({ ...voucherForm, discountPercent: e.target.value })} placeholder={l("Giảm giá %", "Discount %")} />
-              <input type="number" value={voucherForm.creditBonus} onChange={(e) => setVoucherForm({ ...voucherForm, creditBonus: e.target.value })} placeholder={l("Thêm coin", "Bonus coin")} />
+              <input type="number" value={voucherForm.creditBonus} onChange={(e) => setVoucherForm({ ...voucherForm, creditBonus: e.target.value })} placeholder={l("Thêm credit", "Bonus credit")} />
               <input type="number" value={voucherForm.usageLimit} onChange={(e) => setVoucherForm({ ...voucherForm, usageLimit: e.target.value })} placeholder={l("Tổng lượt dùng", "Total uses")} />
               <input type="number" min="0" value={voucherForm.perUserLimit} onChange={(e) => setVoucherForm({ ...voucherForm, perUserLimit: e.target.value })} placeholder={l("Lượt / tài khoản", "Uses / account")} />
               <input type="datetime-local" value={voucherForm.expireAt} onChange={(e) => setVoucherForm({ ...voucherForm, expireAt: e.target.value })} />
@@ -1462,7 +1462,7 @@ export default function Admin({ user, language = "vi" }) {
                   ) : (
                     <>
                       <span>{t.creditBonus}</span>
-                      <strong><CoinAmount value={voucher.creditBonus} prefix="+" /></strong>
+                      <strong>+{voucher.creditBonus} credit</strong>
                     </>
                   )}
                 </div>
@@ -1670,7 +1670,7 @@ export default function Admin({ user, language = "vi" }) {
         <section className="panel">
           <h2><UserPlus size={20} /> {l("Ai đã mời ai", "Who invited whom")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
-            {l("Danh sách người dùng đăng ký qua link giới thiệu và coin đã thưởng cho hai bên.", "Users who signed up through referral links and the coins rewarded to both sides.")}
+            {l("Danh sách người dùng đăng ký qua link giới thiệu và credit đã thưởng cho hai bên.", "Users who signed up through referral links and the credit rewarded to both sides.")}
           </p>
           <div className="segmentedControl" style={{ marginTop: 16 }}>
             {referralModeOptions.map((option) => (
@@ -1686,9 +1686,9 @@ export default function Admin({ user, language = "vi" }) {
           </div>
           <p className="muted" style={{ marginTop: 10 }}>
             {siteSettings.referralMode === "both"
-              ? l("Người mời và người được mời đều nhận coin.", "Both referrer and invited user receive coins.")
+              ? l("Người mời và người được mời đều nhận credit.", "Both referrer and invited user receive credit.")
               : siteSettings.referralMode === "referrer_only"
-                ? l("Chỉ người giới thiệu nhận coin; trang chủ đổi nội dung lời mời.", "Only the referrer receives coins; homepage invite text changes.")
+                ? l("Chỉ người giới thiệu nhận credit; trang chủ đổi nội dung lời mời.", "Only the referrer receives credit; homepage invite text changes.")
                 : l("Ẩn thanh giới thiệu trên trang chủ và không thưởng referral mới.", "Referral invite is hidden and new referral rewards are disabled.")}
           </p>
           {referralMsg && (
@@ -1931,9 +1931,9 @@ export default function Admin({ user, language = "vi" }) {
 
       {activeSection === "data" && dataSection === "getlinks" && (
         <section className="panel">
-          <h2><FileDown size={20} /> {l("Lịch sử getlink đã trừ coin", "Charged getlink history")}</h2>
+          <h2><FileDown size={20} /> {l("Lịch sử getlink đã trừ credit", "Charged getlink history")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
-            {l("Hiển thị các lần user tạo link tải và số coin đã trừ. Tải lại miễn phí không tạo thêm dòng mới ở bảng này.", "Shows user getlink requests and deducted coins. Free redownloads do not create new rows here.")}
+            {l("Hiển thị các lần user tạo link tải và số credit đã trừ. Tải lại miễn phí không tạo thêm dòng mới ở bảng này.", "Shows user getlink requests and deducted credits. Free redownloads do not create new rows here.")}
           </p>
           <div className="adminTableToolbar">
             <label className="adminSearchField">
@@ -2013,7 +2013,7 @@ export default function Admin({ user, language = "vi" }) {
         <section className="panel">
           <h2><CreditCard size={20} /> {l("Ai đã nạp gói nào", "Who purchased which package")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
-            {l("Lịch sử nạp tự động, gói đã chọn, số tiền thanh toán và coin nhận được. Các lần admin cộng coin thủ công không xuất hiện tại đây.", "Automatic top-up history showing selected packages, paid amounts, and received coins. Manual admin coin adjustments are excluded.")}
+            {l("Lịch sử nạp tự động, gói đã chọn, số tiền thanh toán và credit nhận được. Các lần admin cộng credit thủ công không xuất hiện tại đây.", "Automatic top-up history showing selected packages, paid amounts, and received credit. Manual admin credit adjustments are excluded.")}
           </p>
           <div className="adminTableToolbar">
             <label className="adminSearchField">
@@ -2131,8 +2131,8 @@ export default function Admin({ user, language = "vi" }) {
             >
               <option value="created-desc">{l("Mới đăng ký trước", "Newest first")}</option>
               <option value="created-asc">{l("Cũ đăng ký trước", "Oldest first")}</option>
-              <option value="credit-desc">{l("Coin cao trước", "Highest coins")}</option>
-              <option value="credit-asc">{l("Coin thấp trước", "Lowest coins")}</option>
+              <option value="credit-desc">{l("Credit cao trước", "Highest credit")}</option>
+              <option value="credit-asc">{l("Credit thấp trước", "Lowest credit")}</option>
               <option value="email-asc">{l("Email A-Z", "Email A-Z")}</option>
               <option value="email-desc">{l("Email Z-A", "Email Z-A")}</option>
             </select>
@@ -2142,7 +2142,7 @@ export default function Admin({ user, language = "vi" }) {
             <div className="userCreditHistoryPanel">
               <div className="userCreditHistoryHeader">
                 <div>
-                  <h3>{l("Lịch sử coin", "Coin history")}</h3>
+                  <h3>{l("Lịch sử credit", "Credit history")}</h3>
                   <strong>{creditHistoryUser.email}</strong>
                   <span>{creditHistoryUser.name || ""} - <CoinAmount value={Number(creditHistoryUser.credit || 0).toLocaleString(locale)} /></span>
                 </div>
@@ -2172,7 +2172,7 @@ export default function Admin({ user, language = "vi" }) {
                 ))}
                 {creditHistoryLoading && <p className="muted">{l("Đang tải lịch sử...", "Loading history...")}</p>}
                 {!creditHistoryLoading && !creditHistory.length && (
-                  <p className="muted">{l("Chưa có giao dịch coin được ghi nhận.", "No recorded coin transactions.")}</p>
+                  <p className="muted">{l("Chưa có giao dịch credit được ghi nhận.", "No recorded credit transactions.")}</p>
                 )}
               </div>
             </div>
@@ -2207,7 +2207,7 @@ export default function Admin({ user, language = "vi" }) {
                   </>
                 )}
                 <button className="smallButton" onClick={() => loadUserCreditHistory(user)}>
-                  <HistoryIcon size={14} /> {l("Lịch sử coin", "Coin history")}
+                  <HistoryIcon size={14} /> {l("Lịch sử credit", "Credit history")}
                 </button>
                 {user.role !== "admin" && (
                   <div className="banUserControls">

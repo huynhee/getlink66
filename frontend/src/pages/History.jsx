@@ -253,7 +253,7 @@ export default function History({ language = "vi" }) {
           {[
             ["all", language === "vi" ? "Tất cả" : "All"],
             ["download", language === "vi" ? "Tải model" : "Downloads"],
-            ["topup", language === "vi" ? "Nạp coin" : "Top-ups"],
+            ["topup", language === "vi" ? "Nạp credit" : "Top-ups"],
             ["referral", language === "vi" ? "Mời bạn" : "Referral"],
           ].map(([value, label]) => (
             <button

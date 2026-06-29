@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { AlertCircle, ArrowRight, BookOpen, ChevronRight, Chrome, ClipboardPaste, ShieldCheck, UserPlus } from "lucide-react";
 import { API_URL, api } from "../api.js";
-import CoinAmount from "../components/CoinAmount.jsx";
 import GuideContent from "../components/GuideContent.jsx";
 import { translations } from "../i18n.js";
 
@@ -20,19 +19,19 @@ const HOME_TEXT_DEFAULTS = {
     referralTitleReferrerOnly: "Giới thiệu bạn bè để +1 lượt tải.",
     pricingEyebrow: "Bảng giá",
     pricingTitle: "Chọn gói phù hợp",
-    pricingNote: "Nạp coin tự động, cộng coin ngay sau khi chọn gói.",
+    pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
     guideEyebrow: "Hướng dẫn",
     guideTitle: "Bài hướng dẫn",
-    guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp coin và tải lại file đã mua.",
+    guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
     ctaTitle: "Sẵn sàng bắt đầu?",
-    ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý coin của bạn.",
-    ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý coin của bạn.",
+    ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
+    ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
     footerTagline: "Hỗ trợ 24/7",
   },
   en: {
     heroEyebrow: "+ api 3d66 sdk",
     heroText: "FAST 3D66\nGETLINK\nSERVICE",
-    heroSubtitle: "An intermediary getlink service that helps you download 3D66 models with a faster coin workflow.",
+    heroSubtitle: "An intermediary getlink service that helps you download 3D66 models with a faster credit workflow.",
     saleText: "",
     demoTitle: "Start download",
     demoSubmitText: "GET LINK",
@@ -43,13 +42,13 @@ const HOME_TEXT_DEFAULTS = {
     referralTitleReferrerOnly: "Invite friends to get +1 download.",
     pricingEyebrow: "Pricing",
     pricingTitle: "Choose the right package",
-    pricingNote: "Automatic coin top-up after selecting a package.",
+    pricingNote: "Automatic credit top-up after selecting a package.",
     guideEyebrow: "Guide",
     guideTitle: "Guide articles",
-    guideIntro: "Read guides for Getlink, coin top-up, and redownloading purchased files.",
+    guideIntro: "Read guides for Getlink, credit top-up, and redownloading purchased files.",
     ctaTitle: "Ready to start?",
-    ctaUserText: "Open Getlink to download 3D66 models and manage your coins.",
-    ctaGuestText: "Sign in with Google to start using 3D66 Getlink and manage your coins.",
+    ctaUserText: "Open Getlink to download 3D66 models and manage your credit.",
+    ctaGuestText: "Sign in with Google to start using 3D66 Getlink and manage your credit.",
     footerTagline: "24/7 support",
   },
 };
@@ -71,7 +70,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
     heroText: language === "vi" ? "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ" : "FAST 3D66\nGETLINK\nSERVICE",
     heroSubtitle: language === "vi"
       ? "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp."
-      : "An intermediary getlink service that helps you download 3D66 models with a faster coin workflow.",
+      : "An intermediary getlink service that helps you download 3D66 models with a faster credit workflow.",
     saleText: "",
     demoTitle: language === "vi" ? "Bắt đầu tải ngay" : "Start download",
     demoSubmitText: "GET LINK",
@@ -87,20 +86,20 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
     pricingEyebrow: language === "vi" ? "Bảng giá" : "Pricing",
     pricingTitle: language === "vi" ? "Chọn gói phù hợp" : "Choose the right package",
     pricingNote: language === "vi"
-      ? "Nạp coin tự động, cộng coin ngay sau khi chọn gói."
-      : "Automatic coin top-up after selecting a package.",
+      ? "Nạp credit tự động, cộng credit ngay sau khi chọn gói."
+      : "Automatic credit top-up after selecting a package.",
     guideEyebrow: language === "vi" ? "Hướng dẫn" : "Guide",
     guideTitle: language === "vi" ? "Bài hướng dẫn" : "Guide articles",
     guideIntro: language === "vi"
-      ? "Đọc hướng dẫn sử dụng Getlink, nạp coin và tải lại file đã mua."
-      : "Read guides for Getlink, coin top-up, and redownloading purchased files.",
+      ? "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua."
+      : "Read guides for Getlink, credit top-up, and redownloading purchased files.",
     ctaTitle: language === "vi" ? "Sẵn sàng bắt đầu?" : "Ready to start?",
     ctaUserText: language === "vi"
-      ? "Vào trang getlink để tải model 3D66 và quản lý coin của bạn."
-      : "Open Getlink to download 3D66 models and manage your coins.",
+      ? "Vào trang getlink để tải model 3D66 và quản lý credit của bạn."
+      : "Open Getlink to download 3D66 models and manage your credit.",
     ctaGuestText: language === "vi"
-      ? "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý coin của bạn."
-      : "Sign in with Google to start using 3D66 Getlink and manage your coins.",
+      ? "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn."
+      : "Sign in with Google to start using 3D66 Getlink and manage your credit.",
     footerTagline: language === "vi" ? "Hỗ trợ 24/7" : "24/7 support",
     ...HOME_TEXT_DEFAULTS[language]
   });
@@ -494,7 +493,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                         : `SALE ${pkg.salePercent}% from ${Number(pkg.price).toLocaleString("en-US")}đ`}
                     </div>
                   )}
-                  <div className="credits"><CoinAmount value={pkg.credit} /></div>
+                  <div className="credits">{pkg.credit} CREDIT</div>
                   {Number(pkg.maxTopupsPerUser || 0) > 0 && (
                     <div className="credits" style={{ color: "var(--text-muted)", fontWeight: 500 }}>
                       {language === "vi"
