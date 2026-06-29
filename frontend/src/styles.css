@@ -6178,3 +6178,257 @@ html[data-theme="dark"] .inviteSectionTag {
     box-shadow: none;
   }
 }
+
+.topupPackageGrid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-10);
+  align-items: stretch;
+}
+
+.topupPackageCard {
+  min-height: 318px;
+  padding: 18px;
+  display: grid;
+  grid-template-rows: auto auto auto auto 1fr;
+  align-items: start !important;
+  justify-content: stretch;
+  gap: 12px;
+  text-align: left;
+  clip-path: none;
+  border-radius: var(--radius-md);
+  border-color: color-mix(in srgb, var(--neon-cyan) 20%, var(--border-light));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 96%, transparent), var(--surface-2)),
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--neon-cyan) 12%, transparent), transparent 34%);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-primary);
+  overflow: hidden;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.topupPackageCard:hover {
+  border-color: color-mix(in srgb, var(--neon-green) 50%, var(--border-light));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 98%, transparent), var(--surface-2)),
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--neon-green) 14%, transparent), transparent 34%);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.topupPackageCard.selectedPackage {
+  border-color: var(--neon-green);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--neon-green) 45%, transparent),
+    var(--shadow-md);
+}
+
+.topupPackageCard.selectedPackage::after {
+  content: "✓";
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--neon-green) 16%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--neon-green) 55%, var(--border-light));
+  color: var(--neon-green);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.topupPackageCard > svg {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
+  padding: 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--surface-1);
+  color: var(--neon-cyan);
+}
+
+.topupPackageCard.selectedPackage > svg {
+  opacity: 0;
+}
+
+.topupPackageBadge {
+  order: 1;
+  width: fit-content;
+  max-width: calc(100% - 46px);
+}
+
+.topupPackageName {
+  order: 2;
+  max-width: calc(100% - 46px);
+  min-height: 52px;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(20px, 2vw, 26px);
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+
+.topupPackageCredit {
+  order: 3;
+  margin: 0;
+  width: fit-content;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--neon-cyan) 32%, var(--border-light));
+  background: color-mix(in srgb, var(--neon-cyan) 9%, var(--surface-1));
+  color: var(--neon-cyan);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.topupPackagePrice {
+  order: 4;
+  width: 100%;
+  min-height: 86px;
+  margin: 0;
+  padding: 14px 0;
+  justify-items: start;
+  align-content: center;
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.topupPackageFinalPrice {
+  margin: 0;
+  color: var(--neon-green);
+  font-size: clamp(30px, 3.4vw, 42px);
+  line-height: 0.95;
+  overflow-wrap: anywhere;
+}
+
+.topupPackageCard .priceOriginal {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.topupPackageCard > span:not(.topupPackageBadge) {
+  order: 5;
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--neon-magenta) 26%, var(--border-light));
+  background: color-mix(in srgb, var(--neon-magenta) 8%, var(--surface-1));
+  color: var(--neon-magenta);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.25;
+  text-transform: none;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.topupPackageCard > span.muted {
+  border-color: var(--border-light);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+.topupPackageCard > .saleOnly {
+  color: transparent;
+}
+
+.topupPackageCard > .saleOnly::before {
+  color: var(--neon-magenta);
+}
+
+.topupPackageCard > .saleOnly[data-sale="0"]::before,
+.topupPackageCard > .saleOnly[data-sale=""]::before,
+.topupPackageCard > .saleOnly:not([data-sale])::before {
+  content: "SALE";
+}
+
+.topupPackageFeatures {
+  order: 6;
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+
+.topupPackageFeatures li {
+  position: relative;
+  min-height: 24px;
+  padding-left: 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.topupPackageFeatures li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--neon-green) 12%, var(--surface-1));
+  color: var(--neon-green);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.topupCheckoutBox {
+  border-radius: var(--radius-md);
+  clip-path: none;
+  border-color: color-mix(in srgb, var(--neon-green) 32%, var(--border-light));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--neon-green) 8%, var(--surface-1)), var(--surface-2));
+  box-shadow: var(--shadow-sm);
+}
+
+.topupCheckoutBox button {
+  min-width: 170px;
+}
+
+@media (max-width: 640px) {
+  .topupPackageGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .topupPackageCard {
+    min-height: auto;
+    padding: 16px;
+  }
+
+  .topupPackageName {
+    min-height: auto;
+    font-size: 22px;
+  }
+
+  .topupPackageFinalPrice {
+    font-size: 32px;
+  }
+
+  .topupCheckoutBox {
+    align-items: stretch;
+  }
+
+  .topupCheckoutBox button {
+    width: 100%;
+    min-width: 0;
+  }
+}

@@ -298,24 +298,24 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         </div>
         <p className="muted">{t.topupIntro}</p>
         <p className="muted">{t.topupVoucherHelp}</p>
-        <div className="packageGrid">
+        <div className="packageGrid topupPackageGrid">
           {packages.map((item) => (
             <button
-              className={`package ${selectedPackageId === item._id ? "selectedPackage" : ""}`}
+              className={`package topupPackageCard ${selectedPackageId === item._id ? "selectedPackage" : ""}`}
               key={item._id || item.price}
               onClick={() => selectPackage(item)}
               style={{ alignItems: "stretch", textAlign: "left" }}
             >
               <CreditCard size={20} />
-              {item.badge && <span className="badge success">{item.badge}</span>}
-              <h3>{item.name || t.defaultPackageName}</h3>
-              <div className="priceBlock compact">
+              {item.badge && <span className="badge success topupPackageBadge">{item.badge}</span>}
+              <h3 className="topupPackageName">{item.name || t.defaultPackageName}</h3>
+              <div className="priceBlock compact topupPackagePrice">
                 {hasSale(item) && (
                   <div className="priceOriginal">
                     {Number(item.price).toLocaleString(locale)}<span>{CURRENCY}</span>
                   </div>
                 )}
-                <strong>{finalPrice(item).toLocaleString(locale)}{CURRENCY}</strong>
+                <strong className="topupPackageFinalPrice">{finalPrice(item).toLocaleString(locale)}{CURRENCY}</strong>
               </div>
               {Number(appliedVoucher?.discountPercent || 0) > 0 && voucherAppliesToPackage(appliedVoucher, item) && (
                 <span>
@@ -338,7 +338,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                       : `Sale price from ${Number(item.price).toLocaleString(locale)}${CURRENCY}`)}
                 </span>
               )}
-              <strong>{finalCredit(item)} credit</strong>
+              <strong className="topupPackageCredit">{finalCredit(item)} credit</strong>
               {Number(item.maxTopupsPerUser || 0) > 0 && (
                 <span className="muted">
                   {language === "vi"
@@ -349,7 +349,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               {Number(appliedVoucher?.creditBonus || 0) > 0 && voucherAppliesToPackage(appliedVoucher, item) && (
                 <span>Bonus voucher {appliedVoucher.code}: +{appliedVoucher.creditBonus} credit</span>
               )}
-              <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+              <ul className="topupPackageFeatures">
                 {((item.features && item.features.length > 0)
                   ? item.features
                   : t.defaultPackageFeatures
