@@ -298,7 +298,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         </div>
         <p className="muted">{t.topupIntro}</p>
         <p className="muted">{t.topupVoucherHelp}</p>
-        <div className="packageGrid topupPackageGrid">
+        <div className="packageGrid topupPackageGrid" style={{ "--topup-package-count": Math.max(packages.length, 1) }}>
           {packages.map((item) => (
             <button
               className={`package topupPackageCard ${selectedPackageId === item._id ? "selectedPackage" : ""}`}
@@ -306,7 +306,6 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               onClick={() => selectPackage(item)}
               style={{ alignItems: "stretch", textAlign: "left" }}
             >
-              <CreditCard size={20} />
               {item.badge && <span className="badge success topupPackageBadge">{item.badge}</span>}
               <h3 className="topupPackageName">{item.name || t.defaultPackageName}</h3>
               <div className="priceBlock compact topupPackagePrice">

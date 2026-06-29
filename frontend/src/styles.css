@@ -6181,16 +6181,11 @@ html[data-theme="dark"] .inviteSectionTag {
 
 .topupPackageGrid {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(260px, 1fr);
-  grid-template-columns: none;
+  grid-template-columns: repeat(var(--topup-package-count, 4), minmax(0, 1fr));
   gap: var(--space-10);
   align-items: stretch;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: 8px;
-  scroll-snap-type: x proximity;
-  scrollbar-width: thin;
+  overflow: visible;
+  padding-bottom: 0;
 }
 
 .topupPackageCard {
@@ -6204,6 +6199,7 @@ html[data-theme="dark"] .inviteSectionTag {
   text-align: left;
   clip-path: none;
   border-radius: var(--radius-md);
+  border-width: 1px;
   border-color: color-mix(in srgb, var(--neon-cyan) 20%, var(--border-light));
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 96%, transparent), var(--surface-2)),
@@ -6211,8 +6207,7 @@ html[data-theme="dark"] .inviteSectionTag {
   box-shadow: var(--shadow-sm);
   color: var(--text-primary);
   overflow: hidden;
-  scroll-snap-align: start;
-  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  transition: transform 0.18s ease, border-color 0.18s ease, border-width 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .topupPackageCard:hover {
@@ -6225,58 +6220,25 @@ html[data-theme="dark"] .inviteSectionTag {
 }
 
 .topupPackageCard.selectedPackage {
+  border-width: 2px;
   border-color: var(--neon-green);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--neon-green) 8%, var(--surface-1)), var(--surface-2)),
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--neon-green) 16%, transparent), transparent 34%);
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--neon-green) 45%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--neon-green) 18%, transparent),
     var(--shadow-md);
-}
-
-.topupPackageCard.selectedPackage::after {
-  content: "\2713";
-  position: absolute;
-  top: 50%;
-  right: 16px;
-  width: 34px;
-  height: 34px;
-  transform: translateY(-50%);
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--neon-green) 16%, var(--surface-1));
-  border: 1px solid color-mix(in srgb, var(--neon-green) 55%, var(--border-light));
-  color: var(--neon-green);
-  font-family: var(--font-mono);
-  font-size: 16px;
-  font-weight: 900;
-}
-
-.topupPackageCard > svg {
-  position: absolute;
-  top: 50%;
-  right: 16px;
-  width: 34px;
-  height: 34px;
-  transform: translateY(-50%);
-  padding: 7px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-light);
-  background: var(--surface-1);
-  color: var(--neon-cyan);
-}
-
-.topupPackageCard.selectedPackage > svg {
-  opacity: 0;
 }
 
 .topupPackageBadge {
   order: 1;
   width: fit-content;
-  max-width: calc(100% - 54px);
+  max-width: 100%;
 }
 
 .topupPackageName {
   order: 2;
-  max-width: calc(100% - 54px);
+  max-width: 100%;
   min-height: 52px;
   margin: 0;
   color: var(--text-primary);
@@ -6417,8 +6379,7 @@ html[data-theme="dark"] .inviteSectionTag {
 
 @media (max-width: 640px) {
   .topupPackageGrid {
-    grid-auto-columns: minmax(260px, 86vw);
-    grid-template-columns: none;
+    grid-template-columns: 1fr;
   }
 
   .topupPackageCard {
