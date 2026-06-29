@@ -7,6 +7,7 @@ import { setFaviconNotificationCount } from "../utils/faviconProgress.js";
 
 function LanguageToggle({ language, onLanguageChange }) {
   const nextLanguage = language === "vi" ? "en" : "vi";
+  const currentLanguage = language === "vi" ? "vi" : "en";
   const label = `Switch to ${nextLanguage.toUpperCase()}`;
   return (
     <button
@@ -16,7 +17,7 @@ function LanguageToggle({ language, onLanguageChange }) {
       title={label}
       aria-label={label}
     >
-      <span>{nextLanguage.toUpperCase()}</span>
+      <span>{currentLanguage.toUpperCase()}</span>
     </button>
   );
 }
