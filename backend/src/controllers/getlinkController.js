@@ -1431,9 +1431,23 @@ export async function getLink(req, res, next) {
         cacheMatchesDownloadFormat(cachedBeforeDownload, downloadFormat),
     );
     const cache = await resolveProductCache(effectiveProductId, url, downloadFormat);
+    if (lockToInputProductId && String(cache.productId || "") !== String(productId)) {
+      throw Object.assign(
+        new Error("3D66 returned a different model than the requested link. Please retry this model."),
+        {
+          status: 502,
+          details: {
+            requestedProductId: productId,
+            returnedProductId: cache.productId,
+          },
+        },
+      );
+    }
     const cachedRedownload = await findActiveRedownload(
       req.user._id,
-      [productId, effectiveProductId, cache.productId],
+      lockToInputProductId
+        ? [productId, effectiveProductId]
+        : [productId, effectiveProductId, cache.productId],
       url,
       downloadFormat,
     );
