@@ -815,11 +815,14 @@ function extractPreviewImageFromHtml(html = "", pageUrl = "") {
   return "";
 }
 
-function extractCreditCostFromHtml(html = "") {
-  const detailData = parseDetailData(html);
-  const detailRes = detailResFromData(detailData);
-  const detailPrice = Number(detailRes.res_price || detailRes.origin_price || detailRes.coupon_after_price);
-  if (Number.isFinite(detailPrice) && detailPrice > 0) return detailPrice;
+function extractCreditCostFromHtml(html = "", options = {}) {
+  const useDetailData = options.useDetailData !== false;
+  if (useDetailData) {
+    const detailData = parseDetailData(html);
+    const detailRes = detailResFromData(detailData);
+    const detailPrice = Number(detailRes.res_price || detailRes.origin_price || detailRes.coupon_after_price);
+    if (Number.isFinite(detailPrice) && detailPrice > 0) return detailPrice;
+  }
 
   const source = decodeHtml(html);
   const downloadPriceBlock = html.match(/<div\b(?=[^>]*\bclass=["'][^"']*download-price[^"']*["'])[\s\S]*?<\/div>\s*<\/div>/i)?.[0] || "";
@@ -862,11 +865,14 @@ function extractCreditCostFromHtml(html = "") {
   return Number.isFinite(number) && number > 0 ? number : 1;
 }
 
-function hasKnownCreditCostInHtml(html = "") {
-  const detailData = parseDetailData(html);
-  const detailRes = detailResFromData(detailData);
-  const detailPrice = Number(detailRes.res_price || detailRes.origin_price || detailRes.coupon_after_price);
-  if (Number.isFinite(detailPrice) && detailPrice > 0) return true;
+function hasKnownCreditCostInHtml(html = "", options = {}) {
+  const useDetailData = options.useDetailData !== false;
+  if (useDetailData) {
+    const detailData = parseDetailData(html);
+    const detailRes = detailResFromData(detailData);
+    const detailPrice = Number(detailRes.res_price || detailRes.origin_price || detailRes.coupon_after_price);
+    if (Number.isFinite(detailPrice) && detailPrice > 0) return true;
+  }
 
   return /orginal-price|original-price|download-price|res_price|coupon_after_price|download_price|need_xzb|xuan_dian|çŽ„ç‚¹|ç‚¹/i.test(
     decodeHtml(html),
@@ -876,8 +882,12 @@ function hasKnownCreditCostInHtml(html = "") {
 function parseModelMetadata(html, pageUrl, fields = {}) {
   const detailData = parseDetailData(html);
   const detailRes = detailResFromData(detailData);
-  const formatOptions = formatOptionsFromPage(html, detailRes);
-  const detailImages = Array.isArray(detailRes.res_img) ? detailRes.res_img : [];
+  const requestedLlId = String(fields.llId || "").trim();
+  const detailLlId = String(detailRes.ll_id || "").trim();
+  const detailMatchesRequested = !requestedLlId || !detailLlId || detailLlId === requestedLlId;
+  const detailForMetadata = detailMatchesRequested ? detailRes : {};
+  const formatOptions = formatOptionsFromPage(html, detailForMetadata);
+  const detailImages = Array.isArray(detailForMetadata.res_img) ? detailForMetadata.res_img : [];
   const coverItem =
     detailImages.find((item) => Number(item?.img_type) === 1 && item?.is_cover) ||
     detailImages.find((item) => Number(item?.img_type) === 1) ||
@@ -906,15 +916,15 @@ function parseModelMetadata(html, pageUrl, fields = {}) {
     coverItem.fullimg ||
     coverItem.thuimg88 ||
     coverItem.res_img_dg ||
-    detailRes.business_img ||
-    detailRes.res_img_dg ||
-    detailData?.images?.[0] ||
+    detailForMetadata.business_img ||
+    detailForMetadata.res_img_dg ||
+    (detailMatchesRequested ? detailData?.images?.[0] : "") ||
     "";
   const modelNameTag = firstTagWithClass(html, "h1", "model-name");
   const directTitle = extractModelTitleFromHtml(html);
+  const detailTitle = detailMatchesRequested ? detailRes.res_name_txt || detailRes.res_name : "";
   const modelTitle =
-    detailRes.res_name_txt ||
-    detailRes.res_name ||
+    detailTitle ||
     directTitle ||
     attrValue(modelNameTag, "title") ||
     stripTags(modelNameTag);
@@ -952,11 +962,11 @@ function parseModelMetadata(html, pageUrl, fields = {}) {
   ])).replaceAll("\\/", "/");
 
   return {
-    productId: detailRes.ll_id || fields.llId || "",
+    productId: fields.llId || detailRes.ll_id || "",
     title: title || fields.llId || "3D66 model",
     imageUrl: absoluteUrl(rawImage, pageUrl),
-    creditCost: extractCreditCostFromHtml(html),
-    priceKnown: hasKnownCreditCostInHtml(html),
+    creditCost: extractCreditCostFromHtml(html, { useDetailData: detailMatchesRequested }),
+    priceKnown: hasKnownCreditCostInHtml(html, { useDetailData: detailMatchesRequested }),
     formatOptions,
     sourceUrl: pageUrl
   };
@@ -966,6 +976,10 @@ function parseDynamicFields(html, pageUrl) {
   const parsed = new URL(pageUrl);
   const source = `${pageUrl}\n${html}`;
   const detailRes = detailResFromData(parseDetailData(html));
+  const requestedSof = parsed.searchParams.get("sof") || "";
+  const detailLlId = String(detailRes.ll_id || "").trim();
+  const detailMatchesRequested = !requestedSof || !detailLlId || detailLlId === requestedSof;
+  const detailForFields = detailMatchesRequested ? detailRes : {};
   const param = (...names) => {
     for (const name of names) {
       const value = parsed.searchParams.get(name);
@@ -973,23 +987,23 @@ function parseDynamicFields(html, pageUrl) {
     }
     return "";
   };
-  const firstFileFormat = Array.isArray(detailRes.down_file_format)
-    ? detailRes.down_file_format[0] || {}
+  const firstFileFormat = Array.isArray(detailForFields.down_file_format)
+    ? detailForFields.down_file_format[0] || {}
     : {};
-  const formatOptions = formatOptionsFromPage(html, detailRes);
+  const formatOptions = formatOptionsFromPage(html, detailForFields);
   const defaultFormat = formatOptions.find((option) => option.isDefault) || formatOptions[0] || {};
 
   return {
     llId:
-      detailRes.ll_id ||
+      requestedSof ||
+      detailForFields.ll_id ||
       firstMatch(source, [
         /\sdata-sof=["']([A-Z0-9_-]{8,})["']/i,
         /<span[^>]+class=["'][^"']*ll-id[^"']*["'][^>]*>\s*([A-Z0-9_-]{8,})\s*<\/span>/i,
         /<div[^>]+class=["'][^"']*slide-ll-id[^"']*["'][^>]*>\s*ID\s*<b>\s*([A-Z0-9_-]{8,})\s*<\/b>/i,
         /["']ll_id["']\s*:\s*["']([^"']+)["']/i,
         /(?:ll_id|llId)\s*=\s*["']([^"']+)["']/i
-      ]) ||
-      parsed.searchParams.get("sof"),
+      ]),
     sign:
       parsed.searchParams.get("sign") ||
       firstMatch(source, [

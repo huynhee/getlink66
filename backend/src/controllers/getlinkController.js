@@ -180,7 +180,7 @@ function productIdsFromModelUrl(url = "") {
   const ids = [];
   try {
     const parsed = new URL(url);
-    ["sof", "id", "parentId"].forEach((key) => {
+    ["sof", "id"].forEach((key) => {
       const value = parsed.searchParams.get(key);
       if (value) ids.push(value);
     });
