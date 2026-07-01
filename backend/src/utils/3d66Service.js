@@ -76,6 +76,30 @@ function httpError(message, status = 502, details = {}) {
   return error;
 }
 
+function requestedProductIdFromUrl(rawUrl = "") {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.searchParams.get("sof") || parsed.searchParams.get("id") || "";
+  } catch {
+    return "";
+  }
+}
+
+function enforceRequestedProductId(fields = {}, metadata = {}, requestedProductId = "") {
+  const lockedId = String(requestedProductId || "").trim();
+  if (!lockedId) return { fields, metadata };
+  return {
+    fields: {
+      ...fields,
+      llId: lockedId,
+    },
+    metadata: {
+      ...metadata,
+      productId: lockedId,
+    },
+  };
+}
+
 function timeoutMs() {
   const value = Number(process.env.THREED66_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_TIMEOUT_MS;
@@ -1633,6 +1657,7 @@ export async function fetch3D66Preview(url, cookieValue) {
 
   const cookies = requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
+  const requestedProductId = requestedProductIdFromUrl(normalized.toString());
   const popPreview = await previewFromDownloadPopOnly(normalized.toString(), cookieValue, cookies);
   if (popPreview) return popPreview.metadata;
 
@@ -1677,12 +1702,14 @@ export async function fetch3D66Preview(url, cookieValue) {
     }
   }
 
+  ({ fields, metadata } = enforceRequestedProductId(fields, metadata, requestedProductId));
   return metadata;
 }
 
 export async function inspect3D66Page(url, cookieValue) {
   requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
+  const requestedProductId = requestedProductIdFromUrl(normalized.toString());
   let browserMetadata = null;
   let html = "";
   let pageUrl = normalized.toString();
@@ -1720,6 +1747,7 @@ export async function inspect3D66Page(url, cookieValue) {
       usedBrowser = true;
     }
   }
+  ({ fields, metadata } = enforceRequestedProductId(fields, metadata, requestedProductId));
 
   const detailData = parseDetailData(html);
 
@@ -1859,6 +1887,7 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
 
   const initialCookies = requireCookie(cookieValue);
   const normalized = normalizeModelUrl(url);
+  const requestedProductId = requestedProductIdFromUrl(normalized.toString());
   let effectiveCookieValue = cookieValue;
   let browserMetadata = null;
   const requestedFormat = options.downloadFormat
@@ -1916,6 +1945,7 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
     }
   }
 
+  ({ fields, metadata } = enforceRequestedProductId(fields, metadata, requestedProductId));
   ({ fields, metadata } = applySelectedFormat(fields, metadata, requestedFormat));
 
   if (!fields.llId || !fields.token || !fields.upTime) {

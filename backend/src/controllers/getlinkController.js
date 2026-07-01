@@ -191,6 +191,21 @@ function productIdsFromModelUrl(url = "") {
   return uniqueProductIds(ids);
 }
 
+function hasExplicitProductId(url = "") {
+  try {
+    const parsed = new URL(url);
+    return Boolean(parsed.searchParams.get("sof") || parsed.searchParams.get("id"));
+  } catch {
+    return false;
+  }
+}
+
+function lockedProductId(url = "", inputProductId = "", resolvedProductId = "") {
+  return hasExplicitProductId(url)
+    ? String(inputProductId || "").trim()
+    : String(resolvedProductId || inputProductId || "").trim();
+}
+
 function modelPageKey(url = "") {
   try {
     const parsed = new URL(url);
@@ -339,6 +354,8 @@ function isDuplicate3D66Operation(error = {}) {
 function historyMatchesProductIdentity(history, productIds = [], sourceUrl = "") {
   const candidateIds = new Set(uniqueProductIds(productIds));
   if (candidateIds.has(String(history?.productId || ""))) return true;
+
+  if (hasExplicitProductId(sourceUrl)) return false;
 
   const historySourceIds = productIdsFromModelUrl(history?.sourceUrl || "");
   if (historySourceIds.some((id) => candidateIds.has(id))) return true;
@@ -1064,6 +1081,7 @@ export async function previewGetlink(req, res, next) {
     if (!url) return;
 
     const productId = extractProductId(url);
+    const previewProductId = lockedProductId(url, productId, productId);
     const cache = await ProductCache.findOne({ productId });
     const cacheMatchesCurrentUrl = cacheMatchesModelUrl(cache, url);
     const cachedTitle = String(cache?.title || "").trim();
@@ -1080,7 +1098,7 @@ export async function previewGetlink(req, res, next) {
     );
     if (hasPreviewMetadata) {
       return res.json({
-        productId: cache.productId,
+        productId: previewProductId,
         title: cache.title || cache.productId,
         imageUrl: cache.imageUrl || "",
         creditCost: normalizeDownloadCreditCost(cache.creditCost, 1),
@@ -1091,19 +1109,20 @@ export async function previewGetlink(req, res, next) {
     const preview = await with3D66Cookie((cookieValue) =>
       queue3D66Preview(() => fetch3D66Preview(url, cookieValue)),
     );
+    const resolvedProductId = lockedProductId(url, productId, preview.productId);
     if (
       process.env.THREED66_MOCK === "false" &&
-      isFallbackMetadata(preview, preview.productId || productId)
+      isFallbackMetadata(preview, resolvedProductId)
     ) {
       return res.status(422).json({
         message:
           "Chưa đọc được đầy đủ thông tin model 3D66. Vui lòng thử lại hoặc bật Playwright fallback nếu model bị 3D66 render/challenge.",
         metadataIncomplete: true,
-        productId: preview.productId || productId,
+        productId: resolvedProductId,
       });
     }
     const previewPayload = {
-      productId: preview.productId || productId,
+      productId: resolvedProductId,
       sourceUrl: preview.sourceUrl || url,
       title: preview.title,
       imageUrl: preview.imageUrl,
@@ -1112,14 +1131,14 @@ export async function previewGetlink(req, res, next) {
     };
     await upsertProductCache(previewPayload, cache);
     res.json({
-      productId: preview.productId || productId,
+      productId: resolvedProductId,
       title: preview.title,
       imageUrl: preview.imageUrl,
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
       cached: false,
       metadataIncomplete: isFallbackMetadata(
         preview,
-        preview.productId || productId,
+        resolvedProductId,
       ),
     });
   } catch (error) {
@@ -1175,6 +1194,7 @@ export async function getLink(req, res, next) {
     const downloadFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
 
     const productId = extractProductId(url);
+    const lockToInputProductId = hasExplicitProductId(url);
     let effectiveProductId = productId;
     logProductId = productId;
 
@@ -1277,8 +1297,9 @@ export async function getLink(req, res, next) {
       }
 
       expectedCreditCost = normalizeDownloadCreditCost(preview.creditCost, 1);
+      const previewProductId = lockedProductId(url, productId, preview.productId);
       const previewPayload = {
-        productId: preview.productId || productId,
+        productId: previewProductId,
         sourceUrl: preview.sourceUrl || url,
         title: preview.title,
         imageUrl: preview.imageUrl,
@@ -1288,7 +1309,7 @@ export async function getLink(req, res, next) {
       effectiveProductId = previewPayload.productId;
       logProductId = effectiveProductId;
 
-      if (previewPayload.productId !== productId) {
+      if (!lockToInputProductId && previewPayload.productId !== productId) {
         let previewRedownload = await findActiveRedownload(
           req.user._id,
           [productId, previewPayload.productId],
@@ -1370,15 +1391,19 @@ export async function getLink(req, res, next) {
       );
       const formatOptions = sanitizeDownloadFormatOptions(formatSelection.formatOptions);
       if (formatSelection.cache) {
-        cachePreview = formatSelection.cache;
-        effectiveProductId = cachePreview.productId || effectiveProductId;
+        if (!lockToInputProductId || String(formatSelection.cache.productId || "") === String(productId)) {
+          cachePreview = formatSelection.cache;
+        }
+        effectiveProductId = lockToInputProductId ? productId : cachePreview.productId || effectiveProductId;
         logProductId = effectiveProductId;
       }
       if (formatOptions.length > 1) {
         const metadata = formatSelection.metadata || {};
         const selectionCache = formatSelection.cache || cachePreview;
         return res.json(formatSelectionPayload(req, {
-          productId: metadata.productId || selectionCache?.productId || effectiveProductId,
+          productId: lockToInputProductId
+            ? productId
+            : metadata.productId || selectionCache?.productId || effectiveProductId,
           title: metadata.title || selectionCache?.title || cachePreview?.title,
           imageUrl: metadata.imageUrl || selectionCache?.imageUrl || cachePreview?.imageUrl,
           creditCost: expectedCreditCost,

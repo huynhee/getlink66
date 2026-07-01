@@ -428,16 +428,20 @@ function evaluateMetadata() {
         : detail?.res && typeof detail.res === "object"
           ? detail.res
           : {};
-  const detailImages = Array.isArray(res.res_img) ? res.res_img : [];
+  const params = new URLSearchParams(location.search);
+  const requestedSof = params.get("sof") || "";
+  const detailLlId = String(res.ll_id || "").trim();
+  const detailMatchesRequested = !requestedSof || !detailLlId || detailLlId === requestedSof;
+  const metadataRes = detailMatchesRequested ? res : {};
+  const metadataImages = Array.isArray(metadataRes.res_img) ? metadataRes.res_img : [];
   const cover =
-    detailImages.find(
+    metadataImages.find(
       (item) => Number(item?.img_type) === 1 && item?.is_cover,
     ) ||
-    detailImages.find((item) => Number(item?.img_type) === 1) ||
-    detailImages.find((item) => item?.is_cover) ||
-    detailImages[0] ||
+    metadataImages.find((item) => Number(item?.img_type) === 1) ||
+    metadataImages.find((item) => item?.is_cover) ||
+    metadataImages[0] ||
     {};
-  const params = new URLSearchParams(location.search);
   const priceText =
     document.querySelector(".download-price .orginal-price")?.textContent ||
     document.querySelector(".download-price .original-price")?.textContent ||
@@ -446,14 +450,14 @@ function evaluateMetadata() {
     document.querySelector(".download-price .price")?.textContent ||
     "";
   const domPrice = toNumber(priceText);
-  const detailPrice = toNumber(res.res_price);
-  const discountPrice = toNumber(res.coupon_after_price);
+  const detailPrice = detailMatchesRequested ? toNumber(res.res_price) : 0;
+  const discountPrice = detailMatchesRequested ? toNumber(res.coupon_after_price) : 0;
   const creditCost = domPrice || detailPrice || discountPrice || 1;
   const priceKnown = Boolean(domPrice || detailPrice || discountPrice);
 
   const title =
-    res.res_name_txt ||
-    res.res_name ||
+    metadataRes.res_name_txt ||
+    metadataRes.res_name ||
     document.querySelector("h1.model-name")?.getAttribute("title") ||
     document.querySelector("h1.model-name")?.textContent?.trim() ||
     document.querySelector("meta[property='og:title']")?.content ||
@@ -476,17 +480,17 @@ function evaluateMetadata() {
     cover.fullimg ||
     cover.thuimg88 ||
     cover.res_img_dg ||
-    res.business_img ||
-    res.res_img_dg ||
+    metadataRes.business_img ||
+    metadataRes.res_img_dg ||
     "";
 
   return {
     productId:
-      res.ll_id ||
+      requestedSof ||
+      (detailMatchesRequested ? res.ll_id : "") ||
       document.querySelector(".ll-id")?.textContent?.trim() ||
       document.querySelector(".slide-ll-id b")?.textContent?.trim() ||
       document.querySelector("[data-sof]")?.getAttribute("data-sof") ||
-      params.get("sof") ||
       "",
     title: title.trim(),
     imageUrl: absolute(imageUrl),
@@ -495,11 +499,11 @@ function evaluateMetadata() {
     sourceUrl: location.href,
     dynamicFields: {
       llId:
-        res.ll_id ||
+        requestedSof ||
+        (detailMatchesRequested ? res.ll_id : "") ||
         document.querySelector(".ll-id")?.textContent?.trim() ||
         document.querySelector(".slide-ll-id b")?.textContent?.trim() ||
         document.querySelector("[data-sof]")?.getAttribute("data-sof") ||
-        params.get("sof") ||
         "",
       sign: params.get("sign") || "",
       token:
@@ -513,7 +517,7 @@ function evaluateMetadata() {
         document.querySelector("input[name='up_time']")?.value ||
         "",
       actionId:
-        res.actionId ||
+        (detailMatchesRequested ? res.actionId : "") ||
         document.querySelector("#actionId")?.value ||
         document.querySelector("#action_id")?.value ||
         params.get("searchActionId") ||
@@ -523,10 +527,10 @@ function evaluateMetadata() {
       sourceAlg: params.get("s_alg") || params.get("source_alg") || "",
       position: params.get("position") || params.get("p") || "",
       fileFormat: Array.isArray(res.down_file_format)
-        ? String(res.down_file_format[0]?.file_format || "")
+        ? String((detailMatchesRequested ? res.down_file_format[0] : null)?.file_format || "")
         : "",
       site:
-        document.querySelector("#site")?.value || String(res.res_type || ""),
+        document.querySelector("#site")?.value || String(detailMatchesRequested ? res.res_type || "" : ""),
       pageType: document.querySelector("#page_type")?.value || "",
     },
     found: {
