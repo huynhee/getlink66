@@ -160,7 +160,7 @@ export default function Admin({ user, language = "vi" }) {
   const l = (vi, en) => text(language, vi, en);
   const locale = language === "vi" ? "vi-VN" : "en-US";
   const [activeSection, setActiveSection] = useState("overview");
-  const [dataSection, setDataSection] = useState("logs");
+  const [dataSection, setDataSection] = useState("users");
   const [threed66SettingsTab, setThreed66SettingsTab] = useState("tasks");
   const [revenuePeriod, setRevenuePeriod] = useState("day");
   const [overview, setOverview] = useState(null);
@@ -816,11 +816,11 @@ export default function Admin({ user, language = "vi" }) {
     { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert }
   ];
   const dataSections = [
-    { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
     { key: "users", label: t.adminUsers, icon: Users, count: userPagination.total },
-    { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
     { key: "getlinks", label: l("Lịch sử getlink", "Getlink history"), icon: FileDown, count: getlinkPagination.total },
     { key: "topups", label: l("Lịch sử nạp", "Top-up history"), icon: CreditCard, count: topupPagination.total },
+    { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
+    { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
   ];
   const homeTextGroups = [
     {
