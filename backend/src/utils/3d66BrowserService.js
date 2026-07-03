@@ -1,3 +1,5 @@
+import { notify3D66ProxyFallback } from "./telegramNotifier.js";
+
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_BROWSER_CONCURRENCY = 2;
 const DEFAULT_BROWSER_QUEUE_MAX = 50;
@@ -85,6 +87,21 @@ function booleanEnv(name, fallback = false) {
   return value === "true" || value === "1" || value === 1 || value === true;
 }
 
+function proxyFailClosed() {
+  return booleanEnv("THREED66_PROXY_FAIL_CLOSED", false);
+}
+
+function maskProxyUrl(value = "") {
+  try {
+    const parsed = new URL(value);
+    if (parsed.username) parsed.username = "***";
+    if (parsed.password) parsed.password = "***";
+    return parsed.toString();
+  } catch {
+    return "[invalid proxy url]";
+  }
+}
+
 function browserProxyConfig() {
   if (!booleanEnv("THREED66_PROXY_ENABLED", false)) return null;
   if (!booleanEnv("THREED66_PROXY_FOR_BROWSER", false)) return null;
@@ -104,6 +121,15 @@ function browserProxyConfig() {
       ...(parsed.password ? { password: decodeURIComponent(parsed.password) } : {}),
     };
   } catch (error) {
+    if (!proxyFailClosed()) {
+      notify3D66ProxyFallback({
+        stage: "browser",
+        proxy: maskProxyUrl(rawUrl),
+        error,
+      });
+      return null;
+    }
+
     const proxyError = new Error(`3D66 browser proxy URL is invalid: ${error.message}`);
     proxyError.status = 500;
     throw proxyError;
@@ -260,29 +286,45 @@ async function withBrowserContext(url, cookieValue, callback) {
   return runBrowserTask(async () => {
     const browser = await getSharedBrowser();
     const proxy = browserProxyConfig();
-    const context = await browser.newContext({
-      userAgent: DEFAULT_USER_AGENT,
-      locale: "zh-CN",
-      viewport: { width: 1440, height: 900 },
-      ...(proxy ? { proxy } : {}),
-    });
+    const runWithProxy = async (currentProxy) => {
+      const context = await browser.newContext({
+        userAgent: DEFAULT_USER_AGENT,
+        locale: "zh-CN",
+        viewport: { width: 1440, height: 900 },
+        ...(currentProxy ? { proxy: currentProxy } : {}),
+      });
+
+      try {
+        await installFastRoutes(context);
+
+        const cookies = buildBrowserCookies(cookieValue, url);
+        if (cookies.length) {
+          await context.addCookies(cookies);
+        }
+
+        const page = await context.newPage();
+        return await callback({ context, page });
+      } finally {
+        await context.close().catch(() => {});
+        browserTasksSinceLaunch += 1;
+        if (shouldRecycleBrowser()) {
+          browserRecyclePending = true;
+        }
+      }
+    };
+
+    if (!proxy) return runWithProxy(null);
 
     try {
-      await installFastRoutes(context);
-
-      const cookies = buildBrowserCookies(cookieValue, url);
-      if (cookies.length) {
-        await context.addCookies(cookies);
-      }
-
-      const page = await context.newPage();
-      return await callback({ context, page });
-    } finally {
-      await context.close().catch(() => {});
-      browserTasksSinceLaunch += 1;
-      if (shouldRecycleBrowser()) {
-        browserRecyclePending = true;
-      }
+      return await runWithProxy(proxy);
+    } catch (error) {
+      if (proxyFailClosed()) throw error;
+      notify3D66ProxyFallback({
+        stage: "browser",
+        proxy: maskProxyUrl(process.env.THREED66_PROXY_URL || ""),
+        error,
+      });
+      return runWithProxy(null);
     }
   });
 }

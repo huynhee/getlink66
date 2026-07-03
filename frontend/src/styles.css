@@ -1868,6 +1868,18 @@ label {
   box-shadow: 0 0 18px rgba(0, 255, 136, 0.12);
 }
 
+.threed66SettingsTabs {
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.threed66SettingsTabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
 /* Window Controls (Fake MacOS dots for cyber vibe) */
 .window-controls {
   display: flex;

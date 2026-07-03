@@ -123,7 +123,7 @@ const defaultSiteSettings = {
   threed66ProxyForApi: false,
   threed66ProxyForDownload: false,
   threed66ProxyForBrowser: false,
-  threed66ProxyFailClosed: true,
+  threed66ProxyFailClosed: false,
   threed66TimeoutMs: 30000,
   threed66CookieMaxFailures: 2,
   threed66CookieCooldownMinutes: 30,
@@ -161,6 +161,7 @@ export default function Admin({ user, language = "vi" }) {
   const locale = language === "vi" ? "vi-VN" : "en-US";
   const [activeSection, setActiveSection] = useState("overview");
   const [dataSection, setDataSection] = useState("logs");
+  const [threed66SettingsTab, setThreed66SettingsTab] = useState("tasks");
   const [revenuePeriod, setRevenuePeriod] = useState("day");
   const [overview, setOverview] = useState(null);
   const [users, setUsers] = useState([]);
@@ -812,7 +813,6 @@ export default function Admin({ user, language = "vi" }) {
     { key: "homeText", label: l("Text trang chủ", "Homepage text"), icon: Type },
     { key: "articles", label: t.adminArticles || l("Bài viết", "Articles"), icon: FileText, count: articles.length },
     { key: "threed66", label: l("Cài đặt 3D66", "3D66 settings"), icon: Activity },
-    { key: "cookie", label: t.adminCookie, icon: Cookie },
     { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert }
   ];
   const dataSections = [
@@ -1033,7 +1033,7 @@ export default function Admin({ user, language = "vi" }) {
     {
       field: "threed66ProxyFailClosed",
       label: l("Proxy lỗi thì dừng", "Fail closed on proxy error"),
-      help: l("Nếu proxy lỗi thì báo lỗi rõ, không âm thầm đổi về IP VPS để tránh route lẫn lộn.", "If proxy fails, return a clear error instead of silently falling back to the VPS IP."),
+      help: l("Mặc định tắt: proxy lỗi sẽ tự chuyển về IP VPS và gửi cảnh báo Telegram. Bật nếu muốn dừng hẳn khi proxy lỗi.", "Off by default: proxy failures fall back to the VPS IP and send a Telegram alert. Enable to stop requests when proxy fails."),
     },
   ];
   const currentPlaywrightMode = Boolean(siteSettings.threed66BrowserAlways)
@@ -1059,6 +1059,14 @@ export default function Admin({ user, language = "vi" }) {
       label: l("Luôn Playwright", "Always Playwright"),
       help: l("Ép preview/getlink đi qua browser để test model khó. Tốn RAM/CPU hơn.", "Force preview/getlink through the browser for hard models. Uses more RAM/CPU."),
     },
+  ];
+  const threed66SettingsTabs = [
+    { key: "tasks", label: l("Tác vụ", "Tasks"), icon: Activity },
+    { key: "downloads", label: l("Tải file", "Downloads"), icon: FileDown },
+    { key: "proxy", label: l("Proxy", "Proxy"), icon: Zap },
+    { key: "playwright", label: l("Playwright", "Playwright"), icon: Gauge },
+    { key: "cookie", label: l("Cookie", "Cookie"), icon: Cookie },
+    { key: "status", label: l("Trạng thái", "Status"), icon: Cookie },
   ];
 
   return (
@@ -1777,7 +1785,24 @@ export default function Admin({ user, language = "vi" }) {
       {activeSection === "threed66" && (
         <section className="panel">
           <h2><Activity size={20} /> {l("Cài đặt vận hành 3D66", "3D66 runtime settings")}</h2>
+          <div className="segmentedControl threed66SettingsTabs" style={{ marginTop: 14 }}>
+            {threed66SettingsTabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={threed66SettingsTab === tab.key ? "active" : ""}
+                  onClick={() => setThreed66SettingsTab(tab.key)}
+                >
+                  <Icon size={14} /> {tab.label}
+                </button>
+              );
+            })}
+          </div>
+          {threed66SettingsTab !== "status" && (
           <form className="stack" onSubmit={saveRuntimeSettings} style={{ marginTop: 14 }}>
+            {threed66SettingsTab === "tasks" && (
             <div className="runtimeSettingGroup">
               <h3>{l("Tác vụ sang 3D66", "3D66 task settings")}</h3>
               <div className="runtimeSettingList">
@@ -1799,6 +1824,8 @@ export default function Admin({ user, language = "vi" }) {
                 ))}
               </div>
             </div>
+            )}
+            {threed66SettingsTab === "downloads" && (
             <div className="runtimeSettingGroup">
               <h3>{l("User và tải file", "User and download settings")}</h3>
               <div className="runtimeSettingList">
@@ -1819,6 +1846,8 @@ export default function Admin({ user, language = "vi" }) {
                 ))}
               </div>
             </div>
+            )}
+            {threed66SettingsTab === "proxy" && (
             <div className="runtimeSettingGroup">
               <h3>{l("Proxy Hong Kong", "Hong Kong proxy")}</h3>
               <div className="runtimeSettingList">
@@ -1877,6 +1906,8 @@ export default function Admin({ user, language = "vi" }) {
                 ))}
               </div>
             </div>
+            )}
+            {threed66SettingsTab === "playwright" && (
             <div className="runtimeSettingGroup">
               <h3>{l("Chế độ Playwright", "Playwright mode")}</h3>
               <div className="runtimeModeGrid">
@@ -1900,6 +1931,7 @@ export default function Admin({ user, language = "vi" }) {
                 )}
               </p>
             </div>
+            )}
             <p className="muted" style={{ margin: 0 }}>
               {l(
                 "Các giá trị này áp dụng ngay sau khi lưu. Paytype value dùng để chọn ví thanh toán 3D66, ví dụ value=\"4\" là 赠点. Tăng concurrency quá cao có thể làm cookie bị chặn hoặc VPS quá tải.",
@@ -1915,7 +1947,81 @@ export default function Admin({ user, language = "vi" }) {
               <Save size={14} /> {l("Lưu thông số 3D66", "Save 3D66 settings")}
             </button>
           </form>
-          {cookiePool && (
+          )}
+          {threed66SettingsTab === "cookie" && (
+            <div className="stack" style={{ marginTop: 14 }}>
+              <div className="runtimeSettingGroup">
+                <h3>{l("Cookie 3D66", "3D66 cookies")}</h3>
+                <form className="inputRow" onSubmit={saveCookie}>
+                  <input value={cookie} onChange={(event) => setCookie(event.target.value)} placeholder={l("Dán cookie 3D66 VIP vào đây...", "Paste 3D66 VIP cookie here...")} />
+                  <button disabled={!cookie || loading}>
+                    {loading ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />}
+                    {l("Lưu", "Save")}
+                  </button>
+                  <button type="button" className="smallButton" onClick={test3D66Cookie} disabled={loading}>
+                    <Check size={14} />
+                    {l("Kiểm tra", "Check")}
+                  </button>
+                </form>
+                {message && <p className="success">{message}</p>}
+              </div>
+              {cookiePool && (
+                <div className="cookiePoolGrid">
+                  <div className="cookiePoolCard">
+                    <span>Active</span>
+                    <strong>{cookiePool.stats?.active || 0}</strong>
+                  </div>
+                  <div className="cookiePoolCard warning">
+                    <span>Warning</span>
+                    <strong>{cookiePool.stats?.warning || 0}</strong>
+                  </div>
+                  <div className="cookiePoolCard error">
+                    <span>{l("Cooldown / lỗi", "Cooldown / errors")}</span>
+                    <strong>{(cookiePool.stats?.cooldown || 0) + (cookiePool.stats?.invalid || 0)}</strong>
+                  </div>
+                </div>
+              )}
+              <div className="table" style={{ marginTop: 16 }}>
+                {cookieRecords.map((item, index) => (
+                  <div className="tableRow" key={item._id}>
+                    <span>{item.status === "cooldown" ? l("Tạm nghỉ", "Cooldown") : index === 0 ? l("Ưu tiên", "Primary") : l("Dự phòng", "Backup")}</span>
+                    <code>{item.preview || "cookie"}</code>
+                    <span>{item.keyCount || 0} keys</span>
+                    <span className={item.hasRequiredKeys ? "success" : "error"}>
+                      {item.hasRequiredKeys ? l("Đủ key", "Keys OK") : `${l("Thiếu", "Missing")}: ${(item.missingKeys || []).join(", ")}`}
+                    </span>
+                    <span className={item.status === "cooldown" ? "error" : item.status === "warning" ? "muted" : "success"}>
+                      {item.status || "active"} · {l("lỗi", "errors")} {item.failureCount || 0} · {l("dùng", "uses")} {item.useCount || 0}
+                    </span>
+                    <span>
+                      {item.lastTestAt
+                        ? `${item.lastTestOk ? "OK" : l("Lỗi", "Error")} - ${new Date(item.lastTestAt).toLocaleString(locale)}`
+                        : l("Chưa test", "Not tested")}
+                    </span>
+                    {item.cooldownUntil && (
+                      <span className="muted">
+                        {l("nghỉ tới", "cooldown until")} {new Date(item.cooldownUntil).toLocaleString(locale)}
+                      </span>
+                    )}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button type="button" className="smallButton" onClick={() => testSaved3D66Cookie(item._id)} disabled={loading}>
+                        <Check size={14} /> Test
+                      </button>
+                      <button type="button" className="smallButton" onClick={() => delete3D66Cookie(item._id)} style={{ color: "var(--error)" }}>
+                        <X size={14} /> {l("Xóa", "Delete")}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {!cookieRecords.length && (
+                  <p className="muted" style={{ textAlign: "center", padding: 16 }}>
+                    {l("Chưa lưu cookie 3D66 nào.", "No 3D66 cookies saved yet.")}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          {threed66SettingsTab === "status" && cookiePool && (
             <div className="cookiePoolGrid">
               <div className="cookiePoolCard">
                 <span>Queue getlink</span>
@@ -1934,78 +2040,11 @@ export default function Admin({ user, language = "vi" }) {
               </div>
             </div>
           )}
-        </section>
-      )}
-
-      {activeSection === "cookie" && (
-        <section className="panel">
-          <h2><Cookie size={20} /> Cookie 3D66</h2>
-          <form className="inputRow" onSubmit={saveCookie} style={{ marginTop: 14 }}>
-            <input value={cookie} onChange={(event) => setCookie(event.target.value)} placeholder={l("Dán cookie 3D66 VIP vào đây...", "Paste 3D66 VIP cookie here...")} />
-            <button disabled={!cookie || loading}>
-              {loading ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />}
-              {l("Lưu", "Save")}
-            </button>
-            <button type="button" className="smallButton" onClick={test3D66Cookie} disabled={loading}>
-              <Check size={14} />
-              {l("Kiểm tra", "Check")}
-            </button>
-          </form>
-          {message && <p className="success">{message}</p>}
-          {cookiePool && (
-            <div className="cookiePoolGrid">
-              <div className="cookiePoolCard">
-                <span>Active</span>
-                <strong>{cookiePool.stats?.active || 0}</strong>
-              </div>
-              <div className="cookiePoolCard warning">
-                <span>Warning</span>
-                <strong>{cookiePool.stats?.warning || 0}</strong>
-              </div>
-              <div className="cookiePoolCard error">
-                <span>{l("Cooldown / lỗi", "Cooldown / errors")}</span>
-                <strong>{(cookiePool.stats?.cooldown || 0) + (cookiePool.stats?.invalid || 0)}</strong>
-              </div>
-            </div>
+          {threed66SettingsTab === "status" && !cookiePool && (
+            <p className="muted" style={{ marginTop: 14 }}>
+              {l("Chưa có dữ liệu trạng thái 3D66.", "No 3D66 status data yet.")}
+            </p>
           )}
-          <div className="table" style={{ marginTop: 16 }}>
-            {cookieRecords.map((item, index) => (
-              <div className="tableRow" key={item._id}>
-                <span>{item.status === "cooldown" ? l("Tạm nghỉ", "Cooldown") : index === 0 ? l("Ưu tiên", "Primary") : l("Dự phòng", "Backup")}</span>
-                <code>{item.preview || "cookie"}</code>
-                <span>{item.keyCount || 0} keys</span>
-                <span className={item.hasRequiredKeys ? "success" : "error"}>
-                  {item.hasRequiredKeys ? l("Đủ key", "Keys OK") : `${l("Thiếu", "Missing")}: ${(item.missingKeys || []).join(", ")}`}
-                </span>
-                <span className={item.status === "cooldown" ? "error" : item.status === "warning" ? "muted" : "success"}>
-                  {item.status || "active"} · {l("lỗi", "errors")} {item.failureCount || 0} · {l("dùng", "uses")} {item.useCount || 0}
-                </span>
-                <span>
-                  {item.lastTestAt
-                    ? `${item.lastTestOk ? "OK" : l("Lỗi", "Error")} - ${new Date(item.lastTestAt).toLocaleString(locale)}`
-                    : l("Chưa test", "Not tested")}
-                </span>
-                {item.cooldownUntil && (
-                  <span className="muted">
-                    {l("nghỉ tới", "cooldown until")} {new Date(item.cooldownUntil).toLocaleString(locale)}
-                  </span>
-                )}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="smallButton" onClick={() => testSaved3D66Cookie(item._id)} disabled={loading}>
-                    <Check size={14} /> Test
-                  </button>
-                  <button type="button" className="smallButton" onClick={() => delete3D66Cookie(item._id)} style={{ color: "var(--error)" }}>
-                    <X size={14} /> {l("Xóa", "Delete")}
-                  </button>
-                </div>
-              </div>
-            ))}
-            {!cookieRecords.length && (
-              <p className="muted" style={{ textAlign: "center", padding: 16 }}>
-                {l("Chưa lưu cookie 3D66 nào.", "No 3D66 cookies saved yet.")}
-              </p>
-            )}
-          </div>
         </section>
       )}
 

@@ -5,6 +5,7 @@ import {
   fetch3D66PageWithBrowser,
   inspect3D66DownloadFormatsWithBrowser,
 } from "./3d66BrowserService.js";
+import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 
 const DEFAULT_DOWNLOAD_ENDPOINT = "https://user.3d66.com/api/v1/download/handle";
 const DEFAULT_DOWNLOAD_POP_ENDPOINT = "https://user.3d66.com/api/v1/download/pop";
@@ -142,14 +143,33 @@ function proxyDispatcher(stage, url) {
 }
 
 async function fetch3D66(url, options = {}, { stage = "api" } = {}) {
-  const dispatcher = proxyDispatcher(stage, url);
+  let dispatcher;
+  try {
+    dispatcher = proxyDispatcher(stage, url);
+  } catch (error) {
+    if (!booleanEnv("THREED66_PROXY_FAIL_CLOSED", false)) {
+      notify3D66ProxyFallback({
+        stage,
+        proxy: maskProxyUrl(proxyUrl()),
+        error,
+      });
+      return fetch(url, options);
+    }
+    throw error;
+  }
+
   if (!dispatcher) return fetch(url, options);
 
   try {
     return await fetch(url, { ...options, dispatcher });
   } catch (error) {
     if (error.name === "AbortError") throw error;
-    if (!booleanEnv("THREED66_PROXY_FAIL_CLOSED", true)) {
+    if (!booleanEnv("THREED66_PROXY_FAIL_CLOSED", false)) {
+      notify3D66ProxyFallback({
+        stage,
+        proxy: maskProxyUrl(proxyUrl()),
+        error,
+      });
       return fetch(url, options);
     }
     throw httpError("3D66 proxy connection failed", 502, {

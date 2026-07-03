@@ -149,3 +149,17 @@ export function notify3D66CookiesUnavailable({ reason, error, stats } = {}) {
 
   sendTelegramNotification(lines.join("\n")).catch(() => {});
 }
+
+export function notify3D66ProxyFallback({ stage, proxy, error } = {}) {
+  const lines = [
+    "<b>3D66 proxy fallback</b>",
+    `Stage: ${escapeHtml(stage || "-")}`,
+    `Proxy: <code>${escapeHtml(proxy || "-")}</code>`,
+    `Reason: ${escapeHtml(error?.message || error || "Proxy request failed").slice(0, 500)}`,
+    "Action: switched to default VPS route for this request",
+  ];
+
+  sendTelegramNotification(lines.join("\n"), {
+    dedupeKey: `3d66-proxy-fallback:${stage || "-"}:${proxy || "-"}`,
+  }).catch(() => {});
+}

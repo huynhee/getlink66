@@ -96,7 +96,7 @@ const RUNTIME_BOOLEAN_FIELDS = {
   },
   threed66ProxyFailClosed: {
     env: "THREED66_PROXY_FAIL_CLOSED",
-    fallback: normalizeBoolean(process.env.THREED66_PROXY_FAIL_CLOSED, true),
+    fallback: normalizeBoolean(process.env.THREED66_PROXY_FAIL_CLOSED, false),
   },
 };
 const RUNTIME_NUMBER_FIELDS = {
@@ -415,6 +415,12 @@ async function loadSettings() {
       runtimePatch[field] = normalized;
     }
   });
+  if (
+    settings.threed66ProxyFailClosed === true &&
+    normalizeBoolean(settings.threed66ProxyEnabled, RUNTIME_BOOLEAN_FIELDS.threed66ProxyEnabled.fallback) === false
+  ) {
+    runtimePatch.threed66ProxyFailClosed = false;
+  }
   if (Object.keys(runtimePatch).length) {
     settings = await SiteSetting.findOneAndUpdate(
       { key: "homepage" },
