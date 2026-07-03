@@ -79,6 +79,37 @@ function shouldBlockAssets() {
   return process.env.THREED66_BROWSER_BLOCK_ASSETS !== "false";
 }
 
+function booleanEnv(name, fallback = false) {
+  const value = process.env[name];
+  if (value === undefined || value === "") return fallback;
+  return value === "true" || value === "1" || value === 1 || value === true;
+}
+
+function browserProxyConfig() {
+  if (!booleanEnv("THREED66_PROXY_ENABLED", false)) return null;
+  if (!booleanEnv("THREED66_PROXY_FOR_BROWSER", false)) return null;
+
+  const rawUrl = String(process.env.THREED66_PROXY_URL || "").trim();
+  if (!rawUrl) return null;
+
+  try {
+    const parsed = new URL(rawUrl);
+    if (!["http:", "https:", "socks5:"].includes(parsed.protocol)) {
+      throw new Error("Unsupported proxy protocol");
+    }
+    const server = `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+    return {
+      server,
+      ...(parsed.username ? { username: decodeURIComponent(parsed.username) } : {}),
+      ...(parsed.password ? { password: decodeURIComponent(parsed.password) } : {}),
+    };
+  } catch (error) {
+    const proxyError = new Error(`3D66 browser proxy URL is invalid: ${error.message}`);
+    proxyError.status = 500;
+    throw proxyError;
+  }
+}
+
 function browserConcurrency() {
   const value = numberEnv(
     "THREED66_BROWSER_CONCURRENCY",
@@ -228,10 +259,12 @@ function runBrowserTask(task) {
 async function withBrowserContext(url, cookieValue, callback) {
   return runBrowserTask(async () => {
     const browser = await getSharedBrowser();
+    const proxy = browserProxyConfig();
     const context = await browser.newContext({
       userAgent: DEFAULT_USER_AGENT,
       locale: "zh-CN",
       viewport: { width: 1440, height: 900 },
+      ...(proxy ? { proxy } : {}),
     });
 
     try {

@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { ProxyAgent } from "undici";
 import {
   download3D66WithBrowser,
   fetch3D66PageWithBrowser,
@@ -11,6 +12,13 @@ const DEFAULT_TIMEOUT_MS = 30000;
 const MAX_HTML_LENGTH = 2 * 1024 * 1024;
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
+const PROXY_STAGE_ENV = {
+  preview: "THREED66_PROXY_FOR_PREVIEW",
+  api: "THREED66_PROXY_FOR_API",
+  file: "THREED66_PROXY_FOR_DOWNLOAD",
+  browser: "THREED66_PROXY_FOR_BROWSER",
+};
+const proxyAgentCache = new Map();
 const DEFAULT_SITE_CONTEXTS = {
   "3d.3d66.com": {
     site: "1",
@@ -74,6 +82,82 @@ function httpError(message, status = 502, details = {}) {
   error.status = status;
   error.details = details;
   return error;
+}
+
+function booleanEnv(name, fallback = false) {
+  const value = process.env[name];
+  if (value === undefined || value === "") return fallback;
+  return value === "true" || value === "1" || value === 1 || value === true;
+}
+
+function maskProxyUrl(value = "") {
+  try {
+    const parsed = new URL(value);
+    if (parsed.username) parsed.username = "***";
+    if (parsed.password) parsed.password = "***";
+    return parsed.toString();
+  } catch {
+    return "[invalid proxy url]";
+  }
+}
+
+function proxyUrl() {
+  return String(process.env.THREED66_PROXY_URL || "").trim();
+}
+
+function shouldUseProxyFor3D66(url, stage = "api") {
+  if (!booleanEnv("THREED66_PROXY_ENABLED", false)) return false;
+  if (!proxyUrl()) return false;
+  const stageEnv = PROXY_STAGE_ENV[stage] || "";
+  if (stageEnv && !booleanEnv(stageEnv, false)) return false;
+
+  try {
+    return isAllowed3D66Host(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function proxyDispatcher(stage, url) {
+  if (!shouldUseProxyFor3D66(url, stage)) return null;
+
+  const urlValue = proxyUrl();
+  try {
+    const parsed = new URL(urlValue);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      throw new Error("Proxy URL must use http:// or https://");
+    }
+  } catch (error) {
+    throw httpError("3D66 proxy URL is invalid", 500, {
+      stage,
+      proxy: maskProxyUrl(urlValue),
+      cause: error.message,
+    });
+  }
+
+  if (!proxyAgentCache.has(urlValue)) {
+    proxyAgentCache.set(urlValue, new ProxyAgent(urlValue));
+  }
+  return proxyAgentCache.get(urlValue);
+}
+
+async function fetch3D66(url, options = {}, { stage = "api" } = {}) {
+  const dispatcher = proxyDispatcher(stage, url);
+  if (!dispatcher) return fetch(url, options);
+
+  try {
+    return await fetch(url, { ...options, dispatcher });
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
+    if (!booleanEnv("THREED66_PROXY_FAIL_CLOSED", true)) {
+      return fetch(url, options);
+    }
+    throw httpError("3D66 proxy connection failed", 502, {
+      stage,
+      proxy: maskProxyUrl(proxyUrl()),
+      cause: error.message,
+    });
+  }
 }
 
 function requestedProductIdFromUrl(rawUrl = "") {
@@ -1097,7 +1181,7 @@ function buildModelUrls(pageUrl, fields) {
 async function fetchModelPage(url, cookieValue) {
   const { controller, done } = withTimeout();
   try {
-    const response = await fetch(url, {
+    const response = await fetch3D66(url, {
       redirect: "follow",
       signal: controller.signal,
       headers: {
@@ -1117,7 +1201,7 @@ async function fetchModelPage(url, cookieValue) {
         "upgrade-insecure-requests": "1",
         "user-agent": DEFAULT_USER_AGENT
       }
-    });
+    }, { stage: "preview" });
 
     const html = await response.text();
     if (!response.ok) {
@@ -1359,7 +1443,7 @@ async function requestDownloadPop(fields, cookieValue, context) {
   });
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetch3D66(endpoint, {
       method: "POST",
       signal: controller.signal,
       headers: {
@@ -1372,7 +1456,7 @@ async function requestDownloadPop(fields, cookieValue, context) {
         "x-requested-with": "XMLHttpRequest"
       },
       body: payload
-    });
+    }, { stage: "api" });
 
     const text = await response.text();
     let json;
@@ -1545,7 +1629,7 @@ async function requestDownloadUrl(payload, cookieValue, origin) {
   const { controller, done } = withTimeout();
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetch3D66(endpoint, {
       method: "POST",
       signal: controller.signal,
       headers: {
@@ -1558,7 +1642,7 @@ async function requestDownloadUrl(payload, cookieValue, origin) {
         "x-requested-with": "XMLHttpRequest"
       },
       body: payload
-    });
+    }, { stage: "api" });
 
     const text = await response.text();
     let json;
@@ -1813,11 +1897,11 @@ export async function request3D66File(fileUrl, cookieValue, options = {}) {
 
   if (options.range) headers.range = options.range;
 
-  return fetch(fileUrl, {
+  return fetch3D66(fileUrl, {
     redirect: "follow",
     signal: options.signal,
     headers
-  });
+  }, { stage: "file" });
 }
 
 export async function inspect3D66DownloadFormats(url, cookieValue) {

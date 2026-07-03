@@ -1151,6 +1151,12 @@ button:disabled {
   width: 100%;
 }
 
+.runtimeSettingRow input[type="checkbox"] {
+  justify-self: end;
+  width: 18px;
+  height: 18px;
+}
+
 .homeTextEditor {
   display: grid;
   gap: var(--space-14);

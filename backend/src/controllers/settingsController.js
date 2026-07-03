@@ -1,4 +1,5 @@
 import SiteSetting from "../models/SiteSetting.js";
+import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
 import { limitedString, rejectUnknownKeys, sanitizeHtml } from "../utils/validators.js";
 
 const REFERRAL_MODES = ["both", "referrer_only", "off"];
@@ -72,6 +73,30 @@ const RUNTIME_BOOLEAN_FIELDS = {
   threed66DownloadHandleBrowserFallback: {
     env: "THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK",
     fallback: normalizeBoolean(process.env.THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK, false),
+  },
+  threed66ProxyEnabled: {
+    env: "THREED66_PROXY_ENABLED",
+    fallback: normalizeBoolean(process.env.THREED66_PROXY_ENABLED, false),
+  },
+  threed66ProxyForPreview: {
+    env: "THREED66_PROXY_FOR_PREVIEW",
+    fallback: normalizeBoolean(process.env.THREED66_PROXY_FOR_PREVIEW, false),
+  },
+  threed66ProxyForApi: {
+    env: "THREED66_PROXY_FOR_API",
+    fallback: normalizeBoolean(process.env.THREED66_PROXY_FOR_API, false),
+  },
+  threed66ProxyForDownload: {
+    env: "THREED66_PROXY_FOR_DOWNLOAD",
+    fallback: normalizeBoolean(process.env.THREED66_PROXY_FOR_DOWNLOAD, false),
+  },
+  threed66ProxyForBrowser: {
+    env: "THREED66_PROXY_FOR_BROWSER",
+    fallback: normalizeBoolean(process.env.THREED66_PROXY_FOR_BROWSER, false),
+  },
+  threed66ProxyFailClosed: {
+    env: "THREED66_PROXY_FAIL_CLOSED",
+    fallback: normalizeBoolean(process.env.THREED66_PROXY_FAIL_CLOSED, true),
   },
 };
 const RUNTIME_NUMBER_FIELDS = {
@@ -191,6 +216,13 @@ const defaultSettings = {
   threed66DisableBrowserPageFallback: RUNTIME_BOOLEAN_FIELDS.threed66DisableBrowserPageFallback.fallback,
   threed66DisableBrowserDownloadFallback: RUNTIME_BOOLEAN_FIELDS.threed66DisableBrowserDownloadFallback.fallback,
   threed66DownloadHandleBrowserFallback: RUNTIME_BOOLEAN_FIELDS.threed66DownloadHandleBrowserFallback.fallback,
+  threed66ProxyEnabled: RUNTIME_BOOLEAN_FIELDS.threed66ProxyEnabled.fallback,
+  threed66ProxyUrl: process.env.THREED66_PROXY_URL ? encryptSecret(process.env.THREED66_PROXY_URL) : "",
+  threed66ProxyForPreview: RUNTIME_BOOLEAN_FIELDS.threed66ProxyForPreview.fallback,
+  threed66ProxyForApi: RUNTIME_BOOLEAN_FIELDS.threed66ProxyForApi.fallback,
+  threed66ProxyForDownload: RUNTIME_BOOLEAN_FIELDS.threed66ProxyForDownload.fallback,
+  threed66ProxyForBrowser: RUNTIME_BOOLEAN_FIELDS.threed66ProxyForBrowser.fallback,
+  threed66ProxyFailClosed: RUNTIME_BOOLEAN_FIELDS.threed66ProxyFailClosed.fallback,
   threed66TimeoutMs: Number(process.env.THREED66_TIMEOUT_MS || 30000),
   threed66CookieMaxFailures: Number(process.env.THREED66_COOKIE_MAX_FAILURES || 2),
   threed66CookieCooldownMinutes: Math.round(Number(process.env.THREED66_COOKIE_COOLDOWN_MS || 1800000) / 60000),
@@ -211,6 +243,34 @@ function settingsSnapshot(settings = {}) {
     ...defaultSettings,
     ...plain,
   };
+}
+
+function rawSettingValue(settings = {}, field = "") {
+  const raw = settings?.toObject ? settings.toObject({ defaults: false }) : settings;
+  return Object.prototype.hasOwnProperty.call(raw || {}, field) ? raw[field] : undefined;
+}
+
+function decryptProxyUrl(value = "") {
+  try {
+    return decryptSecret(value || "");
+  } catch {
+    return "";
+  }
+}
+
+function proxyUrlConfigured(settings = {}) {
+  const stored = rawSettingValue(settings, "threed66ProxyUrl");
+  if (stored !== undefined) return Boolean(decryptProxyUrl(stored));
+  return Boolean(String(process.env.THREED66_PROXY_URL || "").trim());
+}
+
+function publicSettings(settings = {}) {
+  const snapshot = settingsSnapshot(settings);
+  delete snapshot.threed66ProxyUrl;
+  snapshot.threed66ProxyUrlConfigured = proxyUrlConfigured(settings);
+  snapshot.threed66ProxyUrl = "";
+  snapshot.threed66ProxyUrlClear = false;
+  return snapshot;
 }
 
 function cacheSettings(settings) {
@@ -274,6 +334,25 @@ function normalizePaytypeValue(value) {
   return /^[\w-]{1,20}$/.test(text) ? text : "4";
 }
 
+function normalizeProxyUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  let parsed;
+  try {
+    parsed = new URL(text);
+  } catch {
+    const error = new Error("Proxy URL không hợp lệ.");
+    error.status = 400;
+    throw error;
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    const error = new Error("Proxy URL phải dùng http:// hoặc https://.");
+    error.status = 400;
+    throw error;
+  }
+  return parsed.toString();
+}
+
 function applyRuntimeSettings(settings = {}) {
   Object.entries(RUNTIME_NUMBER_FIELDS).forEach(([field, config]) => {
     const value = clampInteger(settings[field], config);
@@ -285,6 +364,10 @@ function applyRuntimeSettings(settings = {}) {
   process.env.THREED66_PAYTYPE_VALUE = normalizePaytypeValue(
     settings.threed66PaytypeValue,
   );
+  const storedProxyUrl = rawSettingValue(settings, "threed66ProxyUrl");
+  if (storedProxyUrl !== undefined && String(storedProxyUrl || "").trim()) {
+    process.env.THREED66_PROXY_URL = decryptProxyUrl(storedProxyUrl);
+  }
 }
 
 async function loadSettings() {
@@ -367,7 +450,7 @@ export async function initializeSettings() {
 export async function getSettings(_req, res, next) {
   try {
     const settings = await loadSettingsWithRetry({ allowFallback: true });
-    res.json({ settings });
+    res.json({ settings: publicSettings(settings) });
   } catch (error) {
     next(error);
   }
@@ -388,6 +471,14 @@ export async function updateSettings(req, res, next) {
       "threed66DisableBrowserPageFallback",
       "threed66DisableBrowserDownloadFallback",
       "threed66DownloadHandleBrowserFallback",
+      "threed66ProxyEnabled",
+      "threed66ProxyUrl",
+      "threed66ProxyUrlClear",
+      "threed66ProxyForPreview",
+      "threed66ProxyForApi",
+      "threed66ProxyForDownload",
+      "threed66ProxyForBrowser",
+      "threed66ProxyFailClosed",
       "threed66TimeoutMs",
       "threed66CookieMaxFailures",
       "threed66CookieCooldownMinutes",
@@ -417,6 +508,15 @@ export async function updateSettings(req, res, next) {
         update[field] = normalizePaytypeValue(req.body[field]);
         return;
       }
+      if (field === "threed66ProxyUrl") {
+        const normalized = normalizeProxyUrl(req.body[field]);
+        if (normalized) update[field] = encryptSecret(normalized);
+        return;
+      }
+      if (field === "threed66ProxyUrlClear") {
+        if (normalizeBoolean(req.body[field], false)) update.threed66ProxyUrl = "";
+        return;
+      }
       if (RUNTIME_BOOLEAN_FIELDS[field]) {
         update[field] = normalizeBoolean(req.body[field], RUNTIME_BOOLEAN_FIELDS[field].fallback);
         return;
@@ -431,9 +531,12 @@ export async function updateSettings(req, res, next) {
       { new: true },
     );
     applyRuntimeSettings(settings);
+    if (update.threed66ProxyUrl === "") {
+      process.env.THREED66_PROXY_URL = "";
+    }
     cacheSettings(settings);
 
-    res.json({ settings });
+    res.json({ settings: publicSettings(settings) });
   } catch (error) {
     next(error);
   }

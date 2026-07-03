@@ -115,6 +115,15 @@ const defaultSiteSettings = {
   threed66DisableBrowserPageFallback: false,
   threed66DisableBrowserDownloadFallback: false,
   threed66DownloadHandleBrowserFallback: false,
+  threed66ProxyEnabled: false,
+  threed66ProxyUrl: "",
+  threed66ProxyUrlConfigured: false,
+  threed66ProxyUrlClear: false,
+  threed66ProxyForPreview: false,
+  threed66ProxyForApi: false,
+  threed66ProxyForDownload: false,
+  threed66ProxyForBrowser: false,
+  threed66ProxyFailClosed: true,
   threed66TimeoutMs: 30000,
   threed66CookieMaxFailures: 2,
   threed66CookieCooldownMinutes: 30,
@@ -539,6 +548,14 @@ export default function Admin({ user, language = "vi" }) {
           threed66DisableBrowserPageFallback: Boolean(siteSettings.threed66DisableBrowserPageFallback),
           threed66DisableBrowserDownloadFallback: Boolean(siteSettings.threed66DisableBrowserDownloadFallback),
           threed66DownloadHandleBrowserFallback: Boolean(siteSettings.threed66DownloadHandleBrowserFallback),
+          threed66ProxyEnabled: Boolean(siteSettings.threed66ProxyEnabled),
+          threed66ProxyUrl: String(siteSettings.threed66ProxyUrl || "").trim(),
+          threed66ProxyUrlClear: Boolean(siteSettings.threed66ProxyUrlClear),
+          threed66ProxyForPreview: Boolean(siteSettings.threed66ProxyForPreview),
+          threed66ProxyForApi: Boolean(siteSettings.threed66ProxyForApi),
+          threed66ProxyForDownload: Boolean(siteSettings.threed66ProxyForDownload),
+          threed66ProxyForBrowser: Boolean(siteSettings.threed66ProxyForBrowser),
+          threed66ProxyFailClosed: Boolean(siteSettings.threed66ProxyFailClosed),
           threed66TimeoutMs: Number(siteSettings.threed66TimeoutMs || 30000),
           threed66CookieMaxFailures: Number(siteSettings.threed66CookieMaxFailures || 2),
           threed66CookieCooldownMinutes: Number(siteSettings.threed66CookieCooldownMinutes || 30),
@@ -985,6 +1002,38 @@ export default function Admin({ user, language = "vi" }) {
       min: 1,
       max: 100,
       fallback: 5,
+    },
+  ];
+  const proxyRuntimeSettings = [
+    {
+      field: "threed66ProxyEnabled",
+      label: l("Bật proxy 3D66", "Enable 3D66 proxy"),
+      help: l("Bật lớp proxy riêng cho request backend gửi sang 3D66. Không ảnh hưởng user vào web.", "Enable a dedicated proxy for backend requests to 3D66. User traffic to the site is not affected."),
+    },
+    {
+      field: "threed66ProxyForPreview",
+      label: l("Proxy khi kiểm tra model", "Proxy preview checks"),
+      help: l("Dùng proxy khi đọc trang/metadata model. Mặc định nên tắt để preview nhanh và ít rủi ro.", "Use proxy for model page and metadata reads. Keep off by default for faster, lower-risk previews."),
+    },
+    {
+      field: "threed66ProxyForApi",
+      label: l("Proxy khi mua/generate link", "Proxy purchase/generate API"),
+      help: l("Dùng proxy khi gọi download/pop và download/handle của 3D66.", "Use proxy for 3D66 download/pop and download/handle API calls."),
+    },
+    {
+      field: "threed66ProxyForDownload",
+      label: l("Proxy khi kéo file tải", "Proxy file download"),
+      help: l("Dùng proxy khi VPS kéo fileUrl thật từ 3D66 trước khi stream về user.", "Use proxy when the VPS pulls the real 3D66 fileUrl before streaming to the user."),
+    },
+    {
+      field: "threed66ProxyForBrowser",
+      label: l("Proxy cho Playwright", "Proxy Playwright"),
+      help: l("Dùng proxy cho browser fallback. Chỉ bật khi đã test proxy ổn.", "Use proxy for browser fallback. Enable only after the proxy is tested."),
+    },
+    {
+      field: "threed66ProxyFailClosed",
+      label: l("Proxy lỗi thì dừng", "Fail closed on proxy error"),
+      help: l("Nếu proxy lỗi thì báo lỗi rõ, không âm thầm đổi về IP VPS để tránh route lẫn lộn.", "If proxy fails, return a clear error instead of silently falling back to the VPS IP."),
     },
   ];
   const currentPlaywrightMode = Boolean(siteSettings.threed66BrowserAlways)
@@ -1765,6 +1814,64 @@ export default function Admin({ user, language = "vi" }) {
                       max={setting.max}
                       value={siteSettings[setting.field] ?? setting.fallback}
                       onChange={(event) => updateRuntimeSetting(setting.field, event.target.value)}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="runtimeSettingGroup">
+              <h3>{l("Proxy Hong Kong", "Hong Kong proxy")}</h3>
+              <div className="runtimeSettingList">
+                <label className="runtimeSettingRow">
+                  <span className="runtimeSettingText">
+                    <strong>{l("Proxy URL", "Proxy URL")}</strong>
+                    <small>
+                      {siteSettings.threed66ProxyUrlConfigured
+                        ? l("Đã cấu hình proxy URL. Nhập URL mới nếu muốn thay thế; để trống sẽ giữ nguyên.", "Proxy URL is configured. Enter a new URL to replace it; leave blank to keep it.")
+                        : l("Chưa cấu hình proxy. Nhập dạng http://user:pass@host:port sau khi mua proxy.", "No proxy configured. Enter http://user:pass@host:port after buying a proxy.")}
+                    </small>
+                  </span>
+                  <input
+                    type="password"
+                    value={siteSettings.threed66ProxyUrl || ""}
+                    placeholder="http://user:pass@host:port"
+                    autoComplete="off"
+                    onChange={(event) =>
+                      setSiteSettings((settings) => ({
+                        ...settings,
+                        threed66ProxyUrl: event.target.value,
+                        threed66ProxyUrlClear: false,
+                      }))
+                    }
+                  />
+                </label>
+                {siteSettings.threed66ProxyUrlConfigured && (
+                  <button
+                    type="button"
+                    className="smallButton dangerButton"
+                    style={{ alignSelf: "flex-start" }}
+                    onClick={() =>
+                      setSiteSettings((settings) => ({
+                        ...settings,
+                        threed66ProxyUrl: "",
+                        threed66ProxyUrlConfigured: false,
+                        threed66ProxyUrlClear: true,
+                      }))
+                    }
+                  >
+                    <X size={14} /> {l("Xóa proxy URL", "Clear proxy URL")}
+                  </button>
+                )}
+                {proxyRuntimeSettings.map((setting) => (
+                  <label className="runtimeSettingRow" key={setting.field}>
+                    <span className="runtimeSettingText">
+                      <strong>{setting.label}</strong>
+                      <small>{setting.help}</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(siteSettings[setting.field])}
+                      onChange={(event) => updateRuntimeSetting(setting.field, event.target.checked)}
                     />
                   </label>
                 ))}
