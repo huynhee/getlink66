@@ -52,6 +52,8 @@ function compareAdminUsers(a, b, sort = "created-desc") {
   }
   if (sort === "credit-desc") return Number(b.credit || 0) - Number(a.credit || 0);
   if (sort === "credit-asc") return Number(a.credit || 0) - Number(b.credit || 0);
+  if (sort === "pro-desc") return new Date(b.proUntil || 0) - new Date(a.proUntil || 0);
+  if (sort === "pro-asc") return new Date(a.proUntil || 0) - new Date(b.proUntil || 0);
   if (sort === "email-asc") return compareText(a.email, b.email);
   if (sort === "email-desc") return compareText(b.email, a.email);
   return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
@@ -61,6 +63,8 @@ function adminUserSort(sort = "created-desc") {
   if (sort === "created-asc") return { createdAt: 1 };
   if (sort === "credit-desc") return { credit: -1 };
   if (sort === "credit-asc") return { credit: 1 };
+  if (sort === "pro-desc") return { proUntil: -1 };
+  if (sort === "pro-asc") return { proUntil: 1 };
   if (sort === "email-asc") return { email: 1 };
   if (sort === "email-desc") return { email: -1 };
   return { createdAt: -1 };
@@ -370,6 +374,7 @@ export async function listUsers(req, res, next) {
   try {
     const search = normalizedSearch(req.query.search);
     const sort = String(req.query.sort || "created-desc");
+    const filter = String(req.query.filter || "all");
     const requestedPage = Number(req.query.page || 1);
     const page = Number.isInteger(requestedPage) && requestedPage > 0
       ? requestedPage
@@ -379,6 +384,16 @@ export async function listUsers(req, res, next) {
       const query = regex
         ? { $or: [{ email: regex }, { name: regex }] }
         : {};
+      if (filter === "banned") query.isBanned = true;
+      if (filter === "admin") query.role = "admin";
+      if (filter === "pro") query.proUntil = { $gt: new Date() };
+      if (filter === "free") {
+        query.role = { $ne: "admin" };
+        query.$and = [
+          ...(query.$and || []),
+          { $or: [{ proUntil: { $exists: false } }, { proUntil: null }, { proUntil: { $lte: new Date() } }] },
+        ];
+      }
       const total = await User.countDocuments(query);
       const totalPages = Math.max(1, Math.ceil(total / ADMIN_USER_PAGE_SIZE));
       const safePage = Math.min(page, totalPages);
@@ -400,9 +415,14 @@ export async function listUsers(req, res, next) {
     const allUsers = await User.find();
     const filteredUsers = allUsers
       .filter((user) => {
-        if (!search) return true;
-        return [user.email, user.name, user._id]
+        const matchesSearch = !search || [user.email, user.name, user._id]
           .some((value) => String(value || "").toLowerCase().includes(search));
+        if (!matchesSearch) return false;
+        if (filter === "banned") return Boolean(user.isBanned);
+        if (filter === "admin") return user.role === "admin";
+        if (filter === "pro") return Boolean(user.proUntil && new Date(user.proUntil) > new Date());
+        if (filter === "free") return user.role !== "admin" && (!user.proUntil || new Date(user.proUntil) <= new Date());
+        return true;
       })
       .sort((a, b) => compareAdminUsers(a, b, sort));
     const total = filteredUsers.length;

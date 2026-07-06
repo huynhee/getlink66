@@ -16,7 +16,11 @@ const userSchema = new mongoose.Schema(
     isBanned: { type: Boolean, default: false, index: true },
     banReason: { type: String, default: "" },
     bannedAt: Date,
-    bannedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }
+    bannedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    proUntil: { type: Date, index: true },
+    proPlanId: { type: mongoose.Schema.Types.ObjectId, ref: "MembershipPlan" },
+    proActivatedAt: Date,
+    proDailyDownloadLimit: { type: Number, default: 100, min: 0 },
   },
   { timestamps: true }
 );

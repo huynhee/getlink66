@@ -68,3 +68,36 @@ export function createSepayCheckout({ topup, user, pack }) {
     fields,
   };
 }
+
+export function createMembershipSepayCheckout({ order, user, plan }) {
+  assertSepayConfigured();
+  const sepay = getSepayClient();
+  const paymentCode = String(order.paymentCode || "");
+  const successUrl = process.env.SEPAY_MEMBERSHIP_SUCCESS_URL || process.env.SEPAY_SUCCESS_URL || frontendUrl("/membership?payment=success");
+  const errorUrl = process.env.SEPAY_MEMBERSHIP_ERROR_URL || process.env.SEPAY_ERROR_URL || frontendUrl("/membership?payment=error");
+  const cancelUrl = process.env.SEPAY_MEMBERSHIP_CANCEL_URL || process.env.SEPAY_CANCEL_URL || frontendUrl("/membership?payment=cancel");
+
+  const fields = sepay.checkout.initOneTimePaymentFields({
+    operation: "PURCHASE",
+    payment_method: process.env.SEPAY_PAYMENT_METHOD || "BANK_TRANSFER",
+    order_invoice_number: paymentCode,
+    order_amount: Number(order.amount || 0),
+    currency: "VND",
+    order_description: `Nang cap Pro 3DIPL ${paymentCode}`,
+    customer_id: String(user?._id || order.userId || ""),
+    success_url: successUrl,
+    error_url: errorUrl,
+    cancel_url: cancelUrl,
+    custom_data: JSON.stringify({
+      membershipOrderId: String(order._id),
+      planId: String(plan?._id || ""),
+      userId: String(user?._id || order.userId || ""),
+    }),
+  });
+
+  return {
+    provider: "sepay",
+    checkoutUrl: sepay.checkout.initCheckoutUrl(),
+    fields,
+  };
+}

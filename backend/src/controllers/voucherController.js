@@ -1,5 +1,9 @@
 import Voucher from "../models/Voucher.js";
-import Topup from "../models/Topup.js";
+import {
+  approvedVoucherUseCount,
+  safeVoucherPayload,
+  voucherApplicablePackageIds,
+} from "../utils/voucherCheckoutService.js";
 import {
   isVoucherCode,
   isSafeId,
@@ -10,13 +14,14 @@ import { voucherUnavailableMessage } from "../utils/voucherStatus.js";
 
 export async function applyVoucher(req, res, next) {
   try {
-    const unknownKey = rejectUnknownKeys(req.body, ["code", "packageId"]);
+    const unknownKey = rejectUnknownKeys(req.body, ["code", "packageId", "target"]);
     if (unknownKey) {
       return res.status(400).json({ message: "Invalid voucher request" });
     }
 
     const code = normalizeVoucherCode(req.body.code);
     const packageId = String(req.body.packageId || "").trim();
+    const target = String(req.body.target || "topup").trim().toLowerCase();
     if (!code || !isVoucherCode(code)) {
       return res.status(400).json({ message: "Voucher code is required" });
     }
@@ -34,6 +39,16 @@ export async function applyVoucher(req, res, next) {
     const applicablePackageIds = Array.isArray(voucher.applicablePackageIds)
       ? voucher.applicablePackageIds.map((id) => String(id?._id || id))
       : [];
+    if (target === "membership" && applicablePackageIds.length > 0) {
+      return res.status(400).json({
+        message: "Voucher này chỉ áp dụng cho gói Credit.",
+      });
+    }
+    if (target === "membership" && Number(voucher.discountPercent || 0) <= 0) {
+      return res.status(400).json({
+        message: "Voucher này chỉ cộng Credit, không áp dụng cho Pro.",
+      });
+    }
     if (packageId && applicablePackageIds.length > 0 && !applicablePackageIds.includes(packageId)) {
       return res.status(400).json({
         message: "Voucher không áp dụng cho gói nạp này.",
@@ -43,11 +58,7 @@ export async function applyVoucher(req, res, next) {
     const perUserLimit = Number(voucher.perUserLimit ?? 1);
     let userVoucherUsed = 0;
     if (perUserLimit > 0) {
-      userVoucherUsed = await Topup.countDocuments({
-        userId: req.user._id,
-        voucherCode: voucher.code,
-        status: "approved",
-      });
+      userVoucherUsed = await approvedVoucherUseCount(req.user._id, voucher.code);
       if (userVoucherUsed >= perUserLimit) {
         return res.status(400).json({
           message: "Bạn đã đạt giới hạn sử dụng voucher này.",
@@ -58,14 +69,10 @@ export async function applyVoucher(req, res, next) {
     // Chi tra cac field can thiet cho frontend, KHONG leak `usageLimit`, `usedCount`,
     // `_id`, `createdAt`. Tranh information disclosure cho atttacker biet trang thai voucher.
     const safeVoucher = {
-      code: voucher.code,
-      description: voucher.description || "",
-      creditBonus: Number(voucher.creditBonus || 0),
-      discountPercent: Number(voucher.discountPercent || 0),
-      expireAt: voucher.expireAt,
+      ...safeVoucherPayload(voucher),
       perUserRemaining:
         perUserLimit > 0 ? Math.max(0, perUserLimit - userVoucherUsed) : null,
-      applicablePackageIds,
+      applicablePackageIds: voucherApplicablePackageIds(voucher),
     };
 
     res.json({

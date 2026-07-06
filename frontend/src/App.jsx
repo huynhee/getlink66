@@ -6,6 +6,8 @@ import Navbar from "./components/Navbar.jsx";
 import Login from "./pages/Login.jsx";
 import Home from "./pages/Home.jsx";
 import Topup from "./pages/Topup.jsx";
+import Models from "./pages/Models.jsx";
+import Membership from "./pages/Membership.jsx";
 import History from "./pages/History.jsx";
 import Invite from "./pages/Invite.jsx";
 import Admin from "./pages/Admin.jsx";
@@ -160,14 +162,17 @@ function BannedOverlay({ user, onClose, language = "vi" }) {
 }
 
 function pageFromPath(pathname) {
-  if (pathname === "/topup") return "topup";
-  if (pathname === "/history") return "history";
-  if (pathname === "/invite") return "invite";
-  if (pathname === "/admin") return "admin";
-  if (pathname === "/guide") return "guide";
-  if (pathname === "/privacy" || pathname === "/chinh-sach-bao-mat") return "privacy";
-  if (pathname === "/terms" || pathname === "/dieu-khoan-su-dung") return "terms";
-  if (pathname === "/") return "";
+  const cleanPath = String(pathname || "/").split(/[?#]/)[0] || "/";
+  if (cleanPath === "/models" || cleanPath.startsWith("/models/")) return "models";
+  if (cleanPath === "/membership") return "membership";
+  if (cleanPath === "/topup") return "topup";
+  if (cleanPath === "/history") return "history";
+  if (cleanPath === "/invite") return "invite";
+  if (cleanPath === "/admin") return "admin";
+  if (cleanPath === "/guide") return "guide";
+  if (cleanPath === "/privacy" || cleanPath === "/chinh-sach-bao-mat") return "privacy";
+  if (cleanPath === "/terms" || cleanPath === "/dieu-khoan-su-dung") return "terms";
+  if (cleanPath === "/") return "";
   return "getlink";
 }
 
@@ -207,14 +212,17 @@ function App() {
 
   function navigate(nextPath) {
     window.history.pushState({}, "", nextPath);
-    setPath(nextPath);
-    setPage(pageFromPath(nextPath));
+    const nextUrl = new URL(nextPath, window.location.origin);
+    setPath(nextUrl.pathname);
+    setPage(pageFromPath(nextUrl.pathname));
   }
 
   function navigateByPage(nextPage) {
     const routes = {
       getlink: "/getlink",
       topup: "/topup",
+      models: "/models",
+      membership: "/membership",
       history: "/history",
       invite: "/invite",
       guide: "/guide"
@@ -305,12 +313,14 @@ function App() {
       <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
       <FacebookGroupBanner language={language} />
       <main className="shell">
-        {!user && !["guide", "privacy", "terms"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />}
+        {!user && !["guide", "privacy", "terms", "models"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />}
+        {page === "models" && <Models user={user} language={language} path={path} onNavigate={navigate} onUserChange={setUser} />}
         {page === "guide" && <Guide language={language} />}
         {page === "privacy" && <Privacy language={language} />}
         {page === "terms" && <Terms language={language} />}
         {user && page === "getlink" && <Home user={user} onUserChange={setUser} language={language} />}
         {user && page === "topup" && <Topup user={user} onUserChange={setUser} language={language} />}
+        {user && page === "membership" && <Membership user={user} onUserChange={setUser} language={language} />}
         {user && page === "history" && <History language={language} />}
         {user && page === "invite" && <Invite language={language} />}
       </main>

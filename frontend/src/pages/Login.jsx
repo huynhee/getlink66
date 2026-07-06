@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertCircle, ArrowRight, BookOpen, ChevronRight, Chrome, ClipboardPaste, ShieldCheck, UserPlus } from "lucide-react";
+import { AlertCircle, ArrowRight, BookOpen, ChevronRight, Chrome, ClipboardPaste, ShieldCheck, Sparkles, UserPlus, Wallet } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import GuideContent from "../components/GuideContent.jsx";
 import { translations } from "../i18n.js";
@@ -53,11 +53,17 @@ const HOME_TEXT_DEFAULTS = {
   },
 };
 
+function isDailyMembershipPlan(plan) {
+  return String(plan?.code || "").toUpperCase() === "DAILY" || Number(plan?.durationDays || 0) <= 1;
+}
+
 export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/", language = "vi" }) {
   const t = { ...(translations[language] || translations.vi) };
   const [demoLink, setDemoLink] = useState("");
   const [demoError, setDemoError] = useState("");
   const [packages, setPackages] = useState([]);
+  const [membershipPlans, setMembershipPlans] = useState([]);
+  const [homeTopupMode, setHomeTopupMode] = useState("credit");
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
   const [referral, setReferral] = useState(null);
   const [referralCopied, setReferralCopied] = useState(false);
@@ -122,6 +128,9 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
         .catch(console.error);
       api("/api/topup/packages")
         .then((data) => setPackages(data.packages || []))
+        .catch(console.error);
+      api("/api/membership/plans")
+        .then((data) => setMembershipPlans(data.plans || []))
         .catch(console.error);
       api("/api/system/3d66-status")
         .then((data) => setSystemStatus({ online: Boolean(data.online), message: data.message || "" }))
@@ -190,7 +199,14 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   }
 
   function authAwareHref(target) {
-    return user ? target : googleHref("/");
+    return user ? target : googleHref(target);
+  }
+
+  function topupTarget(mode, id = "") {
+    const params = new URLSearchParams({ mode });
+    if (mode === "pro" && id) params.set("planId", id);
+    if (mode === "credit" && id) params.set("packageId", id);
+    return `/topup?${params.toString()}`;
   }
 
   function getlinkTarget() {
@@ -448,9 +464,44 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
             </div>
 
             <div
-              className="pricingGrid"
-              style={{ "--package-count": Math.min(pricingPackages.length || 1, 5) }}
+              className="homeTopupChooser landingTopupChooser"
             >
+              <div>
+                <span className="eyebrowSignal">{language === "vi" ? "Gói nạp" : "Top-up"}</span>
+                <h3>{language === "vi" ? "Nạp theo nhu cầu" : "Top up by need"}</h3>
+                <p className="homeTopupPurpose">
+                  {language === "vi"
+                    ? "Credit dùng làm số dư getlink/mua lẻ. Pro dùng để mở quyền tải model member theo ngày."
+                    : "Credit is balance for getlink/pay-per-use. Pro unlocks member-model downloads by day."}
+                </p>
+              </div>
+              <div className="homeTopupActions">
+                <button
+                  type="button"
+                  className={`homeTopupAction pro ${homeTopupMode === "pro" ? "active" : ""}`}
+                  onClick={() => setHomeTopupMode("pro")}
+                >
+                  <Sparkles size={18} />
+                  <span>Pro</span>
+                  <small>{language === "vi" ? "Quyền tải member/S-VIP" : "Member/S-VIP access"}</small>
+                </button>
+                <button
+                  type="button"
+                  className={`homeTopupAction credit ${homeTopupMode === "credit" ? "active" : ""}`}
+                  onClick={() => setHomeTopupMode("credit")}
+                >
+                  <Wallet size={18} />
+                  <span>Credit</span>
+                  <small>{language === "vi" ? "Số dư getlink/mua lẻ" : "Getlink/pay-per-use balance"}</small>
+                </button>
+              </div>
+            </div>
+
+            {homeTopupMode === "credit" ? (
+              <div
+                className="pricingGrid"
+                style={{ "--package-count": Math.min(pricingPackages.length || 1, 5) }}
+              >
               {pricingPackages.map((pkg, index) => (
                 <div
                   className="pricingCard"
@@ -509,12 +560,57 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                       <li key={featureIndex}>{feature}</li>
                     ))}
                   </ul>
-                  <a className={pkg.badge ? "primaryButton" : "googleButton"} href={authAwareHref("/topup")}>
+                  <a className={pkg.badge ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("credit", pkg._id))}>
                     {user ? t.topupNow : t.buyNow}
                   </a>
                 </div>
               ))}
-            </div>
+              </div>
+            ) : (
+              <div
+                className="pricingGrid"
+                style={{ "--package-count": Math.min(membershipPlans.length || 1, 4) }}
+              >
+                {membershipPlans.map((plan) => (
+                  <div className="pricingCard" key={plan._id || plan.code}>
+                    {plan.badge && (
+                      <div className="badge success" style={{ width: "fit-content" }}>
+                        {plan.badge}
+                      </div>
+                    )}
+                    <h3>{plan.name}</h3>
+                    <div className="priceBlock">
+                      <div className="price hl-green">
+                        {Number(plan.price || 0).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span style={{ fontSize: 16 }}>đ</span>
+                      </div>
+                    </div>
+                    <div className="credits">
+                      {isDailyMembershipPlan(plan)
+                        ? (language === "vi"
+                          ? `Thêm ${plan.dailyDownloadLimit}/ngày khi cần`
+                          : `Add ${plan.dailyDownloadLimit}/day when needed`)
+                        : (language === "vi"
+                          ? `${plan.durationDays} ngày - ${plan.dailyDownloadLimit}/ngày`
+                          : `${plan.durationDays} days - ${plan.dailyDownloadLimit}/day`)}
+                    </div>
+                    <ul>
+                      {(plan.features || []).map((feature, featureIndex) => (
+                        <li key={featureIndex}>{feature}</li>
+                      ))}
+                    </ul>
+                    <a className={plan.code === "GOLD" ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("pro", plan._id))}>
+                      {user ? t.topupNow : t.buyNow}
+                    </a>
+                  </div>
+                ))}
+                {!membershipPlans.length && (
+                  <div className="pricingCard">
+                    <h3>Pro</h3>
+                    <div className="credits">{language === "vi" ? "Đang tải gói Pro..." : "Loading Pro plans..."}</div>
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           <section className="homeGuideSection" id="home-guide">

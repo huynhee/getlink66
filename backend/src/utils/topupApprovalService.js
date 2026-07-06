@@ -6,6 +6,7 @@ import Voucher from "../models/Voucher.js";
 import VoucherRedemption from "../models/VoucherRedemption.js";
 import { addCredit } from "./creditService.js";
 import { notifyTopupApproved } from "./telegramNotifier.js";
+import { approvedVoucherUseCount } from "./voucherCheckoutService.js";
 
 function normalizeVoucherCode(code) {
   return String(code || "").trim().toUpperCase();
@@ -58,11 +59,7 @@ async function claimVoucherUsage(topup, session = null) {
     return { voucher, redemption: null };
   }
 
-  const approvedByUser = await execMaybeSession(Topup.countDocuments({
-    userId,
-    voucherCode: code,
-    status: "approved",
-  }), session);
+  const approvedByUser = await approvedVoucherUseCount(userId, code);
   if (approvedByUser >= perUserLimit) {
     await releaseVoucherCounter(code, session);
     const error = new Error("Tài khoản này đã đạt giới hạn sử dụng voucher.");

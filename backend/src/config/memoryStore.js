@@ -23,13 +23,21 @@ function matches(document, query = {}) {
     if (key === "$or") return expected.some((item) => matches(document, item));
     if (key === "$and") return expected.every((item) => matches(document, item));
     const actual = getByPath(document, key);
+    if (expected instanceof RegExp) return expected.test(String(actual || ""));
     if (expected && typeof expected === "object" && !Array.isArray(expected)) {
       if ("$gte" in expected && !(actual >= expected.$gte)) return false;
       if ("$gt" in expected && !(new Date(actual) > new Date(expected.$gt))) return false;
       if ("$lte" in expected && !(actual <= expected.$lte)) return false;
       if ("$lt" in expected && !(new Date(actual) < new Date(expected.$lt))) return false;
       if ("$ne" in expected && String(actual) === String(expected.$ne)) return false;
-      if ("$in" in expected && !expected.$in.map(String).includes(String(actual))) return false;
+      if ("$in" in expected) {
+        const allowed = expected.$in.map(String);
+        if (Array.isArray(actual)) {
+          if (!actual.some((value) => allowed.includes(String(value)))) return false;
+        } else if (!allowed.includes(String(actual))) {
+          return false;
+        }
+      }
       if ("$exists" in expected && (actual !== undefined) !== Boolean(expected.$exists)) return false;
       return true;
     }
@@ -101,6 +109,9 @@ function chain(result, isArray = true, projection = "") {
     limit(count) {
       return chain(result.slice(0, count), isArray, projection);
     },
+    skip(count) {
+      return chain(result.slice(Math.max(0, Number(count) || 0)), isArray, projection);
+    },
     select(fields = "") {
       return chain(result, isArray, fields);
     },
@@ -113,6 +124,11 @@ function chain(result, isArray = true, projection = "") {
         referrerId: "User",
         referredUserId: "User",
         packageId: "TopupPackage",
+        planId: "MembershipPlan",
+        modelId: "MarketplaceModel",
+        categoryId: "MarketplaceCategory",
+        parentId: "MarketplaceCategory",
+        parentCategoryId: "MarketplaceCategory",
         applicablePackageIds: "TopupPackage",
         createdBy: "User",
       };

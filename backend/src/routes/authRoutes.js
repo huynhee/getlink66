@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   csrfToken,
   currentUser,
+  devLogin,
   googleCallback,
   googleLogin,
   logout,
@@ -35,6 +36,7 @@ const twoFaVerifyLimit = createRateLimit({
 
 router.get("/google", authLimit, googleLogin);
 router.get("/google/callback", googleCallback);
+router.get("/dev-login", authLimit, devLogin);
 router.get("/csrf", csrfToken);
 router.post("/logout", logout);
 router.get("/user", currentUser);

@@ -1,5 +1,7 @@
 import Topup from "../models/Topup.js";
+import MembershipOrder from "../models/MembershipOrder.js";
 import { approvePendingTopup } from "../utils/topupApprovalService.js";
+import { approvePendingMembershipOrder } from "../utils/membershipService.js";
 import crypto from "node:crypto";
 
 function webhookSecretFromRequest(req) {
@@ -125,8 +127,45 @@ function extractTransactions(payload) {
 function extractPaymentCode(text) {
   const match = String(text || "")
     .toUpperCase()
-    .match(/\b(?:NAP[A-Z0-9]{6,24}|3D66[A-Z0-9]{6,24})\b/);
+    .match(/\b(?:NAP[A-Z0-9]{6,24}|PRO[A-Z0-9]{6,24}|3D66[A-Z0-9]{6,24})\b/);
   return match?.[0] || "";
+}
+
+async function approveMembershipFromPayment({ paymentCode, amount, transactionId, payload, provider }) {
+  const duplicate = await MembershipOrder.findOne({
+    gatewayTransactionId: transactionId,
+    status: "approved",
+  });
+  if (duplicate) {
+    return { ok: false, paymentCode, reason: "duplicate_transaction" };
+  }
+
+  const order = await MembershipOrder.findOne({ paymentCode, status: "pending" });
+  if (!order) {
+    return { ok: false, paymentCode, reason: "membership_order_not_found_or_already_handled" };
+  }
+  if (amount < order.amount) {
+    return {
+      ok: false,
+      paymentCode,
+      reason: "amount_not_enough",
+      expected: order.amount,
+      received: amount,
+    };
+  }
+
+  const approved = await approvePendingMembershipOrder(order, {
+    gatewayProvider: provider,
+    gatewayTransactionId: transactionId,
+    gatewayPayload: payload,
+  });
+  if (!approved) return { ok: false, paymentCode, reason: "already_handled" };
+  return {
+    ok: true,
+    paymentCode,
+    membershipOrderId: approved.order._id,
+    proUntil: approved.user.proUntil,
+  };
 }
 
 async function approveTopupFromTransaction(transaction) {
@@ -157,11 +196,16 @@ async function approveTopupFromTransaction(transaction) {
 
   const topup = await Topup.findOne({ paymentCode, status: "pending" });
   if (!topup) {
-    return {
-      ok: false,
-      paymentCode,
-      reason: "topup_not_found_or_already_handled",
-    };
+    if (paymentCode.startsWith("PRO")) {
+      return approveMembershipFromPayment({
+        paymentCode,
+        amount,
+        transactionId,
+        payload: transaction,
+        provider: "vietqr",
+      });
+    }
+    return { ok: false, paymentCode, reason: "topup_not_found_or_already_handled" };
   }
 
   // KHONG check expiresAt: user da chuyen tien that thi phai approve. Dinh nghia "expired"
@@ -301,6 +345,20 @@ export async function sepayIpn(req, res, next) {
 
     const topup = await Topup.findOne({ paymentCode, status: "pending" });
     if (!topup) {
+      if (paymentCode.startsWith("PRO")) {
+        const membershipResult = await approveMembershipFromPayment({
+          paymentCode,
+          amount,
+          transactionId: gatewayTransactionId,
+          payload: req.body,
+          provider: "sepay",
+        });
+        return res.json({
+          ok: membershipResult.ok,
+          paymentCode,
+          ...membershipResult,
+        });
+      }
       return res.json({
         ok: false,
         paymentCode,

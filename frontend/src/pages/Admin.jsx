@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState } from "react";
 import { Activity, AlertTriangle, Ban, BarChart3, Check, ChevronLeft, ChevronRight, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Gauge, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
+import AdminMarketplace from "../components/AdminMarketplace.jsx";
 import CoinAmount from "../components/CoinAmount.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
@@ -14,6 +15,17 @@ const emptyPackage = {
   maxTopupsPerUser: "",
   badge: "",
   features: "5 lượt tải model\nLưu lịch sử tải\nHỗ trợ cơ bản"
+};
+
+const emptyMembershipPlan = {
+  code: "",
+  name: "",
+  price: "",
+  durationDays: "",
+  dailyDownloadLimit: "100",
+  badge: "",
+  features: "100 lượt tải model mỗi ngày\nTải nhanh, không chờ 30s\nTải model Pro / S-VIP",
+  isActive: true
 };
 
 const emptyVoucher = {
@@ -155,6 +167,15 @@ function toDatetimeLocal(value) {
   return local.toISOString().slice(0, 16);
 }
 
+function isProVoucher(voucher) {
+  return Boolean(
+    voucher &&
+      Number(voucher.discountPercent || 0) > 0 &&
+      Number(voucher.creditBonus || 0) === 0 &&
+      (!Array.isArray(voucher.applicablePackageIds) || voucher.applicablePackageIds.length === 0)
+  );
+}
+
 export default function Admin({ user, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const l = (vi, en) => text(language, vi, en);
@@ -166,6 +187,7 @@ export default function Admin({ user, language = "vi" }) {
   const [overview, setOverview] = useState(null);
   const [users, setUsers] = useState([]);
   const [packages, setPackages] = useState([]);
+  const [membershipPlans, setMembershipPlans] = useState([]);
   const [vouchers, setVouchers] = useState([]);
   const [articles, setArticles] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -183,6 +205,7 @@ export default function Admin({ user, language = "vi" }) {
   const [getlinkPagination, setGetlinkPagination] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
   const [topupRecords, setTopupRecords] = useState([]);
   const [topupSearch, setTopupSearch] = useState("");
+  const [transactionKind, setTransactionKind] = useState("all");
   const [topupStatus, setTopupStatus] = useState("approved");
   const [topupPage, setTopupPage] = useState(1);
   const [topupPagination, setTopupPagination] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
@@ -196,8 +219,11 @@ export default function Admin({ user, language = "vi" }) {
   const [cookie, setCookie] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [packageMode, setPackageMode] = useState("credit");
   const [packageForm, setPackageForm] = useState(emptyPackage);
+  const [membershipPlanForm, setMembershipPlanForm] = useState(emptyMembershipPlan);
   const [voucherForm, setVoucherForm] = useState(emptyVoucher);
+  const [voucherMode, setVoucherMode] = useState("credit");
   const [voucherMsg, setVoucherMsg] = useState("");
   const [notificationForm, setNotificationForm] = useState(emptyNotification);
   const [notificationMsg, setNotificationMsg] = useState("");
@@ -206,17 +232,26 @@ export default function Admin({ user, language = "vi" }) {
   const [editCredit, setEditCredit] = useState("");
   const [banReasonByUser, setBanReasonByUser] = useState({});
   const [editingPackageId, setEditingPackageId] = useState("");
+  const [editingMembershipPlanId, setEditingMembershipPlanId] = useState("");
   const [editingVoucherId, setEditingVoucherId] = useState("");
   const [dragPackageId, setDragPackageId] = useState("");
+  const [userDetail, setUserDetail] = useState(null);
+  const [userQuota, setUserQuota] = useState(null);
+  const [userTimeline, setUserTimeline] = useState([]);
+  const [userTimelineType, setUserTimelineType] = useState("all");
+  const [userDetailLoading, setUserDetailLoading] = useState(false);
+  const [userDetailMsg, setUserDetailMsg] = useState("");
+  const [proAdjustForm, setProAdjustForm] = useState({ proUntil: "", proDailyDownloadLimit: "100" });
   const [twoFactorQr, setTwoFactorQr] = useState("");
   const [twoFactorSecret, setTwoFactorSecret] = useState("");
   const [twoFactorToken, setTwoFactorToken] = useState("");
   const [twoFactorMsg, setTwoFactorMsg] = useState("");
 
   async function loadData() {
-    const [oRes, pRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
+    const [oRes, pRes, planRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
       api(`/api/admin/overview?period=${revenuePeriod}`),
       api("/api/admin/topup-packages"),
+      api("/api/admin/membership-plans"),
       api("/api/admin/vouchers"),
       api("/api/admin/cookies"),
       api("/api/admin/cookies/status"),
@@ -228,6 +263,7 @@ export default function Admin({ user, language = "vi" }) {
     ]);
     setOverview(oRes.overview || null);
     setPackages(pRes.packages || []);
+    setMembershipPlans(planRes.plans || []);
     setVouchers(vRes.vouchers || []);
     setCookieRecords(cRes.cookies || []);
     setCookiePool(sRes.pool || null);
@@ -264,14 +300,30 @@ export default function Admin({ user, language = "vi" }) {
   async function loadTopups() {
     const query = new URLSearchParams({
       page: String(topupPage),
-      status: topupStatus,
+      kind: transactionKind,
     });
+    if (topupStatus !== "all") query.set("status", topupStatus);
     if (topupSearch.trim()) query.set("search", topupSearch.trim());
-    const data = await api(`/api/admin/topups?${query.toString()}`);
-    setTopupRecords(data.topups || []);
+    const data = await api(`/api/admin/transactions?${query.toString()}`);
+    setTopupRecords(data.transactions || data.topups || []);
     const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
     setTopupPagination(pagination);
     if (pagination.page !== topupPage) setTopupPage(pagination.page);
+  }
+
+  async function reviewTransaction(item, action) {
+    if (!item?.rawId) return;
+    const endpoint = item.kind === "pro"
+      ? `/api/admin/membership-orders/${item.rawId}/${action}`
+      : `/api/admin/topups/${item.rawId}/${action}`;
+    await api(endpoint, {
+      method: "POST",
+      body: action === "cancel" ? JSON.stringify({ reason: "admin_cancel" }) : undefined
+    });
+    await Promise.all([loadTopups(), loadData(), loadUsers()]);
+    if (userDetail?.user?._id && item.user?._id === userDetail.user._id) {
+      await loadUserDetail(userDetail.user, userTimelineType);
+    }
   }
 
   useEffect(() => {
@@ -297,7 +349,7 @@ export default function Admin({ user, language = "vi" }) {
       loadTopups().catch(console.error);
     }, 250);
     return () => clearTimeout(timer);
-  }, [topupSearch, topupStatus, topupPage]);
+  }, [topupSearch, topupStatus, transactionKind, topupPage]);
 
   function fillPackageForm(pack) {
     setEditingPackageId(pack?._id || "");
@@ -358,10 +410,56 @@ export default function Admin({ user, language = "vi" }) {
     await loadData();
   }
 
+  function fillMembershipPlanForm(plan) {
+    setEditingMembershipPlanId(plan?._id || "");
+    if (!plan) {
+      setMembershipPlanForm(emptyMembershipPlan);
+      return;
+    }
+
+    setMembershipPlanForm({
+      code: plan.code || "",
+      name: plan.name || "",
+      price: plan.price || "",
+      durationDays: plan.durationDays || "",
+      dailyDownloadLimit: plan.dailyDownloadLimit || "100",
+      badge: plan.badge || "",
+      features: Array.isArray(plan.features) ? plan.features.join("\n") : "",
+      isActive: plan.isActive !== false
+    });
+  }
+
+  async function saveMembershipPlan(event) {
+    event.preventDefault();
+    const payload = {
+      ...membershipPlanForm,
+      price: Number(membershipPlanForm.price || 0),
+      durationDays: Number(membershipPlanForm.durationDays || 1),
+      dailyDownloadLimit: Number(membershipPlanForm.dailyDownloadLimit || 100)
+    };
+    await api(editingMembershipPlanId ? `/api/admin/membership-plans/${editingMembershipPlanId}` : "/api/admin/membership-plans", {
+      method: editingMembershipPlanId ? "PUT" : "POST",
+      body: JSON.stringify(payload)
+    });
+    setMembershipPlanForm(emptyMembershipPlan);
+    setEditingMembershipPlanId("");
+    await loadData();
+  }
+
+  async function deleteMembershipPlan(id) {
+    await api(`/api/admin/membership-plans/${id}`, { method: "DELETE" });
+    if (editingMembershipPlanId === id) {
+      setEditingMembershipPlanId("");
+      setMembershipPlanForm(emptyMembershipPlan);
+    }
+    await loadData();
+  }
+
   function fillVoucherForm(voucher) {
     setEditingVoucherId(voucher?._id || "");
     if (!voucher) {
       setVoucherForm(emptyVoucher);
+      setVoucherMode("credit");
       setVoucherMsg("");
       return;
     }
@@ -380,20 +478,22 @@ export default function Admin({ user, language = "vi" }) {
         : [],
       expireAt: toDatetimeLocal(voucher.expireAt)
     });
+    setVoucherMode(isProVoucher(voucher) ? "pro" : "credit");
     setVoucherMsg("");
   }
 
   async function saveVoucher(event) {
     event.preventDefault();
     try {
+      const isProMode = voucherMode === "pro";
       const payload = {
         ...voucherForm,
-        creditBonus: Number(voucherForm.creditBonus || 0),
+        creditBonus: isProMode ? 0 : Number(voucherForm.creditBonus || 0),
         discountPercent: Number(voucherForm.discountPercent || 0),
         usageLimit: Number(voucherForm.usageLimit),
         perUserLimit:
           voucherForm.perUserLimit === "" ? undefined : Number(voucherForm.perUserLimit),
-        applicablePackageIds: voucherForm.applicablePackageIds,
+        applicablePackageIds: isProMode ? [] : voucherForm.applicablePackageIds,
         expireAt: new Date(voucherForm.expireAt).toISOString()
       };
       await api(editingVoucherId ? `/api/admin/vouchers/${editingVoucherId}` : "/api/admin/voucher", {
@@ -640,6 +740,7 @@ export default function Admin({ user, language = "vi" }) {
       body: JSON.stringify({ userId, credit: 1 })
     });
     await Promise.all([loadData(), loadUsers()]);
+    if (userDetail?.user?._id === userId) await loadUserDetail(userDetail.user, userTimelineType);
   }
 
   async function saveUserCredit(userId) {
@@ -649,6 +750,7 @@ export default function Admin({ user, language = "vi" }) {
     });
     setEditUser(null);
     await Promise.all([loadData(), loadUsers()]);
+    if (userDetail?.user?._id === userId) await loadUserDetail(userDetail.user, userTimelineType);
   }
 
   async function toggleBanUser(targetUser) {
@@ -669,6 +771,7 @@ export default function Admin({ user, language = "vi" }) {
     await api(endpoint, options);
     setBanReasonByUser((items) => ({ ...items, [targetUser._id]: "" }));
     await loadUsers();
+    if (userDetail?.user?._id === targetUser._id) await loadUserDetail(targetUser, userTimelineType);
   }
 
   async function loadUserCreditHistory(targetUser) {
@@ -681,6 +784,70 @@ export default function Admin({ user, language = "vi" }) {
       setCreditHistory(data.history || []);
     } finally {
       setCreditHistoryLoading(false);
+    }
+  }
+
+  async function loadUserDetail(targetUser, timelineType = userTimelineType) {
+    if (!targetUser?._id) return;
+    setUserDetailLoading(true);
+    setUserDetailMsg("");
+    try {
+      const [profileRes, quotaRes, timelineRes] = await Promise.all([
+        api(`/api/admin/users/${targetUser._id}/profile`),
+        api(`/api/admin/users/${targetUser._id}/quota`),
+        api(`/api/admin/users/${targetUser._id}/timeline?type=${timelineType}&limit=12`)
+      ]);
+      const profileUser = profileRes.user || targetUser;
+      setUserDetail({
+        user: profileUser,
+        stats: profileRes.stats || {},
+        auditLogs: profileRes.auditLogs || []
+      });
+      setUserQuota(quotaRes.quota || null);
+      setUserTimeline(timelineRes.events || []);
+      setUserTimelineType(timelineRes.type || timelineType);
+      setProAdjustForm({
+        proUntil: toDatetimeLocal(profileUser.proUntil),
+        proDailyDownloadLimit: String(profileUser.proDailyDownloadLimit ?? 100)
+      });
+    } catch (err) {
+      setUserDetailMsg(err.message);
+    } finally {
+      setUserDetailLoading(false);
+    }
+  }
+
+  async function saveUserProAdjust(event) {
+    event.preventDefault();
+    if (!userDetail?.user?._id) return;
+    try {
+      setUserDetailMsg("");
+      await api(`/api/admin/users/${userDetail.user._id}/pro-adjust`, {
+        method: "POST",
+        body: JSON.stringify({
+          proUntil: proAdjustForm.proUntil ? new Date(proAdjustForm.proUntil).toISOString() : undefined,
+          proDailyDownloadLimit: Number(proAdjustForm.proDailyDownloadLimit || 100)
+        })
+      });
+      setUserDetailMsg(l("Đã cập nhật Pro cho user.", "User Pro updated."));
+      await Promise.all([loadUsers(), loadUserDetail(userDetail.user, userTimelineType)]);
+    } catch (err) {
+      setUserDetailMsg(err.message);
+    }
+  }
+
+  async function clearUserPro() {
+    if (!userDetail?.user?._id) return;
+    try {
+      setUserDetailMsg("");
+      await api(`/api/admin/users/${userDetail.user._id}/pro-adjust`, {
+        method: "POST",
+        body: JSON.stringify({ clearPro: true })
+      });
+      setUserDetailMsg(l("Đã gỡ Pro của user.", "User Pro cleared."));
+      await Promise.all([loadUsers(), loadUserDetail(userDetail.user, userTimelineType)]);
+    } catch (err) {
+      setUserDetailMsg(err.message);
     }
   }
 
@@ -807,7 +974,8 @@ export default function Admin({ user, language = "vi" }) {
   const sections = [
     { key: "overview", label: t.adminOverview, icon: BarChart3 },
     { key: "data", label: "Data", icon: Database },
-    { key: "packages", label: t.adminPackages, icon: Package, count: packages.length },
+    { key: "marketplace", label: "Model", icon: Package },
+    { key: "packages", label: t.adminPackages, icon: CreditCard, count: packages.length + membershipPlans.length },
     { key: "vouchers", label: t.adminVouchers, icon: Gift, count: vouchers.length },
     { key: "notifications", label: t.notifications, icon: Megaphone, count: notifications.length },
     { key: "homeText", label: l("Text trang chủ", "Homepage text"), icon: Type },
@@ -1280,9 +1448,29 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
+      {activeSection === "marketplace" && (
+        <AdminMarketplace language={language} />
+      )}
+
       {activeSection === "packages" && (
         <section className="panel">
           <h2><Package size={20} /> {l("Quản lý gói nạp", "Manage top-up packages")}</h2>
+          <div className="adminSubTabs" role="tablist" aria-label={l("Loại gói nạp", "Top-up package type")}>
+            <button type="button" className={packageMode === "credit" ? "active" : ""} onClick={() => setPackageMode("credit")}>
+              <CreditCard size={15} /> Credit
+            </button>
+            <button type="button" className={packageMode === "pro" ? "active" : ""} onClick={() => setPackageMode("pro")}>
+              <Zap size={15} /> Pro
+            </button>
+          </div>
+          <p className="muted" style={{ marginTop: 8 }}>
+            {packageMode === "credit"
+              ? l("Gói Credit dùng để cộng số dư credit cho getlink/nạp lượt.", "Credit packages add balance for getlink/top-up usage.")
+              : l("Gói Pro chỉ kích hoạt quyền thành viên và quota tải model, không cộng credit.", "Pro plans only activate membership and model download quota, not credit.")}
+          </p>
+
+          {packageMode === "credit" ? (
+            <>
           <form onSubmit={savePackage} style={{ display: "grid", gap: 10, marginTop: 14 }}>
             <div className="inputRow">
               <select
@@ -1413,6 +1601,86 @@ export default function Admin({ user, language = "vi" }) {
               </div>
             ))}
           </div>
+            </>
+          ) : (
+            <>
+              <form onSubmit={saveMembershipPlan} style={{ display: "grid", gap: 10, marginTop: 14 }}>
+                <div className="inputRow">
+                  <select
+                    value={editingMembershipPlanId}
+                    onChange={(event) => {
+                      const selected = membershipPlans.find((item) => item._id === event.target.value);
+                      fillMembershipPlanForm(selected);
+                    }}
+                  >
+                    <option value="">{l("Tạo gói Pro mới", "Create new Pro plan")}</option>
+                    {membershipPlans.map((plan) => (
+                      <option key={plan._id} value={plan._id}>{plan.name || plan.code}</option>
+                    ))}
+                  </select>
+                  {editingMembershipPlanId && (
+                    <button type="button" className="smallButton" onClick={() => fillMembershipPlanForm(null)}>
+                      <RotateCcw size={14} /> {l("Hủy sửa", "Cancel edit")}
+                    </button>
+                  )}
+                </div>
+                <div className="inputRow">
+                  <input value={membershipPlanForm.code} disabled={Boolean(editingMembershipPlanId)} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, code: e.target.value.toUpperCase() })} placeholder="CODE: DAILY, SILVER, GOLD" />
+                  <input value={membershipPlanForm.name} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, name: e.target.value })} placeholder={l("Tên gói Pro", "Pro plan name")} />
+                  <input type="number" value={membershipPlanForm.price} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, price: e.target.value })} placeholder={t.price} />
+                </div>
+                <div className="inputRow">
+                  <input type="number" min="1" value={membershipPlanForm.durationDays} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, durationDays: e.target.value })} placeholder={l("Số ngày hiệu lực", "Duration days")} />
+                  <input type="number" min="1" value={membershipPlanForm.dailyDownloadLimit} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, dailyDownloadLimit: e.target.value })} placeholder={l("Quota tải/ngày", "Downloads/day")} />
+                  <input value={membershipPlanForm.badge} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, badge: e.target.value })} placeholder={l("Nhãn: HOT, BEST...", "Badge: HOT, BEST...")} />
+                  <label className="adminCheckboxRow">
+                    <input type="checkbox" checked={membershipPlanForm.isActive} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, isActive: e.target.checked })} />
+                    {l("Đang bán", "Active")}
+                  </label>
+                </div>
+                <textarea
+                  value={membershipPlanForm.features}
+                  onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, features: e.target.value })}
+                  rows={4}
+                  style={{ height: "auto", minHeight: 110 }}
+                  placeholder={l("Mỗi dòng là một quyền lợi Pro", "Each line is one Pro benefit")}
+                />
+                <button className="smallButton" disabled={!membershipPlanForm.name || !membershipPlanForm.price || !membershipPlanForm.durationDays} style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}>
+                  {editingMembershipPlanId ? <Save size={16} /> : <Plus size={16} />}
+                  {editingMembershipPlanId ? l("Lưu gói Pro", "Save Pro plan") : l("Thêm gói Pro", "Add Pro plan")}
+                </button>
+              </form>
+
+              <div className="packageGrid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+                {membershipPlans.map((plan) => (
+                  <div className="package membershipPlanCard" key={plan._id} style={{ alignItems: "stretch", padding: 16, textAlign: "left" }}>
+                    <div className="packageActions">
+                      <button type="button" onClick={() => fillMembershipPlanForm(plan)} title={l("Sửa gói Pro", "Edit Pro plan")}>
+                        <Pencil size={15} />
+                      </button>
+                      <button type="button" onClick={() => deleteMembershipPlan(plan._id)} title={l("Tắt gói Pro", "Disable Pro plan")} style={{ color: "var(--error)" }}>
+                        <X size={16} />
+                      </button>
+                    </div>
+                    <span className={`badge ${plan.isActive !== false ? "success" : "error"}`}>{plan.isActive !== false ? "ACTIVE" : "OFF"}</span>
+                    <h3 style={{ marginTop: 8 }}>{plan.name || plan.code}</h3>
+                    <div className="priceBlock compact" style={{ alignItems: "flex-start" }}>
+                      <strong>{Number(plan.price || 0).toLocaleString(locale)}đ</strong>
+                    </div>
+                    <span>{Number(plan.durationDays || 0).toLocaleString(locale)} {l("ngày, hết hạn cuối ngày", "days, expires end of day")}</span>
+                    <span>{Number(plan.dailyDownloadLimit || 100).toLocaleString(locale)} {l("lượt tải/ngày", "downloads/day")}</span>
+                    {plan.badge && <span className="badge success" style={{ alignSelf: "start" }}>{plan.badge}</span>}
+                    <ul style={{ marginTop: 10, paddingLeft: 18 }}>
+                      {(Array.isArray(plan.features) && plan.features.length ? plan.features : emptyMembershipPlan.features.split("\n")).map((feature, index) => (
+                        <li key={index}>{feature}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+                {!membershipPlans.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Chưa có gói Pro.", "No Pro plans yet.")}</p>}
+              </div>
+            </>
+          )}
         </section>
       )}
 
@@ -1423,6 +1691,19 @@ export default function Admin({ user, language = "vi" }) {
       {activeSection === "vouchers" && (
         <section className="panel">
           <h2><Gift size={20} /> {l("Quản lý voucher", "Manage vouchers")}</h2>
+          <div className="adminSubTabs" role="tablist" aria-label={l("Loại voucher", "Voucher type")}>
+            <button type="button" className={voucherMode === "credit" ? "active" : ""} onClick={() => setVoucherMode("credit")}>
+              <CreditCard size={15} /> Credit
+            </button>
+            <button type="button" className={voucherMode === "pro" ? "active" : ""} onClick={() => setVoucherMode("pro")}>
+              <Zap size={15} /> Pro
+            </button>
+          </div>
+          <p className="muted" style={{ marginTop: 8 }}>
+            {voucherMode === "credit"
+              ? l("Voucher Credit dùng cho gói nạp credit, có thể giảm giá hoặc cộng thêm credit.", "Credit vouchers apply to credit packages and can discount or add bonus credit.")
+              : l("Voucher Pro dùng cho gói thành viên, chỉ giảm phần trăm và không cộng credit.", "Pro vouchers apply to membership plans, discount percentage only, no credit bonus.")}
+          </p>
           <form onSubmit={saveVoucher} style={{ display: "grid", gap: 10, marginTop: 14 }}>
             <div className="inputRow">
               <select
@@ -1433,7 +1714,9 @@ export default function Admin({ user, language = "vi" }) {
                 }}
               >
                 <option value="">{l("Tạo voucher mới", "Create new voucher")}</option>
-                {vouchers.map((voucher) => (
+                {vouchers
+                  .filter((voucher) => voucherMode === "pro" ? isProVoucher(voucher) : !isProVoucher(voucher))
+                  .map((voucher) => (
                   <option key={voucher._id} value={voucher._id}>{voucher.code}</option>
                 ))}
               </select>
@@ -1449,44 +1732,63 @@ export default function Admin({ user, language = "vi" }) {
             </div>
             <div className="inputRow">
               <input type="number" value={voucherForm.discountPercent} onChange={(e) => setVoucherForm({ ...voucherForm, discountPercent: e.target.value })} placeholder={l("Giảm giá %", "Discount %")} />
-              <input type="number" value={voucherForm.creditBonus} onChange={(e) => setVoucherForm({ ...voucherForm, creditBonus: e.target.value })} placeholder={l("Thêm credit", "Bonus credit")} />
+              {voucherMode === "credit" && (
+                <input type="number" value={voucherForm.creditBonus} onChange={(e) => setVoucherForm({ ...voucherForm, creditBonus: e.target.value })} placeholder={l("Thêm credit", "Bonus credit")} />
+              )}
               <input type="number" value={voucherForm.usageLimit} onChange={(e) => setVoucherForm({ ...voucherForm, usageLimit: e.target.value })} placeholder={l("Tổng lượt dùng", "Total uses")} />
               <input type="number" min="0" value={voucherForm.perUserLimit} onChange={(e) => setVoucherForm({ ...voucherForm, perUserLimit: e.target.value })} placeholder={l("Lượt / tài khoản", "Uses / account")} />
               <input type="datetime-local" value={voucherForm.expireAt} onChange={(e) => setVoucherForm({ ...voucherForm, expireAt: e.target.value })} />
             </div>
-            <div className="voucherPackagePicker">
-              <div>
-                <strong>{l("Áp dụng cho gói", "Apply to packages")}</strong>
-                <span>{l("Bỏ trống là áp dụng cho tất cả gói nạp.", "Leave empty to apply to all top-up packages.")}</span>
+            {voucherMode === "credit" ? (
+              <div className="voucherPackagePicker">
+                <div>
+                  <strong>{l("Áp dụng cho gói Credit", "Apply to Credit packages")}</strong>
+                  <span>{l("Bỏ trống là áp dụng cho tất cả gói nạp credit.", "Leave empty to apply to all credit top-up packages.")}</span>
+                </div>
+                <div>
+                  {packages.map((pkg) => {
+                    const checked = voucherForm.applicablePackageIds.includes(pkg._id);
+                    return (
+                      <label key={pkg._id}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => {
+                            const nextIds = event.target.checked
+                              ? [...voucherForm.applicablePackageIds, pkg._id]
+                              : voucherForm.applicablePackageIds.filter((id) => id !== pkg._id);
+                            setVoucherForm({ ...voucherForm, applicablePackageIds: nextIds });
+                          }}
+                        />
+                        <span>{pkg.name || t.defaultPackageName}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
-              <div>
-                {packages.map((pkg) => {
-                  const checked = voucherForm.applicablePackageIds.includes(pkg._id);
-                  return (
-                    <label key={pkg._id}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(event) => {
-                          const nextIds = event.target.checked
-                            ? [...voucherForm.applicablePackageIds, pkg._id]
-                            : voucherForm.applicablePackageIds.filter((id) => id !== pkg._id);
-                          setVoucherForm({ ...voucherForm, applicablePackageIds: nextIds });
-                        }}
-                      />
-                      <span>{pkg.name || t.defaultPackageName}</span>
-                    </label>
-                  );
-                })}
+            ) : (
+              <div className="voucherPackagePicker">
+                <div>
+                  <strong>{l("Áp dụng cho Pro", "Apply to Pro")}</strong>
+                  <span>{l("Backend nhận voucher Pro bằng mã giảm %, không gắn vào gói credit và không cộng credit.", "Backend treats Pro vouchers as discount-only, not linked to credit packages and no credit bonus.")}</span>
+                </div>
+                <div>
+                  {membershipPlans.map((plan) => (
+                    <span className="badge" key={plan._id}>{plan.name || plan.code}</span>
+                  ))}
+                  {!membershipPlans.length && <span className="muted">{l("Chưa có gói Pro.", "No Pro plans yet.")}</span>}
+                </div>
               </div>
-            </div>
+            )}
             <button
               className="smallButton"
               disabled={
                 !voucherForm.code ||
                 !voucherForm.usageLimit ||
                 !voucherForm.expireAt ||
-                (!voucherForm.discountPercent && !voucherForm.creditBonus)
+                (voucherMode === "pro"
+                  ? !voucherForm.discountPercent
+                  : (!voucherForm.discountPercent && !voucherForm.creditBonus))
               }
               style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}
             >
@@ -1497,11 +1799,15 @@ export default function Admin({ user, language = "vi" }) {
           {voucherMsg && <p className={voucherMsg.includes("thành công") || voucherMsg.includes("successfully") ? "success" : "error"}>{voucherMsg}</p>}
 
           <div className="voucherList">
-            {vouchers.map((voucher) => (
+            {vouchers
+              .filter((voucher) => voucherMode === "pro" ? isProVoucher(voucher) : !isProVoucher(voucher))
+              .map((voucher) => {
+                const proVoucher = isProVoucher(voucher);
+                return (
               <div className="voucherCard" key={voucher._id}>
                 <div className="voucherCardHeader">
                   <div>
-                    <strong>{voucher.code}</strong>
+                    <strong>{voucher.code} <span className={`badge ${proVoucher ? "pending" : "success"}`}>{proVoucher ? "PRO" : "CREDIT"}</span></strong>
                     <p>{voucher.description || t.noDescription}</p>
                   </div>
                   <span className={new Date(voucher.expireAt) > new Date() ? "badge success" : "badge error"}>
@@ -1540,7 +1846,9 @@ export default function Admin({ user, language = "vi" }) {
                 <div className="voucherApplies">
                   <span>{t.appliesTo}</span>
                   <strong>
-                    {Array.isArray(voucher.applicablePackageIds) && voucher.applicablePackageIds.length > 0
+                    {proVoucher
+                      ? l("Gói Pro / Membership", "Pro / Membership plans")
+                      : Array.isArray(voucher.applicablePackageIds) && voucher.applicablePackageIds.length > 0
                       ? voucher.applicablePackageIds.map((pkg) => pkg?.name || t.defaultPackageName).join(", ")
                       : t.allTopupPackages}
                   </strong>
@@ -1554,8 +1862,9 @@ export default function Admin({ user, language = "vi" }) {
                   </button>
                 </div>
               </div>
-            ))}
-            {!vouchers.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Chưa có voucher.", "No vouchers yet.")}</p>}
+                );
+              })}
+            {!vouchers.filter((voucher) => voucherMode === "pro" ? isProVoucher(voucher) : !isProVoucher(voucher)).length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Chưa có voucher.", "No vouchers yet.")}</p>}
           </div>
         </section>
       )}
@@ -2157,9 +2466,9 @@ export default function Admin({ user, language = "vi" }) {
 
       {activeSection === "data" && dataSection === "topups" && (
         <section className="panel">
-          <h2><CreditCard size={20} /> {l("Ai đã nạp gói nào", "Who purchased which package")}</h2>
+          <h2><CreditCard size={20} /> {l("Giao dịch Credit / Pro", "Credit / Pro transactions")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
-            {l("Lịch sử nạp tự động, gói đã chọn, số tiền thanh toán và credit nhận được. Các lần admin cộng credit thủ công không xuất hiện tại đây.", "Automatic top-up history showing selected packages, paid amounts, and received credit. Manual admin credit adjustments are excluded.")}
+            {l("Theo dõi đơn nạp credit và đơn mua Pro chung một bảng. Đơn chờ thanh toán có thể duyệt hoặc hủy thủ công khi webhook lỗi.", "Track credit top-ups and Pro orders in one table. Pending payments can be approved or canceled manually when webhook handling fails.")}
           </p>
           <div className="adminTableToolbar">
             <label className="adminSearchField">
@@ -2173,6 +2482,18 @@ export default function Admin({ user, language = "vi" }) {
                 placeholder={l("Tìm email, tên gói hoặc mã giao dịch", "Search email, package, or transaction code")}
               />
             </label>
+            <select
+              value={transactionKind}
+              onChange={(event) => {
+                setTransactionKind(event.target.value);
+                setTopupPage(1);
+              }}
+              aria-label={l("Lọc loại giao dịch", "Filter transaction kind")}
+            >
+              <option value="all">{l("Credit + Pro", "Credit + Pro")}</option>
+              <option value="credit">Credit</option>
+              <option value="pro">Pro</option>
+            </select>
             <select
               value={topupStatus}
               onChange={(event) => {
@@ -2189,14 +2510,21 @@ export default function Admin({ user, language = "vi" }) {
           </div>
           <div className="table topupAuditTable" style={{ marginTop: 16 }}>
             {topupRecords.map((item) => (
-              <div className="tableRow" key={item._id}>
+              <div className="tableRow" key={item.id || item._id}>
                 <div className="topupAuditIdentity">
                   <strong>{item.user?.email || l("Không rõ user", "Unknown user")}</strong>
                   <span>{item.user?.name || item.userId || ""}</span>
                 </div>
                 <div className="topupAuditPackage">
-                  <strong>{item.package?.name || l("Gói đã bị xóa", "Deleted package")}</strong>
-                  <span>{item.type || item.gatewayProvider || "auto"}</span>
+                  <strong>{item.title || item.package?.name || l("Gói đã bị xóa", "Deleted package")}</strong>
+                  <span>{item.kind === "pro" ? "PRO" : "CREDIT"} · {item.gatewayProvider || item.type || "auto"}</span>
+                  {item.kind === "pro" && (
+                    <code>
+                      {item.isQuotaAddon
+                        ? l(`Addon +${Number(item.quotaBoostAmount || 0).toLocaleString(locale)} lượt hôm nay`, `Addon +${Number(item.quotaBoostAmount || 0).toLocaleString(locale)} today`)
+                        : l(`${Number(item.durationDays || 0).toLocaleString(locale)} ngày · ${Number(item.dailyDownloadLimit || 0).toLocaleString(locale)} lượt/ngày`, `${Number(item.durationDays || 0).toLocaleString(locale)} days · ${Number(item.dailyDownloadLimit || 0).toLocaleString(locale)} downloads/day`)}
+                    </code>
+                  )}
                   {item.voucherCode && <code>{l("Voucher", "Voucher")}: {item.voucherCode}</code>}
                 </div>
                 <span className={`badge ${item.status === "approved" ? "success" : item.status === "pending" ? "pending" : "error"}`}>
@@ -2212,12 +2540,26 @@ export default function Admin({ user, language = "vi" }) {
                     <span>{l("Giảm", "Discount")}: {formatMoney(item.discountAmount)}</span>
                   )}
                 </div>
-                <strong><CoinAmount value={Number(item.credit || 0).toLocaleString(locale)} prefix="+" /></strong>
+                {item.kind === "pro" ? (
+                  <strong>{item.isQuotaAddon ? `+${Number(item.quotaBoostAmount || 0).toLocaleString(locale)} ${l("lượt", "downloads")}` : `${Number(item.durationDays || 0).toLocaleString(locale)} ${l("ngày", "days")}`}</strong>
+                ) : (
+                  <strong><CoinAmount value={Number(item.credit || 0).toLocaleString(locale)} prefix="+" /></strong>
+                )}
                 <div className="topupAuditPayment">
                   <code>{item.paymentCode || item.gatewayTransactionId || "-"}</code>
                   {item.rejectionReason && <span className="error">{item.rejectionReason}</span>}
                 </div>
                 <time>{new Date(item.paidAt || item.createdAt).toLocaleString(locale)}</time>
+                {item.status === "pending" && (
+                  <div className="adminUserActions">
+                    <button type="button" className="smallButton" onClick={() => reviewTransaction(item, "approve")}>
+                      <Check size={14} /> {l("Duyệt", "Approve")}
+                    </button>
+                    <button type="button" className="smallButton dangerButton" onClick={() => reviewTransaction(item, "cancel")}>
+                      <X size={14} /> {l("Hủy", "Cancel")}
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
             {!topupRecords.length && (
@@ -2324,6 +2666,140 @@ export default function Admin({ user, language = "vi" }) {
             </div>
           )}
 
+          {userDetail && (
+            <div className="userDetailPanel">
+              <div className="userCreditHistoryHeader">
+                <div>
+                  <h3>{l("Chi tiết user", "User detail")}</h3>
+                  <strong>{userDetail.user?.email}</strong>
+                  <span>{userDetail.user?.name || ""} - {userDetail.user?.role || "user"}</span>
+                </div>
+                <button
+                  type="button"
+                  className="smallButton"
+                  onClick={() => {
+                    setUserDetail(null);
+                    setUserQuota(null);
+                    setUserTimeline([]);
+                    setUserDetailMsg("");
+                  }}
+                >
+                  <X size={14} /> {l("Đóng", "Close")}
+                </button>
+              </div>
+
+              {userDetailMsg && <p className={userDetailMsg.includes("Đã") || userDetailMsg.includes("updated") || userDetailMsg.includes("cleared") ? "success" : "error"}>{userDetailMsg}</p>}
+              {userDetailLoading && <p className="muted">{l("Đang tải thông tin user...", "Loading user detail...")}</p>}
+
+              <div className="adminDetailGrid">
+                <div className="adminDetailCard">
+                  <span>{l("Số dư", "Balance")}</span>
+                  <strong><CoinAmount value={Number(userDetail.user?.credit || 0).toLocaleString(locale)} /></strong>
+                  <small>{userDetail.user?.isBanned ? l("Đang bị ban getlink", "Banned from getlink") : l("Tài khoản hoạt động", "Active account")}</small>
+                </div>
+                <div className="adminDetailCard">
+                  <span>Pro</span>
+                  <strong>{userDetail.user?.isPro ? l("Đang hoạt động", "Active") : l("Chưa kích hoạt", "Inactive")}</strong>
+                  <small>{userDetail.user?.proUntil ? new Date(userDetail.user.proUntil).toLocaleString(locale) : l("Chưa có hạn Pro", "No Pro expiry")}</small>
+                </div>
+                <div className="adminDetailCard">
+                  <span>{l("Quota tải hôm nay", "Download quota today")}</span>
+                  <strong>
+                    {Number(userQuota?.downloads?.used || 0).toLocaleString(locale)}/{Number(userQuota?.downloads?.limit || 0).toLocaleString(locale)}
+                  </strong>
+                  <small>
+                    {l("Còn", "Remaining")} {Number(userQuota?.downloads?.remaining || 0).toLocaleString(locale)}
+                    {Number(userQuota?.downloads?.bonusLimit || 0) > 0 ? ` +${Number(userQuota.downloads.bonusLimit).toLocaleString(locale)} addon` : ""}
+                  </small>
+                </div>
+                <div className="adminDetailCard">
+                  <span>{l("Tìm ảnh hôm nay", "Image search today")}</span>
+                  <strong>
+                    {Number(userQuota?.imageSearch?.used || 0).toLocaleString(locale)}/{Number(userQuota?.imageSearch?.limit || 0).toLocaleString(locale)}
+                  </strong>
+                  <small>{userQuota?.resetAt ? `${l("Reset", "Reset")} ${new Date(userQuota.resetAt).toLocaleString(locale)}` : ""}</small>
+                </div>
+              </div>
+
+              <form className="adminInlineForm" onSubmit={saveUserProAdjust}>
+                <div>
+                  <strong>{l("Chỉnh Pro thủ công", "Manual Pro adjustment")}</strong>
+                  <span>{l("Dùng khi cần hỗ trợ user hoặc xử lý đơn Pro lỗi webhook.", "Use for support or failed Pro webhook cases.")}</span>
+                </div>
+                <input
+                  type="datetime-local"
+                  value={proAdjustForm.proUntil}
+                  onChange={(e) => setProAdjustForm({ ...proAdjustForm, proUntil: e.target.value })}
+                  title={l("Ngày hết hạn Pro", "Pro expiry")}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  value={proAdjustForm.proDailyDownloadLimit}
+                  onChange={(e) => setProAdjustForm({ ...proAdjustForm, proDailyDownloadLimit: e.target.value })}
+                  placeholder={l("Lượt tải/ngày", "Downloads/day")}
+                />
+                <button className="smallButton" type="submit"><Save size={14} /> {l("Lưu Pro", "Save Pro")}</button>
+                <button className="smallButton dangerButton" type="button" onClick={clearUserPro}><X size={14} /> {l("Gỡ Pro", "Clear Pro")}</button>
+              </form>
+
+              <div className="adminDetailGrid compact">
+                {[
+                  ["getlinks", l("Getlink", "Getlinks")],
+                  ["topups", l("Nạp credit", "Credit top-ups")],
+                  ["proOrders", l("Đơn Pro", "Pro orders")],
+                  ["modelDownloads", l("Tải model", "Model downloads")],
+                  ["purchases", l("Mua model", "Model purchases")]
+                ].map(([key, label]) => (
+                  <div className="adminDetailCard" key={key}>
+                    <span>{label}</span>
+                    <strong>{Number(userDetail.stats?.[key] || 0).toLocaleString(locale)}</strong>
+                  </div>
+                ))}
+              </div>
+
+              <div className="adminSubTabs" role="tablist" aria-label={l("Lọc timeline user", "Filter user timeline")}>
+                {[
+                  ["all", l("Tất cả", "All")],
+                  ["credit", "Credit"],
+                  ["pro", "Pro"],
+                  ["getlink", "Getlink"],
+                  ["model", "Model"],
+                  ["referral", l("Giới thiệu", "Referral")],
+                  ["voucher", "Voucher"]
+                ].map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={userTimelineType === key ? "active" : ""}
+                    onClick={() => loadUserDetail(userDetail.user, key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="adminTimelineList">
+                {userTimeline.map((event) => (
+                  <div className="adminTimelineItem" key={event.id}>
+                    <span className={`badge ${event.status === "approved" || event.status === "downloaded" || event.status === "used" ? "success" : event.status === "pending" ? "pending" : "error"}`}>{event.type}</span>
+                    <div>
+                      <strong>{event.title}</strong>
+                      <small>
+                        {event.status || "-"} · {event.createdAt ? new Date(event.createdAt).toLocaleString(locale) : ""}
+                        {event.metadata?.paymentCode ? ` · ${event.metadata.paymentCode}` : ""}
+                      </small>
+                    </div>
+                    <strong className={Number(event.amount || 0) >= 0 ? "successText" : "errorText"}>
+                      {Number(event.amount || 0) > 0 ? "+" : ""}{Number(event.amount || 0).toLocaleString(locale)}
+                    </strong>
+                  </div>
+                ))}
+                {!userTimeline.length && <p className="muted">{l("Chưa có lịch sử phù hợp.", "No matching history yet.")}</p>}
+              </div>
+            </div>
+          )}
+
           <div className="table adminUserTable">
             {users.map((user) => (
               <div className="tableRow" key={user._id}>
@@ -2352,9 +2828,14 @@ export default function Admin({ user, language = "vi" }) {
                     </button>
                   </>
                 )}
-                <button className="smallButton" onClick={() => loadUserCreditHistory(user)}>
-                  <HistoryIcon size={14} /> {l("Lịch sử credit", "Credit history")}
-                </button>
+                <div className="adminUserActions">
+                  <button className="smallButton" onClick={() => loadUserDetail(user)}>
+                    <Users size={14} /> {l("Chi tiết", "Detail")}
+                  </button>
+                  <button className="smallButton" onClick={() => loadUserCreditHistory(user)}>
+                    <HistoryIcon size={14} /> {l("Lịch sử credit", "Credit history")}
+                  </button>
+                </div>
                 {user.role !== "admin" && (
                   <div className="banUserControls">
                     {!user.isBanned && (

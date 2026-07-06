@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { Check, Copy, Gift, CreditCard, QrCode } from "lucide-react";
+import { Check, Copy, Gift, CreditCard, QrCode, Sparkles, Wallet } from "lucide-react";
 import { api } from "../api.js";
 import { translations } from "../i18n.js";
 
 const CURRENCY = "đ";
 const PENDING_TOPUP_ID_KEY = "pendingSepayTopupId";
+const PENDING_MEMBERSHIP_ORDER_KEY = "pendingMembershipOrderId";
 
 function submitPaymentCheckout(payment) {
   if (!payment?.checkoutUrl || !payment?.fields) return false;
@@ -43,27 +44,113 @@ function clearPaymentQuery() {
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
+function money(value, locale) {
+  return `${Number(value || 0).toLocaleString(locale)}${CURRENCY}`;
+}
+
+function modeFromLocation() {
+  if (typeof window === "undefined") return "pro";
+  const params = new URLSearchParams(window.location.search);
+  const mode = params.get("mode");
+  if (mode === "pro") return "pro";
+  if (params.get("packageId")) return "credit";
+  if (params.get("planId")) return "pro";
+  return mode === "credit" ? "credit" : "pro";
+}
+
+function queryParam(name) {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get(name) || "";
+}
+
+function isDailyMembershipPlan(plan) {
+  return String(plan?.code || "").toUpperCase() === "DAILY" || Number(plan?.durationDays || 0) <= 1;
+}
+
 export default function Topup({ user, onUserChange, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const locale = language === "vi" ? "vi-VN" : "en-US";
   const [packages, setPackages] = useState([]);
+  const [membershipPlans, setMembershipPlans] = useState([]);
+  const [membership, setMembership] = useState(null);
   const [voucher, setVoucher] = useState("");
   const [appliedVoucher, setAppliedVoucher] = useState(null);
   const [selectedPackageId, setSelectedPackageId] = useState("");
+  const [selectedMembershipPlanId, setSelectedMembershipPlanId] = useState("");
   const [payment, setPayment] = useState(null);
   const [lastPaidPayment, setLastPaidPayment] = useState(null);
   const [copied, setCopied] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [proMessage, setProMessage] = useState("");
+  const [proError, setProError] = useState("");
+  const [proLoading, setProLoading] = useState(false);
+  const [voucherMessage, setVoucherMessage] = useState("");
+  const [voucherError, setVoucherError] = useState("");
+  const [topupMode, setTopupModeState] = useState(modeFromLocation);
+
+  function changeTopupMode(nextMode) {
+    const normalizedMode = nextMode === "credit" ? "credit" : "pro";
+    setTopupModeState(normalizedMode);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("mode", normalizedMode);
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  function updateTopupSelectionQuery(updates = {}, removals = []) {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value) url.searchParams.set(key, value);
+    });
+    removals.forEach((key) => url.searchParams.delete(key));
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
 
   useEffect(() => {
-    api("/api/topup/packages").then((data) => setPackages(data.packages));
+    api("/api/topup/packages").then((data) => {
+      const nextPackages = data.packages || [];
+      setPackages(nextPackages);
+      const packageId = queryParam("packageId");
+      if (packageId && nextPackages.some((item) => String(item._id) === String(packageId))) {
+        setSelectedPackageId(packageId);
+      }
+    });
   }, []);
+
+  useEffect(() => {
+    api("/api/membership/plans")
+      .then((data) => {
+        const nextPlans = data.plans || [];
+        setMembershipPlans(nextPlans);
+        const planId = queryParam("planId");
+        if (planId && nextPlans.some((item) => String(item._id) === String(planId))) {
+          setSelectedMembershipPlanId(planId);
+        } else if (!selectedMembershipPlanId && nextPlans[0]) {
+          setSelectedMembershipPlanId(nextPlans[0]._id);
+        }
+      })
+      .catch((err) => setProError(err.message));
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setMembership(null);
+      return;
+    }
+    api("/api/membership/me")
+      .then((data) => setMembership(data.membership || null))
+      .catch(() => {});
+  }, [user?._id, user?.proUntil]);
 
   useEffect(() => {
     const paymentStatus = new URLSearchParams(window.location.search).get("payment");
     if (!paymentStatus) return undefined;
     const pendingTopupId = window.sessionStorage.getItem(PENDING_TOPUP_ID_KEY);
+    const pendingMembershipOrderId = window.sessionStorage.getItem(PENDING_MEMBERSHIP_ORDER_KEY);
+    if (pendingMembershipOrderId && !pendingTopupId) return undefined;
+    changeTopupMode("credit");
 
     if (["error", "cancel"].includes(paymentStatus)) {
       let canceled = false;
@@ -184,6 +271,67 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     return () => window.clearInterval(timer);
   }, [payment, onUserChange, user]);
 
+  useEffect(() => {
+    const paymentStatus = new URLSearchParams(window.location.search).get("payment");
+    const pendingOrderId = window.sessionStorage.getItem(PENDING_MEMBERSHIP_ORDER_KEY);
+    if (!paymentStatus || !pendingOrderId || !user) return undefined;
+    changeTopupMode("pro");
+
+    if (["error", "cancel"].includes(paymentStatus)) {
+      let canceled = false;
+      async function closePendingMembershipOrder() {
+        try {
+          await api(`/api/membership/orders/${pendingOrderId}/cancel`, {
+            method: "POST",
+            body: JSON.stringify({
+              reason: paymentStatus === "error" ? "gateway_error" : "user_cancel",
+            }),
+          });
+          if (canceled) return;
+          window.sessionStorage.removeItem(PENDING_MEMBERSHIP_ORDER_KEY);
+          clearPaymentQuery();
+          if (paymentStatus === "error") {
+            setProError(language === "vi" ? "Thanh toán Pro bị lỗi." : "Pro payment failed.");
+          } else {
+            setProMessage(language === "vi" ? "Đơn Pro đã hủy." : "Pro order canceled.");
+          }
+        } catch (err) {
+          if (!canceled) setProError(err.message);
+        }
+      }
+      closePendingMembershipOrder();
+      return () => {
+        canceled = true;
+      };
+    }
+
+    setProMessage(language === "vi" ? "Đang kiểm tra thanh toán Pro..." : "Checking Pro payment...");
+    let attempts = 0;
+    const timer = window.setInterval(async () => {
+      attempts += 1;
+      try {
+        const data = await api(`/api/membership/orders/${pendingOrderId}/status`);
+        if (data.status === "approved") {
+          window.sessionStorage.removeItem(PENDING_MEMBERSHIP_ORDER_KEY);
+          clearPaymentQuery();
+          setMembership(data.membership || null);
+          onUserChange?.({ ...user, proUntil: data.membership?.proUntil, isPro: data.membership?.active });
+          setProMessage(language === "vi" ? "Đã kích hoạt gói Pro." : "Pro membership activated.");
+          window.clearInterval(timer);
+        } else if (data.status === "rejected") {
+          window.sessionStorage.removeItem(PENDING_MEMBERSHIP_ORDER_KEY);
+          clearPaymentQuery();
+          setProMessage(language === "vi" ? "Đơn Pro đã hủy." : "Pro order canceled.");
+          window.clearInterval(timer);
+        }
+      } catch {
+        // Keep polling while the gateway redirects back.
+      }
+      if (attempts >= 20) window.clearInterval(timer);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [user, onUserChange, language]);
+
   function priceBeforeVoucher(item) {
     if (Number(item.salePrice || 0) > 0) return Number(item.salePrice || 0);
     return Math.round(Number(item.price || 0) * (100 - Number(item.salePercent || 0)) / 100);
@@ -219,8 +367,23 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   }
 
   const selectedPackage = packages.find((item) => String(item._id) === String(selectedPackageId));
+  const selectedMembershipPlan = membershipPlans.find((item) => String(item._id) === String(selectedMembershipPlanId));
+  const voucherTargetsMembership =
+    appliedVoucher &&
+    topupMode === "pro" &&
+    appliedVoucher.appliesToMembership !== false &&
+    Number(appliedVoucher.discountPercent || 0) > 0;
+  const selectedPlanIsDailyAddon = membership?.active && isDailyMembershipPlan(selectedMembershipPlan);
+
+  function membershipFinalPrice(plan) {
+    const original = Number(plan?.price || 0);
+    if (!voucherTargetsMembership) return original;
+    return Math.max(0, Math.round(original * (100 - Number(appliedVoucher.discountPercent || 0)) / 100));
+  }
 
   function selectPackage(item) {
+    changeTopupMode("credit");
+    updateTopupSelectionQuery({ packageId: item._id }, ["planId"]);
     setSelectedPackageId(item._id);
     setPayment(null);
     setLastPaidPayment(null);
@@ -228,7 +391,43 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     setError("");
   }
 
+  async function checkoutMembership() {
+    changeTopupMode("pro");
+    if (!user) {
+      setProError(language === "vi" ? "Vui lòng đăng nhập trước khi mua Pro." : "Please sign in before buying Pro.");
+      return;
+    }
+    if (!selectedMembershipPlan) {
+      setProError(language === "vi" ? "Vui lòng chọn gói Pro." : "Please select a Pro plan.");
+      return;
+    }
+    setProLoading(true);
+    setProMessage("");
+    setProError("");
+    try {
+      const data = await api("/api/membership/checkout", {
+        method: "POST",
+        body: JSON.stringify({
+          planId: selectedMembershipPlan._id,
+          voucherCode: voucherTargetsMembership ? appliedVoucher?.code : undefined,
+        }),
+      });
+      if (data.order?._id) {
+        window.sessionStorage.setItem(PENDING_MEMBERSHIP_ORDER_KEY, data.order._id);
+      }
+      setProMessage(language === "vi" ? "Đang chuyển sang cổng thanh toán..." : "Redirecting to payment...");
+      if (!submitPaymentCheckout(data.payment)) {
+        setProMessage(language === "vi" ? "Đã tạo đơn Pro. Vui lòng hoàn tất thanh toán." : "Pro order created. Please complete payment.");
+      }
+    } catch (err) {
+      setProError(err.message);
+    } finally {
+      setProLoading(false);
+    }
+  }
+
   async function topup() {
+    changeTopupMode("credit");
     if (!selectedPackage) {
       setError(t.selectPackageBeforePayment);
       return;
@@ -273,31 +472,146 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   async function applyVoucher(event) {
     event.preventDefault();
     try {
-      setMessage("");
-      setError("");
+      setVoucherMessage("");
+      setVoucherError("");
       const data = await api("/api/voucher/apply", {
         method: "POST",
-        body: JSON.stringify({ code: voucher }),
+        body: JSON.stringify({
+          code: voucher,
+          target: topupMode === "pro" ? "membership" : "topup",
+          packageId: topupMode === "credit" && selectedPackage ? selectedPackage._id : undefined,
+        }),
       });
       setAppliedVoucher(data.voucher || null);
       setPayment(null);
       setLastPaidPayment(null);
       setVoucher("");
-      setMessage(data.message || t.voucherApplied);
+      setVoucherMessage(data.message || t.voucherApplied);
     } catch (err) {
-      setError(err.message);
+      setVoucherError(err.message);
     }
   }
 
   return (
     <div className="stack">
-      <section className="panel">
+      <section className="topupPurposeGrid" aria-label={language === "vi" ? "Mục đích gói nạp" : "Top-up purposes"}>
+        <button
+          type="button"
+          className={`topupPurposeItem credit ${topupMode === "credit" ? "active" : ""}`}
+          onClick={() => changeTopupMode("credit")}
+        >
+          <Wallet size={18} />
+          <strong>Credit</strong>
+          <span>
+            {language === "vi"
+              ? "Dùng làm số dư để getlink, mua lẻ model và các lượt tính tiền theo từng giao dịch."
+              : "Used as balance for getlink, per-model purchases, and pay-per-use actions."}
+          </span>
+          <small>{language === "vi" ? "Không kích hoạt quyền Pro." : "Does not activate Pro access."}</small>
+        </button>
+        <button
+          type="button"
+          className={`topupPurposeItem pro ${topupMode === "pro" ? "active" : ""}`}
+          onClick={() => changeTopupMode("pro")}
+        >
+          <Sparkles size={18} />
+          <strong>Pro</strong>
+          <span>
+            {language === "vi"
+              ? "Dùng để mở quyền thành viên: tải model member/S-VIP, tải nhanh và quota theo ngày."
+              : "Used to unlock membership access: member/S-VIP models, fast downloads, and daily quota."}
+          </span>
+          <small>{language === "vi" ? "Không cộng thêm số dư Credit." : "Does not add Credit balance."}</small>
+        </button>
+      </section>
+
+      {topupMode === "pro" && (
+      <section className="panel topupUnifiedSection topupProSection">
+        <div className="topupSectionHeader">
+          <div>
+            <span className="eyebrowSignal">3DIPL MEMBER</span>
+            <h2><Sparkles size={20} /> {language === "vi" ? "Mua Pro" : "Buy Pro"}</h2>
+            <p className="muted">
+              {language === "vi"
+                ? "Pro kích hoạt quyền tải model member/S-VIP, 100 lượt mỗi ngày, tải nhanh và không cộng credit."
+                : "Pro unlocks member/S-VIP models, 100 downloads per day, fast download, and does not add credits."}
+            </p>
+          </div>
+          {membership?.active && (
+            <span className="badge success">
+              {language === "vi" ? "Đang Pro đến" : "Pro until"} {new Date(membership.proUntil).toLocaleString(locale)}
+            </span>
+          )}
+        </div>
+        <div className="membershipPlans topupMembershipPlans">
+          {membershipPlans.map((plan) => (
+            <button
+              key={plan._id}
+              type="button"
+              className={`membershipPlanCard panel ${selectedMembershipPlanId === plan._id ? "selectedPackage" : ""}`}
+              onClick={() => {
+                updateTopupSelectionQuery({ mode: "pro", planId: plan._id }, ["packageId"]);
+                setSelectedMembershipPlanId(plan._id);
+                setProMessage("");
+                setProError("");
+              }}
+            >
+              {plan.badge && <span className="badge success">{plan.badge}</span>}
+              <h3>{plan.name}</h3>
+              <strong>{money(membershipFinalPrice(plan), locale)}</strong>
+              {voucherTargetsMembership && (
+                <span>{language === "vi" ? `Voucher ${appliedVoucher.code}: giảm ${appliedVoucher.discountPercent}%` : `Voucher ${appliedVoucher.code}: ${appliedVoucher.discountPercent}% off`}</span>
+              )}
+              <span>
+                {membership?.active && isDailyMembershipPlan(plan)
+                  ? (language === "vi"
+                    ? `Thêm ${plan.dailyDownloadLimit} lượt hôm nay`
+                    : `Add ${plan.dailyDownloadLimit} downloads today`)
+                  : (language === "vi"
+                    ? `${plan.durationDays} ngày · ${plan.dailyDownloadLimit}/ngày`
+                    : `${plan.durationDays} days · ${plan.dailyDownloadLimit}/day`)}
+              </span>
+              <ul>
+                {(plan.features || []).map((feature) => (
+                  <li key={feature}><Check size={14} /> {feature}</li>
+                ))}
+              </ul>
+            </button>
+          ))}
+        </div>
+        <div className="topupCheckoutBox">
+          <div>
+            <span>{language === "vi" ? "Gói Pro đang chọn" : "Selected Pro plan"}</span>
+            <strong>{selectedMembershipPlan?.name || "-"}</strong>
+            <p>
+              {selectedMembershipPlan
+                ? (language === "vi"
+                  ? (selectedPlanIsDailyAddon
+                    ? `Thanh toán ${money(membershipFinalPrice(selectedMembershipPlan), locale)} để thêm ${selectedMembershipPlan.dailyDownloadLimit} lượt tải hôm nay; hạn Pro hiện tại vẫn giữ nguyên.`
+                    : `Thanh toán ${money(membershipFinalPrice(selectedMembershipPlan), locale)} để kích hoạt ${selectedMembershipPlan.durationDays} ngày Pro đến cuối ngày hết hạn.`)
+                  : (selectedPlanIsDailyAddon
+                    ? `Pay ${money(membershipFinalPrice(selectedMembershipPlan), locale)} to add ${selectedMembershipPlan.dailyDownloadLimit} downloads today; your current Pro expiry stays unchanged.`
+                    : `Pay ${money(membershipFinalPrice(selectedMembershipPlan), locale)} for ${selectedMembershipPlan.durationDays} days of Pro ending at the end of the final day.`))
+                : (language === "vi" ? "Chọn một gói Pro để tiếp tục." : "Select a Pro plan to continue.")}
+            </p>
+          </div>
+          <button className="primaryButton" type="button" disabled={proLoading || !selectedMembershipPlan} onClick={checkoutMembership}>
+            <CreditCard size={18} />
+            {language === "vi" ? "Mua Pro" : "Buy Pro"}
+          </button>
+        </div>
+        {proMessage && <p className="success" style={{ marginTop: 14 }}>{proMessage}</p>}
+        {proError && <p className="error" style={{ marginTop: 14 }}>{proError}</p>}
+      </section>
+      )}
+
+      {topupMode === "credit" && (
+      <section className="panel topupUnifiedSection topupCreditSection">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <h2><QrCode size={20} /> {t.topupMoney}</h2>
           <span className="badge success">{t.automatic}</span>
         </div>
         <p className="muted">{t.topupIntro}</p>
-        <p className="muted">{t.topupVoucherHelp}</p>
         <div className="packageGrid topupPackageGrid" style={{ "--topup-package-count": Math.max(packages.length, 1) }}>
           {packages.map((item) => (
             <button
@@ -443,27 +757,19 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
             </p>
           </div>
         )}
-        {appliedVoucher && (
-          <div className="result">
-            <span>{t.voucherInfo}</span>
-            <strong>{appliedVoucher.code}</strong>
-            {appliedVoucher.description && <p>{appliedVoucher.description}</p>}
-            <p>
-              {appliedVoucher.discountPercent > 0
-                ? (language === "vi"
-                  ? `Giảm ${appliedVoucher.discountPercent}% cho gói nạp. Giá sẽ giảm khi bạn chọn gói.`
-                  : `${appliedVoucher.discountPercent}% off top-up packages. The price will decrease when you select a package.`)
-                : (language === "vi"
-                  ? `Cộng thêm ${appliedVoucher.creditBonus} credit khi nạp thành công.`
-                  : `Add ${appliedVoucher.creditBonus} bonus credit after a successful top-up.`)}
-            </p>
-          </div>
-        )}
       </section>
+      )}
 
-      <section className="panel">
-        <h2><Gift size={20} /> Voucher</h2>
-        <form className="inputRow" onSubmit={applyVoucher}>
+      <section className="panel topupVoucherPanel">
+        <div>
+          <h2><Gift size={18} /> Voucher</h2>
+          <p className="muted">
+            {language === "vi"
+              ? `Áp dụng cho ${topupMode === "pro" ? "gói Pro đang chọn" : "gói Credit đang chọn"}. Đổi tab vẫn giữ voucher đã nhập.`
+              : `Applies to the selected ${topupMode === "pro" ? "Pro" : "Credit"} package. Switching tabs keeps the voucher.`}
+          </p>
+        </div>
+        <form className="inputRow topupVoucherRow" onSubmit={applyVoucher}>
           <input
             value={voucher}
             onChange={(event) => setVoucher(event.target.value)}
@@ -474,6 +780,24 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
             {t.apply}
           </button>
         </form>
+        {voucherMessage && <p className="success">{voucherMessage}</p>}
+        {voucherError && <p className="error">{voucherError}</p>}
+        {appliedVoucher && (
+          <div className="result topupVoucherResult">
+            <span>{t.voucherInfo}</span>
+            <strong>{appliedVoucher.code}</strong>
+            {appliedVoucher.description && <p>{appliedVoucher.description}</p>}
+            <p>
+              {appliedVoucher.discountPercent > 0
+                ? (language === "vi"
+                  ? `Giảm ${appliedVoucher.discountPercent}% cho thanh toán phù hợp.`
+                  : `${appliedVoucher.discountPercent}% off eligible payments.`)
+                : (language === "vi"
+                  ? `Cộng thêm ${appliedVoucher.creditBonus} credit khi nạp Credit thành công.`
+                  : `Adds ${appliedVoucher.creditBonus} bonus credits after a successful Credit top-up.`)}
+            </p>
+          </div>
+        )}
       </section>
     </div>
   );

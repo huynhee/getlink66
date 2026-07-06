@@ -1,6 +1,6 @@
 # Tai lieu he thong Get Link 3D66
 
-Cap nhat: 2026-06-18  
+Cap nhat: 2026-07-04  
 Pham vi doc: toan bo source backend, frontend, route, controller, model, middleware, utility, cau hinh mau va public assets trong repo.
 
 Luu y bao mat: tai lieu nay khong sao chep gia tri that trong `backend/.env`. Cac muc cau hinh duoc mo ta theo ten bien trong `backend/.env.example`.
@@ -14,13 +14,15 @@ Muc tieu nghiep vu chinh:
 - Xac thuc nguoi dung bang Google OAuth.
 - Luu credit cho tung user.
 - Kiem tra thong tin model 3D66: product id, ten, anh, gia credit.
+- Ho tro chon dinh dang file 3D66 khi model co popup format, gom fileFormat, version, renderer va dung luong nen.
 - Tru credit an toan khi user tao getlink.
 - Luu lich su getlink va cho phep tai lai mien phi trong cua so thoi gian/gioi han cau hinh.
+- Cho phep tai kem anh preview cua model bang link noi bo rieng, khong luu binary anh tren DB/server.
 - Tao checkout SePay cho cac goi nap credit.
 - Nhan IPN/webhook de duyet topup va cong credit.
 - Ho tro voucher giam gia hoac cong credit bonus.
 - Ho tro chuong trinh gioi thieu ban be.
-- Quan tri cookie 3D66, fallback Playwright va hang doi request de giam nguy co bi 3D66 chan.
+- Quan tri cookie 3D66, fallback Playwright, proxy rieng cho 3D66 va hang doi request de giam nguy co bi 3D66 chan.
 - Hien thi frontend React cho user va admin.
 
 ## 2. Cau truc thu muc
@@ -62,7 +64,7 @@ Root `package.json` chi dong vai tro orchestration:
 
 Backend va frontend la 2 package rieng:
 
-- Backend: Node.js ESM, Express, Mongoose, Passport Google OAuth, JWT, Playwright, SePay SDK, Pino.
+- Backend: Node.js ESM, Express, Mongoose, Passport Google OAuth, JWT, Playwright, SePay SDK, Pino, Undici/ProxyAgent.
 - Frontend: React 18, Vite, lucide-react.
 
 ## 3. Backend
@@ -171,6 +173,14 @@ Luu lich su user tao link:
 - `title`
 - `imageUrl`
 - `creditUsed`
+- `downloadFormat`:
+  - `key`
+  - `label`
+  - `fileFormat`
+  - `formatVersion`
+  - `rendererType`
+  - `rendererLabel`
+  - `size`
 - `initialDownloadAt`
 - `redownloadCount`
 - `lastRedownloadAt`
@@ -188,6 +198,16 @@ Cache metadata/file link cua 3D66:
 - `imageUrl`
 - `creditCost`
 - `priceKnown`
+- `formatOptions`
+- `formatOptionsVersion`
+- format selection da mua/cache:
+  - `downloadFormatKey`
+  - `fileFormat`
+  - `formatVersion`
+  - `rendererType`
+  - `rendererLabel`
+  - `formatLabel`
+  - `formatSize`
 - `isPurchased`
 
 Cache giup tranh mua/lay lai link khong can thiet va tang toc preview.
@@ -300,10 +320,13 @@ Luu text trang chu va tham so runtime:
   - paytype value
   - request interval
   - browser fallback flags
+  - proxy 3D66 rieng cho preview/API/download/browser
   - timeout
   - cookie failure/cooldown
   - download concurrency limits
   - redownload window/limit
+
+`threed66ProxyUrl` duoc ma hoa bang `secretBox` truoc khi luu. Public `/api/settings` chi tra `threed66ProxyUrlConfigured`, khong tra URL that.
 
 Khi settings duoc load/cap nhat, backend apply cac field runtime vao `process.env`.
 
@@ -490,6 +513,7 @@ Google OAuth callback:
 | POST | `/getlink/preview` | auth, not banned, rate limit user+IP | Lay metadata model: productId, title, image, creditCost |
 | POST | `/getlink/inspect` | auth, admin | Debug/inspect trang 3D66 |
 | POST | `/getlink` | auth, not banned, rate limit user+IP | Tao download link, tru credit |
+| POST | `/getlink/redownload/:id` | auth, not banned, rate limit user+IP | Chuan bi link tai lai, co the hien popup chon dinh dang |
 | GET | `/getlink/download/:id` | download rate limit | Proxy stream file 3D66 |
 | GET | `/getlink/preview-image/:id` | download rate limit | Proxy tai anh preview |
 | GET | `/getlink/history` | auth | Lich su getlink cua user |
@@ -662,25 +686,40 @@ Bat 2FA:
 
 ### 5.4 Tao getlink va tru credit
 
-1. Frontend goi POST `/api/getlink` voi `url` va `includePreviewImage`.
+1. Frontend goi POST `/api/getlink` voi:
+   - `url`
+   - `includePreviewImage`
+   - `downloadFormat` neu user da chon dinh dang file.
 2. Backend validate URL.
 3. Lay `productId`.
 4. Tao lock theo `userId:productId` trong Set de chan request dong thoi cung user/cung model.
 5. Tim lich su tai lai mien phi con hop le:
-   - Neu co, tra downloadUrl khong tru credit.
+   - Neu co va khong can chon lai format, tra downloadUrl khong tru credit.
+   - Neu model co nhieu format va user chua chon, tra payload `requiresFormatSelection=true`.
 6. Lay/refresh preview metadata de biet credit can tru.
 7. Check user credit.
-8. Resolve product cache:
+8. Neu user chua gui `downloadFormat`, backend kiem tra popup dinh dang file 3D66:
+   - Neu co nhieu format hop le, tra danh sach `formatOptions` gom label, fileFormat, version, renderer va size.
+   - Chua tru credit o buoc nay.
+   - User chon format va goi lai POST `/api/getlink` kem `downloadFormat`.
+   - Neu model khong co popup/chi co 1 format, tiep tuc luong cu.
+9. Resolve product cache:
    - Neu cache fresh co `fileUrl`, dung cache.
    - Neu chua co hoac het han, goi `fetchFrom3D66` de mua/lay file URL.
    - Co per-product lock de tranh nhieu task refresh cung product.
-9. Kiem tra lai redownload sau khi cache xong de tranh race.
-10. Tru credit bang atomic update `credit >= amount`.
-11. Tao `Getlink` record voi `fileUrl`, `sourceUrl`, metadata va `creditUsed`.
-12. Tao download token HMAC va public URL:
+10. Kiem tra lai redownload sau khi cache xong de tranh race.
+11. Tru credit bang atomic update `credit >= amount`.
+12. Tao `Getlink` record voi `fileUrl`, `sourceUrl`, metadata, `creditUsed` va `downloadFormat`.
+13. Tao download token HMAC va public URL:
     - `/api/getlink/download/:id?t=...`
     - neu user chon anh preview: `/api/getlink/preview-image/:id?t=...`
-13. Tra URL va credit moi cho frontend.
+14. Tra URL va credit moi cho frontend.
+
+Neu user getlink lai cung model:
+
+- Neu history cu con trong han va con luot tai lai, backend tra link mien phi `creditUsed=0`.
+- Luot tai lai khong bi tru ngay luc POST `/api/getlink`; no chi tang khi user mo link download va server bat dau stream file.
+- Neu het han tai lai hoac het luot tai lai, backend xu ly nhu getlink moi: check credit, mua/generate link, tru credit va tao history moi.
 
 ### 5.5 Download file
 
@@ -696,13 +735,34 @@ Bat 2FA:
 5. Kiem tra cua so tai lai:
    - `GETLINK_REDOWNLOAD_DAYS`
    - `GETLINK_REDOWNLOAD_LIMIT`
-6. Ho tro range request:
+6. Neu day la lan mo link dau tien cua history:
+   - Set `initialDownloadAt`.
+   - Khong tang `redownloadCount`.
+7. Neu day la lan tai lai tiep theo:
+   - Atomic `$inc redownloadCount + 1` neu con trong window va chua vuot limit.
+   - Neu stream/upstream loi truoc khi thanh cong, rollback lai luot da reserve.
+8. Ho tro range request:
    - Partial download gan nhau trong `PARTIAL_DOWNLOAD_SESSION_MS` khong tinh them luot moi.
-7. Neu `fileUrl` het han hoac upstream tra 401/403/404/410/419, backend refresh bang sourceUrl.
-8. Request file tu 3D66 voi cookie hop le.
-9. Kiem tra upstream co ve file stream, khong phai HTML/JSON.
-10. Proxy headers va stream body ve client.
-11. Neu loi truoc khi stream thanh cong, rollback `initialDownloadAt` hoac `redownloadCount` da reserve.
+9. Neu `fileUrl` het han hoac upstream tra 401/403/404/410/419, backend refresh bang sourceUrl.
+10. Request file tu 3D66 voi cookie hop le.
+11. Kiem tra upstream co ve file stream, khong phai HTML/JSON.
+12. Proxy headers va stream body ve client.
+13. Neu loi truoc khi stream thanh cong, rollback `initialDownloadAt` hoac `redownloadCount` da reserve.
+
+### 5.5.1 Chuan bi tai lai
+
+1. Frontend o `/getlink` hoac `/history` goi POST `/api/getlink/redownload/:id` truoc khi mo link.
+2. Backend check owner, ban state, window va limit tai lai.
+3. Neu history/fileUrl cu con fresh va format khong doi, tra downloadUrl moi co HMAC token moi.
+4. Neu link 3D66 het han, backend refresh bang sourceUrl nhu luong getlink cu.
+5. Neu model co nhieu format va user chua chon, tra `requiresFormatSelection=true` de frontend hien popup.
+6. Neu user chon format khac voi history cu, backend refresh fileUrl theo format moi va cap nhat history/cache.
+
+Het han tai lai:
+
+- Khi `createdAt + GETLINK_REDOWNLOAD_DAYS` da qua, download/redownload tra `canRedownload=false`.
+- User phai getlink lai model; neu co credit thi he thong tru credit va tao history moi.
+- History moi reset lai window va `redownloadCount=0`.
 
 ### 5.6 Nap credit SePay
 
@@ -721,6 +781,8 @@ Bat 2FA:
    - Tao SePay checkout fields va `checkoutUrl`.
 5. Frontend submit form an toi checkout URL cua SePay.
 6. Sau redirect success/error/cancel, frontend poll `/api/topup/:id/status` hoac cancel pending.
+   - Cancel/error SePay goi `/api/topup/:id/cancel`.
+   - Topup pending cua SePay bi chuyen thang sang `rejected` voi `canceledAt` va `rejectionReason`, khong cho duyet thu cong nua.
 7. SePay goi IPN `/api/payments/sepay/ipn`.
 8. Backend verify secret, status, amount va duplicate transaction.
 9. Goi `approvePendingTopup`.
@@ -779,8 +841,9 @@ User frontend:
 
 - Navbar poll `/api/notifications` moi 60 giay.
 - Dropdown chi dem unread notification khong phai fullscreen.
-- Fullscreen notification hien overlay, co the dong trong session.
-- Mark read goi `/api/notifications/:id/read`.
+- Fullscreen notification hien overlay va co the dong tam trong session/tab.
+- Dong fullscreen khong mark read tren server; neu admin van de notification active thi F5/session moi co the hien lai.
+- Dropdown notification mark read qua `/api/notifications/:id/read`.
 
 ## 6. Tich hop 3D66
 
@@ -813,6 +876,11 @@ User frontend:
 
 - Validate URL chi cho phep `3d66.com` hoac subdomain.
 - Validate download URL chi cho phep host 3D66 va HTTPS.
+- Goi fetch rieng `fetch3D66(url, options, { stage })` cho request sang 3D66.
+- Stage proxy:
+  - `preview`: doc trang/metadata.
+  - `api`: download/pop, download/handle, mua/generate link.
+  - `file`: keo fileUrl that tu 3D66 de stream ve user.
 - Fetch model page voi headers giong browser.
 - Parse:
   - title
@@ -820,7 +888,15 @@ User frontend:
   - price/credit cost
   - dynamic fields: `llId`, `token`, `upTime`, `sign`, `actionId`, context fields
 - Goi download pop endpoint de enrich metadata.
+- Parse popup chon dinh dang file:
+  - `fileFormat`
+  - `formatVersion`
+  - `rendererType`
+  - label ten dinh dang
+  - renderer label
+  - size file nen
 - Build payload cho download handle endpoint.
+- Khi user chon format, gui format selection vao payload 3D66 de lay dung file.
 - Extract file URL tu JSON response.
 - Request file stream voi cookie va referer.
 
@@ -858,6 +934,31 @@ Browser lifecycle:
   - `THREED66_BROWSER_WAIT_NETWORKIDLE`
 - Tu recycle browser theo so task hoac tuoi browser.
 - Co queue rieng cho task browser.
+
+### 6.4 Proxy 3D66
+
+He thong co proxy rieng chi ap dung cho request backend sang 3D66, khong anh huong user truy cap `3dipl.org`, MongoDB, Google OAuth, SePay hay Telegram.
+
+Bien cau hinh:
+
+- `THREED66_PROXY_ENABLED`
+- `THREED66_PROXY_URL`
+- `THREED66_PROXY_FOR_PREVIEW`
+- `THREED66_PROXY_FOR_API`
+- `THREED66_PROXY_FOR_DOWNLOAD`
+- `THREED66_PROXY_FOR_BROWSER`
+- `THREED66_PROXY_FAIL_CLOSED`
+
+Hanh vi:
+
+- Mac dinh proxy tat nen he thong chay nhu cu.
+- Proxy URL duoc mask khi log/alert va duoc ma hoa khi luu trong `SiteSetting`.
+- `/api/settings` public khong tra proxy URL that, chi tra `threed66ProxyUrlConfigured`.
+- Neu proxy loi va `THREED66_PROXY_FAIL_CLOSED=false`, backend:
+  - gui Telegram alert `3D66 proxy fallback`;
+  - retry request bang route VPS mac dinh.
+- Neu `THREED66_PROXY_FAIL_CLOSED=true`, proxy loi se tra loi ro `3D66 proxy connection failed`.
+- Playwright fallback cung co proxy rieng; neu proxy browser loi va fail-closed tat, browser retry lai khong proxy.
 
 ## 7. Frontend
 
@@ -908,10 +1009,12 @@ Quan ly state chinh:
 - `page`
 - `path`
 - `language`
+- `theme`
 - loading
 - ban overlay
 
 Luon goi `/api/auth/user` luc load de lay user.
+Theme duoc luu trong localStorage key `3dipl-theme` va apply vao `document.documentElement.dataset.theme`.
 
 Admin path:
 
@@ -924,6 +1027,7 @@ Admin path:
 Public home:
 
 - Hien landing/login.
+- Hien banner group Facebook 3DIPL duoi navbar.
 
 Authenticated user pages:
 
@@ -937,6 +1041,8 @@ Public pages:
 - `Guide`
 - `Privacy`
 - `Terms`
+
+Root render `MessengerFloatButton` o goc phai duoi, link toi `https://m.me/1079508495252841`.
 
 ### 7.4 Navbar
 
@@ -953,6 +1059,7 @@ Public pages:
   - credit
   - admin link neu role admin
   - language toggle `VI/EN`
+  - theme toggle dark/light
   - logout
 - Notification menu:
   - poll `/api/notifications` moi 60 giay
@@ -994,6 +1101,8 @@ Admin mode:
 - Mount `GetlinkBox`.
 - Load lich su getlink va topup.
 - Hien lich su tai gan day va topup gan day.
+- Nut ho tro trong lich su tai tro ve group Facebook 3DIPL.
+- Tai lai file goi POST `/api/getlink/redownload/:id` truoc khi mo link de refresh link/token va hien popup format neu can.
 - Neu user bi ban, truyen `disabledReason` vao `GetlinkBox`.
 
 `GetlinkBox.jsx`:
@@ -1003,9 +1112,16 @@ Admin mode:
 - Step 1: POST `/api/getlink/preview`.
 - Hien model info va gia credit.
 - Step 2: POST `/api/getlink`.
+- Neu backend tra `requiresFormatSelection=true`, hien popup chon dinh dang file:
+  - ten dinh dang, vi du 3Dmax/OBJ/FBX;
+  - phien ban;
+  - renderer;
+  - dung luong nen.
+- Sau khi user chon format, POST lai `/api/getlink` kem `downloadFormat`.
 - Cap nhat credit user.
 - Hien download link va copy button.
-- Neu chon download preview image, auto trigger tai anh preview.
+- Neu tick tai kem preview image, backend tra link `/api/getlink/preview-image/:id?t=...`; frontend co the trigger tai anh rieng.
+- Preview image chi luu URL 3D66 trong DB, khong luu binary/base64 anh tren server.
 - Co progress bar va dynamic favicon progress.
 
 ### 7.7 Topup
@@ -1021,7 +1137,7 @@ Admin mode:
 - Submit hidden form toi SePay checkout.
 - Sau redirect `?payment=success/error/cancel`:
   - Poll `/api/topup/:id/status`.
-  - Hoac cancel pending neu error/cancel.
+  - Hoac cancel pending neu error/cancel; backend doi status thanh `rejected`.
 - Neu dang o trang va co pending payment, poll status moi 5 giay.
 
 ### 7.8 History
@@ -1040,6 +1156,12 @@ Gop thanh mot timeline, filter:
 - referral
 
 Download history hien redownload link neu con hop le.
+
+Khi user bam tai lai:
+
+- Neu history co nhieu format, hien `RedownloadFormatModal` de user chon lai.
+- Neu khong co nhieu format, goi prepare redownload va mo link moi.
+- Hien so luot con lai dang `remaining/limit`.
 
 ### 7.9 Invite
 
@@ -1097,11 +1219,11 @@ Section chinh:
   - Revenue chart theo day/month/year.
   - Recent getlinks/topups/top packages.
 - Data:
-  - Logs.
   - Users.
-  - Referrals.
   - Getlink history.
   - Topup history.
+  - Referrals.
+  - Logs.
 - Packages:
   - Create/update/delete/reorder packages.
 - Vouchers:
@@ -1114,10 +1236,11 @@ Section chinh:
 - Articles:
   - Uses `AdminArticles.jsx` CRUD guide articles.
 - 3D66 settings:
+  - Tach tab: Tac vu, Tai file, Proxy, Playwright, Cookie, Trang thai.
   - Runtime concurrency, paytype, request interval, Playwright mode, timeout, cookie cooldown, redownload limits.
-- Cookie:
-  - Save/test/delete 3D66 cookies.
-  - View cookie pool health.
+  - Proxy Hong Kong: bat/tat proxy, proxy URL secret, stage preview/API/download/browser, fail-closed.
+  - Cookie tab: save/test/delete 3D66 cookies.
+  - Trang thai tab: queue va cookie pool health.
 - Security:
   - 2FA setup/enable for admin.
 
@@ -1214,6 +1337,7 @@ Admin write actions duoc backend audit qua `auditAdmin`.
   - topup approved
   - server error 5xx
   - 3D66 cookies unavailable
+  - 3D66 proxy fallback khi proxy loi va he thong tu chuyen ve route VPS mac dinh
 - Telegram co dedupe window.
 
 ## 9. Cau hinh moi truong quan trong
@@ -1278,6 +1402,13 @@ Production can:
 - `THREED66_PAYTYPE_VALUE`
 - `THREED66_SITE_CONTEXTS`
 - `THREED66_DOWNLOAD_SEND_ORIGIN`
+- `THREED66_PROXY_ENABLED`
+- `THREED66_PROXY_URL`
+- `THREED66_PROXY_FOR_PREVIEW`
+- `THREED66_PROXY_FOR_API`
+- `THREED66_PROXY_FOR_DOWNLOAD`
+- `THREED66_PROXY_FOR_BROWSER`
+- `THREED66_PROXY_FAIL_CLOSED`
 - `THREED66_COOKIE_MAX_FAILURES`
 - `THREED66_COOKIE_COOLDOWN_MS`
 
@@ -1345,6 +1476,16 @@ SePay:
 - `TELEGRAM_COOKIE_ALERT_COOLDOWN_MS`
 - `TELEGRAM_DEDUP_WINDOW_MS`
 
+### 9.8 Marketplace Google Drive
+
+- `GOOGLE_DRIVE_CLIENT_ID`
+- `GOOGLE_DRIVE_CLIENT_SECRET`
+- `GOOGLE_DRIVE_REFRESH_TOKEN`
+- `GOOGLE_DRIVE_ACCESS_TOKEN`
+- `GOOGLE_DRIVE_BEARER_TOKEN`
+
+Marketplace model/cover/preview/file co the luu tren Google Drive va stream qua backend. Production nen dung `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN` de backend tu refresh access token. `GOOGLE_DRIVE_ACCESS_TOKEN`/`GOOGLE_DRIVE_BEARER_TOKEN` chi nen dung test ngan han vi OAuth access token thuong het han nhanh.
+
 ## 10. Van hanh local
 
 Cai dependencies:
@@ -1390,6 +1531,7 @@ Production can dam bao:
 - `CLIENT_URL` va `PUBLIC_BASE_URL` la HTTPS.
 - SePay dashboard cau hinh IPN URL: `https://<api-domain>/api/payments/sepay/ipn`.
 - Neu dung Playwright fallback, can cai browser Chromium cho Playwright.
+- Neu dung marketplace Google Drive, can cau hinh refresh token Drive thay vi chi dung access token tinh.
 
 ## 11. Cac diem can luu y
 
@@ -1428,21 +1570,23 @@ Neu production khong set `PUBLIC_BASE_URL`, backend fallback tu `req.protocol + 
 ### Backend controllers
 
 - `authController.js`: Google OAuth, logout, current user, CSRF alias, TOTP 2FA.
-- `getlinkController.js`: preview, inspect, create getlink, download proxy, preview image download, history.
+- `getlinkController.js`: preview, inspect, create getlink, popup chon format, redownload prepare, download proxy, preview image download, history.
 - `topupController.js`: packages, create SePay topup, history/status/cancel.
 - `paymentController.js`: VietQR webhook va SePay IPN.
 - `voucherController.js`: apply voucher.
 - `referralController.js`: referral summary va history.
-- `settingsController.js`: site settings va runtime 3D66 settings.
+- `settingsController.js`: site settings, runtime 3D66 settings, proxy 3D66 va encrypted proxy URL.
 - `systemController.js`: public 3D66 cookie/system status.
 - `guideController.js`: public/admin guide articles.
 - `notificationController.js`: user/admin notifications.
-- `adminController.js`: dashboard, user/credit, cookie, voucher, package, logs, topups/getlinks.
+- `adminController.js`: dashboard, data tabs, user/credit, cookie, voucher, package, logs, topups/getlinks/referrals.
+- `marketplaceController.js`: public marketplace list/detail, cover/preview proxy, image search quota va download session.
+- `marketplaceAdminController.js`: admin import/sync Google Drive folder, attach asset/file va marketplace stats.
 
 ### Backend utils
 
-- `3d66Service.js`: HTTP/API integration voi 3D66, parse metadata va download URL.
-- `3d66BrowserService.js`: Playwright fallback.
+- `3d66Service.js`: HTTP/API integration voi 3D66, parse metadata, parse popup format, ProxyAgent theo stage va download URL.
+- `3d66BrowserService.js`: Playwright fallback, browser proxy tuy chon va retry ve route mac dinh neu fail-open.
 - `3d66CookiePool.js`: cookie selection, status, failure/cooldown.
 - `3d66Queue.js`: concurrency queues.
 - `asyncLimiter.js`: queue primitive.
@@ -1450,7 +1594,7 @@ Neu production khong set `PUBLIC_BASE_URL`, backend fallback tu `req.protocol + 
 - `downloadToken.js`: HMAC token cho download.
 - `parse3d66.js`: extract product id tu URL.
 - `pricingService.js`: credit conversion/normalization.
-- `secretBox.js`: AES-256-GCM encrypt/decrypt cookie values.
+- `secretBox.js`: AES-256-GCM encrypt/decrypt cookie values va proxy URL secret.
 - `validators.js`: id, voucher, number, string, HTML stripping.
 - `sepay.js`: SePay SDK fields/checkout URL.
 - `vietqr.js`: VietQR config va payment code.
@@ -1459,21 +1603,25 @@ Neu production khong set `PUBLIC_BASE_URL`, backend fallback tu `req.protocol + 
 - `referralService.js`: referral code/reward/summary.
 - `logger.js`: Pino logger, security/audit event.
 - `systemLog.js`: persistent system log.
-- `telegramNotifier.js`: Telegram notifications.
+- `telegramNotifier.js`: Telegram notifications, cookie alert va proxy fallback alert.
+- `storageProvider.js`: local/Google Drive storage stream, Google Drive token refresh/retry 401.
+- `marketplaceDownloadService.js`: tao va verify download session marketplace.
 
 ### Frontend
 
 - `api.js`: API wrapper va CSRF.
-- `App.jsx`: routing/state chinh.
+- `App.jsx`: routing/state chinh, theme, Facebook group banner va floating Messenger button.
 - `Navbar.jsx`: tabs, auth links, notifications, language.
 - `Login.jsx`: landing page va admin login.
-- `Home.jsx`: user dashboard/getlink history.
-- `GetlinkBox.jsx`: preview/getlink UX.
+- `Home.jsx`: user dashboard/getlink history, support link, redownload prepare va format modal.
+- `GetlinkBox.jsx`: preview/getlink UX, popup chon format, optional preview image download.
 - `Topup.jsx`: package selection, voucher, SePay checkout polling.
-- `History.jsx`: unified history.
+- `History.jsx`: unified history, redownload prepare va chon lai format khi tai lai.
 - `Invite.jsx`: referral page.
 - `Guide.jsx` va `GuideContent.jsx`: public guide rendering.
-- `Admin.jsx`: admin dashboard va management sections.
+- `Admin.jsx`: admin dashboard, Data group, 3D66 settings tabs, proxy/cookie/runtime controls.
+- `AdminMarketplace.jsx`: admin marketplace model/file/Drive import controls.
+- `Models.jsx`: public marketplace model list/detail/download UX.
 - `AdminArticles.jsx`: guide article CRUD.
 - `faviconProgress.js`: favicon progress/badge.
 - `styles.css`: toan bo visual style.

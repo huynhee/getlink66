@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Bell, Chrome, LogOut, Menu, Moon, Sun, UserCircle, X } from "lucide-react";
+import { Bell, CalendarClock, Chrome, Download, LogOut, Menu, Moon, Sun, UserCircle, Wallet, X } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import CoinAmount from "./CoinAmount.jsx";
 import { translations } from "../i18n.js";
@@ -36,6 +36,31 @@ function ThemeToggle({ theme = "dark", onThemeToggle }) {
       {isLight ? <Moon size={17} /> : <Sun size={17} />}
     </button>
   );
+}
+
+function formatProUntil(user, language) {
+  if (!user?.isPro || !user.proUntil) return language === "vi" ? "Chưa kích hoạt" : "Not active";
+  return new Date(user.proUntil).toLocaleString(language === "vi" ? "vi-VN" : "en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function downloadQuotaText(user, language) {
+  const quota = user?.downloadQuota;
+  if (!quota) return language === "vi" ? "Chưa có dữ liệu" : "No data";
+  if (quota.tier === "admin" || quota.limit === null) return language === "vi" ? "Không giới hạn" : "Unlimited";
+  return `${Number(quota.used || 0)}/${Number(quota.limit || 0)} ${language === "vi" ? "lượt" : "downloads"}`;
+}
+
+function downloadQuotaHint(user, language) {
+  const quota = user?.downloadQuota;
+  if (!quota || quota.tier === "admin" || quota.limit === null) return "";
+  const remaining = Number(quota.remaining || 0);
+  return language === "vi" ? `Còn ${remaining} lượt hôm nay` : `${remaining} remaining today`;
 }
 
 export default function Navbar({
@@ -104,8 +129,9 @@ export default function Navbar({
   }
 
   const tabs = [
+    ["models", language === "vi" ? "Model" : "Models"],
     ["getlink", t.getlink],
-    ["topup", t.topup],
+    ["topup", language === "vi" ? "Gói nạp" : "Top-up"],
     ["invite", language === "vi" ? "Mời bạn" : "Invite friends"],
     ["history", t.history],
     ["guide", t.guide]
@@ -208,10 +234,12 @@ export default function Navbar({
                   key={key} 
                   className={page === key ? "active" : ""} 
                   onClick={() => {
-                    if (!user && key !== "guide") {
+                    if (!user && !["guide", "models"].includes(key)) {
                       window.location.href = googleHref("/");
                     } else if (key === "guide") {
                       goPath("/guide");
+                    } else if (key === "models") {
+                      goPath("/models");
                     } else {
                       goPage(key);
                     }
@@ -258,23 +286,81 @@ export default function Navbar({
                 {!notifications.length && <p>{t.noNotifications}</p>}
               </div>
             </div>
-            <button type="button" className="tabletAccountButton" onClick={toggleAccountMenu} aria-label="Account" aria-expanded={accountOpen}>
-              <UserCircle size={16} />
+            <ThemeToggle theme={theme} onThemeToggle={onThemeToggle} />
+            <LanguageToggle language={language} onLanguageChange={onLanguageChange} />
+            <button
+              type="button"
+              className="accountCreditPill"
+              onClick={() => goPath("/topup?mode=credit")}
+              title={language === "vi" ? "Nạp credit" : "Top up credits"}
+            >
+              <Wallet size={15} />
               <strong><CoinAmount value={user.credit} className="compact" /></strong>
             </button>
+            <button
+              type="button"
+              className="accountTrigger"
+              onClick={toggleAccountMenu}
+              aria-label={language === "vi" ? "Trạng thái tài khoản" : "Account status"}
+              aria-expanded={accountOpen}
+            >
+              <span className="accountAvatar" aria-hidden="true">
+                {user.avatar ? (
+                  <img src={user.avatar} alt="" referrerPolicy="no-referrer" />
+                ) : (
+                  <UserCircle size={22} />
+                )}
+              </span>
+              <span className="accountIdentity">
+                <span>{user.name || user.email}</span>
+                <small>{user.isPro ? "PRO" : "FREE"}</small>
+              </span>
+            </button>
             <div className="accountMenuContent">
-              <span>{user.name}</span>
-              <strong><CoinAmount value={user.credit} /></strong>
-              {user.role === "admin" && (
-                <button className="adminLink" onClick={() => goPath("/admin")}>
-                  {t.admin}
+              <div className="accountStatusHeader">
+                <span className="accountAvatar large" aria-hidden="true">
+                  {user.avatar ? (
+                    <img src={user.avatar} alt="" referrerPolicy="no-referrer" />
+                  ) : (
+                    <UserCircle size={30} />
+                  )}
+                </span>
+                <div>
+                  <strong>{user.name || user.email}</strong>
+                  <span>{user.email}</span>
+                </div>
+                <span className={`badge ${user.isPro ? "success" : ""}`}>
+                  {user.isPro ? "PRO" : "FREE"}
+                </span>
+              </div>
+              <div className="accountStatusGrid">
+                <div className="accountStatusRow">
+                  <Wallet size={16} />
+                  <span>{language === "vi" ? "Số dư" : "Balance"}</span>
+                  <strong><CoinAmount value={user.credit} /></strong>
+                </div>
+                <div className="accountStatusRow">
+                  <CalendarClock size={16} />
+                  <span>{language === "vi" ? "Hạn Pro" : "Pro expires"}</span>
+                  <strong>{formatProUntil(user, language)}</strong>
+                </div>
+                <div className="accountStatusRow">
+                  <Download size={16} />
+                  <span>{language === "vi" ? "Tải hôm nay" : "Downloads today"}</span>
+                  <strong>{downloadQuotaText(user, language)}</strong>
+                  {downloadQuotaHint(user, language) && <small>{downloadQuotaHint(user, language)}</small>}
+                </div>
+              </div>
+              <div className="accountMenuActions">
+                {user.role === "admin" && (
+                  <button className="adminLink" onClick={() => goPath("/admin")}>
+                    {t.admin}
+                  </button>
+                )}
+                <button className="iconButton" onClick={logout} title={t.logout}>
+                  <LogOut size={17} />
                 </button>
-              )}
-              <LanguageToggle language={language} onLanguageChange={onLanguageChange} />
-              <ThemeToggle theme={theme} onThemeToggle={onThemeToggle} />
-              <button className="iconButton" onClick={logout} title={t.logout}>
-                <LogOut size={17} />
-              </button>
+              </div>
             </div>
           </div>
         ) : (

@@ -4,11 +4,13 @@ import QRCode from "qrcode";
 import { issueCsrfToken } from "../middleware/csrf.js";
 import { generateTokens } from "../middleware/jwtAuth.js";
 import User from "../models/User.js";
+import DailyDownloadQuota from "../models/DailyDownloadQuota.js";
 import { securityEvent } from "../utils/logger.js";
 import { SESSION_EXPIRED_MESSAGE } from "../utils/authMessages.js";
 
-const SAFE_RETURN_PATH = /^\/[a-zA-Z0-9\-_/]*$/;
+const SAFE_RETURN_PATH = /^\/[a-zA-Z0-9\-_/]*(?:\?[a-zA-Z0-9._~%=&-]*)?$/;
 const SAFE_REFERRAL_CODE = /^[a-zA-Z0-9]{6,24}$/;
+const SAFE_DEV_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function twoFactorValidationWindow() {
   const configured = Number(process.env.TWO_FA_TOTP_WINDOW || 2);
@@ -37,11 +39,69 @@ function oauthClearCookieOptions() {
   };
 }
 
+function clientRedirectPath(value) {
+  return typeof value === "string" && value.length <= 200 && SAFE_RETURN_PATH.test(value)
+    ? value
+    : "/";
+}
+
+function isLocalRequest(req) {
+  const hostname = String(req.hostname || "").toLowerCase();
+  const ip = String(req.ip || "").replace("::ffff:", "");
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    ip === "127.0.0.1" ||
+    ip === "::1"
+  );
+}
+
+function isDevLoginEnabled(req) {
+  return (
+    process.env.ALLOW_DEV_LOGIN === "true" &&
+    process.env.NODE_ENV !== "production" &&
+    isLocalRequest(req)
+  );
+}
+
+function vietnamDayKey(date = new Date()) {
+  return new Date(date.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function nextVietnamReset(date = new Date()) {
+  const [year, month, day] = vietnamDayKey(date).split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + 1, 17, 0, 0, 0));
+}
+
+async function downloadQuotaSnapshot(user) {
+  if (!user) return null;
+  const isPro = Boolean(user.proUntil && new Date(user.proUntil) > new Date());
+  const tier = user.role === "admin" ? "admin" : isPro ? "member" : "free";
+  const dayKey = vietnamDayKey();
+  const quota = tier === "admin"
+    ? null
+    : await DailyDownloadQuota.findOne({ dayKey, userId: user._id, tier }).lean();
+  const baseLimit = isPro ? Number(user.proDailyDownloadLimit || 100) : 10;
+  const limit = tier === "admin" ? null : baseLimit + Number(quota?.bonusLimit || 0);
+  const used = tier === "admin" ? 0 : Number(quota?.count || 0);
+  return {
+    dayKey,
+    tier,
+    used,
+    limit,
+    remaining: tier === "admin" ? null : Math.max(0, limit - used),
+    resetAt: nextVietnamReset(),
+  };
+}
+
 export function googleLogin(req, res, next) {
   const returnTo =
     typeof req.query.returnTo === "string" ? req.query.returnTo : "";
-  if (returnTo.length <= 200 && SAFE_RETURN_PATH.test(returnTo)) {
-    res.cookie("oauthReturnTo", returnTo === "/admin" ? "/admin" : "/", oauthCookieOptions());
+  const safeReturnTo = clientRedirectPath(returnTo);
+  if (safeReturnTo !== "/") {
+    res.cookie("oauthReturnTo", safeReturnTo, oauthCookieOptions());
+  } else {
+    res.clearCookie("oauthReturnTo", oauthClearCookieOptions());
   }
   const referralCode =
     typeof req.query.ref === "string" ? req.query.ref.trim() : "";
@@ -79,10 +139,56 @@ export const googleCallback = [
     const returnTo = req.cookies.oauthReturnTo || "/";
     res.clearCookie("oauthReturnTo", oauthClearCookieOptions());
     res.clearCookie("oauthReferralCode", oauthClearCookieOptions());
-    const safePath = returnTo === "/admin" ? "/admin" : "/";
+    const safePath = clientRedirectPath(returnTo);
     res.redirect(`${clientUrl}${safePath}`);
   },
 ];
+
+export async function devLogin(req, res, next) {
+  try {
+    if (!isDevLoginEnabled(req)) {
+      return res.status(404).json({ message: "Not found" });
+    }
+
+    const emailCandidate = String(req.query.email || process.env.DEV_LOGIN_EMAIL || "dev@local.test")
+      .trim()
+      .toLowerCase();
+    const email = SAFE_DEV_EMAIL.test(emailCandidate) ? emailCandidate : "dev@local.test";
+    const roleCandidate = String(req.query.role || process.env.DEV_LOGIN_ROLE || "user").toLowerCase();
+    const role = roleCandidate === "admin" && process.env.ALLOW_DEV_ADMIN_LOGIN === "true" ? "admin" : "user";
+    const proEnabled = req.query.pro === "true" || process.env.DEV_LOGIN_PRO === "true";
+
+    const update = {
+      $set: {
+        email,
+        role,
+        name: String(req.query.name || process.env.DEV_LOGIN_NAME || "Local Dev"),
+        avatar: "",
+      },
+      $setOnInsert: {
+        credit: 0,
+      },
+    };
+
+    if (proEnabled) {
+      update.$set.proUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      update.$set.proDailyDownloadLimit = 100;
+    }
+
+    const user = await User.findOneAndUpdate({ email }, update, {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true,
+    });
+
+    generateTokens(req, res, user, role === "admin");
+    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    const returnTo = clientRedirectPath(req.query.returnTo);
+    return res.redirect(`${clientUrl}${returnTo}`);
+  } catch (error) {
+    return next(error);
+  }
+}
 
 export function logout(req, res, next) {
   res.clearCookie("accessToken");
@@ -90,28 +196,36 @@ export function logout(req, res, next) {
   res.json({ ok: true });
 }
 
-export function currentUser(req, res) {
-  if (!req.user) return res.json({ user: null });
+export async function currentUser(req, res, next) {
+  try {
+    if (!req.user) return res.json({ user: null });
 
-  // If user is admin and has 2FA enabled, but hasn't verified this session
-  const requires2FA =
-    req.user.role === "admin" &&
-    req.user.isTwoFactorEnabled &&
-    !req.jwtPayload?.is2FAVerified;
+    // If user is admin and has 2FA enabled, but hasn't verified this session
+    const requires2FA =
+      req.user.role === "admin" &&
+      req.user.isTwoFactorEnabled &&
+      !req.jwtPayload?.is2FAVerified;
 
-  const safeUser = {
-    _id: req.user._id,
-    name: req.user.name,
-    email: req.user.email,
-    avatar: req.user.avatar,
-    role: req.user.role,
-    credit: req.user.credit,
-    isBanned: Boolean(req.user.isBanned),
-    banReason: req.user.banReason || "",
-    isTwoFactorEnabled: req.user.isTwoFactorEnabled,
-    requires2FA,
-  };
-  res.json({ user: safeUser });
+    const safeUser = {
+      _id: req.user._id,
+      name: req.user.name,
+      email: req.user.email,
+      avatar: req.user.avatar,
+      role: req.user.role,
+      credit: req.user.credit,
+      proUntil: req.user.proUntil || null,
+      isPro: Boolean(req.user.proUntil && new Date(req.user.proUntil) > new Date()),
+      proDailyDownloadLimit: Number(req.user.proDailyDownloadLimit || 100),
+      isBanned: Boolean(req.user.isBanned),
+      banReason: req.user.banReason || "",
+      isTwoFactorEnabled: req.user.isTwoFactorEnabled,
+      requires2FA,
+      downloadQuota: await downloadQuotaSnapshot(req.user),
+    };
+    res.json({ user: safeUser });
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function setup2FA(req, res, next) {

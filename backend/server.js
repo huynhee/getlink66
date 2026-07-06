@@ -125,12 +125,19 @@ const { default: systemRoutes } = await import("./src/routes/systemRoutes.js");
 const { default: guideRoutes } = await import("./src/routes/guideRoutes.js");
 const { default: notificationRoutes } = await import("./src/routes/notificationRoutes.js");
 const { default: referralRoutes } = await import("./src/routes/referralRoutes.js");
+const { default: marketplaceRoutes } = await import("./src/routes/marketplaceRoutes.js");
+const { default: membershipRoutes } = await import("./src/routes/membershipRoutes.js");
+const { default: historyRoutes } = await import("./src/routes/historyRoutes.js");
 const { initializeSettings } = await import("./src/controllers/settingsController.js");
 const { ensureTopupIndexes } = await import("./src/models/Topup.js");
 const { awardReferralSignup, ensureReferralCode } = await import("./src/utils/referralService.js");
+const { initializeMarketplaceCategories } = await import("./src/utils/marketplaceSeed.js");
+const { initializeMembershipPlans } = await import("./src/utils/membershipService.js");
 
 await ensureTopupIndexes();
 await initializeSettings();
+await initializeMarketplaceCategories();
+await initializeMembershipPlans();
 
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "true") app.set("trust proxy", 1);
@@ -161,7 +168,7 @@ app.use((_, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "100kb" }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "1mb" }));
 app.use(
   cors({
     maxAge: 86400,
@@ -255,6 +262,9 @@ app.use("/api", systemRoutes);
 app.use("/api", guideRoutes);
 app.use("/api", notificationRoutes);
 app.use("/api", referralRoutes);
+app.use("/api", marketplaceRoutes);
+app.use("/api", membershipRoutes);
+app.use("/api", historyRoutes);
 app.use("/api/admin", adminRoutes);
 
 app.use((error, _req, res, _next) => {

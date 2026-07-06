@@ -1,9 +1,13 @@
 import Topup from "../models/Topup.js";
 import TopupPackage from "../models/TopupPackage.js";
-import Voucher from "../models/Voucher.js";
 import { addCredit } from "../utils/creditService.js";
 import { createPaymentCode } from "../utils/vietqr.js";
 import { assertSepayConfigured, createSepayCheckout } from "../utils/sepay.js";
+import {
+  assertVoucherTarget,
+  assertVoucherUserLimit,
+  findCheckoutVoucher,
+} from "../utils/voucherCheckoutService.js";
 import {
   finiteNumber,
   isSafeId,
@@ -11,7 +15,6 @@ import {
   normalizeVoucherCode,
   rejectUnknownKeys,
 } from "../utils/validators.js";
-import { voucherUnavailableMessage } from "../utils/voucherStatus.js";
 import { expirePendingSepayTopups } from "../utils/topupExpiryService.js";
 
 const MIN_TOPUP_AMOUNT = Number(process.env.MIN_TOPUP_AMOUNT || 1000);
@@ -221,37 +224,9 @@ export async function createTopup(req, res, next) {
     let voucherCreditBonus = 0;
     let voucher = null;
     if (normalizedVoucherCode) {
-      voucher = await Voucher.findOne({ code: normalizedVoucherCode });
-      const unavailableMessage = voucherUnavailableMessage(voucher);
-      if (unavailableMessage) {
-        return res.status(400).json({
-          message: unavailableMessage,
-        });
-      }
-      const applicablePackageIds = Array.isArray(voucher.applicablePackageIds)
-        ? voucher.applicablePackageIds.map((id) => String(id?._id || id))
-        : [];
-      if (
-        applicablePackageIds.length > 0 &&
-        !applicablePackageIds.includes(String(pack._id))
-      ) {
-        return res.status(400).json({
-          message: "Voucher không áp dụng cho gói nạp này.",
-        });
-      }
-      const perUserLimit = Number(voucher.perUserLimit ?? 1);
-      if (perUserLimit > 0) {
-        const userVoucherUsed = await Topup.countDocuments({
-          userId: req.user._id,
-          voucherCode: normalizedVoucherCode,
-          status: "approved",
-        });
-        if (userVoucherUsed >= perUserLimit) {
-          return res.status(400).json({
-            message: "Bạn đã đạt giới hạn sử dụng voucher này.",
-          });
-        }
-      }
+      voucher = await findCheckoutVoucher(normalizedVoucherCode);
+      assertVoucherTarget(voucher, { target: "topup", packageId: pack._id });
+      await assertVoucherUserLimit(voucher, req.user._id);
       discountAmount = Math.min(
         originalAmount,
         Math.round(
