@@ -207,6 +207,29 @@ export async function listGoogleDriveFolderFiles(folderId, options = {}) {
   return files;
 }
 
+export async function getGoogleDriveFileMetadata(fileId, options = {}) {
+  const normalizedFileId = String(fileId || "").trim();
+  if (!normalizedFileId) {
+    const error = new Error("Google Drive fileId is required.");
+    error.status = 400;
+    throw error;
+  }
+
+  const fields = options.fields || "id,name,mimeType,size,imageMediaMetadata(width,height),modifiedTime";
+  const url = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(normalizedFileId)}`);
+  url.searchParams.set("fields", fields);
+  url.searchParams.set("supportsAllDrives", "true");
+
+  const response = await fetchGoogleDrive(url);
+  const text = await response.text();
+  if (!response.ok) {
+    const error = new Error(`Google Drive file metadata failed: ${response.status} ${text.slice(0, 160)}`);
+    error.status = response.status === 404 ? 404 : 502;
+    throw error;
+  }
+  return JSON.parse(text || "{}");
+}
+
 export async function openStorageStream(session) {
   const provider = String(session.storageProvider || "").trim();
   if (provider === "local") {

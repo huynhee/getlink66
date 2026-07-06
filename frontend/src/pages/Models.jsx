@@ -465,7 +465,6 @@ function ModelCard({ model, onNavigate, language = "vi" }) {
   const image = cover(model);
   const href = modelPath(model);
   const hoverMeta = [
-    modelCategoryLabel(model, language),
     model.sizeText || formatBytes(model.fileSize),
     model.renderer,
   ].filter(Boolean).join(" / ");
@@ -526,11 +525,42 @@ function ModelPreview({ model }) {
   );
 }
 
-function ModelMetaRow({ label, value }) {
+function DetailFacetList({ facet, values = [], filterOptions = {}, language = "vi", fallback = "" }) {
+  const normalizedValues = Array.isArray(values) ? values.filter(Boolean) : [];
+  if (!normalizedValues.length && !fallback) return <span className="marketMetaEmpty">-</span>;
+  if (!normalizedValues.length) return <span className="marketDetailFacetText">{fallback}</span>;
+
+  const options = filterOptions[facet] || [];
+  return (
+    <div className={`marketDetailFacetList ${facet}`}>
+      {normalizedValues.map((value) => {
+        const option = options.find((item) => item.value === value) || { value, label: value };
+        const label = labelForFacet({ [facet]: options }, facet, value, language);
+        return (
+          <span className={`marketDetailFacetChip ${facet}`} key={`${facet}-${value}`} title={label}>
+            {facet === "form" && <ShapeIcon value={value} />}
+            {facet === "color" && (
+              <i
+                className="marketColorSwatch"
+                style={{ backgroundColor: option.hex || value }}
+                aria-hidden="true"
+              />
+            )}
+            <span>{label}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function ModelMetaRow({ label, value, children }) {
   return (
     <div className="marketMetaRow">
       <span>{label}</span>
-      <strong>{value || "-"}</strong>
+      <div className="marketMetaValue">
+        {children || <strong>{value || "-"}</strong>}
+      </div>
     </div>
   );
 }
@@ -864,12 +894,6 @@ function ModelListPage({ user, language, onNavigate }) {
               </div>
             )}
           </div>
-          <div className="marketImageQuota">
-            <span>{user?.isPro ? textFor(language, "Tìm ảnh Pro: 150/ngày", "Pro image search: 150/day") : user ? textFor(language, "Tìm ảnh Free: 10/ngày", "Free image search: 10/day") : textFor(language, "Đăng nhập để tìm ảnh", "Login for image search")}</span>
-            {imageSearchMeta && (
-              <span>{textFor(language, "Còn", "Remaining")} {imageSearchMeta.remaining}/{imageSearchMeta.limit} {textFor(language, "lượt", "searches")}</span>
-            )}
-          </div>
           {imageSearchMeta && (
             <div className="marketImageSearchMeta">
               {imageSearchPreview && <img src={imageSearchPreview} alt="Image search preview" />}
@@ -923,6 +947,7 @@ function ModelListPage({ user, language, onNavigate }) {
 function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
   const [model, setModel] = useState(null);
   const [recommendedModels, setRecommendedModels] = useState([]);
+  const [filterOptions, setFilterOptions] = useState(EMPTY_FILTERS);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [message, setMessage] = useState("");
@@ -933,11 +958,15 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
     setLoading(true);
     setMessage("");
     setError("");
-    api(`/api/marketplace/models/${encodeURIComponent(slug)}`)
-      .then((data) => {
+    Promise.all([
+      api(`/api/marketplace/models/${encodeURIComponent(slug)}`),
+      api("/api/marketplace/filters").catch(() => ({ filters: EMPTY_FILTERS })),
+    ])
+      .then(([data, filterData]) => {
         if (!active) return;
         setModel(data.model || null);
         setRecommendedModels(data.recommendedModels || []);
+        setFilterOptions(filterData.filters || EMPTY_FILTERS);
       })
       .catch((err) => {
         if (active) setError(err.message);
@@ -1036,11 +1065,27 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
 
           <div className="marketDetailMeta">
             <ModelMetaRow label={textFor(language, "Danh mục", "Category")} value={modelCategoryLabel(model, language)} />
-            <ModelMetaRow label="Renderer" value={model.renderer} />
-            <ModelMetaRow label={textFor(language, "Phong cách", "Style")} value={labelsForFacetValues("style", model.styles, language)} />
-            <ModelMetaRow label={textFor(language, "Hình dạng", "Form")} value={labelsForFacetValues("form", model.forms, language)} />
-            <ModelMetaRow label={textFor(language, "Màu sắc", "Color")} value={labelsForFacetValues("color", model.colors, language)} />
-            <ModelMetaRow label={textFor(language, "Vật liệu", "Material")} value={labelsForFacetValues("material", model.materials, language)} />
+            <ModelMetaRow label="Renderer">
+              <DetailFacetList
+                facet="render"
+                values={model.renderers}
+                filterOptions={filterOptions}
+                language={language}
+                fallback={model.renderer}
+              />
+            </ModelMetaRow>
+            <ModelMetaRow label={textFor(language, "Phong cách", "Style")}>
+              <DetailFacetList facet="style" values={model.styles} filterOptions={filterOptions} language={language} />
+            </ModelMetaRow>
+            <ModelMetaRow label={textFor(language, "Hình dạng", "Form")}>
+              <DetailFacetList facet="form" values={model.forms} filterOptions={filterOptions} language={language} />
+            </ModelMetaRow>
+            <ModelMetaRow label={textFor(language, "Màu sắc", "Color")}>
+              <DetailFacetList facet="color" values={model.colors} filterOptions={filterOptions} language={language} />
+            </ModelMetaRow>
+            <ModelMetaRow label={textFor(language, "Vật liệu", "Material")}>
+              <DetailFacetList facet="material" values={model.materials} filterOptions={filterOptions} language={language} />
+            </ModelMetaRow>
             <ModelMetaRow label={textFor(language, "Dung lượng", "Size")} value={model.sizeText || formatBytes(model.fileSize)} />
           </div>
         </div>

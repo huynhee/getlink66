@@ -54,6 +54,7 @@ import {
   adminListMarketplaceDownloads,
   adminListMarketplaceModels,
   adminMarketplaceStats,
+  adminRescanMarketplaceModelDriveFolder,
   adminUpdateMarketplaceModel,
 } from "../controllers/marketplaceAdminController.js";
 import {
@@ -136,6 +137,7 @@ router.post("/marketplace/import-drive-folder", adminWriteLimit, auditAdmin("IMP
 router.post("/marketplace/models/import-metadata", adminWriteLimit, auditAdmin("IMPORT_MARKETPLACE_METADATA"), adminImport3dskyModel);
 router.post("/marketplace/models/import-3dsky", adminWriteLimit, auditAdmin("IMPORT_3DSKY_MODEL"), adminImport3dskyModel);
 router.put("/marketplace/models/:id", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_MODEL"), adminUpdateMarketplaceModel);
+router.post("/marketplace/models/:id/rescan-drive", adminWriteLimit, auditAdmin("RESCAN_MARKETPLACE_MODEL_DRIVE"), adminRescanMarketplaceModelDriveFolder);
 router.post("/marketplace/models/:id/attach-file", adminWriteLimit, auditAdmin("ATTACH_MARKETPLACE_FILE"), adminAttachMarketplaceFile);
 router.post("/marketplace/models/:id/attach-assets", adminWriteLimit, auditAdmin("ATTACH_MARKETPLACE_ASSETS"), adminAttachMarketplaceAssets);
 

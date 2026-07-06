@@ -5,7 +5,12 @@ import ModelDownload from "../models/ModelDownload.js";
 import { MARKETPLACE_FILTERS } from "../data/marketplaceFilters.js";
 import crypto from "node:crypto";
 import zlib from "node:zlib";
-import { listGoogleDriveFolderFiles, listGoogleDriveFolderPage, readGoogleDriveFileBuffer } from "../utils/storageProvider.js";
+import {
+  getGoogleDriveFileMetadata,
+  listGoogleDriveFolderFiles,
+  listGoogleDriveFolderPage,
+  readGoogleDriveFileBuffer,
+} from "../utils/storageProvider.js";
 import { isSafeId, limitedString, rejectUnknownKeys, sanitizeString } from "../utils/validators.js";
 
 const ADMIN_MODEL_PAGE_SIZE = 20;
@@ -510,6 +515,20 @@ function adminModel(model) {
   return doc;
 }
 
+const marketplaceLegacyUnset = {
+  "source.raw": "",
+  "source.url": "",
+  formats: "",
+  format: "",
+  version: "",
+  polygons: "",
+  fileName: "",
+  mainMaxFile: "",
+  description: "",
+  tags: "",
+  creditPrice: "",
+};
+
 export async function adminListMarketplaceModels(req, res, next) {
   try {
     const requestedPage = Number(req.query.page || 1);
@@ -804,6 +823,129 @@ export async function adminAttachMarketplaceAssets(req, res, next) {
     if (!model) return res.status(404).json({ message: "Model not found" });
     res.json({ model: adminModel(model) });
   } catch (error) {
+    next(error);
+  }
+}
+
+export async function adminRescanMarketplaceModelDriveFolder(req, res, next) {
+  try {
+    if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
+    const existing = await MarketplaceModel.findById(req.params.id).select("-source.raw").lean();
+    if (!existing) return res.status(404).json({ message: "Model not found" });
+    if (!existing.driveFolderId) {
+      return res.status(400).json({ message: "Model does not have a Drive folder id" });
+    }
+
+    const now = new Date();
+    const folderMetadata = await getGoogleDriveFileMetadata(existing.driveFolderId, {
+      fields: "id,name,mimeType,modifiedTime",
+    });
+    const folder = {
+      id: folderMetadata.id || existing.driveFolderId,
+      name: folderMetadata.name || existing.driveFolderName || existing.source?.slug || existing.slug || String(existing._id),
+      modifiedTime: folderMetadata.modifiedTime || "",
+    };
+    const folderName = sanitizeString(folder.name, 200);
+    const folderSourceModelId = sourceIdFromFolderName(
+      folderName,
+      existing.source?.modelId || existing.slug || String(existing._id),
+    );
+    const files = await listGoogleDriveFolderFiles(folder.id);
+    const driveSignature = driveFolderSignature(folder, files);
+    const images = files.filter(isImageFile);
+    const archives = files.filter(isArchiveFile);
+    const metadata = pickMetadataFile(files, folderSourceModelId);
+    const checksumFile = pickChecksumFile(files);
+    let rawMetadata = null;
+    let metadataError = "";
+
+    if (metadata) {
+      try {
+        rawMetadata = await readDriveMetadataJson(metadata);
+      } catch (error) {
+        metadataError = error?.message || "metadata_parse_failed";
+      }
+    }
+
+    const meta = metadataPayload(rawMetadata || {}, {
+      sourceModelId: folderSourceModelId,
+      sourceSlug: existing.source?.slug || folderName,
+      sourceCategoryId: existing.categorySourceId || existing.source?.categoryId || "",
+      title: existing.title || titleFromFolderName(folderName, folderSourceModelId),
+      accessType: existing.accessType || "member",
+    });
+    const sourceModelId = meta.sourceModelId || folderSourceModelId;
+    const title = meta.title || existing.title || titleFromFolderName(folderName, sourceModelId);
+    const archive = pickArchiveFile(archives, sourceModelId, folderName);
+    const cover = pickCoverImage(images, sourceModelId);
+    const previewImages = pickPreviewImages(images, cover).map((file) => driveImageRef(file, title));
+    let sha256FromFile = "";
+
+    if (checksumFile) {
+      try {
+        sha256FromFile = await readDriveChecksum(checksumFile);
+      } catch {
+        sha256FromFile = "";
+      }
+    }
+
+    const categoryFields = await resolveCategory(meta.sourceCategoryId || existing.categorySourceId || existing.source?.categoryId);
+    const payload = {
+      source: {
+        provider: "drive",
+        modelId: folder.id,
+        slug: meta.sourceSlug || existing.source?.slug || folderName,
+        categoryId: meta.sourceCategoryId || existing.categorySourceId || existing.source?.categoryId || "",
+        syncedAt: now,
+      },
+      title,
+      slug: existing.slug || slugify(meta.sourceSlug || title || sourceModelId),
+      ...categoryFields,
+      driveFolderId: folder.id,
+      driveFolderName: folderName,
+      driveSignature,
+      lastDriveScanAt: now,
+      lastDriveChangeAt: existing.driveSignature !== driveSignature ? now : existing.lastDriveChangeAt,
+      styles: meta.styles?.length ? meta.styles : existing.styles || [],
+      renderers: meta.renderers?.length ? meta.renderers : existing.renderers || [],
+      forms: meta.forms?.length ? meta.forms : existing.forms || [],
+      colors: meta.colors?.length ? meta.colors : existing.colors || [],
+      materials: meta.materials?.length ? meta.materials : existing.materials || [],
+      renderer: meta.renderer || existing.renderer || "",
+      sizeText: meta.sizeText || existing.sizeText || "",
+      accessType: meta.accessType || existing.accessType || "member",
+      isPublished: Boolean(existing.isPublished),
+      fileStatus: archive ? "ready" : "missing",
+      storageProvider: archive ? "google_drive" : "",
+      driveFileId: archive?.id || "",
+      archiveExt: archiveExtension(archive?.name),
+      fileSize: Math.max(0, Number(archive?.size || 0)),
+      coverImage: cover ? driveImageRef(cover, title) : {},
+      previewImages,
+      sha256: meta.sha256 || sha256FromFile || existing.sha256 || "",
+      metadataDriveFileId: metadata?.id || existing.metadataDriveFileId || "",
+      metadataFileName: limitedString(metadata?.name || existing.metadataFileName || "", 240),
+      metadataSize: Math.max(0, Number(metadata?.size || existing.metadataSize || 0)),
+    };
+    applyMetadataCompleteness(payload, Boolean(existing.isPublished));
+
+    const model = await MarketplaceModel.findByIdAndUpdate(
+      existing._id,
+      {
+        $set: payload,
+        $unset: marketplaceLegacyUnset,
+      },
+      { new: true },
+    );
+    res.json({
+      model: adminModel(model),
+      scannedFiles: files.length,
+      previewCount: previewImages.length,
+      changed: existing.driveSignature !== driveSignature,
+      metadataError,
+    });
+  } catch (error) {
+    if (error?.code === 11000) return res.status(409).json({ message: "Model slug or source already exists" });
     next(error);
   }
 }

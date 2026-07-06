@@ -253,7 +253,7 @@ function ModelFact({ label, value, detail }) {
     <div className="marketAdminFact">
       <span>{label}</span>
       <strong>{value || "-"}</strong>
-      {detail && <small>{detail}</small>}
+      {detail && <span className="marketAdminFactDetail">{detail}</span>}
     </div>
   );
 }
@@ -316,7 +316,7 @@ function CategorySelect({ value, categories = [], onChange }) {
         </label>
       )}
       {value && !findCategoryByValue(categories, value) && (
-        <small>Giá trị hiện tại chưa có trong cây danh mục: {value}</small>
+        <span className="marketAdminCategoryHint">Giá trị hiện tại chưa có trong cây danh mục: {value}</span>
       )}
     </div>
   );
@@ -640,6 +640,40 @@ export default function AdminMarketplace() {
       });
       setSelectedModel(data.model || model);
       setMessage(`Đã gắn ảnh/metadata cho ${data.model?.title || model.title}`);
+      await loadModels(page);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function rescanDriveFolder(model) {
+    setMessage("");
+    setError("");
+    try {
+      const data = await api(`/api/admin/marketplace/models/${model._id}/rescan-drive`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setSelectedModel(data.model || model);
+      setAttachById((current) => {
+        const next = { ...current };
+        delete next[model._id];
+        return next;
+      });
+      setAssetById((current) => {
+        const next = { ...current };
+        delete next[model._id];
+        return next;
+      });
+      setMetadataById((current) => {
+        const next = { ...current };
+        delete next[model._id];
+        return next;
+      });
+      setMessage(
+        `Đã quét lại Drive: ${data.scannedFiles || 0} file, ${data.previewCount || 0} preview` +
+        (data.metadataError ? `. Metadata lỗi: ${data.metadataError}` : ""),
+      );
       await loadModels(page);
     } catch (err) {
       setError(err.message);
@@ -994,17 +1028,14 @@ export default function AdminMarketplace() {
                 <div className="marketAdminFieldGrid">
                   <label>
                     <span>Tên model</span>
-                    <small>Tên hiển thị trên web.</small>
                     <input value={selectedMetadataForm.title} onChange={(event) => updateMetadata(currentSelectedModel, "title", event.target.value)} />
                   </label>
                   <label>
                     <span>Slug web</span>
-                    <small>URL nội bộ của trang model.</small>
                     <input value={selectedMetadataForm.slug} onChange={(event) => updateMetadata(currentSelectedModel, "slug", event.target.value)} />
                   </label>
                   <label>
                     <span>Slug nguồn</span>
-                    <small>Mã đối chiếu folder/metadata Drive.</small>
                     <input value={selectedMetadataForm.sourceSlug} onChange={(event) => updateMetadata(currentSelectedModel, "sourceSlug", event.target.value)} />
                   </label>
                   <CategorySelect
@@ -1014,7 +1045,6 @@ export default function AdminMarketplace() {
                   />
                   <label>
                     <span>Renderer hiển thị</span>
-                    <small>Dòng renderer hiện ở card/detail.</small>
                     <select value={selectedMetadataForm.renderer} onChange={(event) => updateMetadata(currentSelectedModel, "renderer", event.target.value)}>
                       <option value="">Chọn renderer</option>
                       {(filterOptions.render || []).map((option) => (
@@ -1024,7 +1054,6 @@ export default function AdminMarketplace() {
                   </label>
                   <label>
                     <span>Dung lượng hiển thị</span>
-                    <small>Text nhẹ cho UI, ví dụ 25 MB.</small>
                     <input value={selectedMetadataForm.sizeText} onChange={(event) => updateMetadata(currentSelectedModel, "sizeText", event.target.value)} placeholder="25 MB" />
                   </label>
                 </div>
@@ -1054,7 +1083,6 @@ export default function AdminMarketplace() {
                 <div className="marketAdminQuickControls">
                   <label>
                     <span>Quyền tải</span>
-                    <small>Free ai cũng tải; Pro cần gói đang hoạt động.</small>
                     <select value={accessControlValue(currentSelectedModel.accessType)} onChange={(event) => quickUpdate(currentSelectedModel, { accessType: event.target.value })}>
                       <option value="free">Free</option>
                       <option value="member">Pro</option>
@@ -1062,7 +1090,6 @@ export default function AdminMarketplace() {
                   </label>
                   <label>
                     <span>Publish</span>
-                    <small>Bật/tắt model trên trang public.</small>
                     <select value={String(Boolean(currentSelectedModel.isPublished))} onChange={(event) => quickUpdate(currentSelectedModel, { isPublished: event.target.value === "true" })}>
                       <option value="true">Đã xuất bản</option>
                       <option value="false">Bản nháp</option>
@@ -1070,7 +1097,6 @@ export default function AdminMarketplace() {
                   </label>
                   <label>
                     <span>Trạng thái file</span>
-                    <small>Ready mới tạo được phiên tải.</small>
                     <select value={currentSelectedModel.fileStatus} onChange={(event) => quickUpdate(currentSelectedModel, { fileStatus: event.target.value })}>
                       <option value="missing">Thiếu file</option>
                       <option value="pending_upload">Chờ upload</option>
@@ -1089,7 +1115,6 @@ export default function AdminMarketplace() {
                 <div className="marketAttachGrid">
                   <label>
                     <span>Storage</span>
-                    <small>Nơi lưu file nén chính.</small>
                     <select value={selectedAttachForm.storageProvider} onChange={(event) => updateAttach(currentSelectedModel, "storageProvider", event.target.value)}>
                       <option value="google_drive">Google Drive</option>
                       <option value="b2">Backblaze B2</option>
@@ -1100,27 +1125,22 @@ export default function AdminMarketplace() {
                   </label>
                   <label>
                     <span>Drive file ID</span>
-                    <small>ID file archive trên Google Drive.</small>
                     <input value={selectedAttachForm.driveFileId} onChange={(event) => updateAttach(currentSelectedModel, "driveFileId", event.target.value)} placeholder="Drive file ID của file nén" />
                   </label>
                   <label>
                     <span>Storage key</span>
-                    <small>Dùng cho R2/B2/local sau này.</small>
                     <input value={selectedAttachForm.storageKey} onChange={(event) => updateAttach(currentSelectedModel, "storageKey", event.target.value)} placeholder="Storage key" />
                   </label>
                   <label>
                     <span>Đuôi file</span>
-                    <small>zip, rar hoặc 7z.</small>
                     <input value={selectedAttachForm.archiveExt} onChange={(event) => updateAttach(currentSelectedModel, "archiveExt", event.target.value)} placeholder="zip / rar / 7z" />
                   </label>
                   <label>
                     <span>Dung lượng</span>
-                    <small>Số byte của file nén.</small>
                     <input type="number" value={selectedAttachForm.fileSize} onChange={(event) => updateAttach(currentSelectedModel, "fileSize", event.target.value)} placeholder="Dung lượng byte" />
                   </label>
                   <label>
                     <span>SHA-256</span>
-                    <small>Plugin dùng để verify file tải về.</small>
                     <input value={selectedAttachForm.sha256} onChange={(event) => updateAttach(currentSelectedModel, "sha256", event.target.value)} placeholder="SHA-256" />
                   </label>
                   <button type="button" className="smallButton" onClick={() => attachFile(currentSelectedModel)}>
@@ -1137,54 +1157,47 @@ export default function AdminMarketplace() {
                 <div className="marketAssetGrid">
                   <label>
                     <span>Cover Drive ID</span>
-                    <small>Ảnh vuông cho card/grid.</small>
                     <input value={selectedAssetForm.coverDriveFileId} onChange={(event) => updateAsset(currentSelectedModel, "coverDriveFileId", event.target.value)} placeholder="Drive file ID của cover" />
                   </label>
                   <label>
                     <span>Tên cover</span>
-                    <small>Ví dụ cover.jpg.</small>
                     <input value={selectedAssetForm.coverFileName} onChange={(event) => updateAsset(currentSelectedModel, "coverFileName", event.target.value)} placeholder="cover.jpg" />
                   </label>
                   <label>
                     <span>Rộng cover</span>
-                    <small>Pixel chiều rộng.</small>
                     <input type="number" value={selectedAssetForm.coverWidth} onChange={(event) => updateAsset(currentSelectedModel, "coverWidth", event.target.value)} placeholder="Chiều rộng cover" />
                   </label>
                   <label>
                     <span>Cao cover</span>
-                    <small>Pixel chiều cao.</small>
                     <input type="number" value={selectedAssetForm.coverHeight} onChange={(event) => updateAsset(currentSelectedModel, "coverHeight", event.target.value)} placeholder="Chiều cao cover" />
                   </label>
                   <label>
                     <span>Dung lượng cover</span>
-                    <small>Số byte của ảnh cover.</small>
                     <input type="number" value={selectedAssetForm.coverSize} onChange={(event) => updateAsset(currentSelectedModel, "coverSize", event.target.value)} placeholder="Dung lượng cover" />
                   </label>
                   <label>
                     <span>Alt cover</span>
-                    <small>Text thay thế cho ảnh.</small>
                     <input value={selectedAssetForm.coverAlt} onChange={(event) => updateAsset(currentSelectedModel, "coverAlt", event.target.value)} placeholder="Alt cover" />
                   </label>
                   <label className="marketAssetWide">
                     <span>Preview images</span>
-                    <small>Mỗi dòng: driveFileId|fileName|width|height|size|alt.</small>
                     <textarea value={selectedAssetForm.previewImages} onChange={(event) => updateAsset(currentSelectedModel, "previewImages", event.target.value)} placeholder="previewDriveFileId|preview-01.jpg|width|height|size|alt" />
                   </label>
                   <label>
                     <span>Metadata Drive ID</span>
-                    <small>ID file metadata.json.gz gốc.</small>
                     <input value={selectedAssetForm.metadataDriveFileId} onChange={(event) => updateAsset(currentSelectedModel, "metadataDriveFileId", event.target.value)} placeholder="Drive file ID metadata.json.gz" />
                   </label>
                   <label>
                     <span>Tên metadata</span>
-                    <small>Thường là metadata.json.gz.</small>
                     <input value={selectedAssetForm.metadataFileName} onChange={(event) => updateAsset(currentSelectedModel, "metadataFileName", event.target.value)} placeholder="metadata.json.gz" />
                   </label>
                   <label>
                     <span>Dung lượng metadata</span>
-                    <small>Số byte của file metadata.</small>
                     <input type="number" value={selectedAssetForm.metadataSize} onChange={(event) => updateAsset(currentSelectedModel, "metadataSize", event.target.value)} placeholder="Dung lượng metadata" />
                   </label>
+                  <button type="button" className="smallButton" onClick={() => rescanDriveFolder(currentSelectedModel)} disabled={!currentSelectedModel.driveFolderId}>
+                    <RefreshCw size={15} /> Quét lại Drive
+                  </button>
                   <button type="button" className="smallButton" onClick={() => attachAssets(currentSelectedModel)}>
                     <UploadCloud size={15} /> Gắn ảnh / metadata
                   </button>
@@ -1204,7 +1217,7 @@ export default function AdminMarketplace() {
                 <div className="marketAdminLogItem" key={item._id}>
                   <div>
                     <strong>{item.modelId?.title || "Model"}</strong>
-                    <small>{item.userId?.email || item.guestKey || "guest"} - {item.clientType} - {item.accessTier}</small>
+                    <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || "guest"} - {item.clientType} - {item.accessTier}</span>
                   </div>
                   <span className={`badge ${item.quotaCharged ? "success" : ""}`}>{item.quotaCharged ? "Tính lượt" : "Miễn lượt"}</span>
                   <span>{formatDate(item.createdAt)}</span>
@@ -1220,7 +1233,7 @@ export default function AdminMarketplace() {
                 <div className="marketAdminLogItem" key={item._id}>
                   <div>
                     <strong>{item.modelId?.title || "Phiên tải"}</strong>
-                    <small>{item.userId?.email || item.guestKey || "guest"} - {item.clientType} - {item.accessTier}</small>
+                    <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || "guest"} - {item.clientType} - {item.accessTier}</span>
                   </div>
                   <span className={`badge ${statusClass(item.status)}`}>{item.status}</span>
                   <span>{formatDate(item.createdAt)}</span>
