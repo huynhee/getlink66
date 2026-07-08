@@ -19,6 +19,8 @@ const PROXY_STAGE_ENV = {
   file: "THREED66_PROXY_FOR_DOWNLOAD",
   browser: "THREED66_PROXY_FOR_BROWSER",
 };
+const ACCOUNT_SEARCH_ENDPOINT = "https://www.3d66.com/api/v1/search/checkKeyword";
+const SEARCH_REFERER = "https://user.3d66.com/";
 const proxyAgentCache = new Map();
 const DEFAULT_SITE_CONTEXTS = {
   "3d.3d66.com": {
@@ -183,10 +185,184 @@ async function fetch3D66(url, options = {}, { stage = "api" } = {}) {
 function requestedProductIdFromUrl(rawUrl = "") {
   try {
     const parsed = new URL(rawUrl);
-    return parsed.searchParams.get("sof") || parsed.searchParams.get("id") || "";
+    return parsed.searchParams.get("sof") || parsed.searchParams.get("id") || productIdFromPath(parsed.pathname);
   } catch {
     return "";
   }
+}
+
+function productIdFromPath(pathname = "") {
+  const numericIds = [...String(pathname || "").matchAll(/(\d{6,})/g)].map((match) => match[1]);
+  if (numericIds.length) return numericIds.sort((a, b) => b.length - a.length)[0];
+  return "";
+}
+
+function safeSearchKeyword(value = "") {
+  const keyword = String(value || "").trim();
+  return /^[A-Z0-9_-]{6,64}$/i.test(keyword) ? keyword : "";
+}
+
+function safeAccountModelUrl(rawUrl, productId) {
+  const normalized = normalizeModelUrl(rawUrl);
+  const next = new URL(normalized.origin + normalized.pathname);
+  const keyword = safeSearchKeyword(productId);
+  if (keyword) {
+    next.searchParams.set("kw", keyword);
+    next.searchParams.set("sof", keyword);
+  }
+  next.searchParams.set("alichlgref", SEARCH_REFERER);
+  return next.toString();
+}
+
+function isExactModelPageUrl(candidateUrl = "", productId = "") {
+  const keyword = safeSearchKeyword(productId);
+  if (!keyword) return false;
+  try {
+    const parsed = new URL(candidateUrl);
+    if (!isAllowed3D66Host(parsed.hostname)) return false;
+    if (!/\/reshtml[a-z]*\//i.test(parsed.pathname) || !/\.html$/i.test(parsed.pathname)) return false;
+    const candidateId =
+      parsed.searchParams.get("sof") ||
+      parsed.searchParams.get("id") ||
+      parsed.searchParams.get("kw") ||
+      productIdFromPath(parsed.pathname);
+    return String(candidateId || "").trim() === keyword;
+  } catch {
+    return false;
+  }
+}
+
+function candidateUrlsFromText(text = "", baseUrl = "https://www.3d66.com/") {
+  const source = decodeHtml(String(text || "").replaceAll("\\/", "/"));
+  const urls = [];
+  const patterns = [
+    /https?:\/\/[^"' <>\n]+3d66\.com\/reshtml[a-z]*\/[^"' <>\n]+?\.html(?:\?[^"' <>\n]*)?/gi,
+    /(?:href|url|resUrl|link)["']?\s*[:=]\s*["'](\/reshtml[a-z]*\/[^"' <>\n]+?\.html(?:\?[^"'<>\n]*)?)["']/gi,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      const raw = match[1] || match[0];
+      try {
+        urls.push(new URL(raw, baseUrl).toString());
+      } catch {
+        // Ignore malformed candidates; search responses may contain escaped snippets.
+      }
+    }
+  }
+
+  return urls;
+}
+
+function exactModelUrlFromAny(value, productId, baseUrl = "https://www.3d66.com/", depth = 0) {
+  if (depth > 6 || value === null || value === undefined) return "";
+  if (typeof value === "string") {
+    for (const candidate of candidateUrlsFromText(value, baseUrl)) {
+      if (isExactModelPageUrl(candidate, productId)) return candidate;
+    }
+    return "";
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = exactModelUrlFromAny(item, productId, baseUrl, depth + 1);
+      if (found) return found;
+    }
+    return "";
+  }
+  if (typeof value !== "object") return "";
+
+  for (const key of ["url", "href", "link", "resUrl", "res_url", "sourceUrl", "source_url"]) {
+    const raw = value[key];
+    if (!raw || typeof raw !== "string") continue;
+    try {
+      const candidate = new URL(raw.replaceAll("\\/", "/"), baseUrl).toString();
+      if (isExactModelPageUrl(candidate, productId)) return candidate;
+    } catch {
+      // Keep scanning nested data.
+    }
+  }
+
+  for (const item of Object.values(value)) {
+    const found = exactModelUrlFromAny(item, productId, baseUrl, depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+
+function accountSearchEnabled() {
+  return booleanEnv("THREED66_ACCOUNT_SEARCH_ENABLED", true);
+}
+
+async function requestAccountSearchUrl(productId, cookieValue, sourceUrl) {
+  const keyword = safeSearchKeyword(productId);
+  if (!keyword || !accountSearchEnabled()) return "";
+
+  const endpoint = new URL(ACCOUNT_SEARCH_ENDPOINT);
+  endpoint.searchParams.set("keyword", keyword);
+  endpoint.searchParams.set("origin", "https://www.3d66.com");
+  endpoint.searchParams.set("is_all_search", "1");
+  endpoint.searchParams.set("refer_url", SEARCH_REFERER);
+  endpoint.searchParams.set("site", "14");
+  endpoint.searchParams.set("page_type", "1");
+  endpoint.searchParams.set("access_source_site", "15");
+  endpoint.searchParams.set("access_source_page", "26");
+  endpoint.searchParams.set("url", "https://www.3d66.com/");
+  endpoint.searchParams.set("browser", DEFAULT_USER_AGENT);
+  endpoint.searchParams.set("res_type", "1");
+
+  const { controller, done } = withTimeout();
+  try {
+    const response = await fetch3D66(endpoint.toString(), {
+      method: "GET",
+      signal: controller.signal,
+      headers: {
+        accept: "application/json, text/plain, */*",
+        "accept-language": "vi,en-US;q=0.9,en;q=0.8,zh-CN;q=0.7,zh;q=0.6",
+        cookie: cookieValue,
+        referer: sourceUrl || SEARCH_REFERER,
+        "user-agent": DEFAULT_USER_AGENT,
+        "x-requested-with": "XMLHttpRequest",
+      },
+    }, { stage: "preview" });
+
+    const text = await response.text();
+    let parsed = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+
+    return (
+      exactModelUrlFromAny(parsed, keyword, endpoint.toString()) ||
+      exactModelUrlFromAny(text, keyword, endpoint.toString())
+    );
+  } catch (error) {
+    if (error.name === "AbortError") return "";
+    return "";
+  } finally {
+    done();
+  }
+}
+
+async function resolveAccountModelUrl(rawUrl, cookieValue, cookies = null) {
+  const normalized = normalizeModelUrl(rawUrl);
+  const productId = safeSearchKeyword(requestedProductIdFromUrl(normalized.toString()));
+  if (!productId || process.env.THREED66_MOCK !== "false") {
+    return { productId, url: normalized.toString(), usedAccountSearch: false };
+  }
+
+  const safeUrl = safeAccountModelUrl(normalized.toString(), productId);
+  const searchUrl = await requestAccountSearchUrl(productId, cookieValue, safeUrl);
+  const resolvedUrl = searchUrl || safeUrl;
+
+  return {
+    productId,
+    url: resolvedUrl,
+    safeUrl,
+    usedAccountSearch: Boolean(searchUrl),
+    cookies,
+  };
 }
 
 function enforceRequestedProductId(fields = {}, metadata = {}, requestedProductId = "") {
@@ -1760,8 +1936,9 @@ export async function fetch3D66Preview(url, cookieValue) {
   }
 
   const cookies = requireCookie(cookieValue);
-  const normalized = normalizeModelUrl(url);
-  const requestedProductId = requestedProductIdFromUrl(normalized.toString());
+  const accountModel = await resolveAccountModelUrl(url, cookieValue, cookies);
+  const normalized = normalizeModelUrl(accountModel.url);
+  const requestedProductId = accountModel.productId || requestedProductIdFromUrl(normalized.toString());
   const popPreview = await previewFromDownloadPopOnly(normalized.toString(), cookieValue, cookies);
   if (popPreview) return popPreview.metadata;
 
@@ -1811,9 +1988,10 @@ export async function fetch3D66Preview(url, cookieValue) {
 }
 
 export async function inspect3D66Page(url, cookieValue) {
-  requireCookie(cookieValue);
-  const normalized = normalizeModelUrl(url);
-  const requestedProductId = requestedProductIdFromUrl(normalized.toString());
+  const cookies = requireCookie(cookieValue);
+  const accountModel = await resolveAccountModelUrl(url, cookieValue, cookies);
+  const normalized = normalizeModelUrl(accountModel.url);
+  const requestedProductId = accountModel.productId || requestedProductIdFromUrl(normalized.toString());
   let browserMetadata = null;
   let html = "";
   let pageUrl = normalized.toString();
@@ -1925,14 +2103,16 @@ export async function request3D66File(fileUrl, cookieValue, options = {}) {
 }
 
 export async function inspect3D66DownloadFormats(url, cookieValue) {
-  requireCookie(cookieValue);
-  const normalized = normalizeModelUrl(url);
+  const cookies = requireCookie(cookieValue);
+  const accountModel = await resolveAccountModelUrl(url, cookieValue, cookies);
+  const normalized = normalizeModelUrl(accountModel.url);
   return inspect3D66DownloadFormatsWithBrowserFallback(normalized.toString(), cookieValue);
 }
 
 export async function inspect3D66DownloadChoice(url, cookieValue) {
   const cookies = requireCookie(cookieValue);
-  const normalized = normalizeModelUrl(url);
+  const accountModel = await resolveAccountModelUrl(url, cookieValue, cookies);
+  const normalized = normalizeModelUrl(accountModel.url);
   const fields = parseDynamicFields("", normalized.toString());
   if (!fields.llId) return null;
 
@@ -1990,8 +2170,9 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   }
 
   const initialCookies = requireCookie(cookieValue);
-  const normalized = normalizeModelUrl(url);
-  const requestedProductId = requestedProductIdFromUrl(normalized.toString());
+  const accountModel = await resolveAccountModelUrl(url, cookieValue, initialCookies);
+  const normalized = normalizeModelUrl(accountModel.url);
+  const requestedProductId = accountModel.productId || requestedProductIdFromUrl(normalized.toString());
   let effectiveCookieValue = cookieValue;
   let browserMetadata = null;
   const requestedFormat = options.downloadFormat
