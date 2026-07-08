@@ -45,7 +45,7 @@ export const translations = {
     terms: "Điều khoản",
     getlinkTitle: "Nhập mã model 3D66",
     getlinkLabel: "Dán mã model 3D66 vào đây",
-    getlinkPlaceholder: "Nhập mã model, ví dụ AGI896357716115729",
+    getlinkPlaceholder: "Nhập mã model vd:AGI123456789",
     getlinkInputAria: "Mã model 3D66",
     checkLink: "Kiểm tra",
     modelInfo: "Thông tin model",
