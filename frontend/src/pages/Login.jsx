@@ -53,6 +53,14 @@ const HOME_TEXT_DEFAULTS = {
   },
 };
 
+function normalizeModelIdInput(value = "") {
+  const text = String(value || "").trim();
+  if (!text || /^https?:\/\//i.test(text) || /3d66\.com/i.test(text)) return "";
+  return /^[A-Z0-9_-]{8,64}$/i.test(text) && /[A-Z]/i.test(text) && /\d{6,}/.test(text)
+    ? text.toUpperCase()
+    : "";
+}
+
 export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/", language = "vi" }) {
   const t = { ...(translations[language] || translations.vi) };
   const [demoLink, setDemoLink] = useState("");
@@ -194,8 +202,8 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   }
 
   function getlinkTarget() {
-    const trimmed = demoLink.trim();
-    return trimmed ? `/getlink?url=${encodeURIComponent(trimmed)}` : "/getlink";
+    const modelId = normalizeModelIdInput(demoLink);
+    return modelId ? `/getlink?url=${encodeURIComponent(modelId)}` : "/getlink";
   }
 
   function handleDemoGetlink(event) {
@@ -204,10 +212,12 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
       setDemoError(t.systemOfflineMessage);
       return;
     }
-    if (!demoLink.includes("3d66.com")) {
+    const modelId = normalizeModelIdInput(demoLink);
+    if (!modelId) {
       setDemoError(t.invalid3d66Link);
       return;
     }
+    setDemoLink(modelId);
     window.location.href = authAwareHref(getlinkTarget());
   }
 
@@ -224,12 +234,13 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
         setDemoError(t.clipboardEmpty);
         return;
       }
-      if (!pasted.includes("3d66.com")) {
+      const modelId = normalizeModelIdInput(pasted);
+      if (!modelId) {
         setDemoError(t.clipboardInvalid3d66);
         return;
       }
 
-      setDemoLink(pasted);
+      setDemoLink(modelId);
     } catch {
       setDemoError(t.clipboardDenied);
     }
@@ -344,11 +355,12 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                 <div className="linkInputWrap terminalInput" style={{ "--cursor-x": `${demoCursorX}px` }}>
                   <span className="terminalInputMirror" aria-hidden="true">{demoLink || t.getlinkPlaceholder}</span>
                   <input
-                    type="url"
+                    type="text"
+                    inputMode="text"
                     placeholder={t.getlinkPlaceholder}
                     value={demoLink}
                     onChange={(event) => {
-                      setDemoLink(event.target.value);
+                      setDemoLink(event.target.value.toUpperCase());
                       setDemoError("");
                     }}
                     required
