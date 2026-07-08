@@ -30,15 +30,25 @@ export function extractModelIdInput(value = "") {
 
 export function modelIdTo3D66Url(productId) {
   const modelId = extractModelIdInput(productId);
-  const baseUrl = new URL(
-    process.env.THREED66_MODEL_ID_BASE_URL ||
-      "https://3d.3d66.com/reshtmla/model/items/id/model.html",
-  );
+  const baseUrl = new URL(process.env.THREED66_MODEL_ID_BASE_URL || modelIdBaseUrl(modelId));
   baseUrl.search = "";
   baseUrl.searchParams.set("kw", modelId);
   baseUrl.searchParams.set("sof", modelId);
   baseUrl.searchParams.set("alichlgref", "https://user.3d66.com/");
   return baseUrl.toString();
+}
+
+function modelIdBaseUrl(modelId) {
+  if (/^[AH]CG/i.test(modelId) || /^[AH]GF/i.test(modelId)) {
+    return `https://xiaoguotu.3d66.com/items/${encodeURIComponent(modelId)}.html`;
+  }
+  if (/^AJI/i.test(modelId)) {
+    return `https://tietu.3d66.com/reshtmla/tietu/items/id/model.html`;
+  }
+  if (/^ACI/i.test(modelId)) {
+    return `https://cad.3d66.com/reshtmla/cad/items/id/model.html`;
+  }
+  return "https://3d.3d66.com/reshtmla/model/items/id/model.html";
 }
 
 export function extractProductId(url) {

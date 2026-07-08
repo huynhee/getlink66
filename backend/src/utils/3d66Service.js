@@ -220,7 +220,7 @@ function isExactModelPageUrl(candidateUrl = "", productId = "") {
   try {
     const parsed = new URL(candidateUrl);
     if (!isAllowed3D66Host(parsed.hostname)) return false;
-    if (!/\/reshtml[a-z]*\//i.test(parsed.pathname) || !/\.html$/i.test(parsed.pathname)) return false;
+    if (!/(?:\/reshtml[a-z]*\/|\/items\/)/i.test(parsed.pathname) || !/\.html$/i.test(parsed.pathname)) return false;
     const candidateId =
       parsed.searchParams.get("sof") ||
       parsed.searchParams.get("id") ||
@@ -237,7 +237,9 @@ function candidateUrlsFromText(text = "", baseUrl = "https://www.3d66.com/") {
   const urls = [];
   const patterns = [
     /https?:\/\/[^"' <>\n]+3d66\.com\/reshtml[a-z]*\/[^"' <>\n]+?\.html(?:\?[^"' <>\n]*)?/gi,
+    /https?:\/\/[^"' <>\n]+3d66\.com\/items\/[^"' <>\n]+?\.html(?:\?[^"' <>\n]*)?/gi,
     /(?:href|url|resUrl|link)["']?\s*[:=]\s*["'](\/reshtml[a-z]*\/[^"' <>\n]+?\.html(?:\?[^"'<>\n]*)?)["']/gi,
+    /(?:href|url|resUrl|link)["']?\s*[:=]\s*["'](\/items\/[^"' <>\n]+?\.html(?:\?[^"'<>\n]*)?)["']/gi,
   ];
 
   for (const pattern of patterns) {
@@ -296,19 +298,20 @@ function accountSearchEnabled() {
 async function requestAccountSearchUrl(productId, cookieValue, sourceUrl) {
   const keyword = safeSearchKeyword(productId);
   if (!keyword || !accountSearchEnabled()) return "";
+  const searchContext = searchContextFromUrl(sourceUrl);
 
   const endpoint = new URL(ACCOUNT_SEARCH_ENDPOINT);
   endpoint.searchParams.set("keyword", keyword);
-  endpoint.searchParams.set("origin", "https://www.3d66.com");
+  endpoint.searchParams.set("origin", searchContext.origin);
   endpoint.searchParams.set("is_all_search", "1");
   endpoint.searchParams.set("refer_url", SEARCH_REFERER);
-  endpoint.searchParams.set("site", "14");
-  endpoint.searchParams.set("page_type", "1");
-  endpoint.searchParams.set("access_source_site", "15");
-  endpoint.searchParams.set("access_source_page", "26");
-  endpoint.searchParams.set("url", "https://www.3d66.com/");
+  endpoint.searchParams.set("site", searchContext.searchSite);
+  endpoint.searchParams.set("page_type", searchContext.pageType);
+  endpoint.searchParams.set("access_source_site", searchContext.accessSourceSite);
+  endpoint.searchParams.set("access_source_page", searchContext.accessSourcePage);
+  endpoint.searchParams.set("url", searchContext.origin + "/");
   endpoint.searchParams.set("browser", DEFAULT_USER_AGENT);
-  endpoint.searchParams.set("res_type", "1");
+  endpoint.searchParams.set("res_type", searchContext.resType);
 
   const { controller, done } = withTimeout();
   try {
@@ -342,6 +345,31 @@ async function requestAccountSearchUrl(productId, cookieValue, sourceUrl) {
     return "";
   } finally {
     done();
+  }
+}
+
+function searchContextFromUrl(sourceUrl = "") {
+  try {
+    const parsed = new URL(sourceUrl);
+    const configured = configuredSiteContexts()[parsed.hostname.toLowerCase()] || {};
+    const site = String(configured.site || "1");
+    return {
+      origin: parsed.origin,
+      resType: site,
+      searchSite: parsed.hostname === "www.3d66.com" ? "14" : site,
+      pageType: String(configured.pageType || "1"),
+      accessSourceSite: String(configured.accessSourceSite || site),
+      accessSourcePage: String(configured.accessSourcePage || "5"),
+    };
+  } catch {
+    return {
+      origin: "https://www.3d66.com",
+      resType: "1",
+      searchSite: "14",
+      pageType: "1",
+      accessSourceSite: "15",
+      accessSourcePage: "26",
+    };
   }
 }
 
