@@ -827,16 +827,14 @@ export async function adminAttachMarketplaceAssets(req, res, next) {
   }
 }
 
-export async function adminRescanMarketplaceModelDriveFolder(req, res, next) {
-  try {
-    if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
-    const existing = await MarketplaceModel.findById(req.params.id).select("-source.raw").lean();
-    if (!existing) return res.status(404).json({ message: "Model not found" });
-    if (!existing.driveFolderId) {
-      return res.status(400).json({ message: "Model does not have a Drive folder id" });
-    }
+export async function rescanMarketplaceModelDrive(existing) {
+  if (!existing?.driveFolderId) {
+    const error = new Error("Model does not have a Drive folder id");
+    error.status = 400;
+    throw error;
+  }
 
-    const now = new Date();
+  const now = new Date();
     const folderMetadata = await getGoogleDriveFileMetadata(existing.driveFolderId, {
       fields: "id,name,mimeType,modifiedTime",
     });
@@ -929,21 +927,33 @@ export async function adminRescanMarketplaceModelDriveFolder(req, res, next) {
     };
     applyMetadataCompleteness(payload, Boolean(existing.isPublished));
 
-    const model = await MarketplaceModel.findByIdAndUpdate(
-      existing._id,
-      {
-        $set: payload,
-        $unset: marketplaceLegacyUnset,
-      },
-      { new: true },
-    );
-    res.json({
-      model: adminModel(model),
-      scannedFiles: files.length,
-      previewCount: previewImages.length,
-      changed: existing.driveSignature !== driveSignature,
-      metadataError,
-    });
+  const model = await MarketplaceModel.findByIdAndUpdate(
+    existing._id,
+    {
+      $set: payload,
+      $unset: marketplaceLegacyUnset,
+    },
+    { new: true },
+  );
+  return {
+    model: adminModel(model),
+    scannedFiles: files.length,
+    previewCount: previewImages.length,
+    changed: existing.driveSignature !== driveSignature,
+    metadataError,
+  };
+}
+
+export async function adminRescanMarketplaceModelDriveFolder(req, res, next) {
+  try {
+    if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
+    const existing = await MarketplaceModel.findById(req.params.id).select("-source.raw").lean();
+    if (!existing) return res.status(404).json({ message: "Model not found" });
+    if (!existing.driveFolderId) {
+      return res.status(400).json({ message: "Model does not have a Drive folder id" });
+    }
+    const result = await rescanMarketplaceModelDrive(existing);
+    res.json(result);
   } catch (error) {
     if (error?.code === 11000) return res.status(409).json({ message: "Model slug or source already exists" });
     next(error);
@@ -1049,26 +1059,14 @@ export async function adminCleanupMarketplaceRaw(_req, res, next) {
   }
 }
 
-export async function adminImportDriveFolderModels(req, res, next) {
-  try {
-    const unknownKey = rejectUnknownKeys(req.body, [
-      "rootFolderId",
-      "rootFolderUrl",
-      "pageToken",
-      "limit",
-      "accessType",
-      "isPublished",
-    ]);
-    if (unknownKey) return res.status(400).json({ message: "Invalid Drive import request" });
-
-    const rootFolderId = extractDriveId(req.body.rootFolderId || req.body.rootFolderUrl);
-    if (!rootFolderId) return res.status(400).json({ message: "Google Drive models folder ID is required" });
-    const pageToken = limitedString(req.body.pageToken, 500);
-    const defaultAccessType = normalizeMarketplaceAccessType(req.body.accessType);
-    const isPublished = normalizeBoolean(req.body.isPublished, true);
-    const limit = Math.min(200, Math.max(1, Number(req.body.limit || 20)));
-
-    const page = await listGoogleDriveFolderPage(rootFolderId, { pageToken, pageSize: limit });
+export async function scanMarketplaceDriveFolderBatch({
+  rootFolderId,
+  pageToken = "",
+  limit = 20,
+  defaultAccessType = "member",
+  isPublished = true,
+} = {}) {
+  const page = await listGoogleDriveFolderPage(rootFolderId, { pageToken, pageSize: limit });
     const modelFolders = page.files.filter(isDriveFolder);
     const nextPageToken = page.nextPageToken || "";
     const imported = [];
@@ -1253,20 +1251,124 @@ export async function adminImportDriveFolderModels(req, res, next) {
       });
     }
 
-    res.json({
+  return {
+    rootFolderId,
+    nextPageToken,
+    hasMore: Boolean(nextPageToken),
+    scannedFolders: modelFolders.length,
+    importedCount: imported.length,
+    createdCount,
+    updatedCount,
+    unchangedCount,
+    skipped,
+    imported,
+  };
+}
+
+export async function adminImportDriveFolderModels(req, res, next) {
+  try {
+    const unknownKey = rejectUnknownKeys(req.body, [
+      "rootFolderId",
+      "rootFolderUrl",
+      "pageToken",
+      "limit",
+      "accessType",
+      "isPublished",
+    ]);
+    if (unknownKey) return res.status(400).json({ message: "Invalid Drive import request" });
+
+    const rootFolderId = extractDriveId(req.body.rootFolderId || req.body.rootFolderUrl);
+    if (!rootFolderId) return res.status(400).json({ message: "Google Drive models folder ID is required" });
+    const result = await scanMarketplaceDriveFolderBatch({
       rootFolderId,
-      nextPageToken,
-      hasMore: Boolean(nextPageToken),
-      scannedFolders: modelFolders.length,
-      importedCount: imported.length,
-      createdCount,
-      updatedCount,
-      unchangedCount,
-      skipped,
-      imported,
+      pageToken: limitedString(req.body.pageToken, 500),
+      limit: Math.min(200, Math.max(1, Number(req.body.limit || 20))),
+      defaultAccessType: normalizeMarketplaceAccessType(req.body.accessType),
+      isPublished: normalizeBoolean(req.body.isPublished, true),
     });
+    res.json(result);
   } catch (error) {
     if (error?.code === 11000) return res.status(409).json({ message: "Model slug or source already exists" });
+    next(error);
+  }
+}
+
+const BULK_MODEL_LIMIT = 50;
+const BULK_RESCAN_LIMIT = 10;
+
+export async function adminBulkMarketplaceModels(req, res, next) {
+  try {
+    const unknownKey = rejectUnknownKeys(req.body, ["ids", "action", "accessType"]);
+    if (unknownKey) return res.status(400).json({ message: "Invalid bulk request" });
+    const action = String(req.body.action || "").trim().toLowerCase();
+    if (!["publish", "unpublish", "access", "rescan"].includes(action)) {
+      return res.status(400).json({ message: "Invalid bulk action" });
+    }
+    const rawIds = Array.isArray(req.body.ids) ? req.body.ids.map((id) => String(id || "").trim()) : [];
+    const ids = [...new Set(rawIds.filter((id) => isSafeId(id)))];
+    const maxIds = action === "rescan" ? BULK_RESCAN_LIMIT : BULK_MODEL_LIMIT;
+    if (!ids.length) return res.status(400).json({ message: "No model ids provided" });
+    if (ids.length > maxIds) {
+      return res.status(400).json({ message: `Too many models for bulk ${action} (max ${maxIds})` });
+    }
+
+    const results = [];
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+
+    for (const id of ids) {
+      const model = await MarketplaceModel.findById(id).select("-source.raw").lean();
+      if (!model) {
+        skippedCount += 1;
+        results.push({ id, status: "skipped", reason: "not_found" });
+        continue;
+      }
+      try {
+        if (action === "publish") {
+          if (model.metadataStatus !== "complete") {
+            skippedCount += 1;
+            results.push({ id, status: "skipped", reason: "metadata_incomplete", title: model.title });
+            continue;
+          }
+          await MarketplaceModel.findByIdAndUpdate(id, { $set: { isPublished: true } });
+          updatedCount += 1;
+          results.push({ id, status: "updated", title: model.title });
+        } else if (action === "unpublish") {
+          await MarketplaceModel.findByIdAndUpdate(id, { $set: { isPublished: false } });
+          updatedCount += 1;
+          results.push({ id, status: "updated", title: model.title });
+        } else if (action === "access") {
+          const accessType = normalizeMarketplaceAccessType(req.body.accessType);
+          await MarketplaceModel.findByIdAndUpdate(id, { $set: { accessType } });
+          updatedCount += 1;
+          results.push({ id, status: "updated", title: model.title, accessType });
+        } else if (action === "rescan") {
+          if (!model.driveFolderId) {
+            skippedCount += 1;
+            results.push({ id, status: "skipped", reason: "no_drive_folder", title: model.title });
+            continue;
+          }
+          const scan = await rescanMarketplaceModelDrive(model);
+          updatedCount += 1;
+          results.push({
+            id,
+            status: "updated",
+            title: model.title,
+            scannedFiles: scan.scannedFiles,
+            previewCount: scan.previewCount,
+            changed: scan.changed,
+            metadataError: scan.metadataError || "",
+          });
+        }
+      } catch (error) {
+        failedCount += 1;
+        results.push({ id, status: "failed", reason: error?.message || "bulk_action_failed", title: model.title });
+      }
+    }
+
+    res.json({ action, total: ids.length, updatedCount, skippedCount, failedCount, results });
+  } catch (error) {
     next(error);
   }
 }

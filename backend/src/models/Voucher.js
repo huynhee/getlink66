@@ -5,6 +5,9 @@ const voucherSchema = new mongoose.Schema(
   {
     code: { type: String, required: true, unique: true, uppercase: true, trim: true },
     description: { type: String, default: "" },
+    // "" = legacy voucher (target suy ra tu creditBonus/discountPercent/applicablePackageIds).
+    // credit = chi goi nap credit, pro = chi goi Pro/membership, all = ca hai.
+    targetKind: { type: String, enum: ["", "all", "credit", "pro"], default: "" },
     creditBonus: { type: Number, default: 0, min: 0 },
     discountPercent: { type: Number, default: 0, min: 0, max: 100 },
     usageLimit: { type: Number, required: true, min: 1 },

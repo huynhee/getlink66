@@ -40,9 +40,26 @@ export async function findCheckoutVoucher(code) {
   return voucher;
 }
 
-export function assertVoucherTarget(voucher, { target = "topup", packageId = "" } = {}) {
+export function voucherTargetKind(voucher) {
+  const explicit = String(voucher?.targetKind || "").trim().toLowerCase();
+  if (["all", "credit", "pro"].includes(explicit)) return explicit;
+  // Legacy voucher khong co targetKind: suy ra tu du lieu cu.
   const applicablePackageIds = voucherApplicablePackageIds(voucher);
+  const hasCreditBonus = Number(voucher?.creditBonus || 0) > 0;
+  const hasDiscount = Number(voucher?.discountPercent || 0) > 0;
+  if (applicablePackageIds.length > 0 || hasCreditBonus) return "credit";
+  if (hasDiscount) return "all";
+  return "credit";
+}
+
+export function assertVoucherTarget(voucher, { target = "topup", packageId = "" } = {}) {
+  const kind = voucherTargetKind(voucher);
+  const applicablePackageIds = voucherApplicablePackageIds(voucher);
+
   if (target === "membership") {
+    if (kind === "credit") {
+      throw checkoutError("Voucher này chỉ áp dụng cho gói Credit.");
+    }
     if (applicablePackageIds.length > 0) {
       throw checkoutError("Voucher này chỉ áp dụng cho gói Credit.");
     }
@@ -50,6 +67,10 @@ export function assertVoucherTarget(voucher, { target = "topup", packageId = "" 
       throw checkoutError("Voucher này chỉ cộng Credit, không áp dụng cho Pro.");
     }
     return;
+  }
+
+  if (kind === "pro") {
+    throw checkoutError("Voucher này chỉ áp dụng cho gói Pro.");
   }
 
   if (
@@ -72,13 +93,18 @@ export async function assertVoucherUserLimit(voucher, userId) {
 
 export function safeVoucherPayload(voucher) {
   const applicablePackageIds = voucherApplicablePackageIds(voucher);
+  const kind = voucherTargetKind(voucher);
   return {
     code: voucher.code,
     description: voucher.description || "",
+    targetKind: kind,
     creditBonus: Number(voucher.creditBonus || 0),
     discountPercent: Number(voucher.discountPercent || 0),
     expireAt: voucher.expireAt,
     applicablePackageIds,
-    appliesToMembership: applicablePackageIds.length === 0 && Number(voucher.discountPercent || 0) > 0,
+    appliesToMembership:
+      kind !== "credit" &&
+      applicablePackageIds.length === 0 &&
+      Number(voucher.discountPercent || 0) > 0,
   };
 }

@@ -3,6 +3,7 @@ import {
   approvedVoucherUseCount,
   safeVoucherPayload,
   voucherApplicablePackageIds,
+  voucherTargetKind,
 } from "../utils/voucherCheckoutService.js";
 import {
   isVoucherCode,
@@ -39,7 +40,13 @@ export async function applyVoucher(req, res, next) {
     const applicablePackageIds = Array.isArray(voucher.applicablePackageIds)
       ? voucher.applicablePackageIds.map((id) => String(id?._id || id))
       : [];
-    if (target === "membership" && applicablePackageIds.length > 0) {
+    const targetKindValue = voucherTargetKind(voucher);
+    if (target !== "membership" && targetKindValue === "pro") {
+      return res.status(400).json({
+        message: "Voucher này chỉ áp dụng cho gói Pro.",
+      });
+    }
+    if (target === "membership" && (targetKindValue === "credit" || applicablePackageIds.length > 0)) {
       return res.status(400).json({
         message: "Voucher này chỉ áp dụng cho gói Credit.",
       });

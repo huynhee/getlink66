@@ -31,6 +31,7 @@ const emptyMembershipPlan = {
 const emptyVoucher = {
   code: "",
   description: "",
+  targetKind: "credit",
   creditBonus: "",
   discountPercent: "",
   usageLimit: "",
@@ -167,13 +168,27 @@ function toDatetimeLocal(value) {
   return local.toISOString().slice(0, 16);
 }
 
+function voucherTargetKind(voucher) {
+  const explicit = String(voucher?.targetKind || "").trim().toLowerCase();
+  if (["credit", "pro", "all"].includes(explicit)) return explicit;
+  const applicablePackageIds = Array.isArray(voucher?.applicablePackageIds) ? voucher.applicablePackageIds : [];
+  if (Number(voucher?.creditBonus || 0) > 0 || applicablePackageIds.length > 0) return "credit";
+  if (Number(voucher?.discountPercent || 0) > 0) return "all";
+  return "credit";
+}
+
 function isProVoucher(voucher) {
-  return Boolean(
-    voucher &&
-      Number(voucher.discountPercent || 0) > 0 &&
-      Number(voucher.creditBonus || 0) === 0 &&
-      (!Array.isArray(voucher.applicablePackageIds) || voucher.applicablePackageIds.length === 0)
-  );
+  return voucherTargetKind(voucher) === "pro";
+}
+
+function voucherMatchesMode(voucher, mode) {
+  return voucherTargetKind(voucher) === mode;
+}
+
+function voucherKindLabel(kind, l) {
+  if (kind === "pro") return "PRO";
+  if (kind === "all") return l("DÙNG CHUNG", "ALL");
+  return "CREDIT";
 }
 
 export default function Admin({ user, language = "vi" }) {
@@ -467,6 +482,7 @@ export default function Admin({ user, language = "vi" }) {
     setVoucherForm({
       code: voucher.code || "",
       description: voucher.description || "",
+      targetKind: voucherTargetKind(voucher),
       creditBonus: voucher.creditBonus || "",
       discountPercent: voucher.discountPercent || "",
       usageLimit: voucher.usageLimit || "",
@@ -478,22 +494,23 @@ export default function Admin({ user, language = "vi" }) {
         : [],
       expireAt: toDatetimeLocal(voucher.expireAt)
     });
-    setVoucherMode(isProVoucher(voucher) ? "pro" : "credit");
+    setVoucherMode(voucherTargetKind(voucher));
     setVoucherMsg("");
   }
 
   async function saveVoucher(event) {
     event.preventDefault();
     try {
-      const isProMode = voucherMode === "pro";
+      const isCreditMode = voucherMode === "credit";
       const payload = {
         ...voucherForm,
-        creditBonus: isProMode ? 0 : Number(voucherForm.creditBonus || 0),
+        targetKind: voucherMode,
+        creditBonus: isCreditMode ? Number(voucherForm.creditBonus || 0) : 0,
         discountPercent: Number(voucherForm.discountPercent || 0),
         usageLimit: Number(voucherForm.usageLimit),
         perUserLimit:
           voucherForm.perUserLimit === "" ? undefined : Number(voucherForm.perUserLimit),
-        applicablePackageIds: isProMode ? [] : voucherForm.applicablePackageIds,
+        applicablePackageIds: isCreditMode ? voucherForm.applicablePackageIds : [],
         expireAt: new Date(voucherForm.expireAt).toISOString()
       };
       await api(editingVoucherId ? `/api/admin/vouchers/${editingVoucherId}` : "/api/admin/voucher", {
@@ -1698,11 +1715,16 @@ export default function Admin({ user, language = "vi" }) {
             <button type="button" className={voucherMode === "pro" ? "active" : ""} onClick={() => setVoucherMode("pro")}>
               <Zap size={15} /> Pro
             </button>
+            <button type="button" className={voucherMode === "all" ? "active" : ""} onClick={() => setVoucherMode("all")}>
+              <Gift size={15} /> {l("Dùng chung", "All")}
+            </button>
           </div>
           <p className="muted" style={{ marginTop: 8 }}>
             {voucherMode === "credit"
               ? l("Voucher Credit dùng cho gói nạp credit, có thể giảm giá hoặc cộng thêm credit.", "Credit vouchers apply to credit packages and can discount or add bonus credit.")
-              : l("Voucher Pro dùng cho gói thành viên, chỉ giảm phần trăm và không cộng credit.", "Pro vouchers apply to membership plans, discount percentage only, no credit bonus.")}
+              : voucherMode === "pro"
+                ? l("Voucher Pro dùng cho gói thành viên, chỉ giảm phần trăm và không cộng credit.", "Pro vouchers apply to membership plans, discount percentage only, no credit bonus.")
+                : l("Voucher dùng chung áp dụng cho cả Credit và Pro, chỉ giảm phần trăm.", "Shared vouchers apply to both Credit and Pro, discount percentage only.")}
           </p>
           <form onSubmit={saveVoucher} style={{ display: "grid", gap: 10, marginTop: 14 }}>
             <div className="inputRow">
@@ -1715,7 +1737,7 @@ export default function Admin({ user, language = "vi" }) {
               >
                 <option value="">{l("Tạo voucher mới", "Create new voucher")}</option>
                 {vouchers
-                  .filter((voucher) => voucherMode === "pro" ? isProVoucher(voucher) : !isProVoucher(voucher))
+                  .filter((voucher) => voucherMatchesMode(voucher, voucherMode))
                   .map((voucher) => (
                   <option key={voucher._id} value={voucher._id}>{voucher.code}</option>
                 ))}
@@ -1769,8 +1791,10 @@ export default function Admin({ user, language = "vi" }) {
             ) : (
               <div className="voucherPackagePicker">
                 <div>
-                  <strong>{l("Áp dụng cho Pro", "Apply to Pro")}</strong>
-                  <span>{l("Backend nhận voucher Pro bằng mã giảm %, không gắn vào gói credit và không cộng credit.", "Backend treats Pro vouchers as discount-only, not linked to credit packages and no credit bonus.")}</span>
+                  <strong>{voucherMode === "pro" ? l("Áp dụng cho Pro", "Apply to Pro") : l("Áp dụng cho Credit và Pro", "Apply to Credit and Pro")}</strong>
+                  <span>{voucherMode === "pro"
+                    ? l("Backend nhận voucher Pro bằng mã giảm %, không gắn vào gói credit và không cộng credit.", "Backend treats Pro vouchers as discount-only, not linked to credit packages and no credit bonus.")
+                    : l("Voucher dùng chung chỉ giảm %, không gắn gói credit riêng và không cộng credit.", "Shared vouchers are discount-only, not linked to specific credit packages and do not add bonus credit.")}</span>
                 </div>
                 <div>
                   {membershipPlans.map((plan) => (
@@ -1788,6 +1812,8 @@ export default function Admin({ user, language = "vi" }) {
                 !voucherForm.expireAt ||
                 (voucherMode === "pro"
                   ? !voucherForm.discountPercent
+                  : voucherMode === "all"
+                  ? !voucherForm.discountPercent
                   : (!voucherForm.discountPercent && !voucherForm.creditBonus))
               }
               style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}
@@ -1800,14 +1826,16 @@ export default function Admin({ user, language = "vi" }) {
 
           <div className="voucherList">
             {vouchers
-              .filter((voucher) => voucherMode === "pro" ? isProVoucher(voucher) : !isProVoucher(voucher))
+              .filter((voucher) => voucherMatchesMode(voucher, voucherMode))
               .map((voucher) => {
-                const proVoucher = isProVoucher(voucher);
+                const kind = voucherTargetKind(voucher);
+                const proVoucher = kind === "pro";
+                const sharedVoucher = kind === "all";
                 return (
               <div className="voucherCard" key={voucher._id}>
                 <div className="voucherCardHeader">
                   <div>
-                    <strong>{voucher.code} <span className={`badge ${proVoucher ? "pending" : "success"}`}>{proVoucher ? "PRO" : "CREDIT"}</span></strong>
+                    <strong>{voucher.code} <span className={`badge ${proVoucher ? "pending" : sharedVoucher ? "" : "success"}`}>{voucherKindLabel(kind, l)}</span></strong>
                     <p>{voucher.description || t.noDescription}</p>
                   </div>
                   <span className={new Date(voucher.expireAt) > new Date() ? "badge success" : "badge error"}>
@@ -1848,6 +1876,8 @@ export default function Admin({ user, language = "vi" }) {
                   <strong>
                     {proVoucher
                       ? l("Gói Pro / Membership", "Pro / Membership plans")
+                      : sharedVoucher
+                      ? l("Credit và Pro", "Credit and Pro")
                       : Array.isArray(voucher.applicablePackageIds) && voucher.applicablePackageIds.length > 0
                       ? voucher.applicablePackageIds.map((pkg) => pkg?.name || t.defaultPackageName).join(", ")
                       : t.allTopupPackages}
@@ -1864,7 +1894,7 @@ export default function Admin({ user, language = "vi" }) {
               </div>
                 );
               })}
-            {!vouchers.filter((voucher) => voucherMode === "pro" ? isProVoucher(voucher) : !isProVoucher(voucher)).length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Chưa có voucher.", "No vouchers yet.")}</p>}
+            {!vouchers.filter((voucher) => voucherMatchesMode(voucher, voucherMode)).length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Chưa có voucher.", "No vouchers yet.")}</p>}
           </div>
         </section>
       )}

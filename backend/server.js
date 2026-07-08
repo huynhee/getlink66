@@ -133,11 +133,13 @@ const { ensureTopupIndexes } = await import("./src/models/Topup.js");
 const { awardReferralSignup, ensureReferralCode } = await import("./src/utils/referralService.js");
 const { initializeMarketplaceCategories } = await import("./src/utils/marketplaceSeed.js");
 const { initializeMembershipPlans } = await import("./src/utils/membershipService.js");
+const { startMarketplaceDriveSyncJob } = await import("./src/utils/marketplaceDriveSyncJob.js");
 
 await ensureTopupIndexes();
 await initializeSettings();
 await initializeMarketplaceCategories();
 await initializeMembershipPlans();
+startMarketplaceDriveSyncJob();
 
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "true") app.set("trust proxy", 1);

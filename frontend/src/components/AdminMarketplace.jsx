@@ -356,12 +356,19 @@ function FacetPicker({ field, value, options = [], onChange }) {
   );
 }
 
-function ModelSummary({ model, selected, onEdit }) {
+function ModelSummary({ model, selected, selectedForBulk, onBulkToggle, onEdit }) {
   const state = publicState(model);
   const missing = model.metadataMissingFields || [];
   return (
     <article className={`marketAdminItem ${state.key} ${selected ? "selected" : ""}`}>
       <div className="marketAdminModelHead">
+        <label className="marketAdminBulkCheck" title="Chọn model">
+          <input
+            type="checkbox"
+            checked={selectedForBulk}
+            onChange={() => onBulkToggle(model._id)}
+          />
+        </label>
         <div className="marketAdminModelIcon">
           <Package size={22} />
         </div>
@@ -421,6 +428,13 @@ export default function AdminMarketplace() {
   const [metadataById, setMetadataById] = useState({});
   const [selectedModel, setSelectedModel] = useState(null);
   const [lastScan, setLastScan] = useState(null);
+  const [syncInfo, setSyncInfo] = useState(null);
+  const [syncRootFolderId, setSyncRootFolderId] = useState("");
+  const [syncRunning, setSyncRunning] = useState(false);
+  const [selectedModelIds, setSelectedModelIds] = useState([]);
+  const [bulkAction, setBulkAction] = useState("publish");
+  const [bulkAccessType, setBulkAccessType] = useState("member");
+  const [bulkRunning, setBulkRunning] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -516,17 +530,21 @@ export default function AdminMarketplace() {
   async function loadModels(nextPage = page) {
     const query = new URLSearchParams({ page: String(nextPage), fileStatus, accessType, published, metadataStatus });
     if (search.trim()) query.set("search", search.trim());
-    const [modelRes, statsRes, downloadRes, sessionRes] = await Promise.all([
+    const [modelRes, statsRes, downloadRes, sessionRes, syncRes] = await Promise.all([
       api(`/api/admin/marketplace/models?${query.toString()}`),
       api("/api/admin/marketplace/stats"),
       api("/api/admin/marketplace/downloads?limit=8"),
       api("/api/admin/marketplace/download-sessions?limit=8"),
+      api("/api/admin/marketplace/sync-state").catch(() => ({ config: null, state: null })),
     ]);
     setModels(modelRes.models || []);
     setPagination(modelRes.pagination || { page: 1, totalPages: 1, total: 0 });
     setStats(statsRes.stats || null);
     setDownloads(downloadRes.downloads || []);
     setSessions(sessionRes.sessions || []);
+    setSyncInfo(syncRes || null);
+    setSyncRootFolderId((current) => current || syncRes?.config?.rootFolderId || driveImportForm.rootFolderId || "");
+    setSelectedModelIds((current) => current.filter((id) => (modelRes.models || []).some((model) => model._id === id)));
   }
 
   async function loadTaxonomy() {
@@ -595,6 +613,29 @@ export default function AdminMarketplace() {
       await loadModels(1);
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function runDriveSyncNow() {
+    setMessage("");
+    setError("");
+    setSyncRunning(true);
+    try {
+      const data = await api("/api/admin/marketplace/sync-run", {
+        method: "POST",
+        body: JSON.stringify({ rootFolderId: syncRootFolderId || driveImportForm.rootFolderId }),
+      });
+      setSyncInfo((current) => ({ ...(current || {}), state: data.state || current?.state || null }));
+      setMessage(
+        `Đã chạy sync Drive: ${data.scannedFolders || 0} folder, ` +
+        `${data.createdCount || 0} tạo mới, ${data.updatedCount || 0} cập nhật, ${data.unchangedCount || 0} không đổi` +
+        (data.cycleCompleted ? ". Đã hết một vòng quét." : ". Còn batch tiếp theo."),
+      );
+      await loadModels(1);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSyncRunning(false);
     }
   }
 
@@ -748,6 +789,52 @@ export default function AdminMarketplace() {
     }
   }
 
+  function toggleSelectedModel(id) {
+    setSelectedModelIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  }
+
+  function toggleSelectPage() {
+    const pageIds = models.map((model) => model._id);
+    const allSelected = pageIds.length > 0 && pageIds.every((id) => selectedModelIds.includes(id));
+    setSelectedModelIds(allSelected ? [] : pageIds);
+  }
+
+  async function runBulkAction() {
+    if (!selectedModelIds.length) return;
+    const label = {
+      publish: "xuất bản",
+      unpublish: "chuyển nháp",
+      access: "đổi quyền tải",
+      rescan: "quét lại Drive",
+    }[bulkAction] || bulkAction;
+    if (!window.confirm(`Áp dụng "${label}" cho ${selectedModelIds.length} model?`)) return;
+    setMessage("");
+    setError("");
+    setBulkRunning(true);
+    try {
+      const data = await api("/api/admin/marketplace/models/bulk", {
+        method: "POST",
+        body: JSON.stringify({
+          ids: selectedModelIds,
+          action: bulkAction,
+          accessType: bulkAccessType,
+        }),
+      });
+      setMessage(
+        `Bulk ${label}: ${data.updatedCount || 0} cập nhật, ` +
+        `${data.skippedCount || 0} bỏ qua, ${data.failedCount || 0} lỗi.`,
+      );
+      setSelectedModelIds([]);
+      await loadModels(page);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBulkRunning(false);
+    }
+  }
+
   function clearFilters() {
     setSearch("");
     setFileStatus("all");
@@ -766,6 +853,7 @@ export default function AdminMarketplace() {
   const selectedAttachForm = currentSelectedModel ? attachForm(currentSelectedModel) : null;
   const selectedAssetForm = currentSelectedModel ? assetForm(currentSelectedModel) : null;
   const selectedMetadataForm = currentSelectedModel ? metadataForm(currentSelectedModel) : null;
+  const allPageSelected = models.length > 0 && models.every((model) => selectedModelIds.includes(model._id));
 
   return (
     <section className="panel adminMarketplace">
@@ -879,6 +967,42 @@ export default function AdminMarketplace() {
             )}
           </form>
 
+          <section className="marketAdminForm marketAdminSyncPanel">
+            <div className="marketAdminPanelTitle">
+              <h3>Sync tự động</h3>
+              <span className={`badge ${syncInfo?.config?.enabled ? "success" : "pending"}`}>
+                {syncInfo?.config?.enabled ? "Đang bật" : "Đang tắt"}
+              </span>
+            </div>
+            <div className="marketAdminFieldGrid">
+              <label>
+                <span>Root folder ID</span>
+                <input
+                  value={syncRootFolderId}
+                  onChange={(event) => setSyncRootFolderId(event.target.value)}
+                  placeholder="MARKETPLACE_DRIVE_ROOT_FOLDER_ID"
+                />
+              </label>
+              <ModelFact label="Batch size" value={syncInfo?.config?.batchSize || "-"} detail="folder/lần" />
+              <ModelFact label="Interval" value={syncInfo?.config?.intervalMinutes || "-"} detail="phút" />
+              <ModelFact label="Trạng thái" value={syncInfo?.state?.status || "idle"} detail={syncInfo?.state?.lastError || ""} />
+            </div>
+            {syncInfo?.state && (
+              <div className="marketAdminScanResult">
+                <span>Token: {syncInfo.state.pageToken ? "còn batch" : "đầu vòng"}</span>
+                <span>Tạo: {syncInfo.state.createdCount || 0}</span>
+                <span>Cập nhật: {syncInfo.state.updatedCount || 0}</span>
+                <span>Không đổi: {syncInfo.state.unchangedCount || 0}</span>
+                <span>Vòng: {syncInfo.state.cycleCount || 0}</span>
+              </div>
+            )}
+            <div className="marketAdminSyncActions">
+              <button type="button" className="primaryButton" onClick={runDriveSyncNow} disabled={syncRunning || !(syncRootFolderId || driveImportForm.rootFolderId)}>
+                <RefreshCw size={17} /> {syncRunning ? "Đang chạy..." : "Chạy sync 1 batch"}
+              </button>
+            </div>
+          </section>
+
           <details className="marketAdminForm marketAdminManualImport">
             <summary><Save size={16} /> Import metadata thủ công</summary>
             <form onSubmit={importModel}>
@@ -962,12 +1086,37 @@ export default function AdminMarketplace() {
             )}
           </div>
 
+          <div className="marketAdminBulkBar">
+            <label className="checkboxInline">
+              <input type="checkbox" checked={allPageSelected} onChange={toggleSelectPage} />
+              Chọn trang này
+            </label>
+            <span>{selectedModelIds.length} model đã chọn</span>
+            <select value={bulkAction} onChange={(event) => setBulkAction(event.target.value)}>
+              <option value="publish">Xuất bản</option>
+              <option value="unpublish">Chuyển nháp</option>
+              <option value="access">Đổi quyền tải</option>
+              <option value="rescan">Quét lại Drive</option>
+            </select>
+            {bulkAction === "access" && (
+              <select value={bulkAccessType} onChange={(event) => setBulkAccessType(event.target.value)}>
+                <option value="member">Pro</option>
+                <option value="free">Free</option>
+              </select>
+            )}
+            <button type="button" className="smallButton" disabled={!selectedModelIds.length || bulkRunning} onClick={runBulkAction}>
+              <RefreshCw size={15} /> {bulkRunning ? "Đang xử lý..." : "Áp dụng"}
+            </button>
+          </div>
+
           <div className="marketAdminList">
             {models.map((model) => (
               <ModelSummary
                 key={model._id}
                 model={model}
                 selected={currentSelectedModel?._id === model._id}
+                selectedForBulk={selectedModelIds.includes(model._id)}
+                onBulkToggle={toggleSelectedModel}
                 onEdit={selectForEdit}
               />
             ))}

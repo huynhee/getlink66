@@ -158,7 +158,12 @@ function normalizeVoucherPayload(body = {}, currentVoucher = null) {
     applicablePackageIds = [],
     expireAt,
     description = "",
+    targetKind = "",
   } = body;
+  const normalizedTargetKind = String(targetKind || "").trim().toLowerCase();
+  if (!["", "all", "credit", "pro"].includes(normalizedTargetKind)) {
+    return { error: "Invalid voucher target kind" };
+  }
   const normalizedCode = normalizeVoucherCode(code);
   const bonus = integerInRange(creditBonus, 0, MAX_STORED_CREDIT);
   const discount = numberInRange(
@@ -197,6 +202,18 @@ function normalizeVoucherPayload(body = {}, currentVoucher = null) {
     return { error: "Voucher must add credit or discount percent" };
   }
 
+  if (normalizedTargetKind === "pro" || normalizedTargetKind === "all") {
+    if (packageIds.length > 0) {
+      return { error: "Pro voucher cannot be limited to credit packages" };
+    }
+    if (normalizedTargetKind === "pro" && bonus > 0) {
+      return { error: "Pro voucher cannot add credit bonus" };
+    }
+    if (discount <= 0) {
+      return { error: "Pro voucher requires a discount percent" };
+    }
+  }
+
   if (currentVoucher && limit < Number(currentVoucher.usedCount || 0)) {
     return { error: "Usage limit cannot be lower than current used count" };
   }
@@ -204,6 +221,7 @@ function normalizeVoucherPayload(body = {}, currentVoucher = null) {
   return {
     payload: {
       code: normalizedCode,
+      targetKind: normalizedTargetKind,
       creditBonus: bonus,
       discountPercent: discount,
       usageLimit: limit,
@@ -1256,6 +1274,7 @@ export async function createVoucher(req, res, next) {
   try {
     const unknownKey = rejectUnknownKeys(req.body, [
       "code",
+      "targetKind",
       "creditBonus",
       "discountPercent",
       "usageLimit",
@@ -1285,6 +1304,7 @@ export async function updateVoucher(req, res, next) {
   try {
     const unknownKey = rejectUnknownKeys(req.body, [
       "code",
+      "targetKind",
       "creditBonus",
       "discountPercent",
       "usageLimit",

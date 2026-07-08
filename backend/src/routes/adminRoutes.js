@@ -47,6 +47,7 @@ import {
 import {
   adminAttachMarketplaceAssets,
   adminAttachMarketplaceFile,
+  adminBulkMarketplaceModels,
   adminCleanupMarketplaceRaw,
   adminImportDriveFolderModels,
   adminImport3dskyModel,
@@ -57,6 +58,10 @@ import {
   adminRescanMarketplaceModelDriveFolder,
   adminUpdateMarketplaceModel,
 } from "../controllers/marketplaceAdminController.js";
+import {
+  adminMarketplaceDriveSyncState,
+  adminRunMarketplaceDriveSync,
+} from "../controllers/marketplaceSyncController.js";
 import {
   adminCreateNotification,
   adminDeleteNotification,
@@ -136,6 +141,9 @@ router.post("/marketplace/cleanup-raw", adminWriteLimit, auditAdmin("CLEANUP_MAR
 router.post("/marketplace/import-drive-folder", adminWriteLimit, auditAdmin("IMPORT_DRIVE_MARKETPLACE_FOLDER"), adminImportDriveFolderModels);
 router.post("/marketplace/models/import-metadata", adminWriteLimit, auditAdmin("IMPORT_MARKETPLACE_METADATA"), adminImport3dskyModel);
 router.post("/marketplace/models/import-3dsky", adminWriteLimit, auditAdmin("IMPORT_3DSKY_MODEL"), adminImport3dskyModel);
+router.post("/marketplace/models/bulk", adminWriteLimit, auditAdmin("BULK_MARKETPLACE_MODELS"), adminBulkMarketplaceModels);
+router.get("/marketplace/sync-state", adminMarketplaceDriveSyncState);
+router.post("/marketplace/sync-run", adminWriteLimit, auditAdmin("RUN_MARKETPLACE_DRIVE_SYNC"), adminRunMarketplaceDriveSync);
 router.put("/marketplace/models/:id", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_MODEL"), adminUpdateMarketplaceModel);
 router.post("/marketplace/models/:id/rescan-drive", adminWriteLimit, auditAdmin("RESCAN_MARKETPLACE_MODEL_DRIVE"), adminRescanMarketplaceModelDriveFolder);
 router.post("/marketplace/models/:id/attach-file", adminWriteLimit, auditAdmin("ATTACH_MARKETPLACE_FILE"), adminAttachMarketplaceFile);

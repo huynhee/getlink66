@@ -19,12 +19,22 @@ const IMAGE_SEARCH_FREE_LIMIT = 10;
 const IMAGE_SEARCH_PRO_LIMIT = 150;
 const MAX_IMAGE_SEARCH_BYTES = 512 * 1024;
 
-function previewUrl(modelId, index) {
-  return `/api/marketplace/models/${modelId}/preview/${index}`;
+function imageVersion(model) {
+  const updatedAt = model?.updatedAt ? new Date(model.updatedAt).getTime() : 0;
+  return updatedAt && Number.isFinite(updatedAt) ? updatedAt.toString(36) : "";
 }
 
-function coverUrl(modelId) {
-  return `/api/marketplace/models/${modelId}/cover`;
+function versionedImageUrl(path, model) {
+  const version = imageVersion(model);
+  return version ? `${path}?v=${version}` : path;
+}
+
+function previewUrl(model, index) {
+  return versionedImageUrl(`/api/marketplace/models/${model._id}/preview/${index}`, model);
+}
+
+function coverUrl(model) {
+  return versionedImageUrl(`/api/marketplace/models/${model._id}/cover`, model);
 }
 
 function publicImageRef(model, image, url) {
@@ -39,15 +49,15 @@ function publicImageRef(model, image, url) {
 }
 
 function publicCoverImage(model) {
-  if (model.coverImage?.driveFileId) return publicImageRef(model, model.coverImage, coverUrl(model._id));
+  if (model.coverImage?.driveFileId) return publicImageRef(model, model.coverImage, coverUrl(model));
   const firstPreview = (model.previewImages || []).find((image) => image?.driveFileId);
-  return firstPreview ? publicImageRef(model, firstPreview, previewUrl(model._id, 0)) : null;
+  return firstPreview ? publicImageRef(model, firstPreview, previewUrl(model, 0)) : null;
 }
 
 function publicPreviewImages(model) {
   return (model.previewImages || [])
     .map((image, index) => {
-      return publicImageRef(model, image, previewUrl(model._id, index));
+      return publicImageRef(model, image, previewUrl(model, index));
     })
     .filter(Boolean);
 }
@@ -428,7 +438,9 @@ export async function getMarketplaceModel(req, res, next) {
 
 function streamImageRef(res, next, image, defaultFileName) {
   return openGoogleDriveFileStream(image.driveFileId, image.fileName || defaultFileName).then((file) => {
+    const etag = crypto.createHash("sha1").update(String(image.driveFileId || "")).digest("hex");
     res.setHeader("cache-control", "public, max-age=31536000, immutable");
+    res.setHeader("etag", `"${etag}"`);
     res.setHeader("cross-origin-resource-policy", "cross-origin");
     res.setHeader("content-type", imageContentType(image.fileName, file.contentType));
     if (file.contentLength || image.size) res.setHeader("content-length", file.contentLength || image.size);

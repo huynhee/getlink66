@@ -176,7 +176,9 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
 
 export async function verifyDownloadSession(sessionId, token) {
   const session = await DownloadSession.findById(sessionId);
-  if (!session || session.status !== "active") {
+  // "used" van duoc phep tai lai trong TTL: download manager/browser co the mo
+  // nhieu ket noi hoac retry; quota da duoc tinh khi tao session, khong tinh lai.
+  if (!session || !["active", "used"].includes(session.status)) {
     const error = new Error("Download session not found");
     error.status = 404;
     throw error;

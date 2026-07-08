@@ -2730,6 +2730,26 @@ button:disabled {
   flex: 1 1 260px;
 }
 
+.marketAdminBulkBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.marketAdminBulkBar > span {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.marketAdminBulkBar select {
+  min-height: 34px;
+}
+
 .marketAdminList {
   gap: 10px;
 }
@@ -2759,8 +2779,23 @@ button:disabled {
 
 .marketAdminModelHead {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-columns: auto 42px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
+}
+
+.marketAdminBulkCheck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+}
+
+.marketAdminBulkCheck input {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
 }
 
 .marketAdminModelIcon {
@@ -6187,6 +6222,92 @@ label {
   background: rgba(0, 255, 136, 0.06);
 }
 
+.historyTimelinePanel {
+  display: grid;
+  gap: var(--space-12);
+}
+
+.historyHeader h2,
+.historyHeader p {
+  margin: 0;
+}
+
+.timelineHistoryList {
+  display: grid;
+  gap: 10px;
+}
+
+.timelineEventCard {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) minmax(150px, auto);
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  background: rgba(255, 255, 255, 0.026);
+  clip-path: var(--cyber-cut-sm);
+}
+
+.timelineEventIcon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-light);
+  color: var(--neon-cyan);
+  background: rgba(255, 255, 255, 0.04);
+  clip-path: var(--cyber-cut-sm);
+}
+
+.timelineEventMain {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.timelineEventTitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.timelineEventTitle strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timelineEventMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.timelineEventMeta span {
+  padding: 4px 7px;
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.timelineEventSide {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.timelineEventSide strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
 .historyType {
   display: inline-flex;
   align-items: center;
@@ -7328,6 +7449,19 @@ label {
 
   .compactHistoryTable .tableRow {
     grid-template-columns: 1fr;
+  }
+
+  .timelineEventCard {
+    grid-template-columns: 1fr;
+  }
+
+  .timelineEventIcon,
+  .timelineEventSide {
+    justify-self: start;
+  }
+
+  .timelineEventSide {
+    justify-items: start;
   }
 
   .historyDownloadCell {
