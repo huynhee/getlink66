@@ -18,7 +18,11 @@ import {
   queue3D66Refresh,
 } from "../utils/3d66Queue.js";
 import { deductCredit } from "../utils/creditService.js";
-import { extractProductId } from "../utils/parse3d66.js";
+import {
+  extractModelIdInput,
+  extractProductId,
+  modelIdTo3D66Url,
+} from "../utils/parse3d66.js";
 import { normalizeDownloadCreditCost } from "../utils/pricingService.js";
 import { isSafeId, rejectUnknownKeys } from "../utils/validators.js";
 import {
@@ -382,19 +386,24 @@ function findDownloadFormatOption(formatOptions = [], requestedFormat = null) {
 }
 
 function readUrlRequest(req, res) {
-  const unknownKey = rejectUnknownKeys(req.body, ["url", "includePreviewImage", "downloadFormat"]);
+  const unknownKey = rejectUnknownKeys(req.body, ["url", "modelId", "includePreviewImage", "downloadFormat"]);
   if (unknownKey) {
     res.status(400).json({ message: "Invalid getlink request" });
     return null;
   }
 
-  const url = String(req.body.url || "").trim();
-  if (!url || url.length > 3000) {
-    res.status(400).json({ message: "URL is required" });
+  const input = String(req.body.modelId || req.body.url || "").trim();
+  if (!input || input.length > 128) {
+    res.status(400).json({ message: "Model ID is required" });
     return null;
   }
 
-  return url;
+  try {
+    return modelIdTo3D66Url(extractModelIdInput(input));
+  } catch (error) {
+    res.status(error.status || 400).json({ message: error.message });
+    return null;
+  }
 }
 
 function normalizeBooleanFlag(value) {

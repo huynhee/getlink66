@@ -26,6 +26,14 @@ function formatDisplayName(option = {}, fallback = "Định dạng file") {
   return option.label || option.name || mapped || fileFormat || fallback;
 }
 
+function normalizeModelIdInput(value = "") {
+  const text = String(value || "").trim();
+  if (!text || /^https?:\/\//i.test(text) || /3d66\.com/i.test(text)) return "";
+  return /^[A-Z0-9_-]{8,64}$/i.test(text) && /[A-Z]/i.test(text) && /\d{6,}/.test(text)
+    ? text.toUpperCase()
+    : "";
+}
+
 export default function GetlinkBox({ onCreditChange, initialUrl = "", language = "vi", disabledReason = "" }) {
   const t = translations[language] || translations.vi;
   const [url, setUrl] = useState(initialUrl);
@@ -151,16 +159,22 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
       setError(t.systemOfflineMessage);
       return;
     }
+    const modelId = normalizeModelIdInput(url);
+    if (!modelId) {
+      setError(t.invalid3d66Link);
+      errorProgress(language === "vi" ? "Mã model không hợp lệ" : "Invalid model ID");
+      return;
+    }
     setLoading(true);
     setCopied(false);
     beginProgress(language === "vi" ? "Đang kiểm tra model..." : "Checking model...", 8, 78);
     try {
       const data = await api("/api/getlink/preview", {
         method: "POST",
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ modelId })
       });
       setPreview(data);
-      setPreviewUrl(url);
+      setPreviewUrl(modelId);
       finishProgress(language === "vi" ? "Đã lấy thông tin model" : "Model info loaded");
     } catch (err) {
       setError(err.message);
@@ -195,10 +209,16 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     setCopied(false);
     beginProgress(language === "vi" ? "Đang lấy link tải..." : "Getting download link...", 12, 92);
     try {
+      const modelId = normalizeModelIdInput(previewUrl || url);
+      if (!modelId) {
+        setError(t.invalid3d66Link);
+        errorProgress(language === "vi" ? "Mã model không hợp lệ" : "Invalid model ID");
+        return;
+      }
       const data = await api("/api/getlink", {
         method: "POST",
         body: JSON.stringify({
-          url: previewUrl || url,
+          modelId,
           includePreviewImage,
           downloadFormat: downloadFormatPayload(downloadFormatOverride)
         })
@@ -265,12 +285,13 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
         setError(t.clipboardEmpty);
         return;
       }
-      if (!pasted.includes("3d66.com")) {
+      const modelId = normalizeModelIdInput(pasted);
+      if (!modelId) {
         setError(t.clipboardInvalid3d66);
         return;
       }
 
-      setUrl(pasted);
+      setUrl(modelId);
       setPreview(null);
       setSelectedFormatKey("");
       setPendingFormatSelection(null);
@@ -296,7 +317,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               value={url}
               aria-label={t.getlinkInputAria}
               onChange={(event) => {
-                setUrl(event.target.value);
+                setUrl(event.target.value.toUpperCase());
                 setPreview(null);
                 setSelectedFormatKey("");
                 setPendingFormatSelection(null);

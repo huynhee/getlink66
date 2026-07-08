@@ -1,3 +1,46 @@
+const MODEL_ID_PATTERN = /^[A-Z0-9_-]{8,64}$/i;
+
+export function isModelId(value = "") {
+  const text = String(value || "").trim();
+  return MODEL_ID_PATTERN.test(text) && /[A-Z]/i.test(text) && /\d{6,}/.test(text);
+}
+
+export function extractModelIdInput(value = "") {
+  const text = String(value || "").trim();
+  if (!text) {
+    throw Object.assign(new Error("Model ID is required"), { status: 400 });
+  }
+
+  if (/^https?:\/\//i.test(text) || /3d66\.com/i.test(text)) {
+    throw Object.assign(
+      new Error("Chỉ nhận mã model 3D66, không nhận link. Vui lòng nhập mã như AGI896357716115729."),
+      { status: 400 },
+    );
+  }
+
+  if (!isModelId(text)) {
+    throw Object.assign(
+      new Error("Mã model 3D66 không hợp lệ. Vui lòng nhập mã như AGI896357716115729."),
+      { status: 400 },
+    );
+  }
+
+  return text.toUpperCase();
+}
+
+export function modelIdTo3D66Url(productId) {
+  const modelId = extractModelIdInput(productId);
+  const baseUrl = new URL(
+    process.env.THREED66_MODEL_ID_BASE_URL ||
+      "https://3d.3d66.com/reshtmla/model/items/id/model.html",
+  );
+  baseUrl.search = "";
+  baseUrl.searchParams.set("kw", modelId);
+  baseUrl.searchParams.set("sof", modelId);
+  baseUrl.searchParams.set("alichlgref", "https://user.3d66.com/");
+  return baseUrl.toString();
+}
+
 export function extractProductId(url) {
   let parsed;
   try {
