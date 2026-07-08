@@ -191,6 +191,23 @@ function requestedProductIdFromUrl(rawUrl = "") {
   }
 }
 
+function requestedProductIdCandidatesFromUrl(rawUrl = "") {
+  try {
+    const parsed = new URL(rawUrl);
+    const candidates = [
+      parsed.searchParams.get("sof"),
+      parsed.searchParams.get("id"),
+      productIdFromPath(parsed.pathname),
+    ];
+    const hash = decodeURIComponent(String(parsed.hash || "").replace(/^#/, ""));
+    const hashCandidates = hash.match(/(?:^|&)candidates=([^&]+)/)?.[1] || "";
+    if (hashCandidates) candidates.push(...hashCandidates.split(","));
+    return [...new Set(candidates.map(safeSearchKeyword).filter(Boolean))];
+  } catch {
+    return [];
+  }
+}
+
 function productIdFromPath(pathname = "") {
   const numericIds = [...String(pathname || "").matchAll(/(\d{6,})/g)].map((match) => match[1]);
   if (numericIds.length) return numericIds.sort((a, b) => b.length - a.length)[0];
@@ -375,20 +392,33 @@ function searchContextFromUrl(sourceUrl = "") {
 
 async function resolveAccountModelUrl(rawUrl, cookieValue, cookies = null) {
   const normalized = normalizeModelUrl(rawUrl);
-  const productId = safeSearchKeyword(requestedProductIdFromUrl(normalized.toString()));
-  if (!productId || process.env.THREED66_MOCK !== "false") {
+  const productIds = requestedProductIdCandidatesFromUrl(normalized.toString());
+  const productId = productIds[0] || "";
+  if (!productIds.length || process.env.THREED66_MOCK !== "false") {
     return { productId, url: normalized.toString(), usedAccountSearch: false };
   }
 
-  const safeUrl = safeAccountModelUrl(normalized.toString(), productId);
-  const searchUrl = await requestAccountSearchUrl(productId, cookieValue, safeUrl);
-  const resolvedUrl = searchUrl || safeUrl;
+  let safeUrl = safeAccountModelUrl(normalized.toString(), productId);
+  for (const candidate of productIds) {
+    const candidateSafeUrl = safeAccountModelUrl(normalized.toString(), candidate);
+    const searchUrl = await requestAccountSearchUrl(candidate, cookieValue, candidateSafeUrl);
+    if (searchUrl) {
+      return {
+        productId: candidate,
+        url: searchUrl,
+        safeUrl: candidateSafeUrl,
+        usedAccountSearch: true,
+        cookies,
+      };
+    }
+    safeUrl = safeUrl || candidateSafeUrl;
+  }
 
   return {
     productId,
-    url: resolvedUrl,
+    url: safeUrl,
     safeUrl,
-    usedAccountSearch: Boolean(searchUrl),
+    usedAccountSearch: false,
     cookies,
   };
 }

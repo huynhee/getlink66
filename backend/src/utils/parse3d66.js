@@ -1,4 +1,33 @@
 const MODEL_ID_PATTERN = /^[A-Z0-9_-]{8,64}$/i;
+const DEFAULT_ACCOUNT_ID = "177536980";
+
+function accountMarker() {
+  const explicitMarker = String(process.env.THREED66_ACCOUNT_MARKER || "").replace(/\D/g, "");
+  if (explicitMarker) return explicitMarker;
+
+  const accountId = String(process.env.THREED66_ACCOUNT_ID || DEFAULT_ACCOUNT_ID).replace(/\D/g, "");
+  const markerSource = accountId.length > 1 ? accountId.slice(0, -1) : accountId;
+  const marker = markerSource.split("").reverse().join("").replace(/^0+/, "");
+  return marker || "89635771";
+}
+
+function splitModelId(value = "") {
+  const modelId = String(value || "").trim().toUpperCase();
+  const match = modelId.match(/^([A-Z]{3})(\d{6,})$/);
+  if (!match) return null;
+  return { modelId, prefix: match[1], digits: match[2] };
+}
+
+function possibleTrackingMarkerLengths(digits = "") {
+  const marker = accountMarker();
+  if (digits.startsWith(marker) && digits.length - marker.length >= 5) {
+    return [marker.length];
+  }
+
+  const lengths = [accountMarker().length, 8, 9]
+    .filter((length) => Number.isInteger(length) && length > 0 && digits.length - length >= 5);
+  return [...new Set(lengths)];
+}
 
 export function isModelId(value = "") {
   const text = String(value || "").trim();
@@ -25,17 +54,85 @@ export function extractModelIdInput(value = "") {
     );
   }
 
-  return text.toUpperCase();
+  return normalizeAccountModelId(text);
 }
 
 export function modelIdTo3D66Url(productId) {
   const modelId = extractModelIdInput(productId);
+  const candidates = publicModelIdCandidates(productId);
   const baseUrl = new URL(process.env.THREED66_MODEL_ID_BASE_URL || modelIdBaseUrl(modelId));
   baseUrl.search = "";
   baseUrl.searchParams.set("kw", modelId);
   baseUrl.searchParams.set("sof", modelId);
   baseUrl.searchParams.set("alichlgref", "https://user.3d66.com/");
+  if (candidates.length > 1) {
+    baseUrl.hash = `candidates=${encodeURIComponent(candidates.join(","))}`;
+  }
   return baseUrl.toString();
+}
+
+export function normalizePublicModelId(value = "") {
+  const parsed = splitModelId(value);
+  if (!parsed) return String(value || "").trim().toUpperCase();
+
+  const marker = accountMarker();
+  if (!parsed.digits.startsWith(marker)) return parsed.modelId;
+
+  const suffix = parsed.digits.slice(marker.length);
+  return suffix ? `${parsed.prefix}${suffix}` : parsed.modelId;
+}
+
+export function normalizeAccountModelId(value = "") {
+  const parsed = splitModelId(value);
+  if (!parsed) return String(value || "").trim().toUpperCase();
+
+  const marker = accountMarker();
+  if (parsed.digits.startsWith(marker)) return parsed.modelId;
+
+  const markerLengths = possibleTrackingMarkerLengths(parsed.digits);
+  for (const markerLength of markerLengths) {
+    const suffix = parsed.digits.slice(markerLength);
+    if (suffix) return `${parsed.prefix}${marker}${suffix}`;
+  }
+
+  return `${parsed.prefix}${marker}${parsed.digits}`;
+}
+
+export function publicModelIdCandidates(value = "") {
+  const parsed = splitModelId(value);
+  const marker = accountMarker();
+  if (!parsed) return [normalizeAccountModelId(value)].filter(isModelId);
+
+  const candidates = [];
+  const markerLengths = possibleTrackingMarkerLengths(parsed.digits);
+
+  if (parsed.digits.startsWith(marker)) {
+    const suffix = parsed.digits.slice(marker.length);
+    candidates.push(parsed.modelId);
+    if (suffix) {
+      candidates.push(`${parsed.prefix}${suffix}`);
+      if (suffix.length > 6) {
+        candidates.push(`${parsed.prefix}${marker}${suffix.slice(0, -1)}`);
+        candidates.push(`${parsed.prefix}${suffix.slice(0, -1)}`);
+      }
+    }
+  } else if (markerLengths.length) {
+    for (const markerLength of markerLengths) {
+      const suffix = parsed.digits.slice(markerLength);
+      if (!suffix) continue;
+      candidates.push(`${parsed.prefix}${marker}${suffix}`);
+      candidates.push(`${parsed.prefix}${suffix}`);
+      if (suffix.length > 6) {
+        candidates.push(`${parsed.prefix}${marker}${suffix.slice(0, -1)}`);
+        candidates.push(`${parsed.prefix}${suffix.slice(0, -1)}`);
+      }
+    }
+  } else {
+    candidates.push(`${parsed.prefix}${marker}${parsed.digits}`);
+    candidates.push(parsed.modelId);
+  }
+
+  return [...new Set(candidates.filter(isModelId))];
 }
 
 function modelIdBaseUrl(modelId) {

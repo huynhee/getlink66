@@ -188,6 +188,16 @@ function productIdsFromModelUrl(url = "") {
       const value = parsed.searchParams.get(key);
       if (value) ids.push(value);
     });
+    const hashParams = new URLSearchParams(String(parsed.hash || "").replace(/^#/, ""));
+    const candidates = hashParams.get("candidates");
+    if (candidates) {
+      ids.push(
+        ...candidates
+          .split(",")
+          .map((value) => decodeURIComponent(value).trim())
+          .filter(Boolean),
+      );
+    }
     ids.push(extractProductId(parsed.toString()));
   } catch {
     // The caller may pass an old or partial URL; ignore it and use other ids.
@@ -205,9 +215,14 @@ function hasExplicitProductId(url = "") {
 }
 
 function lockedProductId(url = "", inputProductId = "", resolvedProductId = "") {
-  return hasExplicitProductId(url)
-    ? String(inputProductId || "").trim()
-    : String(resolvedProductId || inputProductId || "").trim();
+  const inputId = String(inputProductId || "").trim();
+  const resolvedId = String(resolvedProductId || "").trim();
+  if (hasExplicitProductId(url)) {
+    const requestedIds = productIdsFromModelUrl(url);
+    if (resolvedId && requestedIds.includes(resolvedId)) return resolvedId;
+    return inputId;
+  }
+  return String(resolvedId || inputId).trim();
 }
 
 function modelPageKey(url = "") {
@@ -1204,6 +1219,7 @@ export async function getLink(req, res, next) {
 
     const productId = extractProductId(url);
     const lockToInputProductId = hasExplicitProductId(url);
+    const requestedProductIds = productIdsFromModelUrl(url);
     let effectiveProductId = productId;
     logProductId = productId;
 
@@ -1227,14 +1243,14 @@ export async function getLink(req, res, next) {
 
     let activeRedownload = await findActiveRedownload(
       req.user._id,
-      productId,
+      requestedProductIds.length ? requestedProductIds : productId,
       url,
       downloadFormat,
     );
     if (!activeRedownload && downloadFormat) {
       const activeRedownloadAnyFormat = await findActiveRedownload(
         req.user._id,
-        productId,
+        requestedProductIds.length ? requestedProductIds : productId,
         url,
         null,
       );
@@ -1400,10 +1416,15 @@ export async function getLink(req, res, next) {
       );
       const formatOptions = sanitizeDownloadFormatOptions(formatSelection.formatOptions);
       if (formatSelection.cache) {
-        if (!lockToInputProductId || String(formatSelection.cache.productId || "") === String(productId)) {
+        if (
+          !lockToInputProductId ||
+          requestedProductIds.includes(String(formatSelection.cache.productId || ""))
+        ) {
           cachePreview = formatSelection.cache;
         }
-        effectiveProductId = lockToInputProductId ? productId : cachePreview.productId || effectiveProductId;
+        effectiveProductId = lockToInputProductId
+          ? lockedProductId(url, productId, formatSelection.cache.productId)
+          : cachePreview.productId || effectiveProductId;
         logProductId = effectiveProductId;
       }
       if (formatOptions.length > 1) {
@@ -1411,7 +1432,7 @@ export async function getLink(req, res, next) {
         const selectionCache = formatSelection.cache || cachePreview;
         return res.json(formatSelectionPayload(req, {
           productId: lockToInputProductId
-            ? productId
+            ? lockedProductId(url, productId, metadata.productId || selectionCache?.productId || effectiveProductId)
             : metadata.productId || selectionCache?.productId || effectiveProductId,
           title: metadata.title || selectionCache?.title || cachePreview?.title,
           imageUrl: metadata.imageUrl || selectionCache?.imageUrl || cachePreview?.imageUrl,
@@ -1440,13 +1461,14 @@ export async function getLink(req, res, next) {
         cacheMatchesDownloadFormat(cachedBeforeDownload, downloadFormat),
     );
     const cache = await resolveProductCache(effectiveProductId, url, downloadFormat);
-    if (lockToInputProductId && String(cache.productId || "") !== String(productId)) {
+    if (lockToInputProductId && !requestedProductIds.includes(String(cache.productId || ""))) {
       throw Object.assign(
         new Error("3D66 returned a different model than the requested link. Please retry this model."),
         {
           status: 502,
           details: {
             requestedProductId: productId,
+            requestedProductIds,
             returnedProductId: cache.productId,
           },
         },
@@ -1455,7 +1477,7 @@ export async function getLink(req, res, next) {
     const cachedRedownload = await findActiveRedownload(
       req.user._id,
       lockToInputProductId
-        ? [productId, effectiveProductId]
+        ? [productId, effectiveProductId, ...requestedProductIds]
         : [productId, effectiveProductId, cache.productId],
       url,
       downloadFormat,
