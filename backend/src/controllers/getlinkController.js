@@ -408,12 +408,16 @@ function readUrlRequest(req, res) {
   }
 
   const input = String(req.body.modelId || req.body.url || "").trim();
-  if (!input || input.length > 128) {
-    res.status(400).json({ message: "Model ID is required" });
+  if (!input || input.length > 2048) {
+    res.status(400).json({ message: "3D66 model link or model ID is required" });
     return null;
   }
 
   try {
+    if (/^https?:\/\//i.test(input)) {
+      extractProductId(input);
+      return input;
+    }
     return modelIdTo3D66Url(extractModelIdInput(input));
   } catch (error) {
     res.status(error.status || 400).json({ message: error.message });

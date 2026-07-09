@@ -4,6 +4,7 @@ import {
   download3D66WithBrowser,
   fetch3D66PageWithBrowser,
   inspect3D66DownloadFormatsWithBrowser,
+  resolve3D66ModelUrlFromFootprint,
 } from "./3d66BrowserService.js";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 
@@ -21,7 +22,11 @@ const PROXY_STAGE_ENV = {
 };
 const ACCOUNT_SEARCH_ENDPOINT = "https://www.3d66.com/api/v1/search/checkKeyword";
 const SEARCH_REFERER = "https://user.3d66.com/";
+const MODEL_RESOLVE_MODES = new Set(["search", "footprint", "direct"]);
+const FOOTPRINT_CACHE_TTL_MS = 2 * 60 * 1000;
+const FOOTPRINT_CACHE_MAX = 500;
 const proxyAgentCache = new Map();
+const footprintModelUrlCache = new Map();
 const DEFAULT_SITE_CONTEXTS = {
   "3d.3d66.com": {
     site: "1",
@@ -208,6 +213,16 @@ function requestedProductIdCandidatesFromUrl(rawUrl = "") {
   }
 }
 
+function isGeneratedModelIdUrl(rawUrl = "") {
+  try {
+    const parsed = new URL(rawUrl);
+    const hashParams = new URLSearchParams(String(parsed.hash || "").replace(/^#/, ""));
+    return hashParams.get("input") === "model-id";
+  } catch {
+    return false;
+  }
+}
+
 function productIdFromPath(pathname = "") {
   const numericIds = [...String(pathname || "").matchAll(/(\d{6,})/g)].map((match) => match[1]);
   if (numericIds.length) return numericIds.sort((a, b) => b.length - a.length)[0];
@@ -312,6 +327,40 @@ function accountSearchEnabled() {
   return booleanEnv("THREED66_ACCOUNT_SEARCH_ENABLED", true);
 }
 
+function modelResolveMode() {
+  const mode = String(process.env.THREED66_MODEL_RESOLVE_MODE || "search")
+    .trim()
+    .toLowerCase();
+  return MODEL_RESOLVE_MODES.has(mode) ? mode : "search";
+}
+
+function footprintCacheKey(productIds = [], cookieValue = "") {
+  const cookieHash = crypto
+    .createHash("sha256")
+    .update(String(cookieValue || ""))
+    .digest("hex")
+    .slice(0, 16);
+  return `${cookieHash}:${productIds.join(",")}`;
+}
+
+function cachedFootprintModelUrl(key = "") {
+  const entry = footprintModelUrlCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.createdAt > FOOTPRINT_CACHE_TTL_MS) {
+    footprintModelUrlCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function cacheFootprintModelUrl(key, value) {
+  if (footprintModelUrlCache.size >= FOOTPRINT_CACHE_MAX) {
+    const oldestKey = footprintModelUrlCache.keys().next().value;
+    if (oldestKey) footprintModelUrlCache.delete(oldestKey);
+  }
+  footprintModelUrlCache.set(key, { createdAt: Date.now(), value });
+}
+
 async function requestAccountSearchUrl(productId, cookieValue, sourceUrl) {
   const keyword = safeSearchKeyword(productId);
   if (!keyword || !accountSearchEnabled()) return "";
@@ -390,12 +439,52 @@ function searchContextFromUrl(sourceUrl = "") {
   }
 }
 
-async function resolveAccountModelUrl(rawUrl, cookieValue, cookies = null) {
+async function resolveAccountModelUrl(
+  rawUrl,
+  cookieValue,
+  cookies = null,
+  { stage = "preview" } = {},
+) {
   const normalized = normalizeModelUrl(rawUrl);
   const productIds = requestedProductIdCandidatesFromUrl(normalized.toString());
   const productId = productIds[0] || "";
   if (!productIds.length || process.env.THREED66_MOCK !== "false") {
     return { productId, url: normalized.toString(), usedAccountSearch: false };
+  }
+
+  const mode = modelResolveMode();
+  const generatedFromModelId = isGeneratedModelIdUrl(normalized.toString());
+  if (
+    mode === "direct" ||
+    (mode === "footprint" && stage === "preview" && !generatedFromModelId)
+  ) {
+    return {
+      productId,
+      url: normalized.toString(),
+      usedAccountSearch: false,
+      usedFootprint: false,
+      cookies,
+    };
+  }
+
+  if (mode === "footprint" && stage !== "preview" && !generatedFromModelId) {
+    const cacheKey = footprintCacheKey(productIds, cookieValue);
+    const cached = cachedFootprintModelUrl(cacheKey);
+    const footprint = cached || await resolve3D66ModelUrlFromFootprint(
+      normalized.toString(),
+      cookieValue,
+      productIds,
+    );
+    if (!cached) cacheFootprintModelUrl(cacheKey, footprint);
+    return {
+      productId,
+      resolvedProductId: footprint.productId || productId,
+      url: footprint.url,
+      usedAccountSearch: false,
+      usedFootprint: true,
+      cookieValue: footprint.cookieValue || cookieValue,
+      cookies,
+    };
   }
 
   let safeUrl = safeAccountModelUrl(normalized.toString(), productId);
@@ -1637,7 +1726,12 @@ async function download3D66WithBrowserFallback(url, cookieValue, originalError =
 }
 
 async function inspect3D66DownloadFormatsWithBrowserFallback(url, cookieValue) {
-  if (process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK === "true") return null;
+  if (
+    process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK === "true" &&
+    modelResolveMode() !== "footprint"
+  ) {
+    return null;
+  }
   try {
     return await inspect3D66DownloadFormatsWithBrowser(url, cookieValue);
   } catch (error) {
@@ -2162,20 +2256,45 @@ export async function request3D66File(fileUrl, cookieValue, options = {}) {
 
 export async function inspect3D66DownloadFormats(url, cookieValue) {
   const cookies = requireCookie(cookieValue);
-  const accountModel = await resolveAccountModelUrl(url, cookieValue, cookies);
+  const accountModel = await resolveAccountModelUrl(url, cookieValue, cookies, {
+    stage: "download",
+  });
   const normalized = normalizeModelUrl(accountModel.url);
-  return inspect3D66DownloadFormatsWithBrowserFallback(normalized.toString(), cookieValue);
+  const inspection = await inspect3D66DownloadFormatsWithBrowserFallback(
+    normalized.toString(),
+    accountModel.cookieValue || cookieValue,
+  );
+  if (!inspection) return inspection;
+  return {
+    ...inspection,
+    productId: accountModel.productId || inspection.productId,
+    sourceUrl: url,
+    metadata: inspection.metadata
+      ? {
+          ...inspection.metadata,
+          productId: accountModel.productId || inspection.metadata.productId,
+          sourceUrl: url,
+        }
+      : inspection.metadata,
+  };
 }
 
 export async function inspect3D66DownloadChoice(url, cookieValue) {
   const cookies = requireCookie(cookieValue);
-  const accountModel = await resolveAccountModelUrl(url, cookieValue, cookies);
+  const accountModel = await resolveAccountModelUrl(url, cookieValue, cookies, {
+    stage: "download",
+  });
   const normalized = normalizeModelUrl(accountModel.url);
+  const effectiveCookieValue = accountModel.cookieValue || cookieValue;
+  const effectiveCookies = requireCookie(effectiveCookieValue);
   const fields = parseDynamicFields("", normalized.toString());
   if (!fields.llId) return null;
 
-  const context = applyFieldsToContext(siteContext(normalized.toString(), cookies), fields);
-  const popData = await requestDownloadPop(fields, cookieValue, context);
+  const context = applyFieldsToContext(
+    siteContext(normalized.toString(), effectiveCookies),
+    fields,
+  );
+  const popData = await requestDownloadPop(fields, effectiveCookieValue, context);
   if (!popData) return null;
 
   const mergedFields = mergeDownloadPopFields(fields, popData);
@@ -2192,6 +2311,8 @@ export async function inspect3D66DownloadChoice(url, cookieValue) {
     normalized.toString(),
     mergedFields,
   );
+  metadata.productId = accountModel.productId || metadata.productId;
+  metadata.sourceUrl = url;
   const formatOptions = uniqueFormatOptions([
     ...(mergedFields.formatOptions || []),
     ...(metadata.formatOptions || []),
@@ -2228,35 +2349,57 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   }
 
   const initialCookies = requireCookie(cookieValue);
-  const accountModel = await resolveAccountModelUrl(url, cookieValue, initialCookies);
+  const accountModel = await resolveAccountModelUrl(url, cookieValue, initialCookies, {
+    stage: "download",
+  });
   const normalized = normalizeModelUrl(accountModel.url);
-  const requestedProductId = accountModel.productId || requestedProductIdFromUrl(normalized.toString());
-  let effectiveCookieValue = cookieValue;
+  const logicalProductId =
+    accountModel.productId || requestedProductIdFromUrl(normalized.toString());
+  const requestedProductId =
+    accountModel.resolvedProductId ||
+    requestedProductIdFromUrl(normalized.toString()) ||
+    logicalProductId;
+  let effectiveCookieValue = accountModel.cookieValue || cookieValue;
   let browserMetadata = null;
   const requestedFormat = options.downloadFormat
     ? normalizeDownloadFormatOption(options.downloadFormat, 0, false)
     : null;
-  const popPreview = await previewFromDownloadPopOnly(normalized.toString(), effectiveCookieValue, initialCookies);
+  let effectiveCookies = requireCookie(effectiveCookieValue);
+  const popPreview = await previewFromDownloadPopOnly(
+    normalized.toString(),
+    effectiveCookieValue,
+    effectiveCookies,
+  );
   let seedFields = popPreview?.fields || null;
   let seedMetadata = popPreview?.metadata || null;
   let html = "";
   let pageUrl = normalized.toString();
   if (!seedFields || !seedMetadata) {
     if (shouldAlwaysUseBrowserPage()) {
-      const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue);
+      const browserPage = await fetch3D66PageWithBrowserFallback(
+        normalized.toString(),
+        effectiveCookieValue,
+      );
       if (browserPage) {
         browserMetadata = browserPage.metadata;
-        effectiveCookieValue = browserPage.cookieValue || cookieValue;
+        effectiveCookieValue = browserPage.cookieValue || effectiveCookieValue;
         html = browserPage.html;
         pageUrl = browserPage.pageUrl || normalized.toString();
       }
     }
     if (!browserMetadata) {
-      ({ html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
+      ({ html, pageUrl } = await fetchModelPage(
+        normalized.toString(),
+        effectiveCookieValue,
+      ).catch(async (error) => {
         if (!shouldFallbackToBrowserPage(error)) throw error;
-        const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
+        const browserPage = await fetch3D66PageWithBrowserFallback(
+          normalized.toString(),
+          effectiveCookieValue,
+          error,
+        );
         browserMetadata = browserPage.metadata;
-        effectiveCookieValue = browserPage.cookieValue || cookieValue;
+        effectiveCookieValue = browserPage.cookieValue || effectiveCookieValue;
         return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
       }));
     }
@@ -2266,9 +2409,9 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   if (browserMetadata) {
     fields = mergeBrowserFields(fields, browserMetadata);
     metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);
+    effectiveCookies = requireCookie(effectiveCookieValue);
   }
 
-  let effectiveCookies = initialCookies;
   let context = applyFieldsToContext(siteContext(pageUrl, effectiveCookies), fields);
   if (!browserMetadata) {
     ({ fields, metadata } = await enrichFromDownloadPop(fields, metadata, pageUrl, effectiveCookieValue, context));
@@ -2276,11 +2419,14 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   }
 
   if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields, true)) {
-    const browserPage = await fetch3D66PageWithBrowserFallback(pageUrl || normalized.toString(), cookieValue);
+    const browserPage = await fetch3D66PageWithBrowserFallback(
+      pageUrl || normalized.toString(),
+      effectiveCookieValue,
+    );
     if (browserPage) {
       html = browserPage.html;
       pageUrl = browserPage.pageUrl;
-      effectiveCookieValue = browserPage.cookieValue || cookieValue;
+      effectiveCookieValue = browserPage.cookieValue || effectiveCookieValue;
       fields = mergeBrowserFields(parseDynamicFields(html, pageUrl), browserPage.metadata);
       metadata = mergeBrowserMetadata(parseModelMetadata(html, pageUrl, fields), browserPage.metadata, fields);
       effectiveCookies = requireCookie(effectiveCookieValue);
@@ -2292,7 +2438,10 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   ({ fields, metadata } = applySelectedFormat(fields, metadata, requestedFormat));
 
   if (!fields.llId || !fields.token || !fields.upTime) {
-    if (process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK === "true") {
+    if (
+      process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK === "true" &&
+      !accountModel.usedFootprint
+    ) {
       validateDynamicFields(fields);
     }
     const browserDownload = await download3D66WithBrowserFallback(
@@ -2301,7 +2450,13 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
       null,
       { downloadFormat: requestedFormat },
     );
-    if (browserDownload) return browserDownload;
+    if (browserDownload) {
+      return {
+        ...browserDownload,
+        productId: logicalProductId || browserDownload.productId,
+        sourceUrl: url,
+      };
+    }
     validateDynamicFields(fields);
   }
 
@@ -2313,8 +2468,11 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
     download = await requestDownloadUrl(payload, effectiveCookieValue, context.origin);
   } catch (error) {
     if (
-      process.env.THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK === "true" &&
-      process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK !== "true"
+      accountModel.usedFootprint ||
+      (
+        process.env.THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK === "true" &&
+        process.env.THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK !== "true"
+      )
     ) {
       const browserDownload = await download3D66WithBrowserFallback(
         pageUrl || normalized.toString(),
@@ -2322,14 +2480,20 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
         error,
         { downloadFormat: requestedFormat },
       );
-      if (browserDownload) return browserDownload;
+      if (browserDownload) {
+        return {
+          ...browserDownload,
+          productId: logicalProductId || browserDownload.productId,
+          sourceUrl: url,
+        };
+      }
     }
     throw error;
   }
   return {
     fileUrl: download.fileUrl,
-    productId: fields.llId,
-    sourceUrl: pageUrl,
+    productId: logicalProductId || fields.llId,
+    sourceUrl: url,
     title: metadata.title,
     imageUrl: metadata.imageUrl,
     creditCost: download.creditCost || metadata.creditCost,

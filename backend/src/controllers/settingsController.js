@@ -3,6 +3,7 @@ import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
 import { limitedString, rejectUnknownKeys, sanitizeHtml } from "../utils/validators.js";
 
 const REFERRAL_MODES = ["both", "referrer_only", "off"];
+const THREED66_MODEL_RESOLVE_MODES = ["search", "footprint", "direct"];
 const HOME_TEXT_FIELDS = [
   "heroText",
   "heroSubtitle",
@@ -210,6 +211,11 @@ const defaultSettings = {
   threed66PreviewConcurrency: Number(process.env.THREED66_PREVIEW_CONCURRENCY || 1),
   threed66RefreshConcurrency: Number(process.env.THREED66_REFRESH_CONCURRENCY || 1),
   threed66PaytypeValue: String(process.env.THREED66_PAYTYPE_VALUE || "4"),
+  threed66ModelResolveMode: THREED66_MODEL_RESOLVE_MODES.includes(
+    String(process.env.THREED66_MODEL_RESOLVE_MODE || "").trim().toLowerCase(),
+  )
+    ? String(process.env.THREED66_MODEL_RESOLVE_MODE).trim().toLowerCase()
+    : "search",
   threed66RequestIntervalMs: Number(process.env.THREED66_REQUEST_INTERVAL_MS || 2500),
   threed66BrowserConcurrency: Number(process.env.THREED66_BROWSER_CONCURRENCY || 1),
   threed66BrowserAlways: RUNTIME_BOOLEAN_FIELDS.threed66BrowserAlways.fallback,
@@ -334,6 +340,11 @@ function normalizePaytypeValue(value) {
   return /^[\w-]{1,20}$/.test(text) ? text : "4";
 }
 
+function normalizeModelResolveMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  return THREED66_MODEL_RESOLVE_MODES.includes(mode) ? mode : "search";
+}
+
 function normalizeProxyUrl(value) {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -363,6 +374,9 @@ function applyRuntimeSettings(settings = {}) {
   });
   process.env.THREED66_PAYTYPE_VALUE = normalizePaytypeValue(
     settings.threed66PaytypeValue,
+  );
+  process.env.THREED66_MODEL_RESOLVE_MODE = normalizeModelResolveMode(
+    settings.threed66ModelResolveMode,
   );
   const storedProxyUrl = rawSettingValue(settings, "threed66ProxyUrl");
   if (storedProxyUrl !== undefined && String(storedProxyUrl || "").trim()) {
@@ -403,6 +417,22 @@ async function loadSettings() {
     runtimePatch.threed66PaytypeValue = normalizedPaytypeValue;
   }
   const rawSettings = settings.toObject ? settings.toObject({ defaults: false }) : settings;
+  const modelModeIsSchemaDefault =
+    typeof settings.$isDefault === "function" &&
+    settings.$isDefault("threed66ModelResolveMode");
+  const hasStoredModelMode =
+    rawSettings.threed66ModelResolveMode !== undefined && !modelModeIsSchemaDefault;
+  const normalizedModelResolveMode = normalizeModelResolveMode(
+    hasStoredModelMode
+      ? settings.threed66ModelResolveMode
+      : defaultSettings.threed66ModelResolveMode,
+  );
+  if (
+    !hasStoredModelMode ||
+    settings.threed66ModelResolveMode !== normalizedModelResolveMode
+  ) {
+    runtimePatch.threed66ModelResolveMode = normalizedModelResolveMode;
+  }
   Object.entries(RUNTIME_BOOLEAN_FIELDS).forEach(([field, config]) => {
     const isSchemaDefault =
       typeof settings.$isDefault === "function" && settings.$isDefault(field);
@@ -471,6 +501,7 @@ export async function updateSettings(req, res, next) {
       "threed66PreviewConcurrency",
       "threed66RefreshConcurrency",
       "threed66PaytypeValue",
+      "threed66ModelResolveMode",
       "threed66RequestIntervalMs",
       "threed66BrowserConcurrency",
       "threed66BrowserAlways",
@@ -512,6 +543,10 @@ export async function updateSettings(req, res, next) {
       }
       if (field === "threed66PaytypeValue") {
         update[field] = normalizePaytypeValue(req.body[field]);
+        return;
+      }
+      if (field === "threed66ModelResolveMode") {
+        update[field] = normalizeModelResolveMode(req.body[field]);
         return;
       }
       if (field === "threed66ProxyUrl") {

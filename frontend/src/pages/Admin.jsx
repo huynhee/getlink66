@@ -109,6 +109,7 @@ const defaultSiteSettings = {
   threed66PreviewConcurrency: 1,
   threed66RefreshConcurrency: 1,
   threed66PaytypeValue: "4",
+  threed66ModelResolveMode: "search",
   threed66RequestIntervalMs: 2500,
   threed66BrowserConcurrency: 1,
   threed66BrowserAlways: false,
@@ -543,6 +544,7 @@ export default function Admin({ user, language = "vi" }) {
           threed66PreviewConcurrency: Number(siteSettings.threed66PreviewConcurrency || 1),
           threed66RefreshConcurrency: Number(siteSettings.threed66RefreshConcurrency || 1),
           threed66PaytypeValue: String(siteSettings.threed66PaytypeValue || "4").trim(),
+          threed66ModelResolveMode: String(siteSettings.threed66ModelResolveMode || "search"),
           threed66RequestIntervalMs: Number(siteSettings.threed66RequestIntervalMs || 2500),
           threed66BrowserConcurrency: Number(siteSettings.threed66BrowserConcurrency || 1),
           threed66BrowserAlways: Boolean(siteSettings.threed66BrowserAlways),
@@ -1058,6 +1060,32 @@ export default function Admin({ user, language = "vi" }) {
       value: "always",
       label: l("Luôn Playwright", "Always Playwright"),
       help: l("Ép preview/getlink đi qua browser để test model khó. Tốn RAM/CPU hơn.", "Force preview/getlink through the browser for hard models. Uses more RAM/CPU."),
+    },
+  ];
+  const modelResolveModes = [
+    {
+      value: "search",
+      label: l("Tìm bằng ID", "Search by ID"),
+      help: l(
+        "Dùng cookie gọi search 3D66 để lấy URL model. Phù hợp khi user chỉ nhập mã model.",
+        "Use the cookie to search 3D66 for the model URL. Best when users enter only a model ID.",
+      ),
+    },
+    {
+      value: "footprint",
+      label: l("Lấy qua lịch sử truy cập", "Resolve via footprint"),
+      help: l(
+        "Preview đọc link user cho nhanh. Khi tải, Playwright mở link, làm mới lịch sử truy cập và lấy URL thuộc tài khoản cookie.",
+        "Preview the submitted link directly. On download, Playwright opens it, refreshes footprint history, and uses the cookie account URL.",
+      ),
+    },
+    {
+      value: "direct",
+      label: l("Dùng link trực tiếp", "Use direct URL"),
+      help: l(
+        "Dùng nguyên link đầu vào cho cả preview và tải. Chỉ nên dùng để kiểm tra.",
+        "Use the submitted URL for both preview and download. Intended for diagnostics only.",
+      ),
     },
   ];
   const threed66SettingsTabs = [
@@ -1805,6 +1833,20 @@ export default function Admin({ user, language = "vi" }) {
             {threed66SettingsTab === "tasks" && (
             <div className="runtimeSettingGroup">
               <h3>{l("Tác vụ sang 3D66", "3D66 task settings")}</h3>
+              <div className="runtimeModeGrid" style={{ marginBottom: 12 }}>
+                {modelResolveModes.map((mode) => (
+                  <button
+                    key={mode.value}
+                    type="button"
+                    className={`runtimeModeButton ${siteSettings.threed66ModelResolveMode === mode.value ? "active" : ""}`}
+                    aria-pressed={siteSettings.threed66ModelResolveMode === mode.value}
+                    onClick={() => updateRuntimeSetting("threed66ModelResolveMode", mode.value)}
+                  >
+                    <strong>{mode.label}</strong>
+                    <small>{mode.help}</small>
+                  </button>
+                ))}
+              </div>
               <div className="runtimeSettingList">
                 {threed66RuntimeSettings.map((setting) => (
                   <label className="runtimeSettingRow" key={setting.field}>

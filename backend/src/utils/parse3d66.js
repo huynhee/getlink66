@@ -65,9 +65,11 @@ export function modelIdTo3D66Url(productId) {
   baseUrl.searchParams.set("kw", modelId);
   baseUrl.searchParams.set("sof", modelId);
   baseUrl.searchParams.set("alichlgref", "https://user.3d66.com/");
+  const hashParams = new URLSearchParams({ input: "model-id" });
   if (candidates.length > 1) {
-    baseUrl.hash = `candidates=${encodeURIComponent(candidates.join(","))}`;
+    hashParams.set("candidates", candidates.join(","));
   }
+  baseUrl.hash = hashParams.toString();
   return baseUrl.toString();
 }
 

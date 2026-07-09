@@ -53,12 +53,25 @@ const HOME_TEXT_DEFAULTS = {
   },
 };
 
-function normalizeModelIdInput(value = "") {
+function normalize3D66Input(value = "") {
   const text = String(value || "").trim();
-  if (!text || /^https?:\/\//i.test(text) || /3d66\.com/i.test(text)) return "";
+  if (!text) return "";
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      const parsed = new URL(text);
+      const host = parsed.hostname.toLowerCase();
+      return host === "3d66.com" || host.endsWith(".3d66.com") ? text : "";
+    } catch {
+      return "";
+    }
+  }
   return /^[A-Z0-9_-]{8,64}$/i.test(text) && /[A-Z]/i.test(text) && /\d{6,}/.test(text)
     ? text.toUpperCase()
     : "";
+}
+
+function inputValueWhileTyping(value = "") {
+  return /^https?:\/\//i.test(String(value).trim()) ? value : value.toUpperCase();
 }
 
 export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/", language = "vi" }) {
@@ -202,8 +215,8 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   }
 
   function getlinkTarget() {
-    const modelId = normalizeModelIdInput(demoLink);
-    return modelId ? `/getlink?url=${encodeURIComponent(modelId)}` : "/getlink";
+    const modelInput = normalize3D66Input(demoLink);
+    return modelInput ? `/getlink?url=${encodeURIComponent(modelInput)}` : "/getlink";
   }
 
   function handleDemoGetlink(event) {
@@ -212,12 +225,12 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
       setDemoError(t.systemOfflineMessage);
       return;
     }
-    const modelId = normalizeModelIdInput(demoLink);
-    if (!modelId) {
+    const modelInput = normalize3D66Input(demoLink);
+    if (!modelInput) {
       setDemoError(t.invalid3d66Link);
       return;
     }
-    setDemoLink(modelId);
+    setDemoLink(modelInput);
     window.location.href = authAwareHref(getlinkTarget());
   }
 
@@ -234,13 +247,13 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
         setDemoError(t.clipboardEmpty);
         return;
       }
-      const modelId = normalizeModelIdInput(pasted);
-      if (!modelId) {
+      const modelInput = normalize3D66Input(pasted);
+      if (!modelInput) {
         setDemoError(t.clipboardInvalid3d66);
         return;
       }
 
-      setDemoLink(modelId);
+      setDemoLink(modelInput);
     } catch {
       setDemoError(t.clipboardDenied);
     }
@@ -360,7 +373,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                     placeholder={t.getlinkPlaceholder}
                     value={demoLink}
                     onChange={(event) => {
-                      setDemoLink(event.target.value.toUpperCase());
+                      setDemoLink(inputValueWhileTyping(event.target.value));
                       setDemoError("");
                     }}
                     required
