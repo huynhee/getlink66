@@ -54,22 +54,19 @@ function inputModeText(resolveMode = "search", language = "vi") {
   const isVi = language === "vi";
   if (resolveMode === "footprint") {
     return {
-      label: isVi ? "Chế độ: Lấy qua lịch sử truy cập" : "Mode: Resolve via footprint",
       placeholder: isVi ? "Nhập link model" : "Paste the full 3D66 model link",
       invalid: isVi ? "Vui lòng dán link model 3D66 có mã sof." : "Paste a 3D66 model link containing a sof ID.",
     };
   }
   if (resolveMode === "direct") {
     return {
-      label: isVi ? "Chế độ: Dùng link trực tiếp" : "Mode: Use direct URL",
       placeholder: isVi ? "Dán link model" : "Paste the full 3D66 model link",
       invalid: isVi ? "Vui lòng dán link model 3D66 có mã sof." : "Paste a 3D66 model link containing a sof ID.",
     };
   }
   return {
-    label: isVi ? "Chế độ: Tìm bằng ID" : "Mode: Search by ID",
     placeholder: isVi ? "Nhập mã model" : "Enter a 3D66 model ID",
-    invalid: isVi ? "Vui lòng nhập mã model 3D66 hợp lệ." : "Enter a valid 3D66 model ID.",
+    invalid: isVi ? "Vui lòng nhập mã model hợp lệ." : "Enter a valid 3D66 model ID.",
   };
 }
 
@@ -356,7 +353,6 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     <section className="panel">
       <form className="getlinkForm" onSubmit={submit}>
         <h2>{t.getlinkTitle}</h2>
-        <p className="muted" style={{ margin: "-8px 0 0" }}>{modeText.label}</p>
         <div className="inputRow">
           <div className="linkInputWrap terminalInput" style={{ "--cursor-x": `${cursorX}px` }}>
             <span className="terminalInputMirror" aria-hidden="true">{url || modeText.placeholder}</span>

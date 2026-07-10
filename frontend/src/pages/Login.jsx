@@ -81,22 +81,19 @@ function inputModeText(resolveMode = "search", language = "vi") {
   const isVi = language === "vi";
   if (resolveMode === "footprint") {
     return {
-      label: isVi ? "Chế độ: Lấy qua lịch sử truy cập" : "Mode: Resolve via footprint",
       placeholder: isVi ? "Nhập link model" : "Paste the full 3D66 model link",
-      invalid: isVi ? "Vui lòng dán link model có mã sof." : "Paste a 3D66 model link containing a sof ID.",
+      invalid: isVi ? "Vui lòng dán link model." : "Paste a 3D66 model link containing a sof ID.",
     };
   }
   if (resolveMode === "direct") {
     return {
-      label: isVi ? "Chế độ: Dùng link trực tiếp" : "Mode: Use direct URL",
       placeholder: isVi ? "Nhập link model" : "Paste the full 3D66 model link",
-      invalid: isVi ? "Vui lòng dán link model có mã sof." : "Paste a 3D66 model link containing a sof ID.",
+      invalid: isVi ? "Vui lòng dán link model." : "Paste a 3D66 model link containing a sof ID.",
     };
   }
   return {
-    label: isVi ? "Chế độ: Tìm bằng ID" : "Mode: Search by ID",
     placeholder: isVi ? "Nhập mã model" : "Enter a 3D66 model ID",
-    invalid: isVi ? "Vui lòng nhập mã model 3D66 hợp lệ." : "Enter a valid 3D66 model ID.",
+    invalid: isVi ? "Vui lòng nhập mã model hợp lệ." : "Enter a valid 3D66 model ID.",
   };
 }
 
@@ -393,7 +390,6 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
               <h2 style={{ fontSize: 20, marginBottom: 24 }}>
                 {siteSettings.demoTitle || t.startDownload}
               </h2>
-              <p className="muted" style={{ margin: "-14px 0 12px" }}>{modeText.label}</p>
               <form onSubmit={handleDemoGetlink} className="inputWrapper">
                 <div className="linkInputWrap terminalInput" style={{ "--cursor-x": `${demoCursorX}px` }}>
                   <span className="terminalInputMirror" aria-hidden="true">{demoLink || modeText.placeholder}</span>
