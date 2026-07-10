@@ -8,7 +8,7 @@ import ProductCache from "../models/ProductCache.js";
 import SystemLog from "../models/SystemLog.js";
 import Referral from "../models/Referral.js";
 import { isMemoryDb } from "../config/memoryStore.js";
-import { addCredit } from "../utils/creditService.js";
+import { grantManualCredit } from "../utils/manualCreditService.js";
 import { validate3D66Cookie } from "../utils/3d66Service.js";
 import { get3D66CookiePoolStatus } from "../utils/3d66CookiePool.js";
 import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
@@ -31,6 +31,29 @@ const MAX_VOUCHER_DISCOUNT_PERCENT = Number(
 const ADMIN_USER_PAGE_SIZE = 10;
 const ADMIN_GETLINK_PAGE_SIZE = 10;
 const ADMIN_TOPUP_PAGE_SIZE = 10;
+
+export function serializeAdminUser(user) {
+  if (!user) return null;
+  const doc = typeof user.toObject === "function" ? user.toObject() : user;
+  return {
+    _id: doc._id,
+    email: doc.email || "",
+    name: doc.name || "",
+    avatar: doc.avatar || "",
+    role: doc.role || "user",
+    credit: Number(doc.credit || 0),
+    referralCode: doc.referralCode || "",
+    referredBy: doc.referredBy || null,
+    referralRewardedAt: doc.referralRewardedAt || null,
+    isTwoFactorEnabled: Boolean(doc.isTwoFactorEnabled),
+    isBanned: Boolean(doc.isBanned),
+    banReason: doc.banReason || "",
+    bannedAt: doc.bannedAt || null,
+    bannedBy: doc.bannedBy || null,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
 
 function normalizedSearch(value = "") {
   return String(value || "").trim().toLowerCase().slice(0, 120);
@@ -240,10 +263,6 @@ function summarizeCookie(cookie) {
   const keys = cookieKeys(decryptedValue);
   const requiredKeys = ["PHPSESSID", "login_token", "login_sign"];
   const missingKeys = requiredKeys.filter((key) => !keys.has(key));
-  const value = String(decryptedValue || "");
-  const preview =
-    value.length > 36 ? `${value.slice(0, 18)}...${value.slice(-12)}` : value;
-
   return {
     _id: cookie._id,
     label: cookie.label || "",
@@ -255,7 +274,7 @@ function summarizeCookie(cookie) {
     lastUsedAt: cookie.lastUsedAt,
     lastErrorAt: cookie.lastErrorAt,
     lastErrorMessage: cookie.lastErrorMessage,
-    preview,
+    preview: decryptedValue ? "[stored]" : "",
     keyCount: keys.size,
     hasRequiredKeys: missingKeys.length === 0,
     missingKeys,
@@ -387,7 +406,7 @@ export async function listUsers(req, res, next) {
         .skip((safePage - 1) * ADMIN_USER_PAGE_SIZE)
         .limit(ADMIN_USER_PAGE_SIZE);
       return res.json({
-        users,
+        users: users.map(serializeAdminUser),
         pagination: {
           page: safePage,
           pageSize: ADMIN_USER_PAGE_SIZE,
@@ -412,7 +431,7 @@ export async function listUsers(req, res, next) {
     const users = filteredUsers.slice(start, start + ADMIN_USER_PAGE_SIZE);
 
     res.json({
-      users,
+      users: users.map(serializeAdminUser),
       pagination: {
         page: safePage,
         pageSize: ADMIN_USER_PAGE_SIZE,
@@ -534,7 +553,7 @@ export async function banUser(req, res, next) {
       },
       { new: true },
     );
-    res.json({ user });
+    res.json({ user: serializeAdminUser(user) });
   } catch (error) {
     next(error);
   }
@@ -557,7 +576,7 @@ export async function unbanUser(req, res, next) {
       { new: true },
     );
     if (!user) return res.status(404).json({ message: "User not found" });
-    res.json({ user });
+    res.json({ user: serializeAdminUser(user) });
   } catch (error) {
     next(error);
   }
@@ -757,12 +776,12 @@ export async function adminAddCredit(req, res, next) {
 
     // Atomic check: chi tang credit neu sau khi tang khong vuot MAX_STORED_CREDIT.
     // Tranh race khi 2 admin add credit cung luc lam vuot gioi han.
-    const user = await User.findOneAndUpdate(
-      { _id: userId, credit: { $lte: MAX_STORED_CREDIT - amount } },
-      { $inc: { credit: amount } },
-      { new: true },
-    );
-    if (!user) {
+    const result = await grantManualCredit({
+      userId,
+      amount,
+      maxStoredCredit: MAX_STORED_CREDIT,
+    });
+    if (!result) {
       const exists = await User.findById(userId);
       if (!exists) {
         return res.status(404).json({ message: "User not found" });
@@ -774,18 +793,10 @@ export async function adminAddCredit(req, res, next) {
       });
     }
 
-    let topup = null;
-    if (amount > 0) {
-      topup = await Topup.create({
-        userId,
-        amount: 0,
-        credit: amount,
-        type: "manual",
-        status: "approved",
-        paidAt: new Date(),
-      });
-    }
-    res.json({ user, topup });
+    res.json({
+      user: serializeAdminUser(result.user),
+      topup: result.topup,
+    });
   } catch (error) {
     next(error);
   }
@@ -815,7 +826,7 @@ export async function adminSetCredit(req, res, next) {
       { credit: amount },
       { new: true },
     );
-    res.json({ user });
+    res.json({ user: serializeAdminUser(user) });
   } catch (error) {
     next(error);
   }
@@ -1288,9 +1299,12 @@ export async function updateVoucher(req, res, next) {
     const { payload, error } = normalizeVoucherPayload(req.body, currentVoucher);
     if (error) return res.status(400).json({ message: error });
 
-    const voucher = await Voucher.findByIdAndUpdate(req.params.id, payload, {
+    let voucher = await Voucher.findByIdAndUpdate(req.params.id, payload, {
       new: true,
-    }).populate("applicablePackageIds", "name price");
+    });
+    if (typeof voucher?.populate === "function") {
+      voucher = await voucher.populate("applicablePackageIds", "name price");
+    }
     res.json({ voucher });
   } catch (error) {
     if (error?.code === 11000) {

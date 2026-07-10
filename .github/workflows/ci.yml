@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.1
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Install root tooling
+        run: npm ci --ignore-scripts
+      - name: Install backend
+        run: npm ci --ignore-scripts --prefix backend
+      - name: Install frontend
+        run: npm ci --ignore-scripts --prefix frontend
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Audit root tooling
+        run: npm audit
+      - name: Audit backend runtime
+        run: npm audit --omit=dev --prefix backend
+      - name: Audit frontend toolchain
+        run: npm audit --prefix frontend

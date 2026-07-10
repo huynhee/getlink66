@@ -43,6 +43,11 @@ function clearPaymentQuery() {
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
+function createIdempotencyKey() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `topup-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+}
+
 export default function Topup({ user, onUserChange, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const locale = language === "vi" ? "vi-VN" : "en-US";
@@ -55,6 +60,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   const [copied, setCopied] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     api("/api/topup/packages").then((data) => setPackages(data.packages));
@@ -153,7 +159,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     }, 3000);
 
     return () => window.clearInterval(timer);
-  }, [onUserChange, user]);
+  }, [language, onUserChange, t.checkingPayment, t.paymentCanceled, t.paymentError, user]);
 
   useEffect(() => {
     if (!payment || payment.status !== "pending") return undefined;
@@ -182,7 +188,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     }, 5000);
 
     return () => window.clearInterval(timer);
-  }, [payment, onUserChange, user]);
+  }, [language, onUserChange, payment, t.paymentCanceled, user]);
 
   function priceBeforeVoucher(item) {
     if (Number(item.salePrice || 0) > 0) return Number(item.salePrice || 0);
@@ -229,11 +235,13 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   }
 
   async function topup() {
+    if (submitting) return;
     if (!selectedPackage) {
       setError(t.selectPackageBeforePayment);
       return;
     }
 
+    setSubmitting(true);
     try {
       setMessage("");
       setError("");
@@ -241,6 +249,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
       setLastPaidPayment(null);
       const data = await api("/api/topup", {
         method: "POST",
+        headers: { "Idempotency-Key": createIdempotencyKey() },
         body: JSON.stringify({
           packageId: selectedPackage._id,
           type: "sepay",
@@ -254,9 +263,11 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
       setMessage(t.redirectingPayment);
       if (!submitPaymentCheckout(data.payment)) {
         setMessage(t.paymentOrderCreated);
+        setSubmitting(false);
       }
     } catch (err) {
       setError(err.message);
+      setSubmitting(false);
     }
   }
 
@@ -380,9 +391,9 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               <p>{t.selectPackageHelp}</p>
             </div>
           )}
-          <button className="primaryButton" type="button" disabled={!selectedPackage} onClick={topup}>
+          <button className="primaryButton" type="button" disabled={!selectedPackage || submitting} onClick={topup}>
             <CreditCard size={18} />
-            {t.topupNow}
+            {submitting ? t.redirectingPayment : t.topupNow}
           </button>
         </div>
         {message && <p className="success" style={{ marginTop: 14 }}>{message}</p>}

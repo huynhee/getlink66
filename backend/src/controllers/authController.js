@@ -1,4 +1,5 @@
 import passport from "passport";
+import crypto from "node:crypto";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { issueCsrfToken } from "../middleware/csrf.js";
@@ -6,9 +7,11 @@ import { generateTokens } from "../middleware/jwtAuth.js";
 import User from "../models/User.js";
 import { securityEvent } from "../utils/logger.js";
 import { SESSION_EXPIRED_MESSAGE } from "../utils/authMessages.js";
+import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
 
 const SAFE_RETURN_PATH = /^\/[a-zA-Z0-9\-_/]*$/;
 const SAFE_REFERRAL_CODE = /^[a-zA-Z0-9]{6,24}$/;
+const OAUTH_STATE_COOKIE = "oauthState";
 
 function twoFactorValidationWindow() {
   const configured = Number(process.env.TWO_FA_TOTP_WINDOW || 2);
@@ -37,7 +40,48 @@ function oauthClearCookieOptions() {
   };
 }
 
+function safeEqual(a = "", b = "") {
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function clearOAuthCookies(res) {
+  const options = oauthClearCookieOptions();
+  res.clearCookie("oauthReturnTo", options);
+  res.clearCookie("oauthReferralCode", options);
+  res.clearCookie(OAUTH_STATE_COOKIE, options);
+}
+
+export function validateOAuthState(req, res, next) {
+  const expected = String(req.cookies?.[OAUTH_STATE_COOKIE] || "");
+  const received = String(req.query?.state || "");
+  res.clearCookie(OAUTH_STATE_COOKIE, oauthClearCookieOptions());
+
+  if (
+    !expected ||
+    !received ||
+    expected.length > 128 ||
+    received.length > 128 ||
+    !safeEqual(expected, received)
+  ) {
+    securityEvent("GOOGLE_OAUTH_STATE_INVALID", {
+      ip: req.ip,
+      path: req.path,
+      hasExpectedState: Boolean(expected),
+      hasReceivedState: Boolean(received),
+    });
+    clearOAuthCookies(res);
+    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    return res.redirect(`${clientUrl}/?auth=state_error`);
+  }
+
+  return next();
+}
+
 export function googleLogin(req, res, next) {
+  const state = crypto.randomBytes(32).toString("base64url");
+  res.cookie(OAUTH_STATE_COOKIE, state, oauthCookieOptions());
   const returnTo =
     typeof req.query.returnTo === "string" ? req.query.returnTo : "";
   if (returnTo.length <= 200 && SAFE_RETURN_PATH.test(returnTo)) {
@@ -52,10 +96,12 @@ export function googleLogin(req, res, next) {
   passport.authenticate("google", {
     scope: ["profile", "email"],
     session: false,
+    state,
   })(req, res, next);
 }
 
 export const googleCallback = [
+  validateOAuthState,
   (req, res, next) => {
     passport.authenticate("google", { session: false }, (error, user) => {
       if (error || !user) {
@@ -65,8 +111,7 @@ export const googleCallback = [
           path: req.path,
         });
         const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
-        res.clearCookie("oauthReturnTo", oauthClearCookieOptions());
-        res.clearCookie("oauthReferralCode", oauthClearCookieOptions());
+        clearOAuthCookies(res);
         return res.redirect(`${clientUrl}/`);
       }
       req.user = user;
@@ -77,14 +122,13 @@ export const googleCallback = [
     generateTokens(req, res, req.user);
     const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
     const returnTo = req.cookies.oauthReturnTo || "/";
-    res.clearCookie("oauthReturnTo", oauthClearCookieOptions());
-    res.clearCookie("oauthReferralCode", oauthClearCookieOptions());
+    clearOAuthCookies(res);
     const safePath = returnTo === "/admin" ? "/admin" : "/";
     res.redirect(`${clientUrl}${safePath}`);
   },
 ];
 
-export function logout(req, res, next) {
+export function logout(req, res) {
   res.clearCookie("accessToken");
   res.clearCookie("refreshToken");
   res.json({ ok: true });
@@ -174,7 +218,7 @@ export async function verifyAndEnable2FA(req, res, next) {
 
     // Save to user
     await User.findByIdAndUpdate(req.user._id, {
-      twoFactorSecret: tempSecret,
+      twoFactorSecret: encryptSecret(tempSecret),
       isTwoFactorEnabled: true,
     });
 
@@ -206,13 +250,14 @@ export async function verify2FALogin(req, res, next) {
         .json({ message: "2FA is not enabled for this account" });
     }
 
+    const twoFactorSecret = decryptSecret(req.user.twoFactorSecret);
     const totp = new OTPAuth.TOTP({
       issuer: "3DiPL",
       label: req.user.email,
       algorithm: "SHA1",
       digits: 6,
       period: 30,
-      secret: OTPAuth.Secret.fromBase32(req.user.twoFactorSecret),
+      secret: OTPAuth.Secret.fromBase32(twoFactorSecret),
     });
 
     const delta = totp.validate({ token, window: twoFactorValidationWindow() });
@@ -223,6 +268,14 @@ export async function verify2FALogin(req, res, next) {
         ip: req.ip,
       });
       return res.status(400).json({ message: "Mã OTP không hợp lệ" });
+    }
+
+    // Dual-read migration: old plaintext values keep working and are encrypted
+    // opportunistically after a successful verification.
+    if (twoFactorSecret && twoFactorSecret === req.user.twoFactorSecret) {
+      await User.findByIdAndUpdate(req.user._id, {
+        twoFactorSecret: encryptSecret(twoFactorSecret),
+      });
     }
 
     generateTokens(req, res, req.user, true);

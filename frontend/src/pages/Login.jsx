@@ -97,8 +97,9 @@ function inputModeText(resolveMode = "search", language = "vi") {
   };
 }
 
-export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/", language = "vi" }) {
+export default function Login({ user = null, adminMode = false, returnTo = "/", language = "vi" }) {
   const t = { ...(translations[language] || translations.vi) };
+  const userId = user?._id;
   const [demoLink, setDemoLink] = useState("");
   const [demoError, setDemoError] = useState("");
   const [packages, setPackages] = useState([]);
@@ -190,14 +191,14 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   }, [adminMode, language, t.systemOfflineMessage]);
 
   React.useEffect(() => {
-    if (!user || adminMode) {
+    if (!userId || adminMode) {
       setReferral(null);
       return;
     }
     api("/api/referral/me")
       .then(setReferral)
       .catch(() => setReferral(null));
-  }, [user?._id, adminMode]);
+  }, [userId, adminMode]);
 
   const pricingPackages = packages.length
     ? packages

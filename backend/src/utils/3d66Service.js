@@ -25,6 +25,7 @@ const SEARCH_REFERER = "https://user.3d66.com/";
 const MODEL_RESOLVE_MODES = new Set(["search", "footprint", "direct"]);
 const FOOTPRINT_CACHE_TTL_MS = 2 * 60 * 1000;
 const FOOTPRINT_CACHE_MAX = 500;
+const PROXY_AGENT_CACHE_MAX = 5;
 const proxyAgentCache = new Map();
 const footprintModelUrlCache = new Map();
 const DEFAULT_SITE_CONTEXTS = {
@@ -144,9 +145,24 @@ function proxyDispatcher(stage, url) {
   }
 
   if (!proxyAgentCache.has(urlValue)) {
+    while (proxyAgentCache.size >= PROXY_AGENT_CACHE_MAX) {
+      const oldestKey = proxyAgentCache.keys().next().value;
+      if (!oldestKey) break;
+      const oldestAgent = proxyAgentCache.get(oldestKey);
+      proxyAgentCache.delete(oldestKey);
+      Promise.resolve(oldestAgent?.close?.()).catch(() => {});
+    }
     proxyAgentCache.set(urlValue, new ProxyAgent(urlValue));
   }
   return proxyAgentCache.get(urlValue);
+}
+
+export async function close3D66ProxyAgents() {
+  const agents = [...proxyAgentCache.values()];
+  proxyAgentCache.clear();
+  await Promise.allSettled(
+    agents.map((agent) => Promise.resolve(agent?.close?.())),
+  );
 }
 
 async function fetch3D66(url, options = {}, { stage = "api" } = {}) {
@@ -666,6 +682,34 @@ function isAllowed3D66DownloadUrl(value = "") {
   } catch {
     return false;
   }
+}
+
+async function fetch3D66DownloadWithRedirects(url, options = {}) {
+  let currentUrl = String(url || "");
+  for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
+    if (!isAllowed3D66DownloadUrl(currentUrl)) {
+      throw httpError("3D66 download redirect host is not allowed", 400);
+    }
+
+    const response = await fetch3D66(
+      currentUrl,
+      { ...options, redirect: "manual" },
+      { stage: "file" },
+    );
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+
+    const location = response.headers.get("location");
+    await response.body?.cancel().catch(() => {});
+    if (!location || redirectCount >= 5) {
+      throw httpError("3D66 download redirect is invalid", 502);
+    }
+    try {
+      currentUrl = new URL(location, currentUrl).toString();
+    } catch {
+      throw httpError("3D66 download redirect is invalid", 502);
+    }
+  }
+  throw httpError("Too many 3D66 download redirects", 502);
 }
 
 function extractDownloadFileUrl(value, depth = 0) {
@@ -1704,7 +1748,6 @@ function compactTextSample(html = "", length = 1200) {
 }
 
 function detectUnexpectedPage(html = "") {
-  const lower = html.toLowerCase();
   const text = compactTextSample(html, 1600);
   return {
     hasHtmlTag: /<html\b/i.test(html),
@@ -2267,10 +2310,10 @@ export async function inspect3D66Page(url, cookieValue) {
 
 export async function request3D66File(fileUrl, cookieValue, options = {}) {
   requireCookie(cookieValue);
-  const parsedFileUrl = new URL(fileUrl);
-  if (!isAllowed3D66Host(parsedFileUrl.hostname)) {
+  if (!isAllowed3D66DownloadUrl(fileUrl)) {
     throw httpError("Only 3d66.com download links are supported", 400);
   }
+  const parsedFileUrl = new URL(fileUrl);
   const sourceUrl = stripInternalUrlHash(
     options.sourceUrl || process.env.THREED66_ORIGIN || "https://3d.3d66.com/",
   );
@@ -2299,11 +2342,10 @@ export async function request3D66File(fileUrl, cookieValue, options = {}) {
 
   if (options.range) headers.range = options.range;
 
-  return fetch3D66(fileUrl, {
-    redirect: "follow",
+  return fetch3D66DownloadWithRedirects(fileUrl, {
     signal: options.signal,
     headers
-  }, { stage: "file" });
+  });
 }
 
 export async function inspect3D66DownloadFormats(url, cookieValue) {

@@ -48,7 +48,6 @@ let activeBrowser = null;
 let browserLaunchedAt = 0;
 let browserTasksSinceLaunch = 0;
 let browserRecyclePending = false;
-let shutdownHandlersInstalled = false;
 let activeBrowserTasks = 0;
 const browserTaskQueue = [];
 
@@ -190,22 +189,6 @@ async function importChromium() {
   }
 }
 
-function installShutdownHandlers() {
-  if (shutdownHandlersInstalled) return;
-  shutdownHandlersInstalled = true;
-
-  const closeBrowser = async () => {
-    await closeActiveBrowser();
-  };
-
-  process.once("SIGINT", () => {
-    closeBrowser().finally(() => process.exit(0));
-  });
-  process.once("SIGTERM", () => {
-    closeBrowser().finally(() => process.exit(0));
-  });
-}
-
 async function closeActiveBrowser() {
   const browser = activeBrowser;
   activeBrowser = null;
@@ -244,7 +227,6 @@ async function getSharedBrowser() {
         browserTasksSinceLaunch = 0;
         browserRecyclePending = false;
       });
-      installShutdownHandlers();
       return browser;
     })().catch((error) => {
       browserPromise = null;
@@ -334,6 +316,10 @@ async function withBrowserContext(url, cookieValue, callback) {
       return runWithProxy(null);
     }
   });
+}
+
+export async function close3D66Browser() {
+  await closeActiveBrowser();
 }
 
 async function installFastRoutes(context) {
@@ -500,11 +486,6 @@ function footprintCardMatches(card = {}, expectedProductIds = []) {
     cardSuffix &&
       expectedIds.some((productId) => modelIdentitySuffix(productId) === cardSuffix),
   );
-}
-
-function toNumber(value) {
-  const number = Number(String(value || "").replace(/[^\d.]/g, ""));
-  return Number.isFinite(number) && number > 0 ? number : 0;
 }
 
 function evaluateMetadata() {

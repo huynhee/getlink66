@@ -2,6 +2,16 @@ import Topup from "../models/Topup.js";
 import { approvePendingTopup } from "../utils/topupApprovalService.js";
 import crypto from "node:crypto";
 
+const APPROVABLE_PAYMENT_STATES = {
+  $or: [
+    { status: "pending" },
+    {
+      status: "rejected",
+      rejectionReason: { $in: ["expired", "user_cancel", "gateway_error"] },
+    },
+  ],
+};
+
 function webhookSecretFromRequest(req) {
   const auth = String(req.get("authorization") || "");
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
@@ -155,7 +165,10 @@ async function approveTopupFromTransaction(transaction) {
     return { ok: false, paymentCode, reason: "duplicate_transaction" };
   }
 
-  const topup = await Topup.findOne({ paymentCode, status: "pending" });
+  const topup = await Topup.findOne({
+    paymentCode,
+    ...APPROVABLE_PAYMENT_STATES,
+  });
   if (!topup) {
     return {
       ok: false,
@@ -178,10 +191,18 @@ async function approveTopupFromTransaction(transaction) {
     };
   }
 
-  const approved = await approvePendingTopup(topup, {
-    gatewayTransactionId: transactionId,
-    gatewayPayload: transaction,
-  });
+  let approved;
+  try {
+    approved = await approvePendingTopup(topup, {
+      gatewayTransactionId: transactionId,
+      gatewayPayload: transaction,
+    });
+  } catch (error) {
+    if (error?.code === "DUPLICATE_GATEWAY_TRANSACTION") {
+      return { ok: false, paymentCode, reason: "duplicate_transaction" };
+    }
+    throw error;
+  }
 
   if (!approved) {
     return { ok: false, paymentCode, reason: "already_handled" };
@@ -299,7 +320,11 @@ export async function sepayIpn(req, res, next) {
       });
     }
 
-    const topup = await Topup.findOne({ paymentCode, status: "pending" });
+    const topup = await Topup.findOne({
+      paymentCode,
+      gatewayProvider: "sepay",
+      ...APPROVABLE_PAYMENT_STATES,
+    });
     if (!topup) {
       return res.json({
         ok: false,
@@ -318,11 +343,23 @@ export async function sepayIpn(req, res, next) {
       });
     }
 
-    const approved = await approvePendingTopup(topup, {
-      gatewayProvider: "sepay",
-      gatewayTransactionId,
-      gatewayPayload: req.body,
-    });
+    let approved;
+    try {
+      approved = await approvePendingTopup(topup, {
+        gatewayProvider: "sepay",
+        gatewayTransactionId,
+        gatewayPayload: req.body,
+      });
+    } catch (error) {
+      if (error?.code === "DUPLICATE_GATEWAY_TRANSACTION") {
+        return res.json({
+          ok: true,
+          duplicate: true,
+          paymentCode,
+        });
+      }
+      throw error;
+    }
 
     if (!approved) {
       return res.json({ ok: false, paymentCode, reason: "already_handled" });

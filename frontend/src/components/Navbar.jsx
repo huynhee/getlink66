@@ -56,6 +56,7 @@ export default function Navbar({
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [sessionHiddenFullscreenIds, setSessionHiddenFullscreenIds] = useState(() => new Set());
+  const userId = user?._id;
   const unreadCount = notifications.filter(
     (item) => item.displayType !== "fullscreen" && !item.isRead
   ).length;
@@ -66,7 +67,7 @@ export default function Navbar({
   useEffect(() => {
     let cancelled = false;
     async function loadNotifications() {
-      if (!user) {
+      if (!userId) {
         setNotifications([]);
         return;
       }
@@ -78,12 +79,12 @@ export default function Navbar({
       }
     }
     loadNotifications();
-    const timer = user ? window.setInterval(loadNotifications, 60_000) : null;
+    const timer = userId ? window.setInterval(loadNotifications, 60_000) : null;
     return () => {
       cancelled = true;
       if (timer) window.clearInterval(timer);
     };
-  }, [user?._id]);
+  }, [userId]);
 
   useEffect(() => {
     setFaviconNotificationCount(unreadCount);
@@ -202,7 +203,6 @@ export default function Navbar({
         {!adminMode && (
           <nav className="tabs">
             {tabs.map(([key, label]) => {
-              const targetPath = `/${key}`;
               return (
                 <button 
                   key={key} 
@@ -248,7 +248,7 @@ export default function Navbar({
                     key={item._id}
                     type="button"
                     className={item.isRead ? "read" : ""}
-                    onClick={() => markNotificationRead(item._id)}
+                    onClick={() => goNotificationAction(item)}
                   >
                     <b>{item.title}</b>
                     <span>{item.body}</span>

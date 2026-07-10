@@ -1,8 +1,11 @@
 import crypto from "node:crypto";
+import mongoose from "mongoose";
+import { isMemoryDb } from "../config/memoryStore.js";
 import Notification from "../models/Notification.js";
 import Referral from "../models/Referral.js";
 import SiteSetting from "../models/SiteSetting.js";
 import User from "../models/User.js";
+import logger from "./logger.js";
 
 const REFERRAL_CODE_RE = /^[A-Z0-9]{6,24}$/;
 const REFERRAL_MODES = new Set(["both", "referrer_only", "off"]);
@@ -84,6 +87,104 @@ async function notifyReferralReward({ referrer, referredUser, referrerCredit, re
   await Notification.insertMany(notifications);
 }
 
+function transactionUnsupported(error) {
+  const text = String(error?.message || error || "").toLowerCase();
+  return (
+    text.includes("transaction numbers are only allowed") ||
+    text.includes("replica set member or mongos") ||
+    text.includes("transactions are not supported")
+  );
+}
+
+async function awardReferralSignupTransactional(
+  referredUser,
+  { mode, referralCode, credit, creditLimit },
+) {
+  const session = await mongoose.startSession();
+  let result = null;
+  try {
+    await session.withTransaction(async () => {
+      const [freshReferredUser, referrer] = await Promise.all([
+        User.findOne({ _id: referredUser._id }).session(session),
+        User.findOne({ referralCode }).session(session),
+      ]);
+      if (
+        !freshReferredUser ||
+        !referrer ||
+        freshReferredUser.referralRewardedAt ||
+        freshReferredUser.referredBy ||
+        String(referrer._id) === String(freshReferredUser._id)
+      ) {
+        return;
+      }
+
+      const referrerCredit = credit;
+      const referredCredit = mode === "both" ? credit : 0;
+      const [referral] = await Referral.create(
+        [{
+          referrerId: referrer._id,
+          referredUserId: freshReferredUser._id,
+          referralCode,
+          rewardCredit: credit,
+          referrerRewardCredit: referrerCredit,
+          referredRewardCredit: referredCredit,
+          rewardMode: mode,
+          status: "rewarded",
+          rewardedAt: new Date(),
+        }],
+        { session },
+      );
+
+      const now = new Date();
+      const updatedReferredUser = await User.findOneAndUpdate(
+        {
+          _id: freshReferredUser._id,
+          ...(referredCredit > 0
+            ? { credit: { $lte: creditLimit - referredCredit } }
+            : {}),
+          $or: [
+            { referralRewardedAt: { $exists: false } },
+            { referralRewardedAt: null },
+          ],
+        },
+        {
+          $set: { referredBy: referrer._id, referralRewardedAt: now },
+          ...(referredCredit > 0 ? { $inc: { credit: referredCredit } } : {}),
+        },
+        { new: true, session },
+      );
+      const updatedReferrer = await User.findOneAndUpdate(
+        { _id: referrer._id, credit: { $lte: creditLimit - referrerCredit } },
+        { $inc: { credit: referrerCredit } },
+        { new: true, session },
+      );
+      if (!updatedReferredUser || !updatedReferrer) {
+        const error = new Error("Referral credit limit or state conflict.");
+        error.code = "REFERRAL_STATE_CONFLICT";
+        throw error;
+      }
+
+      result = {
+        referral,
+        referrer: updatedReferrer,
+        referredUser: updatedReferredUser,
+        credit: referrerCredit,
+        referrerCredit,
+        referredCredit,
+        mode,
+      };
+    });
+    if (result) {
+      await notifyReferralReward(result).catch((error) => {
+        logger.warn({ message: error.message }, "Referral notification failed");
+      });
+    }
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
 export async function awardReferralSignup(referredUser, rawCode) {
   const mode = await referralMode();
   if (mode === "off") return null;
@@ -100,6 +201,26 @@ export async function awardReferralSignup(referredUser, rawCode) {
   const referredCredit = mode === "both" ? credit : 0;
   const creditLimit = maxStoredCredit();
   if (referrerCredit > creditLimit || referredCredit > creditLimit) return null;
+
+  if (!isMemoryDb()) {
+    try {
+      return await awardReferralSignupTransactional(referredUser, {
+        mode,
+        referralCode,
+        credit,
+        creditLimit,
+      });
+    } catch (error) {
+      if (error?.code === 11000 || error?.code === "REFERRAL_STATE_CONFLICT") {
+        return null;
+      }
+      if (!transactionUnsupported(error)) throw error;
+      logger.warn(
+        { message: error.message },
+        "MongoDB transactions unavailable; using compensated referral write",
+      );
+    }
+  }
 
   try {
     await Referral.create({
@@ -163,6 +284,8 @@ export async function awardReferralSignup(referredUser, rawCode) {
     referredUser: updatedReferredUser,
     referrerCredit,
     referredCredit,
+  }).catch((error) => {
+    logger.warn({ message: error.message }, "Referral notification failed");
   });
 
   return {

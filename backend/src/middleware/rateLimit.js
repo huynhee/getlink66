@@ -2,6 +2,8 @@ import { securityEvent } from "../utils/logger.js";
 
 const buckets = new Map();
 const MAX_BUCKETS = Number(process.env.RATE_LIMIT_MAX_BUCKETS || 10000);
+const CLEANUP_INTERVAL_MS = 60_000;
+let nextCleanupAt = 0;
 
 function maxBuckets() {
   return Number.isFinite(MAX_BUCKETS) && MAX_BUCKETS > 0
@@ -10,6 +12,8 @@ function maxBuckets() {
 }
 
 function cleanup(now) {
+  if (now < nextCleanupAt) return;
+  nextCleanupAt = now + CLEANUP_INTERVAL_MS;
   for (const [key, value] of buckets.entries()) {
     if (value.resetAt <= now) buckets.delete(key);
   }
@@ -36,7 +40,10 @@ export function createRateLimit({
 
     const rawKey = keyGenerator(req);
     const key = `${keyPrefix}:${String(rawKey || "anonymous")}`;
-    const bucket = buckets.get(key) || { count: 0, resetAt: now + windowMs };
+    const currentBucket = buckets.get(key);
+    const bucket = !currentBucket || currentBucket.resetAt <= now
+      ? { count: 0, resetAt: now + windowMs }
+      : currentBucket;
     bucket.count += 1;
     if (buckets.has(key)) buckets.delete(key);
     buckets.set(key, bucket);

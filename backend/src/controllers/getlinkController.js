@@ -17,7 +17,7 @@ import {
   queue3D66Preview,
   queue3D66Refresh,
 } from "../utils/3d66Queue.js";
-import { deductCredit } from "../utils/creditService.js";
+import { chargeAndCreateGetlink } from "../utils/getlinkChargeService.js";
 import {
   extractModelIdInput,
   extractProductId,
@@ -37,6 +37,8 @@ const historyRefreshLocks = new Map();
 const MAX_PRODUCT_LOCKS = 500;
 const PARTIAL_DOWNLOAD_SESSION_MS = 10 * 60 * 1000;
 const MAX_PREVIEW_IMAGE_BYTES = 15 * 1024 * 1024;
+const MAX_PREVIEW_IMAGE_REDIRECTS = 5;
+const PREVIEW_IMAGE_TIMEOUT_MS = 15_000;
 const DOWNLOAD_FORMAT_OPTIONS_VERSION = 2;
 const downloadCounters = {
   global: 0,
@@ -526,10 +528,18 @@ function publicHistoryItem(req, item) {
   const allowed = canRedownload(doc);
   const formatOptions = sanitizeDownloadFormatOptions(doc.formatOptions);
   return {
-    ...doc,
+    _id: doc._id,
+    productId: doc.productId || "",
+    title: doc.title || "",
+    imageUrl: doc.imageUrl || "",
+    creditUsed: Number(doc.creditUsed || 0),
+    downloadFormat: doc.downloadFormat || null,
+    initialDownloadAt: doc.initialDownloadAt || null,
+    lastRedownloadAt: doc.lastRedownloadAt || null,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
     formatOptions,
     hasDownloadFormats: formatOptions.length > 0,
-    fileUrl: undefined,
     downloadUrl: allowed ? publicDownloadUrl(req, doc._id) : null,
     previewImageDownloadUrl:
       allowed && doc.imageUrl ? publicPreviewImageUrl(req, doc._id) : null,
@@ -665,15 +675,41 @@ function previewImageFileName(history, contentType = "") {
   return `${baseName}${imageExtensionFromUrl(history.imageUrl, contentType)}`.replace(/"/g, "");
 }
 
-function resolvePreviewImageUrl(imageUrl = "", sourceUrl = "") {
-  const resolved = new URL(
-    String(imageUrl || ""),
-    sourceUrl || "https://www.3d66.com/",
-  );
-  if (!["http:", "https:"].includes(resolved.protocol)) {
-    throw httpError(400, "Invalid preview image URL");
+export function resolvePreviewImageUrl(imageUrl = "", sourceUrl = "") {
+  let resolved;
+  try {
+    resolved = new URL(
+      String(imageUrl || ""),
+      sourceUrl || "https://www.3d66.com/",
+    );
+  } catch {
+    throw Object.assign(new Error("Invalid preview image URL"), { status: 400 });
+  }
+  const hostname = resolved.hostname.toLowerCase();
+  const is3D66Host = hostname === "3d66.com" || hostname.endsWith(".3d66.com");
+  if (resolved.protocol !== "https:" || !is3D66Host || resolved.username || resolved.password) {
+    throw Object.assign(new Error("Preview image host is not allowed"), { status: 400 });
   }
   return resolved.toString();
+}
+
+async function fetchPreviewImageCandidate(url, options = {}) {
+  let currentUrl = resolvePreviewImageUrl(url);
+  for (let redirectCount = 0; redirectCount <= MAX_PREVIEW_IMAGE_REDIRECTS; redirectCount += 1) {
+    const response = await fetch(currentUrl, {
+      ...options,
+      redirect: "manual",
+    });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+
+    const location = response.headers.get("location");
+    await response.body?.cancel().catch(() => {});
+    if (!location || redirectCount >= MAX_PREVIEW_IMAGE_REDIRECTS) {
+      throw Object.assign(new Error("Preview image redirect is invalid"), { status: 502 });
+    }
+    currentUrl = resolvePreviewImageUrl(location, currentUrl);
+  }
+  throw Object.assign(new Error("Too many preview image redirects"), { status: 502 });
 }
 
 function previewImageUrlCandidates(imageUrl = "", sourceUrl = "") {
@@ -1525,10 +1561,34 @@ export async function getLink(req, res, next) {
       await ProductCache.findByIdAndUpdate(cache._id, { creditCost });
     }
 
-    // Atomic deduct: no stale pre-check, deductCredit uses $gte atomically
+    // The credit deduction and history insert are one MongoDB transaction.
+    // Development/standalone fallback compensates the credit if history insert fails.
     let user;
+    let history;
     try {
-      user = await deductCredit(req.user._id, creditCost);
+      ({ user, history } = await chargeAndCreateGetlink({
+        userId: req.user._id,
+        creditCost,
+        historyPayload: {
+          userId: req.user._id,
+          productId: cache.productId,
+          fileUrl: cache.fileUrl,
+          sourceUrl: cache.sourceUrl || url,
+          resolvedSourceUrl: cache.resolvedSourceUrl || "",
+          title: cache.title,
+          imageUrl: cache.imageUrl,
+          creditUsed: creditCost,
+          downloadFormat: {
+            key: cache.downloadFormatKey || "",
+            label: cache.formatLabel || "",
+            fileFormat: cache.fileFormat || "",
+            formatVersion: cache.formatVersion || "",
+            rendererType: cache.rendererType || "",
+            rendererLabel: cache.rendererLabel || "",
+            size: cache.formatSize || "",
+          },
+        },
+      }));
     } catch (deductError) {
       if (deductError.status === 402) {
         const freshUser = await User.findById(req.user._id);
@@ -1540,26 +1600,6 @@ export async function getLink(req, res, next) {
       }
       throw deductError;
     }
-
-    const history = await Getlink.create({
-      userId: req.user._id,
-      productId: cache.productId,
-      fileUrl: cache.fileUrl,
-      sourceUrl: cache.sourceUrl || url,
-      resolvedSourceUrl: cache.resolvedSourceUrl || "",
-      title: cache.title,
-      imageUrl: cache.imageUrl,
-      creditUsed: creditCost,
-      downloadFormat: {
-        key: cache.downloadFormatKey || "",
-        label: cache.formatLabel || "",
-        fileFormat: cache.fileFormat || "",
-        formatVersion: cache.formatVersion || "",
-        rendererType: cache.rendererType || "",
-        rendererLabel: cache.rendererLabel || "",
-        size: cache.formatSize || "",
-      },
-    });
     const downloadUrl = publicDownloadUrl(req, history._id);
     const previewImageDownloadUrl =
       includePreviewImage && cache.imageUrl
@@ -2165,6 +2205,9 @@ export async function downloadGetlink(req, res, next) {
 export async function downloadGetlinkPreviewImage(req, res, next) {
   const controller = new AbortController();
   let activeLogUserId = req.user?._id;
+  let downloadSlot = null;
+  let previewTimeout = null;
+  let previewTimeoutController = null;
   res.on("close", () => {
     if (!res.writableEnded) controller.abort();
   });
@@ -2218,6 +2261,23 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
       });
     }
 
+    downloadSlot = acquireDownloadSlot(req, ownerUserId);
+    if (!downloadSlot.ok) {
+      return res
+        .status(downloadSlot.status)
+        .json({ message: downloadSlot.message, retryable: true });
+    }
+
+    previewTimeoutController = new AbortController();
+    previewTimeout = setTimeout(
+      () => previewTimeoutController.abort(),
+      PREVIEW_IMAGE_TIMEOUT_MS,
+    );
+    const previewSignal = AbortSignal.any([
+      controller.signal,
+      previewTimeoutController.signal,
+    ]);
+
     const previewCandidates = previewImageUrlCandidates(
       history.imageUrl,
       history.resolvedSourceUrl || history.sourceUrl,
@@ -2236,8 +2296,8 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
     };
 
     for (const previewUrl of previewCandidates) {
-      const candidate = await fetch(previewUrl, {
-        signal: controller.signal,
+      const candidate = await fetchPreviewImageCandidate(previewUrl, {
+        signal: previewSignal,
         headers: previewHeaders,
       });
       lastPreviewStatus = candidate.status;
@@ -2302,6 +2362,13 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
     res.setHeader("x-accel-buffering", "no");
     return res.status(200).end(previewImageBuffer);
   } catch (error) {
+    if (
+      error.name === "AbortError" &&
+      previewTimeoutController?.signal.aborted &&
+      !controller.signal.aborted
+    ) {
+      return res.status(504).json({ message: "Preview image request timed out." });
+    }
     if (error.name === "AbortError") return;
     if (isClientDownloadAbort(error, controller.signal)) return;
     await writeSystemLog({
@@ -2320,6 +2387,9 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
       return;
     }
     next(error);
+  } finally {
+    if (previewTimeout) clearTimeout(previewTimeout);
+    if (downloadSlot?.release) downloadSlot.release();
   }
 }
 

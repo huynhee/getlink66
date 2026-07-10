@@ -1,17 +1,27 @@
 import AuditLog from "../models/AuditLog.js";
 import { auditEvent } from "../utils/logger.js";
 
-const SENSITIVE_KEYS = new Set(["password", "secret", "token", "cookie", "value", "cookieValue"]);
+const SENSITIVE_KEYS = new Set([
+  "password",
+  "secret",
+  "token",
+  "cookie",
+  "value",
+  "cookievalue",
+  "threed66proxyurl",
+]);
 
 /**
  * Removes sensitive fields from request body before storing in audit log.
  */
-function sanitizeBody(body = {}) {
-  if (!body || typeof body !== "object") return {};
-  const result = {};
+function sanitizeBody(body = {}, depth = 0) {
+  if (!body || typeof body !== "object" || depth > 5) return {};
+  const result = Array.isArray(body) ? [] : {};
   for (const [key, value] of Object.entries(body)) {
     if (SENSITIVE_KEYS.has(key.toLowerCase())) {
       result[key] = "[REDACTED]";
+    } else if (value && typeof value === "object") {
+      result[key] = sanitizeBody(value, depth + 1);
     } else if (typeof value === "string" && value.length > 200) {
       result[key] = value.slice(0, 200) + "...[truncated]";
     } else {

@@ -270,9 +270,35 @@ function proxyUrlConfigured(settings = {}) {
   return Boolean(String(process.env.THREED66_PROXY_URL || "").trim());
 }
 
-function publicSettings(settings = {}) {
+function isVerifiedAdminRequest(req) {
+  const adminEmails = new Set(
+    String(process.env.ADMIN_EMAILS || "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const email = String(req?.user?.email || "").toLowerCase();
+  return Boolean(
+    req?.user?.role === "admin" &&
+      adminEmails.has(email) &&
+      (!req.user.isTwoFactorEnabled || req.jwtPayload?.is2FAVerified),
+  );
+}
+
+function publicSettings(settings = {}, { includeRuntime = false } = {}) {
   const snapshot = settingsSnapshot(settings);
+  if (!includeRuntime) {
+    return Object.fromEntries(
+      [
+        ...HOME_TEXT_FIELDS,
+        "referralMode",
+        "threed66ModelResolveMode",
+      ].map((field) => [field, snapshot[field]]),
+    );
+  }
   delete snapshot.threed66ProxyUrl;
+  delete snapshot._id;
+  delete snapshot.__v;
   snapshot.threed66ProxyUrlConfigured = proxyUrlConfigured(settings);
   snapshot.threed66ProxyUrl = "";
   snapshot.threed66ProxyUrlClear = false;
@@ -483,10 +509,14 @@ export async function initializeSettings() {
   return loadSettingsWithRetry({ allowFallback: true });
 }
 
-export async function getSettings(_req, res, next) {
+export async function getSettings(req, res, next) {
   try {
     const settings = await loadSettingsWithRetry({ allowFallback: true });
-    res.json({ settings: publicSettings(settings) });
+    res.json({
+      settings: publicSettings(settings, {
+        includeRuntime: isVerifiedAdminRequest(req),
+      }),
+    });
   } catch (error) {
     next(error);
   }
@@ -577,7 +607,7 @@ export async function updateSettings(req, res, next) {
     }
     cacheSettings(settings);
 
-    res.json({ settings: publicSettings(settings) });
+    res.json({ settings: publicSettings(settings, { includeRuntime: true }) });
   } catch (error) {
     next(error);
   }

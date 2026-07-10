@@ -214,7 +214,7 @@ export default function Admin({ user, language = "vi" }) {
   const [twoFactorToken, setTwoFactorToken] = useState("");
   const [twoFactorMsg, setTwoFactorMsg] = useState("");
 
-  async function loadData() {
+  const loadData = React.useCallback(async () => {
     const [oRes, pRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
       api(`/api/admin/overview?period=${revenuePeriod}`),
       api("/api/admin/topup-packages"),
@@ -237,9 +237,9 @@ export default function Admin({ user, language = "vi" }) {
     setNotifications(nRes.notifications || []);
     setReferrals(rRes.referrals || []);
     setSiteSettings({ ...defaultSiteSettings, ...(settingRes.settings || {}) });
-  }
+  }, [revenuePeriod]);
 
-  async function loadUsers() {
+  const loadUsers = React.useCallback(async () => {
     const query = new URLSearchParams({
       page: String(userPage),
       sort: userSort,
@@ -250,9 +250,9 @@ export default function Admin({ user, language = "vi" }) {
     const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
     setUserPagination(pagination);
     if (pagination.page !== userPage) setUserPage(pagination.page);
-  }
+  }, [userPage, userSearch, userSort]);
 
-  async function loadGetlinks() {
+  const loadGetlinks = React.useCallback(async () => {
     const query = new URLSearchParams({ page: String(getlinkPage) });
     if (getlinkSearch.trim()) query.set("search", getlinkSearch.trim());
     const data = await api(`/api/admin/getlinks?${query.toString()}`);
@@ -260,9 +260,9 @@ export default function Admin({ user, language = "vi" }) {
     const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
     setGetlinkPagination(pagination);
     if (pagination.page !== getlinkPage) setGetlinkPage(pagination.page);
-  }
+  }, [getlinkPage, getlinkSearch]);
 
-  async function loadTopups() {
+  const loadTopups = React.useCallback(async () => {
     const query = new URLSearchParams({
       page: String(topupPage),
       status: topupStatus,
@@ -273,32 +273,32 @@ export default function Admin({ user, language = "vi" }) {
     const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
     setTopupPagination(pagination);
     if (pagination.page !== topupPage) setTopupPage(pagination.page);
-  }
+  }, [topupPage, topupSearch, topupStatus]);
 
   useEffect(() => {
     loadData().catch(console.error);
-  }, [revenuePeriod]);
+  }, [loadData]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       loadUsers().catch(console.error);
     }, 250);
     return () => clearTimeout(timer);
-  }, [userSearch, userSort, userPage]);
+  }, [loadUsers]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       loadGetlinks().catch(console.error);
     }, 250);
     return () => clearTimeout(timer);
-  }, [getlinkSearch, getlinkPage]);
+  }, [loadGetlinks]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       loadTopups().catch(console.error);
     }, 250);
     return () => clearTimeout(timer);
-  }, [topupSearch, topupStatus, topupPage]);
+  }, [loadTopups]);
 
   function fillPackageForm(pack) {
     setEditingPackageId(pack?._id || "");
@@ -1038,11 +1038,11 @@ export default function Admin({ user, language = "vi" }) {
       help: l("Mặc định tắt: proxy lỗi sẽ tự chuyển về IP VPS và gửi cảnh báo Telegram. Bật nếu muốn dừng hẳn khi proxy lỗi.", "Off by default: proxy failures fall back to the VPS IP and send a Telegram alert. Enable to stop requests when proxy fails."),
     },
   ];
-  const currentPlaywrightMode = Boolean(siteSettings.threed66BrowserAlways)
+  const currentPlaywrightMode = siteSettings.threed66BrowserAlways
     ? "always"
-    : Boolean(siteSettings.threed66DisableBrowserPageFallback) &&
-        Boolean(siteSettings.threed66DisableBrowserDownloadFallback) &&
-        !Boolean(siteSettings.threed66DownloadHandleBrowserFallback)
+    : siteSettings.threed66DisableBrowserPageFallback &&
+        siteSettings.threed66DisableBrowserDownloadFallback &&
+        !siteSettings.threed66DownloadHandleBrowserFallback
       ? "off"
       : "fallback";
   const playwrightModes = [
