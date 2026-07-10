@@ -53,25 +53,51 @@ const HOME_TEXT_DEFAULTS = {
   },
 };
 
-function normalize3D66Input(value = "") {
+function normalize3D66Input(value = "", resolveMode = "search") {
   const text = String(value || "").trim();
   if (!text) return "";
   if (/^https?:\/\//i.test(text)) {
+    if (resolveMode === "search") return "";
     try {
       const parsed = new URL(text);
       const host = parsed.hostname.toLowerCase();
-      return host === "3d66.com" || host.endsWith(".3d66.com") ? text : "";
+      const is3D66 = host === "3d66.com" || host.endsWith(".3d66.com");
+      return is3D66 && parsed.searchParams.get("sof") ? text : "";
     } catch {
       return "";
     }
   }
+  if (resolveMode !== "search") return "";
   return /^[A-Z0-9_-]{8,64}$/i.test(text) && /[A-Z]/i.test(text) && /\d{6,}/.test(text)
     ? text.toUpperCase()
     : "";
 }
 
-function inputValueWhileTyping(value = "") {
-  return /^https?:\/\//i.test(String(value).trim()) ? value : value.toUpperCase();
+function inputValueWhileTyping(value = "", resolveMode = "search") {
+  return resolveMode === "search" ? value.toUpperCase() : value;
+}
+
+function inputModeText(resolveMode = "search", language = "vi") {
+  const isVi = language === "vi";
+  if (resolveMode === "footprint") {
+    return {
+      label: isVi ? "Chế độ: Lấy qua lịch sử truy cập" : "Mode: Resolve via footprint",
+      placeholder: isVi ? "Dán link model 3D66 đầy đủ" : "Paste the full 3D66 model link",
+      invalid: isVi ? "Vui lòng dán link model 3D66 có mã sof." : "Paste a 3D66 model link containing a sof ID.",
+    };
+  }
+  if (resolveMode === "direct") {
+    return {
+      label: isVi ? "Chế độ: Dùng link trực tiếp" : "Mode: Use direct URL",
+      placeholder: isVi ? "Dán link model 3D66 đầy đủ" : "Paste the full 3D66 model link",
+      invalid: isVi ? "Vui lòng dán link model 3D66 có mã sof." : "Paste a 3D66 model link containing a sof ID.",
+    };
+  }
+  return {
+    label: isVi ? "Chế độ: Tìm bằng ID" : "Mode: Search by ID",
+    placeholder: isVi ? "Nhập mã model 3D66" : "Enter a 3D66 model ID",
+    invalid: isVi ? "Vui lòng nhập mã model 3D66 hợp lệ." : "Enter a valid 3D66 model ID.",
+  };
 }
 
 export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/", language = "vi" }) {
@@ -122,9 +148,12 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
       ? "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn."
       : "Sign in with Google to start using 3D66 Getlink and manage your credit.",
     footerTagline: language === "vi" ? "Hỗ trợ 24/7" : "24/7 support",
+    threed66ModelResolveMode: "search",
     ...HOME_TEXT_DEFAULTS[language]
   });
-  const demoCursorText = demoLink || t.getlinkPlaceholder;
+  const modelResolveMode = siteSettings.threed66ModelResolveMode || "search";
+  const modeText = inputModeText(modelResolveMode, language);
+  const demoCursorText = demoLink || modeText.placeholder;
   const demoCursorX = Math.min(demoCursorText.length * 8.4, 520);
   if (referral?.mode === "referrer_only") {
     t.referralTitle = language === "vi"
@@ -215,7 +244,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   }
 
   function getlinkTarget() {
-    const modelInput = normalize3D66Input(demoLink);
+    const modelInput = normalize3D66Input(demoLink, modelResolveMode);
     return modelInput ? `/getlink?url=${encodeURIComponent(modelInput)}` : "/getlink";
   }
 
@@ -225,9 +254,9 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
       setDemoError(t.systemOfflineMessage);
       return;
     }
-    const modelInput = normalize3D66Input(demoLink);
+    const modelInput = normalize3D66Input(demoLink, modelResolveMode);
     if (!modelInput) {
-      setDemoError(t.invalid3d66Link);
+      setDemoError(modeText.invalid);
       return;
     }
     setDemoLink(modelInput);
@@ -247,9 +276,9 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
         setDemoError(t.clipboardEmpty);
         return;
       }
-      const modelInput = normalize3D66Input(pasted);
+      const modelInput = normalize3D66Input(pasted, modelResolveMode);
       if (!modelInput) {
-        setDemoError(t.clipboardInvalid3d66);
+        setDemoError(modeText.invalid);
         return;
       }
 
@@ -364,16 +393,17 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
               <h2 style={{ fontSize: 20, marginBottom: 24 }}>
                 {siteSettings.demoTitle || t.startDownload}
               </h2>
+              <p className="muted" style={{ margin: "-14px 0 12px" }}>{modeText.label}</p>
               <form onSubmit={handleDemoGetlink} className="inputWrapper">
                 <div className="linkInputWrap terminalInput" style={{ "--cursor-x": `${demoCursorX}px` }}>
-                  <span className="terminalInputMirror" aria-hidden="true">{demoLink || t.getlinkPlaceholder}</span>
+                  <span className="terminalInputMirror" aria-hidden="true">{demoLink || modeText.placeholder}</span>
                   <input
                     type="text"
                     inputMode="text"
-                    placeholder={t.getlinkPlaceholder}
+                    placeholder={modeText.placeholder}
                     value={demoLink}
                     onChange={(event) => {
-                      setDemoLink(inputValueWhileTyping(event.target.value));
+                      setDemoLink(inputValueWhileTyping(event.target.value, modelResolveMode));
                       setDemoError("");
                     }}
                     required

@@ -26,25 +26,51 @@ function formatDisplayName(option = {}, fallback = "Định dạng file") {
   return option.label || option.name || mapped || fileFormat || fallback;
 }
 
-function normalize3D66Input(value = "") {
+function normalize3D66Input(value = "", resolveMode = "search") {
   const text = String(value || "").trim();
   if (!text) return "";
   if (/^https?:\/\//i.test(text)) {
+    if (resolveMode === "search") return "";
     try {
       const parsed = new URL(text);
       const host = parsed.hostname.toLowerCase();
-      return host === "3d66.com" || host.endsWith(".3d66.com") ? text : "";
+      const is3D66 = host === "3d66.com" || host.endsWith(".3d66.com");
+      return is3D66 && parsed.searchParams.get("sof") ? text : "";
     } catch {
       return "";
     }
   }
+  if (resolveMode !== "search") return "";
   return /^[A-Z0-9_-]{8,64}$/i.test(text) && /[A-Z]/i.test(text) && /\d{6,}/.test(text)
     ? text.toUpperCase()
     : "";
 }
 
-function inputValueWhileTyping(value = "") {
-  return /^https?:\/\//i.test(String(value).trim()) ? value : value.toUpperCase();
+function inputValueWhileTyping(value = "", resolveMode = "search") {
+  return resolveMode === "search" ? value.toUpperCase() : value;
+}
+
+function inputModeText(resolveMode = "search", language = "vi") {
+  const isVi = language === "vi";
+  if (resolveMode === "footprint") {
+    return {
+      label: isVi ? "Chế độ: Lấy qua lịch sử truy cập" : "Mode: Resolve via footprint",
+      placeholder: isVi ? "Dán link model 3D66 đầy đủ" : "Paste the full 3D66 model link",
+      invalid: isVi ? "Vui lòng dán link model 3D66 có mã sof." : "Paste a 3D66 model link containing a sof ID.",
+    };
+  }
+  if (resolveMode === "direct") {
+    return {
+      label: isVi ? "Chế độ: Dùng link trực tiếp" : "Mode: Use direct URL",
+      placeholder: isVi ? "Dán link model 3D66 đầy đủ" : "Paste the full 3D66 model link",
+      invalid: isVi ? "Vui lòng dán link model 3D66 có mã sof." : "Paste a 3D66 model link containing a sof ID.",
+    };
+  }
+  return {
+    label: isVi ? "Chế độ: Tìm bằng ID" : "Mode: Search by ID",
+    placeholder: isVi ? "Nhập mã model 3D66" : "Enter a 3D66 model ID",
+    invalid: isVi ? "Vui lòng nhập mã model 3D66 hợp lệ." : "Enter a valid 3D66 model ID.",
+  };
 }
 
 export default function GetlinkBox({ onCreditChange, initialUrl = "", language = "vi", disabledReason = "" }) {
@@ -62,11 +88,13 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   const [confirming, setConfirming] = useState(false);
   const [copied, setCopied] = useState(false);
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
+  const [modelResolveMode, setModelResolveMode] = useState("search");
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
   const progressTimerRef = useRef(null);
   const resetTimerRef = useRef(null);
-  const cursorText = url || t.getlinkPlaceholder;
+  const modeText = inputModeText(modelResolveMode, language);
+  const cursorText = url || modeText.placeholder;
   const cursorX = Math.min(cursorText.length * 8.4, 520);
   const pendingFormatOptions = Array.isArray(pendingFormatSelection?.formatOptions)
     ? pendingFormatSelection.formatOptions.filter(isUsableFormatOption)
@@ -89,6 +117,12 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
       .then((data) => setSystemStatus({ online: Boolean(data.online), message: data.message || "" }))
       .catch(() => setSystemStatus({ online: false, message: t.systemOfflineMessage }));
   }, [t.systemOfflineMessage]);
+
+  useEffect(() => {
+    api("/api/settings")
+      .then((data) => setModelResolveMode(data?.settings?.threed66ModelResolveMode || "search"))
+      .catch(() => setModelResolveMode("search"));
+  }, []);
 
   useEffect(() => () => {
     if (progressTimerRef.current) clearInterval(progressTimerRef.current);
@@ -172,9 +206,9 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
       setError(t.systemOfflineMessage);
       return;
     }
-    const modelInput = normalize3D66Input(url);
+    const modelInput = normalize3D66Input(url, modelResolveMode);
     if (!modelInput) {
-      setError(t.invalid3d66Link);
+      setError(modeText.invalid);
       errorProgress(language === "vi" ? "Mã model không hợp lệ" : "Invalid model ID");
       return;
     }
@@ -222,9 +256,9 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     setCopied(false);
     beginProgress(language === "vi" ? "Đang lấy link tải..." : "Getting download link...", 12, 92);
     try {
-      const modelInput = normalize3D66Input(previewUrl || url);
+      const modelInput = normalize3D66Input(previewUrl || url, modelResolveMode);
       if (!modelInput) {
-        setError(t.invalid3d66Link);
+        setError(modeText.invalid);
         errorProgress(language === "vi" ? "Mã model không hợp lệ" : "Invalid model ID");
         return;
       }
@@ -298,9 +332,9 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
         setError(t.clipboardEmpty);
         return;
       }
-      const modelInput = normalize3D66Input(pasted);
+      const modelInput = normalize3D66Input(pasted, modelResolveMode);
       if (!modelInput) {
-        setError(t.clipboardInvalid3d66);
+        setError(modeText.invalid);
         return;
       }
 
@@ -322,15 +356,16 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     <section className="panel">
       <form className="getlinkForm" onSubmit={submit}>
         <h2>{t.getlinkTitle}</h2>
+        <p className="muted" style={{ margin: "-8px 0 0" }}>{modeText.label}</p>
         <div className="inputRow">
           <div className="linkInputWrap terminalInput" style={{ "--cursor-x": `${cursorX}px` }}>
-            <span className="terminalInputMirror" aria-hidden="true">{url || t.getlinkPlaceholder}</span>
+            <span className="terminalInputMirror" aria-hidden="true">{url || modeText.placeholder}</span>
             <input
               id="modelUrl"
               value={url}
               aria-label={t.getlinkInputAria}
               onChange={(event) => {
-                setUrl(inputValueWhileTyping(event.target.value));
+                setUrl(inputValueWhileTyping(event.target.value, modelResolveMode));
                 setPreview(null);
                 setSelectedFormatKey("");
                 setPendingFormatSelection(null);
@@ -340,7 +375,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
                 setProgressLabel("");
                 resetFaviconProgress();
               }}
-              placeholder={t.getlinkPlaceholder}
+              placeholder={modeText.placeholder}
             />
             <button type="button" className="pasteInlineButton" onClick={pasteLink} title={t.pasteTitle}>
               <ClipboardPaste size={14} />
