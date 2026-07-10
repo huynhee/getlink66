@@ -983,6 +983,7 @@ export async function listGetlinkRecords(req, res, next) {
         title: doc.title || cache?.title || "",
         imageUrl: doc.imageUrl || "",
         sourceUrl: doc.sourceUrl || "",
+        resolvedSourceUrl: doc.resolvedSourceUrl || "",
         modelPrice,
         priceKnown: Boolean(cache?.priceKnown || modelPrice > 1),
         creditDeducted: creditUsed,

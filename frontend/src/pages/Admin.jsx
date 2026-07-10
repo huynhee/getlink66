@@ -148,6 +148,17 @@ function formatNumber(value, locale = "vi-VN") {
   return Number(value || 0).toLocaleString(locale);
 }
 
+function visible3D66Url(value = "") {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return String(value).split("#")[0];
+  }
+}
+
 function toDatetimeLocal(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -2149,11 +2160,18 @@ export default function Admin({ user, language = "vi" }) {
                 <div className="getlinkAuditModel">
                   <strong>{item.productId || "3D66"}</strong>
                   <span>{item.title || l("Không có tên model", "No model title")}</span>
-                  {item.sourceUrl && (
-                    <a href={item.sourceUrl} target="_blank" rel="noreferrer">
-                      {l("Mở link gốc", "Open source")}
-                    </a>
-                  )}
+                  <div className="getlinkAuditLinks">
+                    {item.sourceUrl && (
+                      <a href={item.sourceUrl} target="_blank" rel="noreferrer">
+                        {l("Link user gửi", "User link")}
+                      </a>
+                    )}
+                    {item.resolvedSourceUrl && (
+                      <a href={visible3D66Url(item.resolvedSourceUrl)} target="_blank" rel="noreferrer">
+                        {l("Link clear", "Cleared link")}
+                      </a>
+                    )}
+                  </div>
                 </div>
                 <span className={`badge ${Number(item.modelPrice || 0) !== Number(item.creditDeducted || 0) ? "error" : ""}`}>
                   {l("Giá", "Price")}: <CoinAmount value={Number(item.modelPrice || 0).toLocaleString(locale)} />{!item.priceKnown ? ` (${l("chưa chắc", "unconfirmed")})` : ""}
