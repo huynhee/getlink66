@@ -223,6 +223,42 @@ function isGeneratedModelIdUrl(rawUrl = "") {
   }
 }
 
+function isFootprintResolvedUrl(rawUrl = "") {
+  try {
+    const parsed = new URL(rawUrl);
+    const hashParams = new URLSearchParams(String(parsed.hash || "").replace(/^#/, ""));
+    return hashParams.get("resolved") === "footprint";
+  } catch {
+    return false;
+  }
+}
+
+function footprintLogicalProductId(rawUrl = "") {
+  try {
+    const parsed = new URL(rawUrl);
+    const hashParams = new URLSearchParams(String(parsed.hash || "").replace(/^#/, ""));
+    return safeSearchKeyword(hashParams.get("logical") || "");
+  } catch {
+    return "";
+  }
+}
+
+function stripInternalUrlHash(rawUrl = "") {
+  const parsed = normalizeModelUrl(rawUrl);
+  parsed.hash = "";
+  return parsed.toString();
+}
+
+function markFootprintResolvedUrl(rawUrl = "", logicalProductId = "") {
+  const parsed = normalizeModelUrl(rawUrl);
+  const hashParams = new URLSearchParams(String(parsed.hash || "").replace(/^#/, ""));
+  hashParams.set("resolved", "footprint");
+  const logicalId = safeSearchKeyword(logicalProductId);
+  if (logicalId) hashParams.set("logical", logicalId);
+  parsed.hash = hashParams.toString();
+  return parsed.toString();
+}
+
 function productIdFromPath(pathname = "") {
   const numericIds = [...String(pathname || "").matchAll(/(\d{6,})/g)].map((match) => match[1]);
   if (numericIds.length) return numericIds.sort((a, b) => b.length - a.length)[0];
@@ -364,7 +400,8 @@ function cacheFootprintModelUrl(key, value) {
 async function requestAccountSearchUrl(productId, cookieValue, sourceUrl) {
   const keyword = safeSearchKeyword(productId);
   if (!keyword || !accountSearchEnabled()) return "";
-  const searchContext = searchContextFromUrl(sourceUrl);
+  const cleanSourceUrl = sourceUrl ? stripInternalUrlHash(sourceUrl) : sourceUrl;
+  const searchContext = searchContextFromUrl(cleanSourceUrl);
 
   const endpoint = new URL(ACCOUNT_SEARCH_ENDPOINT);
   endpoint.searchParams.set("keyword", keyword);
@@ -388,7 +425,7 @@ async function requestAccountSearchUrl(productId, cookieValue, sourceUrl) {
         accept: "application/json, text/plain, */*",
         "accept-language": "vi,en-US;q=0.9,en;q=0.8,zh-CN;q=0.7,zh;q=0.6",
         cookie: cookieValue,
-        referer: sourceUrl || SEARCH_REFERER,
+        referer: cleanSourceUrl || SEARCH_REFERER,
         "user-agent": DEFAULT_USER_AGENT,
         "x-requested-with": "XMLHttpRequest",
       },
@@ -447,13 +484,25 @@ async function resolveAccountModelUrl(
 ) {
   const normalized = normalizeModelUrl(rawUrl);
   const productIds = requestedProductIdCandidatesFromUrl(normalized.toString());
-  const productId = productIds[0] || "";
+  const resolvedLogicalProductId = footprintLogicalProductId(normalized.toString());
+  const productId = resolvedLogicalProductId || productIds[0] || "";
   if (!productIds.length || process.env.THREED66_MOCK !== "false") {
     return { productId, url: normalized.toString(), usedAccountSearch: false };
   }
 
   const mode = modelResolveMode();
   const generatedFromModelId = isGeneratedModelIdUrl(normalized.toString());
+  if (stage !== "preview" && isFootprintResolvedUrl(normalized.toString())) {
+    return {
+      productId,
+      resolvedProductId: productIds[0] || productId,
+      url: normalized.toString(),
+      usedAccountSearch: false,
+      usedFootprint: true,
+      cookieValue,
+      cookies,
+    };
+  }
   if (
     mode === "direct" ||
     (mode === "footprint" && stage === "preview" && !generatedFromModelId)
@@ -479,7 +528,7 @@ async function resolveAccountModelUrl(
     return {
       productId,
       resolvedProductId: footprint.productId || productId,
-      url: footprint.url,
+      url: markFootprintResolvedUrl(footprint.url, productId),
       usedAccountSearch: false,
       usedFootprint: true,
       cookieValue: footprint.cookieValue || cookieValue,
@@ -681,7 +730,7 @@ function parseJsonCookie(cookies, key) {
 }
 
 function siteContext(pageUrl, cookies) {
-  const parsed = new URL(pageUrl);
+  const parsed = new URL(stripInternalUrlHash(pageUrl));
   const origin = process.env.THREED66_ORIGIN || parsed.origin;
   const originHost = new URL(origin).hostname;
   const configured = configuredSiteContexts()[originHost] || {};
@@ -1507,7 +1556,7 @@ function parseDynamicFields(html, pageUrl) {
 }
 
 function buildModelUrls(pageUrl, fields) {
-  const resUrl = new URL(pageUrl);
+  const resUrl = new URL(stripInternalUrlHash(pageUrl));
   if (fields.llId && !resUrl.searchParams.get("sof")) resUrl.searchParams.set("sof", fields.llId);
   if (fields.sign && !resUrl.searchParams.get("sign")) resUrl.searchParams.set("sign", fields.sign);
   if (!resUrl.searchParams.get("alichlgref")) resUrl.searchParams.set("alichlgref", "https://user.3d66.com/");
@@ -1523,8 +1572,9 @@ function buildModelUrls(pageUrl, fields) {
 
 async function fetchModelPage(url, cookieValue) {
   const { controller, done } = withTimeout();
+  const cleanUrl = stripInternalUrlHash(url);
   try {
-    const response = await fetch3D66(url, {
+    const response = await fetch3D66(cleanUrl, {
       redirect: "follow",
       signal: controller.signal,
       headers: {
@@ -1533,7 +1583,7 @@ async function fetchModelPage(url, cookieValue) {
         "cache-control": "no-cache",
         cookie: cookieValue,
         pragma: "no-cache",
-        referer: url,
+        referer: cleanUrl,
         "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"Windows\"",
@@ -1552,7 +1602,7 @@ async function fetchModelPage(url, cookieValue) {
     }
 
     const safeHtml = html.length > MAX_HTML_LENGTH ? html.slice(0, MAX_HTML_LENGTH) : html;
-    return { html: safeHtml, pageUrl: response.url || url };
+    return { html: safeHtml, pageUrl: response.url || cleanUrl };
   } catch (error) {
     if (error.name === "AbortError") {
       throw httpError("3D66 model page request timed out", 504);
@@ -2221,7 +2271,9 @@ export async function request3D66File(fileUrl, cookieValue, options = {}) {
   if (!isAllowed3D66Host(parsedFileUrl.hostname)) {
     throw httpError("Only 3d66.com download links are supported", 400);
   }
-  const sourceUrl = options.sourceUrl || process.env.THREED66_ORIGIN || "https://3d.3d66.com/";
+  const sourceUrl = stripInternalUrlHash(
+    options.sourceUrl || process.env.THREED66_ORIGIN || "https://3d.3d66.com/",
+  );
   const origin = new URL(sourceUrl).origin;
   const headers = {
     accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -2265,15 +2317,22 @@ export async function inspect3D66DownloadFormats(url, cookieValue) {
     accountModel.cookieValue || cookieValue,
   );
   if (!inspection) return inspection;
+  const inspectedSourceUrl =
+    inspection.sourceUrl || inspection.pageUrl || normalized.toString();
+  const resolvedSourceUrl = accountModel.usedFootprint
+    ? markFootprintResolvedUrl(inspectedSourceUrl, accountModel.productId)
+    : inspectedSourceUrl;
   return {
     ...inspection,
     productId: accountModel.productId || inspection.productId,
     sourceUrl: url,
+    resolvedSourceUrl,
     metadata: inspection.metadata
       ? {
           ...inspection.metadata,
           productId: accountModel.productId || inspection.metadata.productId,
           sourceUrl: url,
+          resolvedSourceUrl,
         }
       : inspection.metadata,
   };
@@ -2313,6 +2372,9 @@ export async function inspect3D66DownloadChoice(url, cookieValue) {
   );
   metadata.productId = accountModel.productId || metadata.productId;
   metadata.sourceUrl = url;
+  metadata.resolvedSourceUrl = accountModel.usedFootprint
+    ? markFootprintResolvedUrl(normalized.toString(), accountModel.productId)
+    : normalized.toString();
   const formatOptions = uniqueFormatOptions([
     ...(mergedFields.formatOptions || []),
     ...(metadata.formatOptions || []),
@@ -2339,6 +2401,7 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
       fileUrl: `https://download.mock-3d66.local/${digest}.zip`,
       productId: digest,
       sourceUrl: url,
+      resolvedSourceUrl: url,
       title: "Mock 3D66 model",
       imageUrl: "",
       creditCost: 1,
@@ -2349,12 +2412,20 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   }
 
   const initialCookies = requireCookie(cookieValue);
+  const originalSourceUrl = options.sourceUrl || url;
   const accountModel = await resolveAccountModelUrl(url, cookieValue, initialCookies, {
     stage: "download",
   });
   const normalized = normalizeModelUrl(accountModel.url);
   const logicalProductId =
     accountModel.productId || requestedProductIdFromUrl(normalized.toString());
+  const persistentResolvedSourceUrl = (value) =>
+    accountModel.usedFootprint
+      ? markFootprintResolvedUrl(
+          value || normalized.toString(),
+          logicalProductId || accountModel.productId,
+        )
+      : value || normalized.toString();
   const requestedProductId =
     accountModel.resolvedProductId ||
     requestedProductIdFromUrl(normalized.toString()) ||
@@ -2454,7 +2525,10 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
       return {
         ...browserDownload,
         productId: logicalProductId || browserDownload.productId,
-        sourceUrl: url,
+        sourceUrl: originalSourceUrl,
+        resolvedSourceUrl: persistentResolvedSourceUrl(
+          browserDownload.sourceUrl || pageUrl,
+        ),
       };
     }
     validateDynamicFields(fields);
@@ -2484,7 +2558,10 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
         return {
           ...browserDownload,
           productId: logicalProductId || browserDownload.productId,
-          sourceUrl: url,
+          sourceUrl: originalSourceUrl,
+          resolvedSourceUrl: persistentResolvedSourceUrl(
+            browserDownload.sourceUrl || pageUrl,
+          ),
         };
       }
     }
@@ -2493,7 +2570,8 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   return {
     fileUrl: download.fileUrl,
     productId: logicalProductId || fields.llId,
-    sourceUrl: url,
+    sourceUrl: originalSourceUrl,
+    resolvedSourceUrl: persistentResolvedSourceUrl(pageUrl),
     title: metadata.title,
     imageUrl: metadata.imageUrl,
     creditCost: download.creditCost || metadata.creditCost,

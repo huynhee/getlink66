@@ -43,7 +43,7 @@ export const translations = {
     legal: "Pháp lý",
     privacy: "Quyền riêng tư",
     terms: "Điều khoản",
-    getlinkTitle: "Nhập mã model 3D66",
+    getlinkTitle: "Nhập mã model",
     getlinkLabel: "Dán mã model 3D66 vào đây",
     getlinkPlaceholder: "Nhập link hoặc mã model 3D66",
     getlinkInputAria: "Link hoặc mã model 3D66",

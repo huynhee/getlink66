@@ -7,6 +7,7 @@ const getlinkSchema = new mongoose.Schema(
     productId: { type: String, required: true, index: true },
     fileUrl: { type: String, required: true },
     sourceUrl: String,
+    resolvedSourceUrl: String,
     title: String,
     imageUrl: String,
     creditUsed: { type: Number, default: 1 },

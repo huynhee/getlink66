@@ -37,6 +37,12 @@ function assertSafe3D66Url(rawUrl) {
   return parsed;
 }
 
+function stripInternalUrlHash(rawUrl) {
+  const parsed = assertSafe3D66Url(rawUrl);
+  parsed.hash = "";
+  return parsed.toString();
+}
+
 let browserPromise = null;
 let activeBrowser = null;
 let browserLaunchedAt = 0;
@@ -390,9 +396,10 @@ async function evaluateMetadataWithRetry(page, includeDownloadButton = false) {
 async function goto3D66Page(page, url) {
   let lastError;
   const attempts = navigationRetries();
+  const cleanUrl = stripInternalUrlHash(url);
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      await page.goto(url, {
+      await page.goto(cleanUrl, {
         waitUntil: navigationWaitUntil(),
         timeout: timeoutMs(),
       });

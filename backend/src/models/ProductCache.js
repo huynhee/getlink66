@@ -6,6 +6,7 @@ const productCacheSchema = new mongoose.Schema(
     productId: { type: String, required: true, unique: true, index: true },
     fileUrl: { type: String, default: "" },
     sourceUrl: String,
+    resolvedSourceUrl: String,
     title: String,
     imageUrl: String,
     creditCost: { type: Number, default: 1 },

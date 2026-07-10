@@ -236,8 +236,11 @@ function modelPageKey(url = "") {
 
 function cacheMatchesModelUrl(cache = {}, sourceUrl = "") {
   const currentKey = modelPageKey(sourceUrl);
-  const cacheKey = modelPageKey(cache?.sourceUrl || "");
-  if (currentKey && cacheKey) return currentKey === cacheKey;
+  const cacheKeys = [
+    modelPageKey(cache?.sourceUrl || ""),
+    modelPageKey(cache?.resolvedSourceUrl || ""),
+  ].filter(Boolean);
+  if (currentKey && cacheKeys.length) return cacheKeys.includes(currentKey);
   return false;
 }
 
@@ -326,7 +329,8 @@ function downloadFormatFromCache(cache = {}) {
 
 function refreshLockKey(history = {}, selectedFormat = null) {
   const formatKey = downloadFormatKey(selectedFormat || history.downloadFormat) || "default";
-  const sourceKey = modelPageKey(history.sourceUrl || "") || String(history.sourceUrl || "");
+  const refreshSource = history.resolvedSourceUrl || history.sourceUrl || "";
+  const sourceKey = modelPageKey(refreshSource) || String(refreshSource);
   return [
     String(history.productId || ""),
     formatKey,
@@ -339,7 +343,7 @@ async function useFreshCacheForHistory(history, selectedFormat = null) {
   const cache = await ProductCache.findOne({ productId: history.productId });
   if (
     !isCacheFresh(cache) ||
-    !cacheMatchesModelUrl(cache, history.sourceUrl || "") ||
+    !cacheMatchesModelUrl(cache, history.resolvedSourceUrl || history.sourceUrl || "") ||
     !cacheMatchesDownloadFormat(cache, requestedFormat)
   ) {
     return null;
@@ -350,6 +354,8 @@ async function useFreshCacheForHistory(history, selectedFormat = null) {
     {
       fileUrl: cache.fileUrl,
       sourceUrl: cache.sourceUrl || history.sourceUrl,
+      resolvedSourceUrl:
+        cache.resolvedSourceUrl || history.resolvedSourceUrl,
       title: cache.title || history.title,
       imageUrl: cache.imageUrl || history.imageUrl,
       downloadFormat: downloadFormatFromCache(cache),
@@ -423,6 +429,17 @@ function readUrlRequest(req, res) {
     res.status(error.status || 400).json({ message: error.message });
     return null;
   }
+}
+
+function shouldResolveFreshFootprint(error = {}) {
+  if (isDuplicate3D66Operation(error)) return false;
+  const text = String(error?.message || "");
+  if (/không đủ số dư|insufficient|素材已下架|off.?shelf/i.test(text)) return false;
+  const status = Number(error?.status || 0);
+  return (
+    [400, 401, 403, 404, 410, 422].includes(status) ||
+    /sign|token|up.?time|expired|model page|different model|not found|auth failed/i.test(text)
+  );
 }
 
 function normalizeBooleanFlag(value) {
@@ -907,6 +924,11 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
           productId: browserInspection.productId || metadata.productId || productId,
           fileUrl: browserInspection.fileUrl,
           sourceUrl: browserInspection.sourceUrl || browserInspection.pageUrl || inspection?.pageUrl || url,
+          resolvedSourceUrl:
+            browserInspection.resolvedSourceUrl ||
+            metadata.resolvedSourceUrl ||
+            cache?.resolvedSourceUrl ||
+            "",
           title: browserInspection.title || metadata.title || cache?.title || fallbackMetadata.title,
           imageUrl: browserInspection.imageUrl || metadata.imageUrl || cache?.imageUrl || fallbackMetadata.imageUrl,
           creditCost: normalizeDownloadCreditCost(
@@ -931,6 +953,8 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
         {
           productId: metadata.productId || productId,
           sourceUrl: metadata.sourceUrl || inspection?.pageUrl || url,
+          resolvedSourceUrl:
+            metadata.resolvedSourceUrl || cache?.resolvedSourceUrl || "",
           title: metadata.title || cache?.title || fallbackMetadata.title,
           imageUrl: metadata.imageUrl || cache?.imageUrl || fallbackMetadata.imageUrl,
           creditCost: normalizeDownloadCreditCost(
@@ -1065,6 +1089,8 @@ async function resolveProductCache(productId, url, downloadFormat = null) {
           productId: cacheProductId,
           fileUrl,
           sourceUrl: metadata.sourceUrl || url,
+          resolvedSourceUrl:
+            metadata.resolvedSourceUrl || metadataCache?.resolvedSourceUrl || "",
           title: metadata.title || metadataCache?.title,
           imageUrl: metadata.imageUrl || metadataCache?.imageUrl,
           creditCost,
@@ -1268,7 +1294,7 @@ export async function getLink(req, res, next) {
       if (!downloadFormat) {
         const redownloadCache = await ProductCache.findOne({ productId: activeRedownload.productId }).lean();
         const redownloadFormatSelection = await resolveDownloadFormatSelection(
-          activeRedownload.sourceUrl || url,
+          activeRedownload.resolvedSourceUrl || activeRedownload.sourceUrl || url,
           activeRedownload.productId,
           redownloadCache,
           {
@@ -1362,7 +1388,7 @@ export async function getLink(req, res, next) {
           if (!downloadFormat) {
             const redownloadCache = await ProductCache.findOne({ productId: previewRedownload.productId }).lean();
             const redownloadFormatSelection = await resolveDownloadFormatSelection(
-              previewRedownload.sourceUrl || url,
+              previewRedownload.resolvedSourceUrl || previewRedownload.sourceUrl || url,
               previewRedownload.productId,
               redownloadCache,
               {
@@ -1520,6 +1546,7 @@ export async function getLink(req, res, next) {
       productId: cache.productId,
       fileUrl: cache.fileUrl,
       sourceUrl: cache.sourceUrl || url,
+      resolvedSourceUrl: cache.resolvedSourceUrl || "",
       title: cache.title,
       imageUrl: cache.imageUrl,
       creditUsed: creditCost,
@@ -1580,19 +1607,40 @@ export async function getLink(req, res, next) {
 }
 
 async function refreshHistoryDownload(history, cookieValue, downloadFormatOverride = null) {
-  if (!history.sourceUrl) return history;
+  if (!history.sourceUrl && !history.resolvedSourceUrl) return history;
   const requestedFormat = downloadFormatOverride || history.downloadFormat || null;
-
-  const download = await queue3D66Refresh(() =>
-    fetchFrom3D66(history.sourceUrl, cookieValue, {
-      downloadFormat: requestedFormat,
-    }),
-  );
+  const refreshSourceUrl = history.resolvedSourceUrl || history.sourceUrl;
+  let download;
+  try {
+    download = await queue3D66Refresh(() =>
+      fetchFrom3D66(refreshSourceUrl, cookieValue, {
+        downloadFormat: requestedFormat,
+        sourceUrl: history.sourceUrl || refreshSourceUrl,
+      }),
+    );
+  } catch (error) {
+    if (
+      !history.resolvedSourceUrl ||
+      !history.sourceUrl ||
+      !shouldResolveFreshFootprint(error)
+    ) {
+      throw error;
+    }
+    download = await queue3D66Refresh(() =>
+      fetchFrom3D66(history.sourceUrl, cookieValue, {
+        downloadFormat: requestedFormat,
+        sourceUrl: history.sourceUrl,
+      }),
+    );
+  }
   const updatedFields = {
     fileUrl: typeof download === "string" ? download : download.fileUrl,
-    sourceUrl:
-      (typeof download === "string" ? "" : download.sourceUrl) ||
-      history.sourceUrl,
+    sourceUrl: history.sourceUrl ||
+      (typeof download === "string" ? "" : download.sourceUrl),
+    resolvedSourceUrl:
+      (typeof download === "string" ? "" : download.resolvedSourceUrl) ||
+      history.resolvedSourceUrl ||
+      "",
     title:
       (typeof download === "string" ? "" : download.title) || history.title,
     imageUrl:
@@ -1610,6 +1658,7 @@ async function refreshHistoryDownload(history, cookieValue, downloadFormatOverri
     await ProductCache.findByIdAndUpdate(cache._id, {
       fileUrl: updatedFields.fileUrl,
       sourceUrl: updatedFields.sourceUrl,
+      resolvedSourceUrl: updatedFields.resolvedSourceUrl,
       title: updatedFields.title,
       imageUrl: updatedFields.imageUrl,
       ...cacheFormatPatch(updatedFields.downloadFormat),
@@ -1621,7 +1670,7 @@ async function refreshHistoryDownload(history, cookieValue, downloadFormatOverri
 }
 
 async function refreshHistoryDownloadLocked(history, cookieValue, downloadFormatOverride = null) {
-  if (!history.sourceUrl) return history;
+  if (!history.sourceUrl && !history.resolvedSourceUrl) return history;
   const requestedFormat = downloadFormatOverride || history.downloadFormat || null;
   const cachedHistory = await useFreshCacheForHistory(history, requestedFormat);
   if (cachedHistory) return cachedHistory;
@@ -1699,10 +1748,11 @@ export async function prepareRedownload(req, res, next) {
     const requestedFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
     let selectedFormat = requestedFormat;
 
-    if (!requestedFormat && history.sourceUrl) {
+    const formatSourceUrl = history.resolvedSourceUrl || history.sourceUrl;
+    if (!requestedFormat && formatSourceUrl) {
       try {
         const formatSelection = await resolveDownloadFormatSelection(
-          history.sourceUrl,
+          formatSourceUrl,
           history.productId,
           cache,
           {
@@ -1807,15 +1857,18 @@ async function openDownloadResponse(history, req, signal) {
     }
 
     let upstream = await request3D66File(activeHistory.fileUrl, cookieValue, {
-      sourceUrl: activeHistory.sourceUrl,
+      sourceUrl: activeHistory.resolvedSourceUrl || activeHistory.sourceUrl,
       range: req.get("range"),
       signal,
     });
 
-    if (isRefreshableStatus(upstream.status) && activeHistory.sourceUrl) {
+    if (
+      isRefreshableStatus(upstream.status) &&
+      (activeHistory.resolvedSourceUrl || activeHistory.sourceUrl)
+    ) {
       activeHistory = await refreshHistoryDownloadLocked(activeHistory, cookieValue);
       upstream = await request3D66File(activeHistory.fileUrl, cookieValue, {
-        sourceUrl: activeHistory.sourceUrl,
+        sourceUrl: activeHistory.resolvedSourceUrl || activeHistory.sourceUrl,
         range: req.get("range"),
         signal,
       });
@@ -2167,7 +2220,7 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
 
     const previewCandidates = previewImageUrlCandidates(
       history.imageUrl,
-      history.sourceUrl,
+      history.resolvedSourceUrl || history.sourceUrl,
     );
     let upstream = null;
     let previewImageBuffer = null;
@@ -2177,7 +2230,8 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
       "user-agent":
         req.get("user-agent") ||
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      referer: history.sourceUrl || "https://www.3d66.com/",
+      referer:
+        history.resolvedSourceUrl || history.sourceUrl || "https://www.3d66.com/",
       accept: "image/jpeg,image/png,image/webp,image/gif,image/*;q=0.8,*/*;q=0.5",
     };
 
