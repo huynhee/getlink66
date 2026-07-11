@@ -431,7 +431,39 @@ POST /api/marketplace/image-search
 
 Dung quota rieng trong `DailyImageSearchQuota`.
 
-Hien tai nen xem nhu phase can tiep tuc cai thien logic matching anh that. Contract quota da co.
+Frontend mo popup cho phep chon file, keo tha hoac dan anh tu clipboard. Anh chi duoc gui khi user bam nut tim, vi vay viec chon/dan nham khong ton quota.
+
+Backend khong tu gia lap ket qua bang danh sach model pho bien. Tim anh chi hoat dong khi da cau hinh similarity engine:
+
+```env
+MARKETPLACE_IMAGE_SEARCH_URL=https://image-search.example.com/search
+MARKETPLACE_IMAGE_SEARCH_API_KEY=
+MARKETPLACE_IMAGE_SEARCH_TIMEOUT_MS=20000
+```
+
+Backend gui JSON den provider:
+
+```json
+{
+  "image": "data:image/jpeg;base64,...",
+  "imageHash": "sha256...",
+  "limit": 60
+}
+```
+
+Provider phai tra ID trung voi `MarketplaceModel.source.modelId`:
+
+```json
+{
+  "matches": [
+    { "modelId": "6373049", "score": 0.93 }
+  ]
+}
+```
+
+Backend giu thu tu theo score cua provider, ap dung category/access/filter hien tai, sau do moi tao ket qua public. Quota chi bi tru sau khi provider tra thanh cong. Khi provider chua cau hinh, timeout, loi hoac tra JSON sai, request bi tu choi va quota khong doi.
+
+De tim that tren catalog, dich vu ngoai can co vector index cua anh cover cho tung model. Mot huong trien khai phu hop la CLIP embedding + vector database; job dong bo phai upsert/xoa vector theo `source.modelId` khi model duoc publish, thay cover hoac bi go publish.
 
 ### Cover/preview proxy
 
@@ -789,6 +821,8 @@ Image search:
 free: 10/day
 member: 150/day
 ```
+
+Quota chi duoc charge cho request ma similarity provider xu ly thanh cong. Engine chua cau hinh hoac provider loi khong duoc tru luot.
 
 ## 17. Payment and vouchers
 

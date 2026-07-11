@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ChevronRight, Download, Filter, ImagePlus, Package, Search, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, ClipboardPaste, Download, Filter, Image as ImageIcon, ImagePlus, Loader2, Package, Search, Upload, X } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 
 const EMPTY_FILTERS = {
@@ -592,6 +592,187 @@ async function fileToSearchImageData(file) {
   }
 }
 
+function imageSearchErrorMessage(message, language) {
+  const value = String(message || "");
+  if (language !== "vi") return value || "Image search failed.";
+  if (value.includes("not configured") || value.includes("not available")) {
+    return "Hệ thống tìm ảnh chưa được cấu hình.";
+  }
+  if (value.includes("Login is required")) return "Cần đăng nhập để tìm kiếm bằng hình ảnh.";
+  if (value.includes("quota exceeded")) return "Bạn đã hết lượt tìm kiếm hình ảnh hôm nay.";
+  if (value.includes("too large")) return "Ảnh tìm kiếm có dung lượng quá lớn.";
+  if (value.includes("Invalid image")) return "Ảnh tìm kiếm không hợp lệ.";
+  return value || "Không tìm kiếm được bằng hình ảnh.";
+}
+
+function ImageSearchDialog({
+  open,
+  language,
+  file,
+  preview,
+  searching,
+  error,
+  onSelectFile,
+  onError,
+  onSearch,
+  onClose,
+}) {
+  const inputRef = useRef(null);
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.focus();
+
+    function handlePaste(event) {
+      const item = Array.from(event.clipboardData?.items || [])
+        .find((candidate) => candidate.type?.startsWith("image/"));
+      const pastedFile = item?.getAsFile();
+      if (!pastedFile) return;
+      event.preventDefault();
+      onSelectFile(new File(
+        [pastedFile],
+        pastedFile.name || `clipboard-${Date.now()}.png`,
+        { type: pastedFile.type || "image/png" },
+      ));
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape" && !searching) onClose();
+    }
+
+    document.addEventListener("paste", handlePaste);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("paste", handlePaste);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, onSelectFile, open, searching]);
+
+  if (!open) return null;
+
+  async function readClipboardImage() {
+    onError("");
+    try {
+      if (!navigator.clipboard?.read) throw new Error("Clipboard image reading is not available.");
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        const imageType = item.types.find((type) => type.startsWith("image/"));
+        if (!imageType) continue;
+        const blob = await item.getType(imageType);
+        onSelectFile(new File([blob], `clipboard-${Date.now()}.${imageType.split("/")[1] || "png"}`, { type: imageType }));
+        return;
+      }
+      throw new Error("Clipboard does not contain an image.");
+    } catch (clipboardError) {
+      onError(language === "vi"
+        ? "Không đọc được ảnh trong clipboard."
+        : clipboardError.message || "Cannot read an image from the clipboard.");
+    }
+  }
+
+  function handleDrop(event) {
+    event.preventDefault();
+    const droppedFile = Array.from(event.dataTransfer?.files || [])
+      .find((candidate) => candidate.type?.startsWith("image/"));
+    if (droppedFile) onSelectFile(droppedFile);
+  }
+
+  return (
+    <div
+      className="marketImageSearchOverlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !searching) onClose();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="marketImageSearchDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="market-image-search-title"
+        tabIndex={-1}
+      >
+        <header className="marketImageSearchDialogHeader">
+          <h2 id="market-image-search-title">
+            <ImagePlus size={20} />
+            {language === "vi" ? "Tìm model bằng ảnh" : "Search models by image"}
+          </h2>
+          <button
+            type="button"
+            className="iconButton"
+            onClick={onClose}
+            disabled={searching}
+            aria-label={language === "vi" ? "Đóng" : "Close"}
+            title={language === "vi" ? "Đóng" : "Close"}
+          >
+            <X size={18} />
+          </button>
+        </header>
+
+        <div
+          className={`marketImageSearchDropzone ${preview ? "hasImage" : ""}`}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={handleDrop}
+        >
+          {preview ? (
+            <img src={preview} alt={file?.name || "Image search preview"} />
+          ) : (
+            <ImageIcon size={42} />
+          )}
+        </div>
+
+        {file && (
+          <div className="marketImageSearchFileMeta">
+            <strong>{file.name || (language === "vi" ? "Ảnh clipboard" : "Clipboard image")}</strong>
+            <span>{Math.max(1, Math.ceil(Number(file.size || 0) / 1024)).toLocaleString(language === "vi" ? "vi-VN" : "en-US")} KB</span>
+          </div>
+        )}
+
+        <div className="marketImageSearchActions">
+          <button type="button" className="smallButton" onClick={() => inputRef.current?.click()} disabled={searching}>
+            <Upload size={16} />
+            {language === "vi" ? "Chọn ảnh" : "Choose image"}
+          </button>
+          <button type="button" className="smallButton" onClick={readClipboardImage} disabled={searching}>
+            <ClipboardPaste size={16} />
+            {language === "vi" ? "Dán ảnh" : "Paste image"}
+          </button>
+        </div>
+
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          hidden
+          onChange={(event) => {
+            const selectedFile = event.target.files?.[0];
+            event.target.value = "";
+            if (selectedFile) onSelectFile(selectedFile);
+          }}
+        />
+
+        {error && <p className="error marketImageSearchDialogError">{error}</p>}
+
+        <footer className="marketImageSearchDialogFooter">
+          <button type="button" className="smallButton" onClick={onClose} disabled={searching}>
+            {language === "vi" ? "Hủy" : "Cancel"}
+          </button>
+          <button type="button" className="primaryButton" onClick={onSearch} disabled={!file || searching}>
+            {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
+            {searching
+              ? (language === "vi" ? "Đang tìm..." : "Searching...")
+              : (language === "vi" ? "Tìm model" : "Search models")}
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 function ModelListPage({ user, language, onNavigate }) {
   const [categories, setCategories] = useState([]);
   const [filterOptions, setFilterOptions] = useState({});
@@ -605,9 +786,12 @@ function ModelListPage({ user, language, onNavigate }) {
   const [imageSearchMeta, setImageSearchMeta] = useState(null);
   const [imageSearchPreview, setImageSearchPreview] = useState("");
   const [imageSearching, setImageSearching] = useState(false);
+  const [imageSearchOpen, setImageSearchOpen] = useState(false);
+  const [imageSearchFile, setImageSearchFile] = useState(null);
+  const [imageSearchDraftPreview, setImageSearchDraftPreview] = useState("");
+  const [imageSearchDialogError, setImageSearchDialogError] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const fileInputRef = useRef(null);
 
   async function loadCategories() {
     const data = await api("/api/marketplace/categories");
@@ -667,11 +851,12 @@ function ModelListPage({ user, language, onNavigate }) {
 
   async function searchByImage(file) {
     if (!user) {
-      setError(language === "vi" ? "Cần đăng nhập để tìm kiếm bằng hình ảnh." : "Login is required for image search.");
-      return;
+      setImageSearchDialogError(language === "vi" ? "Cần đăng nhập để tìm kiếm bằng hình ảnh." : "Login is required for image search.");
+      return false;
     }
     setImageSearching(true);
     setError("");
+    setImageSearchDialogError("");
     try {
       const payload = await fileToSearchImageData(file);
       setImageSearchPreview(payload.imageData);
@@ -689,18 +874,46 @@ function ModelListPage({ user, language, onNavigate }) {
       setModels(data.models || []);
       setPagination(data.pagination || { page: 1, totalPages: 1, total: 0 });
       setImageSearchMeta(data.imageSearch || null);
+      return true;
     } catch (err) {
-      setError(err.message);
+      setImageSearchDialogError(imageSearchErrorMessage(err.message, language));
+      return false;
     } finally {
       setImageSearching(false);
     }
   }
 
-  function handleImageInput(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (file) searchByImage(file);
+  function selectImageSearchFile(file) {
+    setImageSearchDialogError("");
+    if (!file?.type?.startsWith("image/")) {
+      setImageSearchDialogError(language === "vi" ? "File phải là ảnh." : "The selected file must be an image.");
+      return;
+    }
+    if (Number(file.size || 0) > 20 * 1024 * 1024) {
+      setImageSearchDialogError(language === "vi" ? "Ảnh không được lớn hơn 20 MB." : "The image must not exceed 20 MB.");
+      return;
+    }
+    setImageSearchFile(file);
+    setImageSearchDraftPreview(URL.createObjectURL(file));
   }
+
+  function closeImageSearchDialog() {
+    if (imageSearching) return;
+    setImageSearchOpen(false);
+    setImageSearchFile(null);
+    setImageSearchDraftPreview("");
+    setImageSearchDialogError("");
+  }
+
+  async function submitImageSearch() {
+    if (!imageSearchFile) return;
+    const searched = await searchByImage(imageSearchFile);
+    if (searched) closeImageSearchDialog();
+  }
+
+  useEffect(() => () => {
+    if (imageSearchDraftPreview.startsWith("blob:")) URL.revokeObjectURL(imageSearchDraftPreview);
+  }, [imageSearchDraftPreview]);
 
   useEffect(() => {
     loadCategories().catch(() => { });
@@ -766,7 +979,8 @@ function ModelListPage({ user, language, onNavigate }) {
   }
 
   return (
-    <div className="marketLayout">
+    <>
+      <div className="marketLayout">
       <aside className="marketSidebar panel">
         <h2>
           <Filter size={20} />
@@ -850,7 +1064,10 @@ function ModelListPage({ user, language, onNavigate }) {
                 type="button"
                 className="marketImageSearchButton"
                 disabled={imageSearching}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  setImageSearchDialogError("");
+                  setImageSearchOpen(true);
+                }}
                 aria-label={language === "vi" ? "Tìm bằng hình ảnh" : "Search by image"}
                 title={language === "vi" ? "Tìm bằng hình ảnh" : "Search by image"}
               >
@@ -869,7 +1086,6 @@ function ModelListPage({ user, language, onNavigate }) {
                 </button>
               ))}
             </div>
-            <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageInput} />
           </div>
           <div className="marketResultBar">
             <span>{pagination.total || 0} {textFor(language, "model", "models found")}</span>
@@ -932,8 +1148,21 @@ function ModelListPage({ user, language, onNavigate }) {
           <button type="button" disabled={pagination.page >= pagination.totalPages || loading} onClick={() => goToPage(pagination.page + 1)}>{textFor(language, "Sau", "Next")}</button>
           <button type="button" disabled={pagination.page >= pagination.totalPages || loading} onClick={() => goToPage(pagination.totalPages)}>{textFor(language, "Cuối", "Last")}</button>
         </nav>
-      </section>
-    </div>
+        </section>
+      </div>
+      <ImageSearchDialog
+        open={imageSearchOpen}
+        language={language}
+        file={imageSearchFile}
+        preview={imageSearchDraftPreview}
+        searching={imageSearching}
+        error={imageSearchDialogError}
+        onSelectFile={selectImageSearchFile}
+        onError={setImageSearchDialogError}
+        onSearch={submitImageSearch}
+        onClose={closeImageSearchDialog}
+      />
+    </>
   );
 }
 

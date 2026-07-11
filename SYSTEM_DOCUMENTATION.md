@@ -1771,6 +1771,7 @@ Neu production khong set `PUBLIC_BASE_URL`, backend fallback tu `req.protocol + 
 - `notificationController.js`: user/admin notifications.
 - `adminController.js`: dashboard, data tabs, user/credit, cookie, voucher, package, logs, topups/getlinks/referrals.
 - `marketplaceController.js`: public marketplace list/detail, cover/preview proxy, image search quota va download session.
+- `marketplaceImageSearchProvider.js`: adapter HTTP cho similarity engine ben ngoai; chuan hoa ranking theo `source.modelId`, timeout va loi provider.
 - `marketplaceAdminController.js`: admin import/sync Google Drive folder, attach asset/file va marketplace stats.
 
 ### Backend utils
@@ -1897,7 +1898,7 @@ May audit 2026-07-10 khong co Docker CLI, vi vay image manifests phai duoc build
 - Daily Pro add-on chi tang `bonusLimit` trong ngay neu user dang co Pro; khong ghi de `proUntil` cua goi dai han.
 - Default Credit/Pro plan chi seed record thieu. Chi ghi de gia/quyen loi khi bat ro `SYNC_DEFAULT_TOPUP_PACKAGES=true` hoac `SYNC_DEFAULT_MEMBERSHIP_PLANS=true`.
 - Model public bat buoc `isPublished=true`, `metadataStatus=complete` va `fileStatus=ready`. Admin khong the publish model thieu archive.
-- Quota download/image search rollback khi request vuot quota hoac tao session/log that bai.
+- Quota download/image search rollback khi request vuot quota hoac tao session/log that bai. Image search khong tru quota khi similarity engine chua cau hinh hoac provider loi.
 - Timeline va admin transaction dung total count that, khong con cap tong o 500 record; timeline khong tra source URL/source model ID.
 - Voucher Pro duoc ghi nhan trong filter Voucher cua timeline.
 - Drive sync co process lock, DB lock co stale timeout, batch startup sau 5 giay va dung timer khi graceful shutdown.

@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 const collections = new Map();
 
 function clone(value) {
@@ -5,7 +7,7 @@ function clone(value) {
 }
 
 function id() {
-  return Math.random().toString(16).slice(2) + Date.now().toString(16);
+  return randomBytes(12).toString("hex");
 }
 
 function getCollection(name) {

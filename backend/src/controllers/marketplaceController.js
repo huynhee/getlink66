@@ -13,6 +13,7 @@ import {
 } from "../utils/marketplaceDownloadService.js";
 import { isProActive } from "../utils/membershipService.js";
 import { openGoogleDriveFileStream, openStorageStream } from "../utils/storageProvider.js";
+import { searchMarketplaceImage } from "../utils/marketplaceImageSearchProvider.js";
 
 const PAGE_SIZE = 60;
 const IMAGE_SEARCH_FREE_LIMIT = 10;
@@ -339,7 +340,24 @@ function parseImageSearchPayload(body = {}) {
     mimeType: `image/${match[1] === "jpg" ? "jpeg" : match[1]}`,
     byteLength: imageBuffer.length,
     imageHash: crypto.createHash("sha256").update(imageBuffer).digest("hex"),
+    imageData,
   };
+}
+
+async function assertImageSearchQuotaAvailable(req, tier) {
+  const limit = imageSearchLimit(tier);
+  if (tier === "admin") return;
+  const current = await DailyImageSearchQuota.findOne({
+    dayKey: vietnamDayKey(),
+    userId: req.user._id,
+    tier,
+  });
+  if (current && Number(current.count || 0) >= limit) {
+    const error = new Error(`Daily image search quota exceeded for ${tier}.`);
+    error.status = 429;
+    error.details = { limit, resetAt: nextVietnamReset() };
+    throw error;
+  }
 }
 
 async function chargeImageSearchQuota(req, tier, imageHash) {
@@ -388,26 +406,54 @@ export async function searchMarketplaceByImage(req, res, next) {
   try {
     const tier = imageSearchTier(req);
     const image = parseImageSearchPayload(req.body);
-    const quota = await chargeImageSearchQuota(req, tier, image.imageHash);
     const requestedLimit = Number(req.body.limit || PAGE_SIZE);
     const limit = Math.min(60, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : PAGE_SIZE));
+    await assertImageSearchQuotaAvailable(req, tier);
+    const searchResult = await searchMarketplaceImage({
+      imageData: image.imageData,
+      imageHash: image.imageHash,
+      limit,
+    });
+    const matchedIds = searchResult.matches.map((match) => match.modelId);
     const query = { isPublished: true, metadataStatus: "complete", fileStatus: "ready" };
 
     Object.assign(query, accessTypeFilter(req.body.accessType));
     applyMarketplaceFacetFilters(query, req.body);
     addNestedFilter(query, await categoryFilter(req.body.category));
+    if (matchedIds.length) {
+      const identityFilters = [
+        { "source.modelId": { $in: matchedIds } },
+        { slug: { $in: matchedIds } },
+      ];
+      const databaseIds = matchedIds.filter((id) => isSafeId(id));
+      if (databaseIds.length) identityFilters.push({ _id: { $in: databaseIds } });
+      query.$and = [...(query.$and || []), { $or: identityFilters }];
+    }
 
-    const total = await MarketplaceModel.countDocuments(query);
-    const models = await MarketplaceModel.find(query)
-      .sort({ downloadCount: -1, createdAt: -1 })
-      .limit(limit)
-      .populate("categoryId", "title titleEn slug sourceCategoryId")
-      .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
-      .lean();
+    const models = matchedIds.length
+      ? await MarketplaceModel.find(query)
+          .limit(limit)
+          .populate("categoryId", "title titleEn slug sourceCategoryId")
+          .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
+          .lean()
+      : [];
+    const ranks = new Map(searchResult.matches.map((match, index) => [match.modelId, { index, score: match.score }]));
+    function modelRank(model) {
+      const candidates = [String(model?.source?.modelId || ""), String(model?.slug || ""), String(model?._id || "")];
+      for (const candidate of candidates) {
+        if (ranks.has(candidate)) return ranks.get(candidate);
+      }
+      return { index: Number.MAX_SAFE_INTEGER, score: 0 };
+    }
+    models.sort((left, right) => modelRank(left).index - modelRank(right).index);
+    const quota = await chargeImageSearchQuota(req, tier, image.imageHash);
 
     res.json({
-      models: models.map((model) => publicModel(model, { includePreviews: false })),
-      pagination: { page: 1, pageSize: limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+      models: models.map((model) => ({
+        ...publicModel(model, { includePreviews: false }),
+        imageSearchScore: modelRank(model).score,
+      })),
+      pagination: { page: 1, pageSize: limit, total: models.length, totalPages: 1 },
       imageSearch: {
         tier: tier === "member" ? "pro" : tier,
         limit: quota.limit,
@@ -415,7 +461,7 @@ export async function searchMarketplaceByImage(req, res, next) {
         resetAt: quota.resetAt,
         imageHash: image.imageHash.slice(0, 12),
         byteLength: image.byteLength,
-        mode: "catalog_fallback",
+        mode: searchResult.provider,
       },
     });
   } catch (error) {
