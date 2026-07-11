@@ -266,7 +266,7 @@ function App() {
   if (isAdminPath) {
     return (
       <div className="appFrame">
-        <Navbar user={user} page="admin" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} adminMode language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
+        <Navbar user={user} page="admin" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
         <main className="shell">
           {user?.requires2FA && <TwoFactorModal onVerify={refreshUser} language={language} />}
           {!user && <Login onLogin={refreshUser} adminMode returnTo="/admin" language={language} />}

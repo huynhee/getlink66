@@ -1031,11 +1031,36 @@ export async function resolve3D66ModelUrlFromFootprint(
     const popup = await popupPromise;
     if (popup) {
       await popup.waitForLoadState("commit", { timeout: timeoutMs() }).catch(() => {});
-      await popup.waitForTimeout(postCommitWaitMs()).catch(() => {});
+      await popup
+        .waitForURL(
+          (candidate) => {
+            try {
+              return Boolean(
+                candidate.searchParams.get("sign") &&
+                candidate.pathname.includes("/reshtmla/"),
+              );
+            } catch {
+              return false;
+            }
+          },
+          { timeout: Math.min(timeoutMs(), 15000) },
+        )
+        .catch(() => {});
+      await popup.waitForTimeout(Math.max(500, postCommitWaitMs())).catch(() => {});
     }
     const resolvedUrl =
       popup && popup.url() && popup.url() !== "about:blank" ? popup.url() : selected.href;
     assertSafe3D66Url(resolvedUrl);
+    if (!new URL(resolvedUrl).searchParams.get("sign")) {
+      throw browserHttpError(
+        "3D66 did not generate a signed model URL after opening the footprint item.",
+        502,
+        {
+          productId: selected.productId,
+          stage: "footprint-signed-url",
+        },
+      );
+    }
 
     const browserCookies = await context.cookies();
     return {
