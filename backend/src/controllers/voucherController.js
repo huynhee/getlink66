@@ -1,9 +1,9 @@
 import Voucher from "../models/Voucher.js";
 import {
-  approvedVoucherUseCount,
+  assertVoucherTarget,
+  assertVoucherUserLimit,
   safeVoucherPayload,
   voucherApplicablePackageIds,
-  voucherTargetKind,
 } from "../utils/voucherCheckoutService.js";
 import {
   isVoucherCode,
@@ -26,8 +26,14 @@ export async function applyVoucher(req, res, next) {
     if (!code || !isVoucherCode(code)) {
       return res.status(400).json({ message: "Voucher code is required" });
     }
+    if (!["topup", "membership"].includes(target)) {
+      return res.status(400).json({ message: "Invalid voucher target" });
+    }
     if (packageId && !isSafeId(packageId)) {
       return res.status(400).json({ message: "Invalid topup package" });
+    }
+    if (target === "membership" && packageId) {
+      return res.status(400).json({ message: "Pro voucher does not accept a credit package" });
     }
 
     const voucher = await Voucher.findOne({ code }).lean();
@@ -37,41 +43,9 @@ export async function applyVoucher(req, res, next) {
       return res.status(400).json({ message: unavailableMessage });
     }
 
-    const applicablePackageIds = Array.isArray(voucher.applicablePackageIds)
-      ? voucher.applicablePackageIds.map((id) => String(id?._id || id))
-      : [];
-    const targetKindValue = voucherTargetKind(voucher);
-    if (target !== "membership" && targetKindValue === "pro") {
-      return res.status(400).json({
-        message: "Voucher này chỉ áp dụng cho gói Pro.",
-      });
-    }
-    if (target === "membership" && (targetKindValue === "credit" || applicablePackageIds.length > 0)) {
-      return res.status(400).json({
-        message: "Voucher này chỉ áp dụng cho gói Credit.",
-      });
-    }
-    if (target === "membership" && Number(voucher.discountPercent || 0) <= 0) {
-      return res.status(400).json({
-        message: "Voucher này chỉ cộng Credit, không áp dụng cho Pro.",
-      });
-    }
-    if (packageId && applicablePackageIds.length > 0 && !applicablePackageIds.includes(packageId)) {
-      return res.status(400).json({
-        message: "Voucher không áp dụng cho gói nạp này.",
-      });
-    }
-
+    assertVoucherTarget(voucher, { target, packageId });
+    const userVoucherUsed = await assertVoucherUserLimit(voucher, req.user._id);
     const perUserLimit = Number(voucher.perUserLimit ?? 1);
-    let userVoucherUsed = 0;
-    if (perUserLimit > 0) {
-      userVoucherUsed = await approvedVoucherUseCount(req.user._id, voucher.code);
-      if (userVoucherUsed >= perUserLimit) {
-        return res.status(400).json({
-          message: "Bạn đã đạt giới hạn sử dụng voucher này.",
-        });
-      }
-    }
 
     // Chi tra cac field can thiet cho frontend, KHONG leak `usageLimit`, `usedCount`,
     // `_id`, `createdAt`. Tranh information disclosure cho atttacker biet trang thai voucher.
@@ -87,8 +61,8 @@ export async function applyVoucher(req, res, next) {
       voucher: safeVoucher,
       message:
         voucher.discountPercent > 0
-          ? `Voucher giảm ${voucher.discountPercent}% sẽ áp dụng khi thanh toán SePay.`
-          : `Voucher cộng thêm ${voucher.creditBonus} credit sẽ áp dụng khi giao dịch nạp thành công.`,
+          ? `Voucher ${target === "membership" ? "Pro" : "Credit"} giảm ${voucher.discountPercent}% sẽ áp dụng khi thanh toán SePay.`
+          : `Voucher Credit cộng thêm ${voucher.creditBonus} credit khi giao dịch nạp thành công.`,
     });
   } catch (error) {
     next(error);

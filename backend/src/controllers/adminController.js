@@ -7,6 +7,7 @@ import Getlink from "../models/Getlink.js";
 import ProductCache from "../models/ProductCache.js";
 import SystemLog from "../models/SystemLog.js";
 import Referral from "../models/Referral.js";
+import MembershipOrder from "../models/MembershipOrder.js";
 import { isMemoryDb } from "../config/memoryStore.js";
 import { grantManualCredit } from "../utils/manualCreditService.js";
 import { validate3D66Cookie } from "../utils/3d66Service.js";
@@ -22,6 +23,7 @@ import {
   rejectUnknownKeys,
 } from "../utils/validators.js";
 import { expirePendingSepayTopups } from "../utils/topupExpiryService.js";
+import { voucherTargetKind } from "../utils/voucherCheckoutService.js";
 
 const MAX_MANUAL_CREDIT = Number(process.env.MAX_MANUAL_CREDIT || 1000000);
 const MAX_STORED_CREDIT = Number(process.env.MAX_STORED_CREDIT || 10000000);
@@ -42,6 +44,10 @@ export function serializeAdminUser(user) {
     avatar: doc.avatar || "",
     role: doc.role || "user",
     credit: Number(doc.credit || 0),
+    proUntil: doc.proUntil || null,
+    proPlanId: doc.proPlanId || null,
+    proActivatedAt: doc.proActivatedAt || null,
+    proDailyDownloadLimit: Number(doc.proDailyDownloadLimit || 0),
     referralCode: doc.referralCode || "",
     referredBy: doc.referredBy || null,
     referralRewardedAt: doc.referralRewardedAt || null,
@@ -182,10 +188,14 @@ function normalizeVoucherPayload(body = {}, currentVoucher = null) {
     expireAt,
     description = "",
     targetKind = "",
+    isActive,
   } = body;
-  const normalizedTargetKind = String(targetKind || "").trim().toLowerCase();
-  if (!["", "all", "credit", "pro"].includes(normalizedTargetKind)) {
+  const normalizedTargetKind = String(targetKind || currentVoucher?.targetKind || "").trim().toLowerCase();
+  if (!["all", "credit", "pro"].includes(normalizedTargetKind)) {
     return { error: "Invalid voucher target kind" };
+  }
+  if (isActive !== undefined && typeof isActive !== "boolean") {
+    return { error: "Invalid voucher active status" };
   }
   const normalizedCode = normalizeVoucherCode(code);
   const bonus = integerInRange(creditBonus, 0, MAX_STORED_CREDIT);
@@ -252,6 +262,7 @@ function normalizeVoucherPayload(body = {}, currentVoucher = null) {
       applicablePackageIds: packageIds,
       expireAt: expiresAt,
       description: limitedString(description, 500),
+      isActive: isActive === undefined ? currentVoucher?.isActive !== false : isActive,
     },
   };
 }
@@ -476,83 +487,6 @@ export async function listUsers(req, res, next) {
         total,
         totalPages,
       },
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function getUserCreditHistory(req, res, next) {
-  try {
-    if (!isSafeId(req.params.id)) {
-      return res.status(400).json({ message: "Invalid user id" });
-    }
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    const [topups, getlinks, referrals] = await Promise.all([
-      Topup.find({ userId: user._id, status: "approved" })
-        .sort({ createdAt: -1 })
-        .limit(200)
-        .populate("packageId", "name"),
-      Getlink.find({ userId: user._id }).sort({ createdAt: -1 }).limit(200),
-      Referral.find({
-        status: "rewarded",
-        $or: [{ referrerId: user._id }, { referredUserId: user._id }],
-      })
-        .sort({ createdAt: -1 })
-        .limit(200)
-        .populate("referrerId", "name email")
-        .populate("referredUserId", "name email"),
-    ]);
-
-    const entries = [
-      ...topups.map((item) => ({
-        _id: `topup-${item._id}`,
-        type: item.type === "manual" ? "admin-credit" : "topup",
-        amount: Number(item.credit || 0),
-        title:
-          item.type === "manual"
-            ? "Admin cộng credit"
-            : `Nạp credit${item.packageId?.name ? ` - ${item.packageId.name}` : ""}`,
-        detail: item.gatewayTransactionId || item.paymentCode || "",
-        createdAt: item.paidAt || item.createdAt,
-      })),
-      ...getlinks.map((item) => ({
-        _id: `getlink-${item._id}`,
-        type: "getlink",
-        amount: -Number(item.creditUsed || 0),
-        title: `Getlink ${item.productId}`,
-        detail: item.title || "",
-        createdAt: item.createdAt,
-      })),
-      ...referrals.map((item) => {
-        const isReferrer = String(item.referrerId?._id || item.referrerId) === String(user._id);
-        const otherUser = isReferrer ? item.referredUserId : item.referrerId;
-        const amount = isReferrer
-          ? Number(item.referrerRewardCredit ?? item.rewardCredit ?? 0)
-          : Number(item.referredRewardCredit ?? item.rewardCredit ?? 0);
-        return {
-          _id: `referral-${item._id}-${isReferrer ? "referrer" : "referred"}`,
-          type: "referral",
-          amount,
-          title: isReferrer ? "Thưởng giới thiệu bạn bè" : "Thưởng đăng ký qua giới thiệu",
-          detail: otherUser?.email || otherUser?.name || "",
-          createdAt: item.rewardedAt || item.createdAt,
-        };
-      }),
-    ]
-      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-      .slice(0, 300);
-
-    res.json({
-      user: {
-        _id: user._id,
-        name: user.name || "",
-        email: user.email || "",
-        credit: Number(user.credit || 0),
-      },
-      history: entries,
     });
   } catch (error) {
     next(error);
@@ -1294,6 +1228,7 @@ export async function createVoucher(req, res, next) {
       "applicablePackageIds",
       "expireAt",
       "description",
+      "isActive",
     ]);
     if (unknownKey) {
       return res.status(400).json({ message: "Invalid voucher request" });
@@ -1324,6 +1259,7 @@ export async function updateVoucher(req, res, next) {
       "applicablePackageIds",
       "expireAt",
       "description",
+      "isActive",
     ]);
     if (unknownKey) {
       return res.status(400).json({ message: "Invalid voucher request" });
@@ -1339,6 +1275,29 @@ export async function updateVoucher(req, res, next) {
 
     const { payload, error } = normalizeVoucherPayload(req.body, currentVoucher);
     if (error) return res.status(400).json({ message: error });
+
+    const currentCode = normalizeVoucherCode(currentVoucher.code);
+    const [topupReferences, membershipReferences] = await Promise.all([
+      Topup.countDocuments({ voucherCode: currentCode }),
+      MembershipOrder.countDocuments({ voucherCode: currentCode }),
+    ]);
+    const hasTransactions =
+      Number(currentVoucher.usedCount || 0) > 0 ||
+      Number(topupReferences || 0) > 0 ||
+      Number(membershipReferences || 0) > 0;
+    if (hasTransactions && payload.code !== currentCode) {
+      return res.status(409).json({
+        message: "Không thể đổi mã voucher đã phát sinh giao dịch.",
+      });
+    }
+    if (hasTransactions && payload.targetKind !== voucherTargetKind(currentVoucher)) {
+      return res.status(409).json({
+        message: "Không thể đổi phạm vi Credit/Pro của voucher đã phát sinh giao dịch.",
+      });
+    }
+    payload.archivedAt = payload.isActive
+      ? null
+      : currentVoucher.archivedAt || new Date();
 
     let voucher = await Voucher.findByIdAndUpdate(req.params.id, payload, {
       new: true,
@@ -1360,8 +1319,27 @@ export async function listVouchers(_req, res, next) {
     const vouchers = await Voucher.find()
       .sort({ createdAt: -1 })
       .limit(200)
-      .populate("applicablePackageIds", "name price");
-    res.json({ vouchers });
+      .populate("applicablePackageIds", "name price")
+      .lean();
+    const codes = vouchers.map((voucher) => voucher.code).filter(Boolean);
+    const [topupRows, membershipRows] = codes.length
+      ? await Promise.all([
+          Topup.find({ voucherCode: { $in: codes } }).select("voucherCode").lean(),
+          MembershipOrder.find({ voucherCode: { $in: codes } }).select("voucherCode").lean(),
+        ])
+      : [[], []];
+    const referencedCodes = new Set(
+      [...topupRows, ...membershipRows]
+        .map((item) => normalizeVoucherCode(item.voucherCode))
+        .filter(Boolean),
+    );
+    res.json({
+      vouchers: vouchers.map((voucher) => ({
+        ...voucher,
+        hasTransactions:
+          Number(voucher.usedCount || 0) > 0 || referencedCodes.has(normalizeVoucherCode(voucher.code)),
+      })),
+    });
   } catch (error) {
     next(error);
   }
@@ -1372,8 +1350,29 @@ export async function deleteVoucher(req, res, next) {
     if (!isSafeId(req.params.id)) {
       return res.status(400).json({ message: "Invalid voucher id" });
     }
-    await Voucher.findByIdAndDelete(req.params.id);
-    res.json({ ok: true });
+    const voucher = await Voucher.findById(req.params.id);
+    if (!voucher) {
+      return res.status(404).json({ message: "Voucher not found" });
+    }
+    const code = normalizeVoucherCode(voucher.code);
+    const [topupReferences, membershipReferences] = await Promise.all([
+      Topup.countDocuments({ voucherCode: code }),
+      MembershipOrder.countDocuments({ voucherCode: code }),
+    ]);
+    const hasTransactions =
+      Number(voucher.usedCount || 0) > 0 ||
+      Number(topupReferences || 0) > 0 ||
+      Number(membershipReferences || 0) > 0;
+    if (hasTransactions) {
+      const archived = await Voucher.findByIdAndUpdate(
+        voucher._id,
+        { $set: { isActive: false, archivedAt: new Date() } },
+        { new: true },
+      );
+      return res.json({ ok: true, archived: true, voucher: archived });
+    }
+    await Voucher.findByIdAndDelete(voucher._id);
+    res.json({ ok: true, archived: false });
   } catch (error) {
     next(error);
   }

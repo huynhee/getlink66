@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Ban, BarChart3, Check, ChevronLeft, ChevronRight, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Gauge, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Archive, Ban, BarChart3, Check, ChevronLeft, ChevronRight, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Gauge, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import AdminMarketplace from "../components/AdminMarketplace.jsx";
 import CoinAmount from "../components/CoinAmount.jsx";
@@ -37,7 +37,8 @@ const emptyVoucher = {
   usageLimit: "",
   perUserLimit: "",
   applicablePackageIds: [],
-  expireAt: ""
+  expireAt: "",
+  isActive: true
 };
 
 const emptyNotification = {
@@ -199,6 +200,51 @@ function voucherKindLabel(kind, l) {
   return "CREDIT";
 }
 
+function voucherOperationalState(voucher) {
+  if (voucher?.isActive === false) return "archived";
+  if (Number(voucher?.usedCount || 0) >= Number(voucher?.usageLimit || 0)) return "exhausted";
+  if (!voucher?.expireAt || new Date(voucher.expireAt) <= new Date()) return "expired";
+  return "active";
+}
+
+function timelineTypeLabel(type, l) {
+  const labels = {
+    credit: "Credit",
+    pro: "Pro",
+    getlink: "Getlink",
+    model: "Model",
+    referral: l("Giới thiệu", "Referral"),
+    voucher: "Voucher",
+  };
+  return labels[type] || type || "-";
+}
+
+function timelineStatusLabel(status, l) {
+  const labels = {
+    approved: l("Thành công", "Approved"),
+    pending: l("Đang chờ", "Pending"),
+    rejected: l("Đã từ chối", "Rejected"),
+    downloaded: l("Đã tải", "Downloaded"),
+    used: l("Đã dùng", "Used"),
+    rewarded: l("Đã nhận", "Rewarded"),
+  };
+  return labels[status] || status || "-";
+}
+
+function timelineStatusClass(status) {
+  if (["approved", "downloaded", "used", "rewarded"].includes(status)) return "success";
+  if (status === "pending") return "pending";
+  return "error";
+}
+
+function adminTimelineAmount(event, locale, l) {
+  const amount = Number(event?.amount || 0);
+  if (!amount) return "-";
+  if (event.type === "pro") return formatMoney(Math.abs(amount));
+  if (event.type === "model") return `${Math.abs(amount).toLocaleString(locale)} ${l("lượt", "download")}`;
+  return `${amount > 0 ? "+" : "-"}${Math.abs(amount).toLocaleString(locale)} credit`;
+}
+
 export default function Admin({ user, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const l = (vi, en) => text(language, vi, en);
@@ -234,7 +280,7 @@ export default function Admin({ user, language = "vi" }) {
   const [topupRecords, setTopupRecords] = useState([]);
   const [topupSearch, setTopupSearch] = useState("");
   const [transactionKind, setTransactionKind] = useState("all");
-  const [topupStatus, setTopupStatus] = useState("approved");
+  const [topupStatus, setTopupStatus] = useState("all");
   const [topupPage, setTopupPage] = useState(1);
   const [topupPagination, setTopupPagination] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
   const [userSearch, setUserSearch] = useState("");
@@ -242,9 +288,6 @@ export default function Admin({ user, language = "vi" }) {
   const [userSort, setUserSort] = useState("created-desc");
   const [userPage, setUserPage] = useState(1);
   const [userPagination, setUserPagination] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
-  const [creditHistoryUser, setCreditHistoryUser] = useState(null);
-  const [creditHistory, setCreditHistory] = useState([]);
-  const [creditHistoryLoading, setCreditHistoryLoading] = useState(false);
   const [cookie, setCookie] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -253,7 +296,10 @@ export default function Admin({ user, language = "vi" }) {
   const [membershipPlanForm, setMembershipPlanForm] = useState(emptyMembershipPlan);
   const [voucherForm, setVoucherForm] = useState(emptyVoucher);
   const [voucherMode, setVoucherMode] = useState("credit");
+  const [voucherSearch, setVoucherSearch] = useState("");
+  const [voucherStatus, setVoucherStatus] = useState("all");
   const [voucherMsg, setVoucherMsg] = useState("");
+  const [voucherMsgError, setVoucherMsgError] = useState(false);
   const [notificationForm, setNotificationForm] = useState(emptyNotification);
   const [notificationMsg, setNotificationMsg] = useState("");
   const [editingNotificationId, setEditingNotificationId] = useState("");
@@ -275,6 +321,9 @@ export default function Admin({ user, language = "vi" }) {
   const [twoFactorSecret, setTwoFactorSecret] = useState("");
   const [twoFactorToken, setTwoFactorToken] = useState("");
   const [twoFactorMsg, setTwoFactorMsg] = useState("");
+  const [transactionMsg, setTransactionMsg] = useState("");
+  const [transactionMsgError, setTransactionMsgError] = useState(false);
+  const [reviewingTransactionId, setReviewingTransactionId] = useState("");
 
   const loadData = React.useCallback(async () => {
     const dashboardPeriod = revenuePeriod === "day" ? "day" : revenuePeriod === "month" ? "month" : "month";
@@ -356,16 +405,36 @@ export default function Admin({ user, language = "vi" }) {
 
   async function reviewTransaction(item, action) {
     if (!item?.rawId) return;
+    const actionLabel = action === "approve" ? l("duyệt", "approve") : l("hủy", "cancel");
+    const kindLabel = item.kind === "pro" ? "Pro" : "Credit";
+    if (!window.confirm(l(
+      `Xác nhận ${actionLabel} giao dịch ${kindLabel} ${item.paymentCode || ""}?`,
+      `Confirm ${actionLabel} ${kindLabel} transaction ${item.paymentCode || ""}?`,
+    ))) return;
     const endpoint = item.kind === "pro"
       ? `/api/admin/membership-orders/${item.rawId}/${action}`
       : `/api/admin/topups/${item.rawId}/${action}`;
-    await api(endpoint, {
-      method: "POST",
-      body: action === "cancel" ? JSON.stringify({ reason: "admin_cancel" }) : undefined
-    });
-    await Promise.all([loadTopups(), loadData(), loadUsers()]);
-    if (userDetail?.user?._id && item.user?._id === userDetail.user._id) {
-      await loadUserDetail(userDetail.user, userTimelineType);
+    setReviewingTransactionId(item.id || item.rawId);
+    setTransactionMsg("");
+    setTransactionMsgError(false);
+    try {
+      await api(endpoint, {
+        method: "POST",
+        body: action === "cancel" ? JSON.stringify({ reason: "admin_cancel" }) : undefined
+      });
+      setTransactionMsg(l(
+        `Đã ${actionLabel} giao dịch ${kindLabel}.`,
+        `${kindLabel} transaction ${action === "approve" ? "approved" : "canceled"}.`,
+      ));
+      await Promise.all([loadTopups(), loadData(), loadUsers()]);
+      if (userDetail?.user?._id && item.user?._id === userDetail.user._id) {
+        await loadUserDetail(userDetail.user, userTimelineType);
+      }
+    } catch (error) {
+      setTransactionMsgError(true);
+      setTransactionMsg(error.message || l("Không xử lý được giao dịch.", "Cannot process transaction."));
+    } finally {
+      setReviewingTransactionId("");
     }
   }
 
@@ -505,12 +574,23 @@ export default function Admin({ user, language = "vi" }) {
     await loadData();
   }
 
+  function resetVoucherEditor(mode = voucherMode) {
+    setEditingVoucherId("");
+    setVoucherForm({ ...emptyVoucher, targetKind: mode });
+    setVoucherMsg("");
+    setVoucherMsgError(false);
+  }
+
+  function changeVoucherMode(mode) {
+    setVoucherMode(mode);
+    setVoucherStatus("all");
+    resetVoucherEditor(mode);
+  }
+
   function fillVoucherForm(voucher) {
     setEditingVoucherId(voucher?._id || "");
     if (!voucher) {
-      setVoucherForm(emptyVoucher);
-      setVoucherMode("credit");
-      setVoucherMsg("");
+      resetVoucherEditor(voucherMode);
       return;
     }
 
@@ -527,10 +607,12 @@ export default function Admin({ user, language = "vi" }) {
       applicablePackageIds: Array.isArray(voucher.applicablePackageIds)
         ? voucher.applicablePackageIds.map((pkg) => String(pkg?._id || pkg)).filter(Boolean)
         : [],
-      expireAt: toDatetimeLocal(voucher.expireAt)
+      expireAt: toDatetimeLocal(voucher.expireAt),
+      isActive: voucher.isActive !== false
     });
     setVoucherMode(voucherTargetKind(voucher));
     setVoucherMsg("");
+    setVoucherMsgError(false);
   }
 
   async function saveVoucher(event) {
@@ -546,30 +628,46 @@ export default function Admin({ user, language = "vi" }) {
         perUserLimit:
           voucherForm.perUserLimit === "" ? undefined : Number(voucherForm.perUserLimit),
         applicablePackageIds: isCreditMode ? voucherForm.applicablePackageIds : [],
-        expireAt: new Date(voucherForm.expireAt).toISOString()
+        expireAt: new Date(voucherForm.expireAt).toISOString(),
+        isActive: voucherForm.isActive !== false
       };
       await api(editingVoucherId ? `/api/admin/vouchers/${editingVoucherId}` : "/api/admin/voucher", {
         method: editingVoucherId ? "PUT" : "POST",
         body: JSON.stringify(payload)
       });
-      setVoucherForm(emptyVoucher);
+      setVoucherForm({ ...emptyVoucher, targetKind: voucherMode });
       setEditingVoucherId("");
       setVoucherMsg(editingVoucherId
         ? l("Voucher đã cập nhật thành công.", "Voucher updated successfully.")
         : l("Voucher đã tạo thành công.", "Voucher created successfully."));
+      setVoucherMsgError(false);
       await loadData();
     } catch (err) {
+      setVoucherMsgError(true);
       setVoucherMsg(err.message);
     }
   }
 
   async function deleteVoucher(id) {
-    await api(`/api/admin/vouchers/${id}`, { method: "DELETE" });
-    if (editingVoucherId === id) {
-      setEditingVoucherId("");
-      setVoucherForm(emptyVoucher);
+    const voucher = vouchers.find((item) => item._id === id);
+    const willArchive = Boolean(voucher?.hasTransactions || Number(voucher?.usedCount || 0) > 0);
+    if (!window.confirm(willArchive
+      ? l("Voucher đã có giao dịch và sẽ được lưu trữ. Tiếp tục?", "This voucher has transactions and will be archived. Continue?")
+      : l("Xóa vĩnh viễn voucher chưa sử dụng này?", "Permanently delete this unused voucher?"))) {
+      return;
     }
-    await loadData();
+    try {
+      const result = await api(`/api/admin/vouchers/${id}`, { method: "DELETE" });
+      if (editingVoucherId === id) resetVoucherEditor(voucherMode);
+      setVoucherMsg(result.archived
+        ? l("Voucher đã được lưu trữ.", "Voucher archived.")
+        : l("Voucher đã được xóa.", "Voucher deleted."));
+      setVoucherMsgError(false);
+      await loadData();
+    } catch (error) {
+      setVoucherMsgError(true);
+      setVoucherMsg(error.message || l("Không xử lý được voucher.", "Cannot process voucher."));
+    }
   }
 
   async function saveNotification(event) {
@@ -825,19 +923,6 @@ export default function Admin({ user, language = "vi" }) {
     setBanReasonByUser((items) => ({ ...items, [targetUser._id]: "" }));
     await loadUsers();
     if (userDetail?.user?._id === targetUser._id) await loadUserDetail(targetUser, userTimelineType);
-  }
-
-  async function loadUserCreditHistory(targetUser) {
-    setCreditHistoryUser(targetUser);
-    setCreditHistory([]);
-    setCreditHistoryLoading(true);
-    try {
-      const data = await api(`/api/admin/users/${targetUser._id}/credit-history`);
-      setCreditHistoryUser(data.user || targetUser);
-      setCreditHistory(data.history || []);
-    } finally {
-      setCreditHistoryLoading(false);
-    }
   }
 
   async function loadUserDetail(targetUser, timelineType = userTimelineType) {
@@ -1341,6 +1426,18 @@ export default function Admin({ user, language = "vi" }) {
     { key: "cookie", label: l("Cookie", "Cookie"), icon: Cookie },
     { key: "status", label: l("Trạng thái", "Status"), icon: Cookie },
   ];
+  const normalizedVoucherSearch = voucherSearch.trim().toLowerCase();
+  const visibleVouchers = vouchers.filter((voucher) => {
+    if (!voucherMatchesMode(voucher, voucherMode)) return false;
+    if (voucherStatus !== "all" && voucherOperationalState(voucher) !== voucherStatus) return false;
+    if (!normalizedVoucherSearch) return true;
+    return [voucher.code, voucher.description]
+      .some((value) => String(value || "").toLowerCase().includes(normalizedVoucherSearch));
+  });
+  const voucherModeCounts = ["credit", "pro", "all"].reduce((counts, mode) => ({
+    ...counts,
+    [mode]: vouchers.filter((voucher) => voucherMatchesMode(voucher, mode)).length,
+  }), {});
 
   return (
     <div className="stack">
@@ -1794,27 +1891,59 @@ export default function Admin({ user, language = "vi" }) {
       )}
 
       {activeSection === "vouchers" && (
-        <section className="panel">
-          <h2><Gift size={20} /> {l("Quản lý voucher", "Manage vouchers")}</h2>
+        <section className="panel adminVoucherPanel">
+          <div className="adminVoucherHeading">
+            <div>
+              <h2><Gift size={20} /> {l("Quản lý voucher", "Manage vouchers")}</h2>
+              <span>{vouchers.length} voucher</span>
+            </div>
+          </div>
           <div className="adminSubTabs" role="tablist" aria-label={l("Loại voucher", "Voucher type")}>
-            <button type="button" className={voucherMode === "credit" ? "active" : ""} onClick={() => setVoucherMode("credit")}>
-              <CreditCard size={15} /> Credit
+            <button type="button" className={voucherMode === "credit" ? "active" : ""} onClick={() => changeVoucherMode("credit")}>
+              <CreditCard size={15} /> Credit <span>{voucherModeCounts.credit || 0}</span>
             </button>
-            <button type="button" className={voucherMode === "pro" ? "active" : ""} onClick={() => setVoucherMode("pro")}>
-              <Zap size={15} /> Pro
+            <button type="button" className={voucherMode === "pro" ? "active" : ""} onClick={() => changeVoucherMode("pro")}>
+              <Zap size={15} /> Pro <span>{voucherModeCounts.pro || 0}</span>
             </button>
-            <button type="button" className={voucherMode === "all" ? "active" : ""} onClick={() => setVoucherMode("all")}>
-              <Gift size={15} /> {l("Dùng chung", "All")}
+            <button type="button" className={voucherMode === "all" ? "active" : ""} onClick={() => changeVoucherMode("all")}>
+              <Gift size={15} /> {l("Dùng chung", "Shared")} <span>{voucherModeCounts.all || 0}</span>
             </button>
           </div>
-          <p className="muted" style={{ marginTop: 8 }}>
-            {voucherMode === "credit"
-              ? l("Voucher Credit dùng cho gói nạp credit, có thể giảm giá hoặc cộng thêm credit.", "Credit vouchers apply to credit packages and can discount or add bonus credit.")
-              : voucherMode === "pro"
-                ? l("Voucher Pro dùng cho gói thành viên, chỉ giảm phần trăm và không cộng credit.", "Pro vouchers apply to membership plans, discount percentage only, no credit bonus.")
-                : l("Voucher dùng chung áp dụng cho cả Credit và Pro, chỉ giảm phần trăm.", "Shared vouchers apply to both Credit and Pro, discount percentage only.")}
-          </p>
-          <form onSubmit={saveVoucher} style={{ display: "grid", gap: 10, marginTop: 14 }}>
+
+          <div className="adminVoucherToolbar">
+            <label className="adminSearchField">
+              <Search size={15} />
+              <input
+                value={voucherSearch}
+                onChange={(event) => setVoucherSearch(event.target.value)}
+                placeholder={l("Tìm mã hoặc mô tả", "Search code or description")}
+              />
+            </label>
+            <select value={voucherStatus} onChange={(event) => setVoucherStatus(event.target.value)}>
+              <option value="all">{l("Tất cả trạng thái", "All statuses")}</option>
+              <option value="active">{l("Đang hoạt động", "Active")}</option>
+              <option value="exhausted">{l("Hết lượt", "Exhausted")}</option>
+              <option value="expired">{l("Hết hạn", "Expired")}</option>
+              <option value="archived">{l("Đã lưu trữ", "Archived")}</option>
+            </select>
+          </div>
+
+          <form className="voucherEditor" onSubmit={saveVoucher}>
+            <div className="voucherEditorHeading">
+              <h3>
+                {editingVoucherId
+                  ? l(`Sửa voucher ${voucherForm.code}`, `Edit voucher ${voucherForm.code}`)
+                  : l(`Tạo voucher ${voucherKindLabel(voucherMode, l)}`, `Create ${voucherKindLabel(voucherMode, l)} voucher`)}
+              </h3>
+              <label className="voucherActiveToggle">
+                <input
+                  type="checkbox"
+                  checked={voucherForm.isActive !== false}
+                  onChange={(event) => setVoucherForm({ ...voucherForm, isActive: event.target.checked })}
+                />
+                <span>{l("Hoạt động", "Active")}</span>
+              </label>
+            </div>
             <div className="inputRow">
               <select
                 value={editingVoucherId}
@@ -1836,24 +1965,49 @@ export default function Admin({ user, language = "vi" }) {
                 </button>
               )}
             </div>
-            <div className="inputRow">
-              <input value={voucherForm.code} onChange={(e) => setVoucherForm({ ...voucherForm, code: e.target.value.toUpperCase() })} placeholder={l("Mã voucher", "Voucher code")} />
-              <input value={voucherForm.description} onChange={(e) => setVoucherForm({ ...voucherForm, description: e.target.value })} placeholder={l("Mô tả", "Description")} />
+            <div className="voucherFieldGrid twoColumns">
+              <label className="voucherField">
+                <span>{l("Mã voucher", "Voucher code")}</span>
+                <input
+                  value={voucherForm.code}
+                  disabled={Boolean(editingVoucherId)}
+                  onChange={(event) => setVoucherForm({ ...voucherForm, code: event.target.value.toUpperCase() })}
+                  placeholder="SUMMER2026"
+                />
+              </label>
+              <label className="voucherField">
+                <span>{l("Mô tả nội bộ", "Internal description")}</span>
+                <input value={voucherForm.description} onChange={(event) => setVoucherForm({ ...voucherForm, description: event.target.value })} />
+              </label>
             </div>
-            <div className="inputRow">
-              <input type="number" value={voucherForm.discountPercent} onChange={(e) => setVoucherForm({ ...voucherForm, discountPercent: e.target.value })} placeholder={l("Giảm giá %", "Discount %")} />
+            <div className="voucherFieldGrid">
+              <label className="voucherField">
+                <span>{l("Giảm giá (%)", "Discount (%)")}</span>
+                <input type="number" min="0" max="90" value={voucherForm.discountPercent} onChange={(event) => setVoucherForm({ ...voucherForm, discountPercent: event.target.value })} />
+              </label>
               {voucherMode === "credit" && (
-                <input type="number" value={voucherForm.creditBonus} onChange={(e) => setVoucherForm({ ...voucherForm, creditBonus: e.target.value })} placeholder={l("Thêm credit", "Bonus credit")} />
+                <label className="voucherField">
+                  <span>{l("Credit tặng thêm", "Bonus credit")}</span>
+                  <input type="number" min="0" value={voucherForm.creditBonus} onChange={(event) => setVoucherForm({ ...voucherForm, creditBonus: event.target.value })} />
+                </label>
               )}
-              <input type="number" value={voucherForm.usageLimit} onChange={(e) => setVoucherForm({ ...voucherForm, usageLimit: e.target.value })} placeholder={l("Tổng lượt dùng", "Total uses")} />
-              <input type="number" min="0" value={voucherForm.perUserLimit} onChange={(e) => setVoucherForm({ ...voucherForm, perUserLimit: e.target.value })} placeholder={l("Lượt / tài khoản", "Uses / account")} />
-              <input type="datetime-local" value={voucherForm.expireAt} onChange={(e) => setVoucherForm({ ...voucherForm, expireAt: e.target.value })} />
+              <label className="voucherField">
+                <span>{l("Tổng lượt dùng", "Total uses")}</span>
+                <input type="number" min="1" value={voucherForm.usageLimit} onChange={(event) => setVoucherForm({ ...voucherForm, usageLimit: event.target.value })} />
+              </label>
+              <label className="voucherField">
+                <span>{l("Lượt mỗi tài khoản", "Uses per account")}</span>
+                <input type="number" min="0" value={voucherForm.perUserLimit} onChange={(event) => setVoucherForm({ ...voucherForm, perUserLimit: event.target.value })} placeholder={l("Mặc định bằng tổng lượt", "Defaults to total uses")} />
+              </label>
+              <label className="voucherField">
+                <span>{l("Hết hạn", "Expires at")}</span>
+                <input type="datetime-local" value={voucherForm.expireAt} onChange={(event) => setVoucherForm({ ...voucherForm, expireAt: event.target.value })} />
+              </label>
             </div>
             {voucherMode === "credit" ? (
               <div className="voucherPackagePicker">
                 <div>
                   <strong>{l("Áp dụng cho gói Credit", "Apply to Credit packages")}</strong>
-                  <span>{l("Bỏ trống là áp dụng cho tất cả gói nạp credit.", "Leave empty to apply to all credit top-up packages.")}</span>
                 </div>
                 <div>
                   {packages.map((pkg) => {
@@ -1877,19 +2031,9 @@ export default function Admin({ user, language = "vi" }) {
                 </div>
               </div>
             ) : (
-              <div className="voucherPackagePicker">
-                <div>
-                  <strong>{voucherMode === "pro" ? l("Áp dụng cho Pro", "Apply to Pro") : l("Áp dụng cho Credit và Pro", "Apply to Credit and Pro")}</strong>
-                  <span>{voucherMode === "pro"
-                    ? l("Backend nhận voucher Pro bằng mã giảm %, không gắn vào gói credit và không cộng credit.", "Backend treats Pro vouchers as discount-only, not linked to credit packages and no credit bonus.")
-                    : l("Voucher dùng chung chỉ giảm %, không gắn gói credit riêng và không cộng credit.", "Shared vouchers are discount-only, not linked to specific credit packages and do not add bonus credit.")}</span>
-                </div>
-                <div>
-                  {membershipPlans.map((plan) => (
-                    <span className="badge" key={plan._id}>{plan.name || plan.code}</span>
-                  ))}
-                  {!membershipPlans.length && <span className="muted">{l("Chưa có gói Pro.", "No Pro plans yet.")}</span>}
-                </div>
+              <div className="voucherScopeSummary">
+                <span>{l("Phạm vi", "Scope")}</span>
+                <strong>{voucherMode === "pro" ? l("Tất cả gói Pro", "All Pro plans") : l("Tất cả gói Credit và Pro", "All Credit and Pro plans")}</strong>
               </div>
             )}
             <button
@@ -1910,15 +2054,20 @@ export default function Admin({ user, language = "vi" }) {
               {editingVoucherId ? l("Lưu chỉnh sửa", "Save changes") : l("Tạo voucher", "Create voucher")}
             </button>
           </form>
-          {voucherMsg && <p className={voucherMsg.includes("thành công") || voucherMsg.includes("successfully") ? "success" : "error"}>{voucherMsg}</p>}
+          {voucherMsg && <p className={voucherMsgError ? "error" : "success"}>{voucherMsg}</p>}
 
           <div className="voucherList">
-            {vouchers
-              .filter((voucher) => voucherMatchesMode(voucher, voucherMode))
-              .map((voucher) => {
+            {visibleVouchers.map((voucher) => {
                 const kind = voucherTargetKind(voucher);
                 const proVoucher = kind === "pro";
                 const sharedVoucher = kind === "all";
+                const operationalState = voucherOperationalState(voucher);
+                const statusConfig = {
+                  active: [l("Đang hoạt động", "Active"), "success"],
+                  exhausted: [l("Hết lượt", "Exhausted"), "error"],
+                  expired: [l("Hết hạn", "Expired"), "error"],
+                  archived: [l("Đã lưu trữ", "Archived"), "pending"],
+                }[operationalState];
                 return (
               <div className="voucherCard" key={voucher._id}>
                 <div className="voucherCardHeader">
@@ -1926,23 +2075,22 @@ export default function Admin({ user, language = "vi" }) {
                     <strong>{voucher.code} <span className={`badge ${proVoucher ? "pending" : sharedVoucher ? "" : "success"}`}>{voucherKindLabel(kind, l)}</span></strong>
                     <p>{voucher.description || t.noDescription}</p>
                   </div>
-                  <span className={new Date(voucher.expireAt) > new Date() ? "badge success" : "badge error"}>
-                    {new Date(voucher.expireAt) > new Date()
-                      ? l("Đang hoạt động", "Active")
-                      : l("Đã hết hạn", "Expired")}
+                  <span className={`badge ${statusConfig[1]}`}>
+                    {statusConfig[0]}
                   </span>
                 </div>
                 <div className="voucherValue">
-                  {voucher.discountPercent > 0 ? (
-                    <>
+                  {Number(voucher.discountPercent || 0) > 0 && (
+                    <div>
                       <span>{t.discount}</span>
-                      <strong>{voucher.discountPercent}%</strong>
-                    </>
-                  ) : (
-                    <>
+                      <strong>-{voucher.discountPercent}%</strong>
+                    </div>
+                  )}
+                  {Number(voucher.creditBonus || 0) > 0 && (
+                    <div>
                       <span>{t.creditBonus}</span>
                       <strong>+{voucher.creditBonus} credit</strong>
-                    </>
+                    </div>
                   )}
                 </div>
                 <div className="voucherMetaGrid">
@@ -1976,13 +2124,16 @@ export default function Admin({ user, language = "vi" }) {
                     <Pencil size={14} /> {l("Sửa voucher", "Edit voucher")}
                   </button>
                   <button className="smallButton voucherDeleteButton" type="button" onClick={() => deleteVoucher(voucher._id)}>
-                    <X size={14} /> {l("Xóa voucher", "Delete voucher")}
+                    {voucher.hasTransactions || Number(voucher.usedCount || 0) > 0 ? <Archive size={14} /> : <X size={14} />}
+                    {voucher.hasTransactions || Number(voucher.usedCount || 0) > 0
+                      ? l("Lưu trữ", "Archive")
+                      : l("Xóa", "Delete")}
                   </button>
                 </div>
               </div>
                 );
               })}
-            {!vouchers.filter((voucher) => voucherMatchesMode(voucher, voucherMode)).length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Chưa có voucher.", "No vouchers yet.")}</p>}
+            {!visibleVouchers.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Không có voucher phù hợp.", "No matching vouchers.")}</p>}
           </div>
         </section>
       )}
@@ -2662,9 +2813,26 @@ export default function Admin({ user, language = "vi" }) {
       {activeSection === "data" && dataSection === "topups" && (
         <section className="panel">
           <h2><CreditCard size={20} /> {l("Giao dịch Credit / Pro", "Credit / Pro transactions")}</h2>
-          <p className="muted" style={{ marginTop: 8 }}>
-            {l("Theo dõi đơn nạp credit và đơn mua Pro chung một bảng. Đơn chờ thanh toán có thể duyệt hoặc hủy thủ công khi webhook lỗi.", "Track credit top-ups and Pro orders in one table. Pending payments can be approved or canceled manually when webhook handling fails.")}
-          </p>
+          <div className="adminSubTabs" role="tablist" aria-label={l("Loại giao dịch", "Transaction type")}>
+            {[
+              ["credit", "Credit", CreditCard],
+              ["pro", "Pro", Zap],
+              ["all", l("Tất cả", "All"), Wallet],
+            ].map(([kind, label, Icon]) => (
+              <button
+                key={kind}
+                type="button"
+                className={transactionKind === kind ? "active" : ""}
+                onClick={() => {
+                  setTransactionKind(kind);
+                  setTopupPage(1);
+                  setTransactionMsg("");
+                }}
+              >
+                <Icon size={15} /> {label}
+              </button>
+            ))}
+          </div>
           <div className="adminTableToolbar">
             <label className="adminSearchField">
               <Search size={15} />
@@ -2677,32 +2845,6 @@ export default function Admin({ user, language = "vi" }) {
                 placeholder={l("Tìm email, tên gói hoặc mã giao dịch", "Search email, package, or transaction code")}
               />
             </label>
-            <select
-              value={userFilter}
-              onChange={(event) => {
-                setUserFilter(event.target.value);
-                setUserPage(1);
-              }}
-              aria-label={l("Lọc người dùng", "Filter users")}
-            >
-              <option value="all">{l("Tất cả tài khoản", "All accounts")}</option>
-              <option value="free">Free</option>
-              <option value="pro">Pro</option>
-              <option value="admin">Admin</option>
-              <option value="banned">{l("Đã khóa", "Banned")}</option>
-            </select>
-            <select
-              value={transactionKind}
-              onChange={(event) => {
-                setTransactionKind(event.target.value);
-                setTopupPage(1);
-              }}
-              aria-label={l("Lọc loại giao dịch", "Filter transaction kind")}
-            >
-              <option value="all">{l("Credit + Pro", "Credit + Pro")}</option>
-              <option value="credit">Credit</option>
-              <option value="pro">Pro</option>
-            </select>
             <select
               value={topupStatus}
               onChange={(event) => {
@@ -2717,6 +2859,7 @@ export default function Admin({ user, language = "vi" }) {
               <option value="all">{l("Tất cả trạng thái", "All statuses")}</option>
             </select>
           </div>
+          {transactionMsg && <p className={transactionMsgError ? "error" : "success"}>{transactionMsg}</p>}
           <div className="table topupAuditTable" style={{ marginTop: 16 }}>
             {topupRecords.map((item) => (
               <div className="tableRow" key={item.id || item._id}>
@@ -2761,10 +2904,10 @@ export default function Admin({ user, language = "vi" }) {
                 <time>{new Date(item.paidAt || item.createdAt).toLocaleString(locale)}</time>
                 {item.status === "pending" && (
                   <div className="adminUserActions">
-                    <button type="button" className="smallButton" onClick={() => reviewTransaction(item, "approve")}>
+                    <button type="button" className="smallButton" disabled={reviewingTransactionId === (item.id || item.rawId)} onClick={() => reviewTransaction(item, "approve")}>
                       <Check size={14} /> {l("Duyệt", "Approve")}
                     </button>
-                    <button type="button" className="smallButton dangerButton" onClick={() => reviewTransaction(item, "cancel")}>
+                    <button type="button" className="smallButton dangerButton" disabled={reviewingTransactionId === (item.id || item.rawId)} onClick={() => reviewTransaction(item, "cancel")}>
                       <X size={14} /> {l("Hủy", "Cancel")}
                     </button>
                   </div>
@@ -2819,6 +2962,20 @@ export default function Admin({ user, language = "vi" }) {
               />
             </label>
             <select
+              value={userFilter}
+              onChange={(event) => {
+                setUserFilter(event.target.value);
+                setUserPage(1);
+              }}
+              aria-label={l("Lọc người dùng", "Filter users")}
+            >
+              <option value="all">{l("Tất cả tài khoản", "All accounts")}</option>
+              <option value="free">Free</option>
+              <option value="pro">Pro</option>
+              <option value="admin">Admin</option>
+              <option value="banned">{l("Đã khóa", "Banned")}</option>
+            </select>
+            <select
               value={userSort}
               onChange={(event) => {
                 setUserSort(event.target.value);
@@ -2830,50 +2987,12 @@ export default function Admin({ user, language = "vi" }) {
               <option value="created-asc">{l("Cũ đăng ký trước", "Oldest first")}</option>
               <option value="credit-desc">{l("Credit cao trước", "Highest credit")}</option>
               <option value="credit-asc">{l("Credit thấp trước", "Lowest credit")}</option>
+              <option value="pro-desc">{l("Hạn Pro xa nhất", "Latest Pro expiry")}</option>
+              <option value="pro-asc">{l("Hạn Pro gần nhất", "Earliest Pro expiry")}</option>
               <option value="email-asc">{l("Email A-Z", "Email A-Z")}</option>
               <option value="email-desc">{l("Email Z-A", "Email Z-A")}</option>
             </select>
           </div>
-
-          {creditHistoryUser && (
-            <div className="userCreditHistoryPanel">
-              <div className="userCreditHistoryHeader">
-                <div>
-                  <h3>{l("Lịch sử credit", "Credit history")}</h3>
-                  <strong>{creditHistoryUser.email}</strong>
-                  <span>{creditHistoryUser.name || ""} - <CoinAmount value={Number(creditHistoryUser.credit || 0).toLocaleString(locale)} /></span>
-                </div>
-                <button
-                  type="button"
-                  className="smallButton"
-                  onClick={() => {
-                    setCreditHistoryUser(null);
-                    setCreditHistory([]);
-                  }}
-                >
-                  <X size={14} /> {l("Đóng", "Close")}
-                </button>
-              </div>
-              <div className="table creditHistoryTable">
-                {creditHistory.map((item) => (
-                  <div className="tableRow" key={item._id}>
-                    <span className={`badge ${Number(item.amount || 0) >= 0 ? "success" : "error"}`}>
-                      <CoinAmount value={Number(item.amount || 0).toLocaleString(locale)} prefix={Number(item.amount || 0) >= 0 ? "+" : ""} />
-                    </span>
-                    <div>
-                      <strong>{item.title}</strong>
-                      {item.detail && <span>{item.detail}</span>}
-                    </div>
-                    <time>{new Date(item.createdAt).toLocaleString(locale)}</time>
-                  </div>
-                ))}
-                {creditHistoryLoading && <p className="muted">{l("Đang tải lịch sử...", "Loading history...")}</p>}
-                {!creditHistoryLoading && !creditHistory.length && (
-                  <p className="muted">{l("Chưa có giao dịch credit được ghi nhận.", "No recorded credit transactions.")}</p>
-                )}
-              </div>
-            </div>
-          )}
 
           {userDetail && (
             <div className="userDetailPanel">
@@ -2967,40 +3086,44 @@ export default function Admin({ user, language = "vi" }) {
                 ))}
               </div>
 
-              <div className="adminSubTabs" role="tablist" aria-label={l("Lọc timeline user", "Filter user timeline")}>
+              <div className="adminTimelineFilterGroups" aria-label={l("Lọc timeline user", "Filter user timeline")}>
                 {[
-                  ["all", l("Tất cả", "All")],
-                  ["credit", "Credit"],
-                  ["pro", "Pro"],
-                  ["getlink", "Getlink"],
-                  ["model", "Model"],
-                  ["referral", l("Giới thiệu", "Referral")],
-                  ["voucher", "Voucher"]
-                ].map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={userTimelineType === key ? "active" : ""}
-                    onClick={() => loadUserDetail(userDetail.user, key)}
-                  >
-                    {label}
-                  </button>
+                  [l("Tổng quan", "Overview"), [["all", l("Tất cả", "All")]]],
+                  [l("Thanh toán", "Payments"), [["credit", "Credit"], ["pro", "Pro"], ["voucher", "Voucher"]]],
+                  [l("Hoạt động", "Activity"), [["getlink", "Getlink"], ["model", "Model"], ["referral", l("Giới thiệu", "Referral")]]],
+                ].map(([groupLabel, filters]) => (
+                  <div key={groupLabel}>
+                    <span>{groupLabel}</span>
+                    <div className="adminSubTabs" role="tablist">
+                      {filters.map(([key, label]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          className={userTimelineType === key ? "active" : ""}
+                          onClick={() => loadUserDetail(userDetail.user, key)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
 
               <div className="adminTimelineList">
                 {userTimeline.map((event) => (
                   <div className="adminTimelineItem" key={event.id}>
-                    <span className={`badge ${event.status === "approved" || event.status === "downloaded" || event.status === "used" ? "success" : event.status === "pending" ? "pending" : "error"}`}>{event.type}</span>
+                    <span className={`badge ${timelineStatusClass(event.status)}`}>{timelineTypeLabel(event.type, l)}</span>
                     <div>
                       <strong>{event.title}</strong>
                       <small>
-                        {event.status || "-"} · {event.createdAt ? new Date(event.createdAt).toLocaleString(locale) : ""}
+                        {timelineStatusLabel(event.status, l)} · {event.createdAt ? new Date(event.createdAt).toLocaleString(locale) : ""}
                         {event.metadata?.paymentCode ? ` · ${event.metadata.paymentCode}` : ""}
+                        {event.metadata?.voucherCode ? ` · Voucher ${event.metadata.voucherCode}` : ""}
                       </small>
                     </div>
-                    <strong className={Number(event.amount || 0) >= 0 ? "successText" : "errorText"}>
-                      {Number(event.amount || 0) > 0 ? "+" : ""}{Number(event.amount || 0).toLocaleString(locale)}
+                    <strong className={Number(event.amount || 0) > 0 ? "successText" : Number(event.amount || 0) < 0 ? "errorText" : ""}>
+                      {adminTimelineAmount(event, locale, l)}
                     </strong>
                   </div>
                 ))}
@@ -3015,6 +3138,9 @@ export default function Admin({ user, language = "vi" }) {
                 <div className="adminUserIdentity">
                   <strong>{user.name}</strong>
                   <span>{user.email}</span>
+                  {user.proUntil && new Date(user.proUntil) > new Date() && (
+                    <span className="badge success">PRO · {new Date(user.proUntil).toLocaleDateString(locale)}</span>
+                  )}
                   {user.isBanned && (
                     <p className="error" style={{ margin: "4px 0 0", fontSize: 12 }}>
                       {l("Đang bị ban", "Banned")}: {user.banReason || l("Không có lý do", "No reason")}
@@ -3040,9 +3166,6 @@ export default function Admin({ user, language = "vi" }) {
                 <div className="adminUserActions">
                   <button className="smallButton" onClick={() => loadUserDetail(user)}>
                     <Users size={14} /> {l("Chi tiết", "Detail")}
-                  </button>
-                  <button className="smallButton" onClick={() => loadUserCreditHistory(user)}>
-                    <HistoryIcon size={14} /> {l("Lịch sử credit", "Credit history")}
                   </button>
                 </div>
                 {user.role !== "admin" && (

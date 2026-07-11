@@ -20,15 +20,28 @@ import { closeDownloadWindow, openDownloadWindow, triggerBrowserDownload } from 
 
 const FACEBOOK_GROUP_URL = "https://www.facebook.com/groups/960223243551548";
 
-const FILTERS = [
-  ["all", "Tất cả", "All"],
-  ["credit", "Credit", "Credit"],
-  ["pro", "Pro", "Pro"],
-  ["getlink", "Getlink", "Getlink"],
-  ["model", "Model", "Model"],
-  ["referral", "Giới thiệu", "Referral"],
-  ["voucher", "Voucher", "Voucher"],
+const FILTER_GROUPS = [
+  { vi: "Tổng quan", en: "Overview", items: [["all", "Tất cả", "All"]] },
+  {
+    vi: "Thanh toán",
+    en: "Payments",
+    items: [
+      ["credit", "Credit", "Credit"],
+      ["pro", "Pro", "Pro"],
+      ["voucher", "Voucher", "Voucher"],
+    ],
+  },
+  {
+    vi: "Tải xuống",
+    en: "Downloads",
+    items: [
+      ["getlink", "Getlink", "Getlink"],
+      ["model", "Model", "Model"],
+    ],
+  },
+  { vi: "Tài khoản", en: "Account", items: [["referral", "Giới thiệu", "Referral"]] },
 ];
+const FILTERS = FILTER_GROUPS.flatMap((group) => group.items);
 
 const TYPE_ICON = {
   credit: Wallet,
@@ -60,8 +73,10 @@ function statusLabel(status = "", language = "vi") {
     cancelled: ["Đã hủy", "Cancelled"],
     canceled: ["Đã hủy", "Canceled"],
     failed: ["Lỗi", "Failed"],
+    rejected: ["Đã từ chối", "Rejected"],
     expired: ["Hết hạn", "Expired"],
     used: ["Đã dùng", "Used"],
+    rewarded: ["Đã nhận", "Rewarded"],
   };
   const pair = map[value] || [status || "-", status || "-"];
   return language === "vi" ? pair[0] : pair[1];
@@ -69,7 +84,7 @@ function statusLabel(status = "", language = "vi") {
 
 function statusClass(status = "") {
   const value = String(status || "").toLowerCase();
-  if (["approved", "completed", "downloaded", "used"].includes(value)) return "success";
+  if (["approved", "completed", "downloaded", "used", "rewarded"].includes(value)) return "success";
   if (["pending"].includes(value)) return "pending";
   return "error";
 }
@@ -108,18 +123,26 @@ function redownloadUsageLabel(metadata = {}, language) {
 
 function metadataLines(event, language) {
   const m = event.metadata || {};
+  const paymentLabel = event.status === "approved"
+    ? (language === "vi" ? "Đã thanh toán" : "Paid")
+    : event.status === "pending"
+      ? (language === "vi" ? "Cần thanh toán" : "Payment due")
+      : (language === "vi" ? "Giá trị đơn" : "Order value");
+  const locale = language === "vi" ? "vi-VN" : "en-US";
   if (event.type === "credit") {
     return [
-      m.amountMoney ? `Thanh toán: ${formatMoney(m.amountMoney)}` : "",
+      m.amountMoney ? `${paymentLabel}: ${formatMoney(m.amountMoney)}` : "",
+      m.creditAmount ? `${language === "vi" ? "Credit theo đơn" : "Order credit"}: +${Number(m.creditAmount).toLocaleString(locale)}` : "",
       m.voucherCode ? `Voucher: ${m.voucherCode}` : "",
-      m.paymentCode ? `Mã: ${m.paymentCode}` : "",
+      m.paymentCode ? `${language === "vi" ? "Mã" : "Code"}: ${m.paymentCode}` : "",
     ].filter(Boolean);
   }
   if (event.type === "pro") {
     return [
-      m.planName || m.planCode ? `Gói: ${m.planName || m.planCode}` : "",
-      m.activatedUntil ? `Hạn Pro: ${formatDate(m.activatedUntil, language)}` : "",
-      m.quotaBoostAmount ? `Thêm lượt: ${m.quotaBoostAmount}` : "",
+      m.planName || m.planCode ? `${language === "vi" ? "Gói" : "Plan"}: ${m.planName || m.planCode}` : "",
+      m.amountMoney ? `${paymentLabel}: ${formatMoney(m.amountMoney)}` : "",
+      m.activatedUntil ? `${language === "vi" ? "Hạn Pro" : "Pro expiry"}: ${formatDate(m.activatedUntil, language)}` : "",
+      m.quotaBoostAmount ? `${language === "vi" ? "Thêm lượt" : "Extra downloads"}: ${m.quotaBoostAmount}` : "",
       m.voucherCode ? `Voucher: ${m.voucherCode}` : "",
     ].filter(Boolean);
   }
@@ -133,19 +156,20 @@ function metadataLines(event, language) {
   if (event.type === "model") {
     return [
       m.model?.title || "",
-      m.clientType ? `Client: ${m.clientType}` : "",
-      m.quotaCharged ? "Có tính lượt" : "Miễn lượt",
+      m.clientType ? `${language === "vi" ? "Thiết bị" : "Client"}: ${m.clientType}` : "",
+      m.quotaCharged ? (language === "vi" ? "Có tính lượt" : "Quota charged") : (language === "vi" ? "Miễn lượt" : "No quota charge"),
     ].filter(Boolean);
   }
   if (event.type === "referral") {
     const other = m.otherUser?.name || m.otherUser?.email || "";
-    return [other ? `User: ${other}` : "", m.referralCode ? `Mã: ${m.referralCode}` : ""].filter(Boolean);
+    return [other ? `User: ${other}` : "", m.referralCode ? `${language === "vi" ? "Mã" : "Code"}: ${m.referralCode}` : ""].filter(Boolean);
   }
   if (event.type === "voucher") {
     return [
-      m.voucherCode ? `Mã: ${m.voucherCode}` : "",
+      m.voucherCode ? `${language === "vi" ? "Mã" : "Code"}: ${m.voucherCode}` : "",
       m.targetKind ? `${language === "vi" ? "Loại" : "Type"}: ${m.targetKind === "pro" ? "Pro" : "Credit"}` : "",
       m.discountAmount ? `${language === "vi" ? "Giảm" : "Discount"}: ${formatMoney(m.discountAmount)}` : "",
+      m.creditBonus ? `${language === "vi" ? "Tặng thêm" : "Bonus"}: +${m.creditBonus} credit` : "",
     ].filter(Boolean);
   }
   return [];
@@ -261,8 +285,8 @@ export default function History({ language = "vi" }) {
           <h2>{language === "vi" ? "Lịch sử" : "History"}</h2>
           <p className="muted">
             {language === "vi"
-              ? `Đang xem: ${activeFilterLabel}`
-              : `Viewing: ${activeFilterLabel}`}
+              ? `${activeFilterLabel} · ${pagination.total} sự kiện`
+              : `${activeFilterLabel} · ${pagination.total} events`}
           </p>
         </div>
         <div className="historyHeaderActions">
@@ -277,16 +301,27 @@ export default function History({ language = "vi" }) {
         </div>
       </div>
 
-      <div className="historyFilterBar" role="tablist" aria-label="History filter">
-        {FILTERS.map(([value, vi, en]) => (
-          <button
-            key={value}
-            type="button"
-            className={filter === value ? "active" : ""}
-            onClick={() => setFilter(value)}
-          >
-            {language === "vi" ? vi : en}
-          </button>
+      <div className="historyFilterGroups" aria-label="History filter">
+        {FILTER_GROUPS.map((group) => (
+          <div className="historyFilterGroup" key={group.en}>
+            <span>{language === "vi" ? group.vi : group.en}</span>
+            <div className="historyFilterBar" role="tablist">
+              {group.items.map(([value, vi, en]) => {
+                const Icon = TYPE_ICON[value] || CalendarClock;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    className={filter === value ? "active" : ""}
+                    onClick={() => setFilter(value)}
+                  >
+                    <Icon size={13} />
+                    {language === "vi" ? vi : en}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         ))}
       </div>
 

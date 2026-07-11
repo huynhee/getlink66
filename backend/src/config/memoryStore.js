@@ -72,6 +72,9 @@ function matches(document, query = {}) {
       if (expected instanceof Date) {
         return new Date(actual).valueOf() === expected.valueOf();
       }
+      if (typeof expected.toHexString === "function") {
+        return String(actual) === String(expected);
+      }
       if ("$gte" in expected && !(comparable(actual, expected.$gte) >= comparable(expected.$gte, actual))) return false;
       if ("$gt" in expected && !(comparable(actual, expected.$gt) > comparable(expected.$gt, actual))) return false;
       if ("$lte" in expected && !(comparable(actual, expected.$lte) <= comparable(expected.$lte, actual))) return false;

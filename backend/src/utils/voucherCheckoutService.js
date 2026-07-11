@@ -53,6 +53,9 @@ export function voucherTargetKind(voucher) {
 }
 
 export function assertVoucherTarget(voucher, { target = "topup", packageId = "" } = {}) {
+  if (!["topup", "membership"].includes(target)) {
+    throw checkoutError("Loại thanh toán voucher không hợp lệ.");
+  }
   const kind = voucherTargetKind(voucher);
   const applicablePackageIds = voucherApplicablePackageIds(voucher);
 
@@ -84,11 +87,12 @@ export function assertVoucherTarget(voucher, { target = "topup", packageId = "" 
 
 export async function assertVoucherUserLimit(voucher, userId) {
   const perUserLimit = Number(voucher?.perUserLimit ?? 1);
-  if (perUserLimit <= 0) return;
+  if (perUserLimit <= 0) return 0;
   const userVoucherUsed = await approvedVoucherUseCount(userId, voucher.code);
   if (userVoucherUsed >= perUserLimit) {
     throw checkoutError("Bạn đã đạt giới hạn sử dụng voucher này.");
   }
+  return userVoucherUsed;
 }
 
 export function safeVoucherPayload(voucher) {

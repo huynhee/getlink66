@@ -8,6 +8,8 @@ const voucherSchema = new mongoose.Schema(
     // "" = legacy voucher (target suy ra tu creditBonus/discountPercent/applicablePackageIds).
     // credit = chi goi nap credit, pro = chi goi Pro/membership, all = ca hai.
     targetKind: { type: String, enum: ["", "all", "credit", "pro"], default: "" },
+    isActive: { type: Boolean, default: true, index: true },
+    archivedAt: { type: Date, default: null },
     creditBonus: { type: Number, default: 0, min: 0 },
     discountPercent: { type: Number, default: 0, min: 0, max: 100 },
     usageLimit: { type: Number, required: true, min: 1 },
@@ -22,5 +24,6 @@ const voucherSchema = new mongoose.Schema(
 
 voucherSchema.index({ code: 1, expireAt: 1 });
 voucherSchema.index({ expireAt: 1, usedCount: 1 });
+voucherSchema.index({ targetKind: 1, isActive: 1, createdAt: -1 });
 
 export default isMemoryDb() ? createMemoryModel("Voucher") : mongoose.model("Voucher", voucherSchema);

@@ -305,6 +305,9 @@ Ma voucher:
 
 - `code`
 - `description`
+- `targetKind`: `credit`, `pro`, hoac `all`
+- `isActive`
+- `archivedAt`
 - `creditBonus`
 - `discountPercent`
 - `usageLimit`
@@ -313,7 +316,14 @@ Ma voucher:
 - `usedCount`
 - `expireAt`
 
-Voucher co the giam gia goi nap hoac cong credit bonus khi topup duoc approve.
+Quy tac voucher:
+
+- Voucher `credit` chi dung cho topup Credit; co the giam gia, tang credit, hoac ca hai.
+- Voucher `pro` chi dung cho MembershipOrder; chi giam phan tram, khong cong credit.
+- Voucher `all` dung chung Credit va Pro; chi giam phan tram.
+- Voucher da co Topup/MembershipOrder khong duoc doi `code` hoac `targetKind`.
+- DELETE voucher da co giao dich chi archive (`isActive=false`), khong xoa document de cac don pending va audit cu van doi soat duoc.
+- Voucher archive bi chan o checkout moi, nhung don pending da tao van giu snapshot gia/voucher cua don.
 
 #### `VoucherRedemption`
 
@@ -646,7 +656,10 @@ Tat ca admin routes dung `requireAuth` va `adminOnly`.
 |---|---|---|
 | GET | `/overview` | KPI tong quan, revenue chart, cookie/queue status |
 | GET | `/users` | Danh sach user co search/sort/pagination |
-| GET | `/users/:id/credit-history` | Lich su credit cua user |
+| GET | `/users/:id/profile` | Ho so va KPI van hanh cua user |
+| GET | `/users/:id/timeline` | Timeline hop nhat Credit, Pro, Getlink, Model, Referral, Voucher |
+| GET | `/users/:id/quota` | Quota download va image search trong ngay |
+| POST | `/users/:id/pro-adjust` | Chinh han/quota Pro thu cong |
 | POST | `/users/:id/ban` | Ban user |
 | POST | `/users/:id/unban` | Go ban user |
 | GET | `/referrals` | Danh sach referral admin |
@@ -654,6 +667,11 @@ Tat ca admin routes dung `requireAuth` va `adminOnly`.
 | GET | `/system-logs` | System logs |
 | GET | `/getlinks` | Lich su getlink admin |
 | GET | `/topups` | Lich su topup admin |
+| GET | `/transactions` | Bang giao dich server-side, filter `credit`, `pro`, `all` |
+| POST | `/topups/:id/approve` | Duyet Credit pending bang approval service dung chung |
+| POST | `/topups/:id/cancel` | Huy Credit pending |
+| POST | `/membership-orders/:id/approve` | Duyet Pro pending bang approval service dung chung |
+| POST | `/membership-orders/:id/cancel` | Huy Pro pending |
 | POST | `/add-credit` | Cong credit thu cong |
 | POST | `/set-credit` | Set credit user |
 | GET | `/cookies` | Danh sach cookie 3D66 da mask |
@@ -665,7 +683,7 @@ Tat ca admin routes dung `requireAuth` va `adminOnly`.
 | POST | `/voucher` | Tao voucher |
 | GET | `/vouchers` | List voucher |
 | PUT | `/vouchers/:id` | Update voucher |
-| DELETE | `/vouchers/:id` | Delete voucher |
+| DELETE | `/vouchers/:id` | Xoa voucher chua dung; archive voucher da co giao dich |
 | GET | `/notifications` | List notification admin |
 | POST | `/notifications` | Tao notification |
 | PUT | `/notifications/:id` | Update notification |
@@ -852,9 +870,9 @@ Apply voucher:
 
 1. User nhap code.
 2. Frontend POST `/api/voucher/apply`.
-3. Backend validate code/package.
-4. Check voucher ton tai, chua het han, chua het luot.
-5. Check applicable packages.
+3. Backend validate target chinh xac: `topup` hoac `membership`.
+4. Check voucher ton tai, active, chua het han, chua het luot.
+5. Check `targetKind` va applicable Credit packages bang mot service dung chung cho apply/checkout.
 6. Check user da dung qua `perUserLimit` chua.
 7. Tra safe voucher payload cho frontend.
 
@@ -863,8 +881,14 @@ Redeem voucher:
 1. Voucher chua tang `usedCount` khi apply.
 2. Khi topup duoc approve, `approvePendingTopup` goi `claimVoucherUsage`.
 3. Backend tang `usedCount` atomic voi dieu kien chua het luot.
-4. Tao `VoucherRedemption` theo slot.
+4. Topup Credit co `perUserLimit > 0` tao `VoucherRedemption` theo slot; Pro va voucher khong gioi han duoc dem truc tiep tu order approved.
 5. Neu loi hoac vuot limit, rollback counter.
+
+Timeline voucher:
+
+- View `all` chi tra giao dich Credit/Pro goc, khong chen them event voucher de tranh hien hai dong cho mot checkout.
+- View `voucher` chieu tu Topup/MembershipOrder approved co `voucherCode`, nen voucher Credit khong gioi han theo user van hien day du.
+- Don pending/rejected co `amount=0` trong event de khong bi hieu la da cong credit/thu tien; gia tri du kien nam trong metadata.
 
 ### 5.8 Referral
 
@@ -1878,3 +1902,6 @@ May audit 2026-07-10 khong co Docker CLI, vi vay image manifests phai duoc build
 - Voucher Pro duoc ghi nhan trong filter Voucher cua timeline.
 - Drive sync co process lock, DB lock co stale timeout, batch startup sau 5 giay va dung timer khi graceful shutdown.
 - Admin cu duoc bo sung filter user, KPI Pro/marketplace/model thieu file va tab Audit co search/phan trang.
+- Voucher admin tach scope Credit/Pro/dung chung, co search/status, archive lifecycle va khoa doi code/scope sau khi co giao dich.
+- Lich su credit admin cu da duoc bo; user detail va `/history` dung duy nhat timeline hop nhat, chia nhom Thanh toan/Tai xuong/Tai khoan.
+- Bootstrap backend import auth/model sau `connectDb`, vi vay `ALLOW_MEMORY_DB=true` fallback local thuc su hoat dong khi Atlas khong truy cap duoc.

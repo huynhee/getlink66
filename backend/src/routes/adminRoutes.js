@@ -8,7 +8,6 @@ import {
   updateVoucher,
   listVouchers,
   deleteVoucher,
-  getUserCreditHistory,
   listUsers, 
   saveCookie,
   unbanUser,
@@ -89,7 +88,6 @@ router.get("/users", listUsers);
 router.get("/users/:id/profile", adminUserProfile);
 router.get("/users/:id/timeline", adminUserTimeline);
 router.get("/users/:id/quota", adminUserQuota);
-router.get("/users/:id/credit-history", getUserCreditHistory);
 router.post("/users/:id/pro-adjust", adminWriteLimit, auditAdmin("ADJUST_USER_PRO"), adminAdjustUserPro);
 router.post("/users/:id/ban", adminWriteLimit, auditAdmin("BAN_USER"), banUser);
 router.post("/users/:id/unban", adminWriteLimit, auditAdmin("UNBAN_USER"), unbanUser);
@@ -114,7 +112,7 @@ router.delete("/cookies/:id", adminWriteLimit, auditAdmin("DELETE_COOKIE"), dele
 router.post("/voucher", adminWriteLimit, auditAdmin("CREATE_VOUCHER"), createVoucher);
 router.get("/vouchers", listVouchers);
 router.put("/vouchers/:id", adminWriteLimit, auditAdmin("UPDATE_VOUCHER"), updateVoucher);
-router.delete("/vouchers/:id", adminWriteLimit, auditAdmin("DELETE_VOUCHER"), deleteVoucher);
+router.delete("/vouchers/:id", adminWriteLimit, auditAdmin("ARCHIVE_OR_DELETE_VOUCHER"), deleteVoucher);
 
 router.get("/notifications", adminListNotifications);
 router.post("/notifications", adminWriteLimit, auditAdmin("CREATE_NOTIFICATION"), adminCreateNotification);

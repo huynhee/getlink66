@@ -64,3 +64,58 @@ test("approved Pro vouchers appear in the voucher timeline", async () => {
   assert.equal(timeline.events[0].metadata.targetKind, "pro");
   assert.equal(timeline.events[0].metadata.discountAmount, 49000);
 });
+
+test("all timeline does not duplicate a Credit transaction as a voucher event", async () => {
+  const user = await User.create({ email: "timeline-credit-voucher@example.test", name: "Credit voucher" });
+  await Topup.create({
+    userId: user._id,
+    amount: 90000,
+    originalAmount: 100000,
+    discountAmount: 10000,
+    credit: 100,
+    voucherCode: "CREDITLINE",
+    type: "sepay",
+    status: "approved",
+    paymentCode: "CREDITLINE123456",
+    paidAt: new Date(),
+  });
+  const all = await buildUserTimeline({ userId: user._id, type: "all", page: 1, limit: 10 });
+  const vouchers = await buildUserTimeline({ userId: user._id, type: "voucher", page: 1, limit: 10 });
+
+  assert.equal(all.pagination.total, 1);
+  assert.equal(all.events[0].type, "credit");
+  assert.equal(all.events[0].amount, 100);
+  assert.equal(vouchers.pagination.total, 1);
+  assert.equal(vouchers.events[0].type, "voucher");
+  assert.equal(vouchers.events[0].metadata.targetKind, "credit");
+});
+
+test("pending payments expose planned values without reporting completed balance movement", async () => {
+  const user = await User.create({ email: "timeline-pending@example.test", name: "Pending" });
+  await Topup.create({
+    userId: user._id,
+    amount: 100000,
+    credit: 100,
+    type: "sepay",
+    status: "pending",
+    paymentCode: "PENDINGCREDIT123",
+  });
+  await MembershipOrder.create({
+    userId: user._id,
+    planId: "pending-plan",
+    planCode: "GOLD",
+    planName: "Gold",
+    amount: 149000,
+    durationDays: 90,
+    status: "pending",
+    paymentCode: "PENDINGPRO123456",
+  });
+
+  const credit = (await buildUserTimeline({ userId: user._id, type: "credit" })).events[0];
+  const pro = (await buildUserTimeline({ userId: user._id, type: "pro" })).events[0];
+
+  assert.equal(credit.amount, 0);
+  assert.equal(credit.metadata.creditAmount, 100);
+  assert.equal(pro.amount, 0);
+  assert.equal(pro.metadata.amountMoney, 149000);
+});

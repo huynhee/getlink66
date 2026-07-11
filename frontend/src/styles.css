@@ -2507,6 +2507,33 @@ button:disabled {
   gap: 8px;
 }
 
+.adminTimelineFilterGroups {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-12);
+  padding: 10px 0;
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  overflow-x: auto;
+}
+
+.adminTimelineFilterGroups>div {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 5px;
+}
+
+.adminTimelineFilterGroups>div>span {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.adminTimelineFilterGroups .adminSubTabs {
+  margin: 0;
+}
+
 .marketAdminLogItem,
 .adminTimelineItem {
   display: grid;
@@ -6204,11 +6231,37 @@ label {
   flex-wrap: wrap;
 }
 
+.historyFilterGroups {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-12);
+  padding: 10px 0;
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  overflow-x: auto;
+}
+
+.historyFilterGroup {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 6px;
+}
+
+.historyFilterGroup>span {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
 .historyFilterBar button {
   min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 0 12px;
   border: 1px solid var(--border-light);
-  background: rgba(0, 0, 0, 0.34);
+  background: var(--surface-2);
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -6863,6 +6916,131 @@ label {
   margin-top: var(--space-12);
 }
 
+.adminVoucherPanel {
+  display: grid;
+  gap: var(--space-12);
+}
+
+.adminVoucherHeading,
+.voucherEditorHeading,
+.adminVoucherToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-10);
+  flex-wrap: wrap;
+}
+
+.adminVoucherHeading h2,
+.voucherEditorHeading h3 {
+  margin: 0;
+}
+
+.adminVoucherHeading>div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.adminVoucherHeading>div>span {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.adminVoucherPanel .adminSubTabs {
+  margin-top: 0;
+}
+
+.adminVoucherPanel .adminSubTabs button>span {
+  min-width: 22px;
+  padding: 2px 5px;
+  border: 1px solid currentColor;
+  color: inherit;
+  font-size: 10px;
+  text-align: center;
+}
+
+.adminVoucherToolbar .adminSearchField {
+  flex: 1 1 320px;
+  max-width: 560px;
+}
+
+.adminVoucherToolbar select {
+  width: min(220px, 100%);
+}
+
+.voucherEditor {
+  display: grid;
+  gap: var(--space-10);
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  background: var(--surface-2);
+}
+
+.voucherEditorHeading h3 {
+  color: var(--text-primary);
+  font-size: 17px;
+}
+
+.voucherActiveToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.voucherActiveToggle input {
+  width: auto;
+  min-height: 0;
+  accent-color: var(--neon-green);
+}
+
+.voucherFieldGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--space-8);
+}
+
+.voucherFieldGrid.twoColumns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.voucherField {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.voucherField>span,
+.voucherScopeSummary>span {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.voucherScopeSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.voucherScopeSummary strong {
+  color: var(--neon-cyan);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 .voucherCard {
   display: grid;
   gap: var(--space-10);
@@ -6904,12 +7082,19 @@ label {
 
 .voucherValue {
   display: flex;
-  align-items: end;
-  justify-content: space-between;
+  align-items: stretch;
   gap: var(--space-8);
   padding: 12px;
   border: 1px solid rgba(0, 216, 255, 0.2);
   background: rgba(0, 216, 255, 0.04);
+}
+
+.voucherValue>div {
+  min-width: 0;
+  flex: 1 1 0;
+  display: grid;
+  align-content: space-between;
+  gap: 6px;
 }
 
 .voucherValue span,
@@ -6924,8 +7109,9 @@ label {
 .voucherValue strong {
   color: var(--neon-cyan);
   font-family: var(--font-mono);
-  font-size: 28px;
+  font-size: 22px;
   line-height: 1;
+  overflow-wrap: anywhere;
 }
 
 .voucherMetaGrid {
@@ -7631,6 +7817,9 @@ label {
 }
 
 .adminTableToolbar select {
+  flex: 0 1 220px;
+  width: auto;
+  min-width: 180px;
   min-height: 38px;
   padding: 0 10px;
 }
@@ -7640,6 +7829,7 @@ label {
   align-items: center;
   gap: 8px;
   min-width: min(100%, 360px);
+  flex: 1 1 360px;
   padding: 0 10px;
   border: 1px solid var(--border-light);
   background: rgba(0, 0, 0, 0.28);
@@ -7764,7 +7954,7 @@ label {
   gap: 4px;
   padding: 12px;
   border: 1px solid var(--border-light);
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--surface-2);
 }
 
 .adminDetailCard span,
@@ -7784,7 +7974,7 @@ label {
   margin-top: 12px;
   padding: 12px;
   border: 1px solid var(--border-light);
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--surface-2);
 }
 
 .adminInlineForm > div {
@@ -7812,12 +8002,42 @@ label {
 }
 
 @media (max-width: 760px) {
+  .adminSectionNav,
+  .adminDataNav {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .adminSectionNav button,
+  .adminDataNav button {
+    flex: 0 0 148px;
+  }
+
   .adminSearchField {
     min-width: 100%;
   }
 
   .adminTableToolbar select {
+    flex-basis: 100%;
     width: 100%;
+  }
+
+  .voucherFieldGrid.twoColumns {
+    grid-template-columns: 1fr;
+  }
+
+  .voucherValue {
+    flex-direction: column;
+  }
+
+  .voucherMetaGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .voucherMetaGrid>div:last-child {
+    grid-column: 1 / -1;
   }
 
   .adminUserTable .tableRow,

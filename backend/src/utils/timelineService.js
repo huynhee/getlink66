@@ -5,7 +5,6 @@ import MembershipOrder from "../models/MembershipOrder.js";
 import ModelDownload from "../models/ModelDownload.js";
 import ModelPurchase from "../models/ModelPurchase.js";
 import Referral from "../models/Referral.js";
-import VoucherRedemption from "../models/VoucherRedemption.js";
 
 const TIMELINE_TYPES = new Set(["all", "credit", "pro", "getlink", "model", "referral", "voucher"]);
 
@@ -84,16 +83,18 @@ function eventBase(id, type, title, amount, status, createdAt, metadata = {}) {
 }
 
 function mapTopup(item) {
+  const isApproved = item.status === "approved";
   return eventBase(
     `topup:${item._id}`,
     "credit",
     item.type === "manual" ? "Admin cộng credit" : `Nạp credit${item.packageId?.name ? ` - ${item.packageId.name}` : ""}`,
-    Number(item.credit || 0),
+    isApproved ? Number(item.credit || 0) : 0,
     item.status,
     item.paidAt || item.createdAt,
     {
       topupId: item._id,
       amountMoney: moneyAmount(item.amount),
+      creditAmount: Number(item.credit || 0),
       originalAmount: moneyAmount(item.originalAmount),
       discountAmount: moneyAmount(item.discountAmount),
       voucherCode: item.voucherCode || "",
@@ -135,11 +136,12 @@ function mapGetlink(item) {
 
 function mapMembership(item) {
   const isAddon = Boolean(item.isQuotaAddon);
+  const isApproved = item.status === "approved";
   return eventBase(
     `membership:${item._id}`,
     "pro",
     isAddon ? `Thêm lượt Pro hôm nay - ${item.planName || item.planCode || "Daily"}` : `Mua Pro - ${item.planName || item.planCode || ""}`.trim(),
-    -moneyAmount(item.amount),
+    isApproved ? -moneyAmount(item.amount) : 0,
     item.status,
     item.paidAt || item.createdAt,
     {
@@ -220,7 +222,7 @@ function mapReferral(item, userId) {
     `referral:${item._id}:${isReferrer ? "referrer" : "referred"}`,
     "referral",
     isReferrer ? "Mời bạn bè" : "Được mời",
-    credit,
+    item.status === "rewarded" ? credit : 0,
     item.status,
     item.rewardedAt || item.createdAt,
     {
@@ -232,19 +234,20 @@ function mapReferral(item, userId) {
   );
 }
 
-function mapVoucher(item) {
+function mapTopupVoucher(item) {
   return eventBase(
-    `voucher:${item._id}`,
+    `topup-voucher:${item._id}`,
     "voucher",
     `Dùng voucher ${item.voucherCode || ""}`.trim(),
     0,
     "used",
-    item.createdAt,
+    item.paidAt || item.createdAt,
     {
-      redemptionId: item._id,
+      topupId: item._id,
       voucherCode: item.voucherCode || "",
-      slot: Number(item.slot || 0),
-      topupId: item.topupId?._id || item.topupId,
+      discountAmount: moneyAmount(item.discountAmount),
+      creditBonus: Number(item.voucherCreditBonus || 0),
+      creditAmount: Number(item.credit || 0),
       targetKind: "credit",
       user: userSummary(item.userId),
     },
@@ -343,14 +346,20 @@ async function fetchTimelineSources({ userId, type, sourceLimit }) {
     );
   }
 
-  if (type === "all" || type === "voucher") {
+  // Voucher rows project their parent Credit/Pro transaction. Keeping this
+  // focused prevents one checkout from appearing twice in the "all" view.
+  if (type === "voucher") {
     tasks.push(
-      VoucherRedemption.find({ userId: userObjectId })
+      Topup.find({
+        userId: userObjectId,
+        status: "approved",
+        voucherCode: { $nin: ["", null] },
+      })
         .sort({ createdAt: -1 })
         .limit(sourceLimit)
         .populate("userId", "name email avatar credit role")
         .lean()
-        .then((items) => items.map(mapVoucher)),
+        .then((items) => items.map(mapTopupVoucher)),
     );
     tasks.push(
       MembershipOrder.find({
@@ -386,8 +395,12 @@ async function countTimelineSources({ userId, type }) {
       $or: [{ referrerId: userObjectId }, { referredUserId: userObjectId }],
     }));
   }
-  if (type === "all" || type === "voucher") {
-    tasks.push(VoucherRedemption.countDocuments({ userId: userObjectId }));
+  if (type === "voucher") {
+    tasks.push(Topup.countDocuments({
+      userId: userObjectId,
+      status: "approved",
+      voucherCode: { $nin: ["", null] },
+    }));
     tasks.push(MembershipOrder.countDocuments({
       userId: userObjectId,
       status: "approved",

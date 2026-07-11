@@ -12,7 +12,6 @@ import { cookieSignatureSecret } from "./src/config/secrets.js";
 import { isMemoryDb } from "./src/config/memoryStore.js";
 import { csrfProtection } from "./src/middleware/csrf.js";
 import { requestGuard } from "./src/middleware/requestGuard.js";
-import { jwtAuth } from "./src/middleware/jwtAuth.js";
 import logger from "./src/utils/logger.js";
 import { notifyServerError } from "./src/utils/telegramNotifier.js";
 
@@ -112,6 +111,7 @@ if (process.env.SEPAY_ENABLED !== "false") {
 
 await connectDb();
 
+const { jwtAuth } = await import("./src/middleware/jwtAuth.js");
 const { default: User } = await import("./src/models/User.js");
 const { currentUser } = await import("./src/controllers/authController.js");
 const { default: authRoutes } = await import("./src/routes/authRoutes.js");
