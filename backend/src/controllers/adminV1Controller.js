@@ -171,6 +171,7 @@ export async function adminDashboard(req, res, next) {
       getlinks,
       marketplaceDownloads,
       missingModels,
+      incompleteModels,
       readyModels,
       sessions,
       recentSystemLogs,
@@ -186,6 +187,7 @@ export async function adminDashboard(req, res, next) {
       Getlink.countDocuments(rangeQuery("createdAt", range)),
       ModelDownload.countDocuments(rangeQuery("createdAt", range)),
       MarketplaceModel.countDocuments({ fileStatus: { $ne: "ready" } }),
+      MarketplaceModel.countDocuments({ metadataStatus: "incomplete" }),
       MarketplaceModel.countDocuments({ fileStatus: "ready" }),
       DownloadSession.countDocuments(rangeQuery("createdAt", range)),
       SystemLog.find().sort({ createdAt: -1 }).limit(8).lean(),
@@ -211,6 +213,7 @@ export async function adminDashboard(req, res, next) {
           getlinks,
           marketplaceDownloads,
           missingModels,
+          incompleteModels,
           readyModels,
           sessions,
         },
@@ -347,8 +350,9 @@ export async function adminTransactions(req, res, next) {
     const search = String(req.query.search || "").trim();
     const userIds = await userIdsForSearch(search);
     const regex = search ? new RegExp(escapedRegex(search), "i") : null;
-    const sourceLimit = Math.min(500, page * limit + 80);
+    const sourceLimit = page * limit;
     const tasks = [];
+    const countTasks = [];
 
     if (kind === "all" || kind === "credit") {
       const query = {};
@@ -370,6 +374,7 @@ export async function adminTransactions(req, res, next) {
           .lean()
           .then((items) => items.map(topupTransaction)),
       );
+      countTasks.push(Topup.countDocuments(query));
     }
 
     if (kind === "all" || kind === "pro") {
@@ -393,10 +398,15 @@ export async function adminTransactions(req, res, next) {
           .lean()
           .then((items) => items.map(membershipTransaction)),
       );
+      countTasks.push(MembershipOrder.countDocuments(query));
     }
 
-    const rows = (await Promise.all(tasks)).flat().sort((a, b) => transactionDate(b) - transactionDate(a));
-    const total = rows.length;
+    const [sourceRows, sourceCounts] = await Promise.all([
+      Promise.all(tasks),
+      Promise.all(countTasks),
+    ]);
+    const rows = sourceRows.flat().sort((a, b) => transactionDate(b) - transactionDate(a));
+    const total = sourceCounts.reduce((sum, count) => sum + Number(count || 0), 0);
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const safePageNumber = Math.min(page, totalPages);
     const start = (safePageNumber - 1) * limit;

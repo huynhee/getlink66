@@ -68,7 +68,7 @@ function canAccessModel(model, tier) {
   return false;
 }
 
-async function chargeQuota(req, tier, model) {
+async function chargeQuota(req, tier) {
   if (tier === "admin") return { charged: false, remaining: Number.MAX_SAFE_INTEGER };
   const dayKey = vietnamDayKey();
   const resetAt = nextVietnamReset();
@@ -94,6 +94,9 @@ async function chargeQuota(req, tier, model) {
   );
 
   if (!quota || Number(quota.count || 0) > limit) {
+    if (quota?._id && Number(quota.count || 0) > limit) {
+      await DailyDownloadQuota.findByIdAndUpdate(quota._id, { $inc: { count: -1 } }).catch(() => {});
+    }
     const error = new Error(`Daily download quota exceeded for ${tier}.`);
     error.status = 429;
     error.details = { limit, resetAt };
@@ -105,6 +108,18 @@ async function chargeQuota(req, tier, model) {
     remaining: Math.max(0, limit - Number(quota.count || 0)),
     resetAt,
   };
+}
+
+async function rollbackQuota(req, tier) {
+  if (tier === "admin") return;
+  const identity = req.user
+    ? { userId: req.user._id, guestKey: "" }
+    : { guestKey: guestKeyFromReq(req) };
+  await DailyDownloadQuota.findOneAndUpdate(
+    { dayKey: vietnamDayKey(), tier, ...identity, count: { $gt: 0 } },
+    { $inc: { count: -1 } },
+    { new: true },
+  ).catch(() => {});
 }
 
 export async function createMarketplaceDownloadSession({ req, modelId, clientType = "web" }) {
@@ -132,38 +147,45 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     throw error;
   }
 
-  const quota = await chargeQuota(req, tier, model);
+  const quota = await chargeQuota(req, tier);
   const token = makeToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  const session = await DownloadSession.create({
-    modelId: model._id,
-    userId: req.user?._id,
-    guestKey: req.user ? "" : guestKeyFromReq(req),
-    clientType: clientType === "plugin" ? "plugin" : "web",
-    tokenHash: sha256(token),
-    expiresAt,
-    quotaCharged: quota.charged,
-    accessTier: tier,
-    storageProvider: model.storageProvider,
-    storageKey: model.storageKey,
-    driveFileId: model.driveFileId,
-    fileName: safeDownloadFileName(model),
-    fileSize: model.fileSize,
-    sha256: model.sha256,
-  });
+  let session = null;
+  try {
+    session = await DownloadSession.create({
+      modelId: model._id,
+      userId: req.user?._id,
+      guestKey: req.user ? "" : guestKeyFromReq(req),
+      clientType: clientType === "plugin" ? "plugin" : "web",
+      tokenHash: sha256(token),
+      expiresAt,
+      quotaCharged: quota.charged,
+      accessTier: tier,
+      storageProvider: model.storageProvider,
+      storageKey: model.storageKey,
+      driveFileId: model.driveFileId,
+      fileName: safeDownloadFileName(model),
+      fileSize: model.fileSize,
+      sha256: model.sha256,
+    });
 
-  await ModelDownload.create({
-    modelId: model._id,
-    sessionId: session._id,
-    userId: req.user?._id,
-    guestKey: req.user ? "" : guestKeyFromReq(req),
-    clientType: session.clientType,
-    accessTier: tier,
-    quotaCharged: quota.charged,
-    ip: req.ip,
-    userAgent: String(req.get("user-agent") || "").slice(0, 300),
-  });
-  await MarketplaceModel.findByIdAndUpdate(model._id, { $inc: { downloadCount: 1 } });
+    await ModelDownload.create({
+      modelId: model._id,
+      sessionId: session._id,
+      userId: req.user?._id,
+      guestKey: req.user ? "" : guestKeyFromReq(req),
+      clientType: session.clientType,
+      accessTier: tier,
+      quotaCharged: quota.charged,
+      ip: req.ip,
+      userAgent: String(req.get("user-agent") || "").slice(0, 300),
+    });
+  } catch (error) {
+    if (session?._id) await DownloadSession.findByIdAndDelete(session._id).catch(() => {});
+    if (quota.charged) await rollbackQuota(req, tier);
+    throw error;
+  }
+  await MarketplaceModel.findByIdAndUpdate(model._id, { $inc: { downloadCount: 1 } }).catch(() => {});
 
   return {
     session,

@@ -18,6 +18,7 @@ import {
 import { expirePendingSepayTopups } from "../utils/topupExpiryService.js";
 
 const MIN_TOPUP_AMOUNT = Number(process.env.MIN_TOPUP_AMOUNT || 1000);
+const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{16,128}$/;
 
 const DEFAULT_TOPUP_PACKAGES = [
   {
@@ -89,6 +90,14 @@ function packagePayAmount(pack) {
   );
 }
 
+function isSameIdempotentTopupRequest(topup, pack, voucherCode = "") {
+  return (
+    String(topup?.packageId?._id || topup?.packageId || "") ===
+      String(pack?._id || "") &&
+    String(topup?.voucherCode || "") === String(voucherCode || "")
+  );
+}
+
 async function userApprovedPackageCount(userId, packageId) {
   return Topup.countDocuments({
     userId,
@@ -119,7 +128,7 @@ function defaultPackageKey(name = "") {
 }
 
 async function syncDefaultTopupPackages(packages) {
-  if (process.env.SYNC_DEFAULT_TOPUP_PACKAGES === "false") return packages;
+  if (process.env.SYNC_DEFAULT_TOPUP_PACKAGES !== "true") return packages;
 
   const defaultsByKey = new Map(
     DEFAULT_TOPUP_PACKAGES.map((pack) => [defaultPackageKey(pack.name), pack]),
@@ -193,6 +202,7 @@ export async function createTopup(req, res, next) {
     }
 
     const packageId = String(req.body.packageId || "").trim();
+    const idempotencyKey = String(req.get("idempotency-key") || "").trim();
     const price = finiteNumber(req.body.price);
     const normalizedVoucherCode = normalizeVoucherCode(req.body.voucherCode);
     if (packageId && !isSafeId(packageId)) {
@@ -204,6 +214,9 @@ export async function createTopup(req, res, next) {
     if (normalizedVoucherCode && !isVoucherCode(normalizedVoucherCode)) {
       return res.status(400).json({ message: "Invalid voucher code" });
     }
+    if (idempotencyKey && !IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
+      return res.status(400).json({ message: "Invalid idempotency key" });
+    }
 
     const type = "sepay";
     const pack = packageId
@@ -212,6 +225,30 @@ export async function createTopup(req, res, next) {
 
     if (!pack || pack.isActive === false) {
       return res.status(400).json({ message: "Invalid topup package" });
+    }
+
+    if (idempotencyKey) {
+      const existingTopup = await Topup.findOne({
+        userId: req.user._id,
+        idempotencyKey,
+      });
+      if (existingTopup) {
+        if (!isSameIdempotentTopupRequest(existingTopup, pack, normalizedVoucherCode)) {
+          return res.status(409).json({
+            message: "Idempotency key was already used for another topup request",
+          });
+        }
+        const payment = existingTopup.status === "approved"
+          ? null
+          : createSepayCheckout({ topup: existingTopup, user: req.user, pack });
+        return res.json({
+          topup: existingTopup,
+          payment,
+          credit: req.user.credit,
+          status: existingTopup.status,
+          idempotentReplay: true,
+        });
+      }
     }
     await ensurePackageTopupLimit(pack, req.user._id);
 
@@ -258,11 +295,13 @@ export async function createTopup(req, res, next) {
       status,
       gatewayProvider: isSepay ? "sepay" : undefined,
       expiresAt: isSepay ? new Date(Date.now() + 30 * 60 * 1000) : undefined,
+      idempotencyKey: idempotencyKey || undefined,
     };
 
     // Retry tao Topup neu paymentCode collision (CSPRNG da rat hiem nhung partial unique
     // index van co the throw E11000 khi 2 request gan nhu cung luc tao trung code).
     let topup;
+    let idempotentReplay = false;
     let attempt = 0;
     while (attempt < 3) {
       attempt += 1;
@@ -272,6 +311,25 @@ export async function createTopup(req, res, next) {
         break;
       } catch (error) {
         if (error?.code === 11000) {
+          if (
+            idempotencyKey &&
+            (error.keyPattern?.idempotencyKey ||
+              error.message?.includes("unique_user_topup_idempotency"))
+          ) {
+            topup = await Topup.findOne({
+              userId: req.user._id,
+              idempotencyKey,
+            });
+            if (topup) {
+              if (!isSameIdempotentTopupRequest(topup, pack, normalizedVoucherCode)) {
+                return res.status(409).json({
+                  message: "Idempotency key was already used for another topup request",
+                });
+              }
+              idempotentReplay = true;
+              break;
+            }
+          }
           // Duplicate key: paymentCode collision.
           if (
             error.keyPattern?.paymentCode ||
@@ -297,7 +355,7 @@ export async function createTopup(req, res, next) {
     }
 
     let payment = null;
-    if (isSepay && status === "pending") {
+    if (isSepay && topup.status !== "approved") {
       payment = createSepayCheckout({ topup, user: req.user, pack });
       topup = await Topup.findByIdAndUpdate(
         topup._id,
@@ -306,7 +364,13 @@ export async function createTopup(req, res, next) {
       );
     }
 
-    res.json({ topup, payment, credit: userCredit, status });
+    res.json({
+      topup,
+      payment,
+      credit: userCredit,
+      status: topup.status || status,
+      idempotentReplay,
+    });
   } catch (error) {
     next(error);
   }

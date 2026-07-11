@@ -154,6 +154,7 @@ async function recommendedModelsFor(model, limit = 8) {
     _id: { $ne: model._id },
     isPublished: true,
     metadataStatus: "complete",
+    fileStatus: "ready",
     ...(signals.length ? { $or: signals } : {}),
   };
   const candidates = await MarketplaceModel.find(query)
@@ -269,7 +270,7 @@ export async function listMarketplaceModels(req, res, next) {
     const search = String(req.query.q || req.query.search || "").trim().slice(0, 120);
     const accessType = String(req.query.accessType || "").trim();
     const fileStatus = String(req.query.fileStatus || "").trim();
-    const query = { isPublished: true, metadataStatus: "complete" };
+    const query = { isPublished: true, metadataStatus: "complete", fileStatus: "ready" };
     Object.assign(query, accessTypeFilter(accessType));
     applyMarketplaceFacetFilters(query, req.query);
     if (["missing", "pending_upload", "ready", "failed"].includes(fileStatus)) query.fileStatus = fileStatus;
@@ -367,6 +368,9 @@ async function chargeImageSearchQuota(req, tier, imageHash) {
   );
 
   if (!quota || Number(quota.count || 0) > limit) {
+    if (quota?._id && Number(quota.count || 0) > limit) {
+      await DailyImageSearchQuota.findByIdAndUpdate(quota._id, { $inc: { count: -1 } }).catch(() => {});
+    }
     const error = new Error(`Daily image search quota exceeded for ${tier}.`);
     error.status = 429;
     error.details = { limit, resetAt };
@@ -387,7 +391,7 @@ export async function searchMarketplaceByImage(req, res, next) {
     const quota = await chargeImageSearchQuota(req, tier, image.imageHash);
     const requestedLimit = Number(req.body.limit || PAGE_SIZE);
     const limit = Math.min(60, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : PAGE_SIZE));
-    const query = { isPublished: true, metadataStatus: "complete" };
+    const query = { isPublished: true, metadataStatus: "complete", fileStatus: "ready" };
 
     Object.assign(query, accessTypeFilter(req.body.accessType));
     applyMarketplaceFacetFilters(query, req.body);
@@ -422,8 +426,8 @@ export async function searchMarketplaceByImage(req, res, next) {
 export async function getMarketplaceModel(req, res, next) {
   try {
     const slugOrId = String(req.params.slug || "").trim();
-    const lookup = [{ slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete" }];
-    if (isSafeId(slugOrId)) lookup.push({ _id: slugOrId, isPublished: true, metadataStatus: "complete" });
+    const lookup = [{ slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready" }];
+    if (isSafeId(slugOrId)) lookup.push({ _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready" });
     const model = await MarketplaceModel.findOne({ $or: lookup })
       .populate("categoryId", "title titleEn slug sourceCategoryId")
       .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
@@ -454,7 +458,7 @@ export async function streamMarketplaceCover(req, res, next) {
     if (!isSafeId(req.params.id)) {
       return res.status(400).json({ message: "Invalid model id" });
     }
-    const model = await MarketplaceModel.findOne({ _id: req.params.id, isPublished: true, metadataStatus: "complete" })
+    const model = await MarketplaceModel.findOne({ _id: req.params.id, isPublished: true, metadataStatus: "complete", fileStatus: "ready" })
       .select("title coverImage previewImages")
       .lean();
     if (!model) return res.status(404).json({ message: "Model not found" });
@@ -477,7 +481,7 @@ export async function streamMarketplacePreview(req, res, next) {
     if (!Number.isInteger(index) || index < 0 || index > 50) {
       return res.status(400).json({ message: "Invalid preview index" });
     }
-    const model = await MarketplaceModel.findOne({ _id: req.params.id, isPublished: true, metadataStatus: "complete" })
+    const model = await MarketplaceModel.findOne({ _id: req.params.id, isPublished: true, metadataStatus: "complete", fileStatus: "ready" })
       .select("title previewImages")
       .lean();
     if (!model) return res.status(404).json({ message: "Model not found" });

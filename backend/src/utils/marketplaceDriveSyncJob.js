@@ -5,6 +5,7 @@ import { writeSystemLog } from "./systemLog.js";
 
 let syncRunning = false;
 let syncTimer = null;
+let initialSyncTimer = null;
 
 function syncEnabled() {
   return String(process.env.MARKETPLACE_DRIVE_SYNC_ENABLED || "false").toLowerCase() === "true";
@@ -55,15 +56,30 @@ export async function runMarketplaceDriveSyncOnce({ trigger = "interval", rootFo
   syncRunning = true;
   const startedAt = new Date();
   let state = null;
+  let lockClaimed = false;
   try {
+    const existingState = await MarketplaceDriveSyncState.findOne({ rootFolderId: folderId });
+    const staleBefore = new Date(Date.now() - Math.max(syncIntervalMs() * 2, 15 * 60 * 1000));
     state = await MarketplaceDriveSyncState.findOneAndUpdate(
-      { rootFolderId: folderId },
+      {
+        rootFolderId: folderId,
+        $or: [
+          { status: { $ne: "running" } },
+          { lastStartedAt: { $lt: staleBefore } },
+        ],
+      },
       {
         $setOnInsert: { rootFolderId: folderId },
         $set: { status: "running", lastStartedAt: startedAt, lastError: "" },
       },
-      { upsert: true, new: true },
+      { upsert: !existingState, new: true },
     );
+    if (!state) {
+      const error = new Error("Marketplace Drive sync is already running on another instance");
+      error.status = 409;
+      throw error;
+    }
+    lockClaimed = true;
 
     const result = await scanMarketplaceDriveFolderBatch({
       rootFolderId: folderId,
@@ -115,18 +131,20 @@ export async function runMarketplaceDriveSyncOnce({ trigger = "interval", rootFo
 
     return { result, state: nextState?.toObject ? nextState.toObject() : nextState, cycleCompleted };
   } catch (error) {
-    await MarketplaceDriveSyncState.findOneAndUpdate(
-      { rootFolderId: folderId },
-      {
-        $setOnInsert: { rootFolderId: folderId },
-        $set: {
-          status: "error",
-          lastFinishedAt: new Date(),
-          lastError: String(error?.message || "drive_sync_failed").slice(0, 500),
+    if (lockClaimed) {
+      await MarketplaceDriveSyncState.findOneAndUpdate(
+        { rootFolderId: folderId },
+        {
+          $setOnInsert: { rootFolderId: folderId },
+          $set: {
+            status: "error",
+            lastFinishedAt: new Date(),
+            lastError: String(error?.message || "drive_sync_failed").slice(0, 500),
+          },
         },
-      },
-      { upsert: true },
-    ).catch(() => {});
+        { upsert: true },
+      ).catch(() => {});
+    }
     writeSystemLog({
       type: "system",
       level: "error",
@@ -156,10 +174,21 @@ export function startMarketplaceDriveSyncJob() {
     });
   }, interval);
   if (typeof syncTimer.unref === "function") syncTimer.unref();
+  initialSyncTimer = setTimeout(() => {
+    initialSyncTimer = null;
+    runMarketplaceDriveSyncOnce({ trigger: "startup" }).catch((error) => {
+      logger.error({ err: error }, "Marketplace Drive startup sync failed");
+    });
+  }, 5000);
+  if (typeof initialSyncTimer.unref === "function") initialSyncTimer.unref();
   logger.info({ intervalMinutes: Math.round(interval / 60000) }, "Marketplace Drive sync job started");
 }
 
 export function stopMarketplaceDriveSyncJob() {
+  if (initialSyncTimer) {
+    clearTimeout(initialSyncTimer);
+    initialSyncTimer = null;
+  }
   if (syncTimer) {
     clearInterval(syncTimer);
     syncTimer = null;

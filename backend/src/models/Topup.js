@@ -40,6 +40,7 @@ const topupSchema = new mongoose.Schema(
     rejectionReason: String,
     gatewayTransactionId: { type: String, index: true },
     gatewayPayload: mongoose.Schema.Types.Mixed,
+    idempotencyKey: { type: String, trim: true },
   },
   { timestamps: true },
 );
@@ -61,6 +62,16 @@ topupSchema.index({ userId: 1, createdAt: -1 });
 topupSchema.index({ status: 1, createdAt: -1 });
 topupSchema.index({ status: 1, paidAt: -1 });
 topupSchema.index({ voucherCode: 1, status: 1 });
+topupSchema.index({ userId: 1, packageId: 1, status: 1 });
+topupSchema.index({ userId: 1, voucherCode: 1, status: 1 });
+topupSchema.index(
+  { userId: 1, idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { idempotencyKey: { $type: "string" } },
+    name: "unique_user_topup_idempotency",
+  },
+);
 
 const TopupModel = isMemoryDb()
   ? createMemoryModel("Topup")
@@ -68,13 +79,17 @@ const TopupModel = isMemoryDb()
 
 export async function ensureTopupIndexes() {
   if (isMemoryDb() || !TopupModel.collection?.indexes) return;
-  try {
-    const indexes = await TopupModel.collection.indexes();
-    if (indexes.some((index) => index.name === "unique_user_voucher_active")) {
+  if (typeof TopupModel.init === "function") await TopupModel.init();
+  const indexes = await TopupModel.collection.indexes();
+  if (indexes.some((index) => index.name === "unique_user_voucher_active")) {
+    try {
       await TopupModel.collection.dropIndex("unique_user_voucher_active");
+    } catch (error) {
+      // Another instance may remove the obsolete index after this instance
+      // listed it. All other index errors must fail startup so payment
+      // idempotency invariants are never silently disabled.
+      if (error?.codeName !== "IndexNotFound" && error?.code !== 27) throw error;
     }
-  } catch {
-    // Non-fatal: old deployments may not have the obsolete index yet.
   }
 }
 

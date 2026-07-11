@@ -1,8 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Check, CreditCard, Sparkles } from "lucide-react";
 import { api } from "../api.js";
 
 const PENDING_MEMBERSHIP_ORDER_KEY = "pendingMembershipOrderId";
+
+function createIdempotencyKey() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `membership-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+}
 
 function submitPaymentCheckout(payment) {
   if (!payment?.checkoutUrl || !payment?.fields) return false;
@@ -35,26 +40,27 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const requestKeyRef = useRef("");
 
-  async function loadPlans() {
+  const loadPlans = useCallback(async () => {
     const data = await api("/api/membership/plans");
     setPlans(data.plans || []);
-    if (!selectedPlanId && data.plans?.[0]) setSelectedPlanId(data.plans[0]._id);
-  }
+    setSelectedPlanId((current) => current || data.plans?.[0]?._id || "");
+  }, []);
 
-  async function loadMe() {
+  const loadMe = useCallback(async () => {
     if (!user) return;
     const data = await api("/api/membership/me");
     setMembership(data.membership || null);
-  }
+  }, [user]);
 
   useEffect(() => {
     loadPlans().catch((err) => setError(err.message));
-  }, []);
+  }, [loadPlans]);
 
   useEffect(() => {
     loadMe().catch(() => {});
-  }, [user?._id, user?.proUntil]);
+  }, [loadMe]);
 
   useEffect(() => {
     const paymentStatus = new URLSearchParams(window.location.search).get("payment");
@@ -86,17 +92,20 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
   }, [user, onUserChange, language]);
 
   async function checkout() {
+    if (loading || requestKeyRef.current) return;
     if (!user) {
       setError(language === "vi" ? "Vui lòng đăng nhập trước khi mua Pro." : "Please sign in before buying Pro.");
       return;
     }
     if (!selectedPlanId) return;
     setLoading(true);
+    requestKeyRef.current = createIdempotencyKey();
     setError("");
     setMessage("");
     try {
       const data = await api("/api/membership/checkout", {
         method: "POST",
+        headers: { "Idempotency-Key": requestKeyRef.current },
         body: JSON.stringify({ planId: selectedPlanId }),
       });
       window.sessionStorage.setItem(PENDING_MEMBERSHIP_ORDER_KEY, data.order._id);
@@ -107,6 +116,7 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
     } catch (err) {
       setError(err.message);
     } finally {
+      requestKeyRef.current = "";
       setLoading(false);
     }
   }
@@ -121,8 +131,8 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
           <h2>{language === "vi" ? "Nâng cấp Pro" : "Upgrade to Pro"}</h2>
           <p>
             {language === "vi"
-              ? "Pro dùng 100 lượt tải mỗi ngày, tải nhanh, mở model member/S-VIP và không cộng lẫn với credit."
-              : "Pro gives 100 downloads per day, fast access, member/S-VIP models, and stays separate from credit."}
+              ? "Pro dùng 100 lượt tải mỗi ngày, tải nhanh, mở model Pro và không cộng lẫn với credit."
+              : "Pro gives 100 downloads per day, fast access, Pro models, and stays separate from credit."}
           </p>
           {membership?.active && (
             <span className="badge success">

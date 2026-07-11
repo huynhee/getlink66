@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -72,7 +72,7 @@ const accessLabels = {
   member: "Pro",
 };
 
-const publishLabels = {
+const _publishLabels = {
   all: "Tất cả publish",
   published: "Đã xuất bản",
   unpublished: "Bản nháp",
@@ -527,7 +527,7 @@ export default function AdminMarketplace() {
     }));
   }
 
-  async function loadModels(nextPage = page) {
+  const loadModels = useCallback(async (nextPage = 1) => {
     const query = new URLSearchParams({ page: String(nextPage), fileStatus, accessType, published, metadataStatus });
     if (search.trim()) query.set("search", search.trim());
     const [modelRes, statsRes, downloadRes, sessionRes, syncRes] = await Promise.all([
@@ -543,9 +543,9 @@ export default function AdminMarketplace() {
     setDownloads(downloadRes.downloads || []);
     setSessions(sessionRes.sessions || []);
     setSyncInfo(syncRes || null);
-    setSyncRootFolderId((current) => current || syncRes?.config?.rootFolderId || driveImportForm.rootFolderId || "");
+    setSyncRootFolderId((current) => current || syncRes?.config?.rootFolderId || "");
     setSelectedModelIds((current) => current.filter((id) => (modelRes.models || []).some((model) => model._id === id)));
-  }
+  }, [accessType, fileStatus, metadataStatus, published, search]);
 
   async function loadTaxonomy() {
     const [categoryRes, filterRes] = await Promise.all([
@@ -561,7 +561,7 @@ export default function AdminMarketplace() {
       loadModels(1).catch((err) => setError(err.message));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [search, fileStatus, accessType, published, metadataStatus]);
+  }, [loadModels]);
 
   useEffect(() => {
     loadTaxonomy().catch((err) => setError(err.message));

@@ -121,8 +121,6 @@ function mapGetlink(item) {
     {
       historyId: item._id,
       productId: item.productId || "",
-      sourceUrl: item.sourceUrl || "",
-      imageUrl: item.imageUrl || "",
       creditUsed: Number(item.creditUsed || 0),
       downloadFormat: item.downloadFormat || null,
       canRedownload: canRedownload(item),
@@ -172,7 +170,6 @@ function modelSummary(model) {
     slug: model.slug || "",
     accessType: model.accessType || "",
     fileStatus: model.fileStatus || "",
-    sourceModelId: model.source?.modelId || "",
   };
 }
 
@@ -248,6 +245,25 @@ function mapVoucher(item) {
       voucherCode: item.voucherCode || "",
       slot: Number(item.slot || 0),
       topupId: item.topupId?._id || item.topupId,
+      targetKind: "credit",
+      user: userSummary(item.userId),
+    },
+  );
+}
+
+function mapMembershipVoucher(item) {
+  return eventBase(
+    `membership-voucher:${item._id}`,
+    "voucher",
+    `Dùng voucher ${item.voucherCode || ""}`.trim(),
+    0,
+    "used",
+    item.paidAt || item.createdAt,
+    {
+      membershipOrderId: item._id,
+      voucherCode: item.voucherCode || "",
+      discountAmount: moneyAmount(item.discountAmount),
+      targetKind: "pro",
       user: userSummary(item.userId),
     },
   );
@@ -323,7 +339,7 @@ async function fetchTimelineSources({ userId, type, sourceLimit }) {
         .populate("referrerId", "name email avatar credit role")
         .populate("referredUserId", "name email avatar credit role")
         .lean()
-        .then((items) => items.map((item) => mapReferral(item, userId)).filter((item) => item.amount > 0)),
+        .then((items) => items.map((item) => mapReferral(item, userId))),
     );
   }
 
@@ -336,10 +352,50 @@ async function fetchTimelineSources({ userId, type, sourceLimit }) {
         .lean()
         .then((items) => items.map(mapVoucher)),
     );
+    tasks.push(
+      MembershipOrder.find({
+        userId: userObjectId,
+        status: "approved",
+        voucherCode: { $nin: ["", null] },
+      })
+        .sort({ createdAt: -1 })
+        .limit(sourceLimit)
+        .populate("userId", "name email avatar credit role")
+        .lean()
+        .then((items) => items.map(mapMembershipVoucher)),
+    );
   }
 
   const groups = await Promise.all(tasks);
   return groups.flat();
+}
+
+async function countTimelineSources({ userId, type }) {
+  const userObjectId = objectId(userId);
+  if (!userObjectId) return 0;
+  const tasks = [];
+  if (type === "all" || type === "credit") tasks.push(Topup.countDocuments({ userId: userObjectId }));
+  if (type === "all" || type === "getlink") tasks.push(Getlink.countDocuments({ userId: userObjectId }));
+  if (type === "all" || type === "pro") tasks.push(MembershipOrder.countDocuments({ userId: userObjectId }));
+  if (type === "all" || type === "model") {
+    tasks.push(ModelDownload.countDocuments({ userId: userObjectId }));
+    tasks.push(ModelPurchase.countDocuments({ userId: userObjectId }));
+  }
+  if (type === "all" || type === "referral") {
+    tasks.push(Referral.countDocuments({
+      $or: [{ referrerId: userObjectId }, { referredUserId: userObjectId }],
+    }));
+  }
+  if (type === "all" || type === "voucher") {
+    tasks.push(VoucherRedemption.countDocuments({ userId: userObjectId }));
+    tasks.push(MembershipOrder.countDocuments({
+      userId: userObjectId,
+      status: "approved",
+      voucherCode: { $nin: ["", null] },
+    }));
+  }
+  const counts = await Promise.all(tasks);
+  return counts.reduce((sum, count) => sum + Number(count || 0), 0);
 }
 
 export async function buildUserTimeline({ userId, type = "all", page = 1, limit = 20 } = {}) {
@@ -348,10 +404,12 @@ export async function buildUserTimeline({ userId, type = "all", page = 1, limit 
     : "all";
   const safePageNumber = safePage(page);
   const safeLimitNumber = safeLimit(limit);
-  const sourceLimit = Math.min(500, Math.max(100, safePageNumber * safeLimitNumber + 40));
-  const events = await fetchTimelineSources({ userId, type: normalizedType, sourceLimit });
+  const sourceLimit = safePageNumber * safeLimitNumber;
+  const [events, total] = await Promise.all([
+    fetchTimelineSources({ userId, type: normalizedType, sourceLimit }),
+    countTimelineSources({ userId, type: normalizedType }),
+  ]);
   const sorted = events.sort((a, b) => dateValue(b.createdAt) - dateValue(a.createdAt));
-  const total = sorted.length;
   const totalPages = Math.max(1, Math.ceil(total / safeLimitNumber));
   const pageNumber = Math.min(safePageNumber, totalPages);
   const start = (pageNumber - 1) * safeLimitNumber;

@@ -148,7 +148,10 @@ function applyMetadataCompleteness(payload, requestedPublish = payload.isPublish
   const completeness = metadataCompleteness(payload);
   payload.metadataStatus = completeness.metadataStatus;
   payload.metadataMissingFields = completeness.metadataMissingFields;
-  if (requestedPublish === true && completeness.metadataStatus !== "complete") {
+  if (
+    requestedPublish === true &&
+    (completeness.metadataStatus !== "complete" || payload.fileStatus !== "ready")
+  ) {
     payload.isPublished = false;
   }
   return payload;
@@ -706,7 +709,10 @@ export async function adminUpdateMarketplaceModel(req, res, next) {
     const requestedPublish = payload.isPublished === undefined ? Boolean(currentModel.isPublished) : payload.isPublished;
     payload.metadataStatus = completeness.metadataStatus;
     payload.metadataMissingFields = completeness.metadataMissingFields;
-    if (requestedPublish && completeness.metadataStatus !== "complete") {
+    if (
+      requestedPublish &&
+      (completeness.metadataStatus !== "complete" || mergedModel.fileStatus !== "ready")
+    ) {
       payload.isPublished = false;
     }
     const model = await MarketplaceModel.findByIdAndUpdate(
@@ -756,6 +762,7 @@ export async function adminAttachMarketplaceFile(req, res, next) {
           fileSize: Math.max(0, Number(req.body.fileSize || 0)),
           sha256: String(req.body.sha256 || "").trim().toLowerCase().slice(0, 128),
           fileStatus,
+          ...(fileStatus === "ready" ? {} : { isPublished: false }),
         },
         $unset: { fileName: "", mainMaxFile: "" },
       },
@@ -1030,7 +1037,7 @@ export async function adminCleanupMarketplaceRaw(_req, res, next) {
       },
     );
     const metadataDocs = await MarketplaceModel.find({})
-      .select("_id categoryId styles renderers renderer forms colors materials isPublished metadataStatus metadataMissingFields")
+      .select("_id categoryId styles renderers renderer forms colors materials fileStatus isPublished metadataStatus metadataMissingFields")
       .lean();
     let normalizedMetadata = 0;
     let unpublishedIncomplete = 0;
@@ -1040,7 +1047,10 @@ export async function adminCleanupMarketplaceRaw(_req, res, next) {
         metadataStatus: completeness.metadataStatus,
         metadataMissingFields: completeness.metadataMissingFields,
       };
-      if (doc.isPublished && completeness.metadataStatus !== "complete") {
+      if (
+        doc.isPublished &&
+        (completeness.metadataStatus !== "complete" || doc.fileStatus !== "ready")
+      ) {
         update.isPublished = false;
         unpublishedIncomplete += 1;
       }
@@ -1326,9 +1336,14 @@ export async function adminBulkMarketplaceModels(req, res, next) {
       }
       try {
         if (action === "publish") {
-          if (model.metadataStatus !== "complete") {
+          if (model.metadataStatus !== "complete" || model.fileStatus !== "ready") {
             skippedCount += 1;
-            results.push({ id, status: "skipped", reason: "metadata_incomplete", title: model.title });
+            results.push({
+              id,
+              status: "skipped",
+              reason: model.metadataStatus !== "complete" ? "metadata_incomplete" : "file_not_ready",
+              title: model.title,
+            });
             continue;
           }
           await MarketplaceModel.findByIdAndUpdate(id, { $set: { isPublished: true } });

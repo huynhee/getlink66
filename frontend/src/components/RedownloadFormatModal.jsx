@@ -43,7 +43,10 @@ function formatOptionLabel(option = {}, language = "vi") {
 }
 
 export default function RedownloadFormatModal({ item, language = "vi", onClose, onDone }) {
-  const options = Array.isArray(item?.formatOptions) ? item.formatOptions.filter(isUsableFormatOption) : [];
+  const options = useMemo(
+    () => (Array.isArray(item?.formatOptions) ? item.formatOptions.filter(isUsableFormatOption) : []),
+    [item?.formatOptions],
+  );
   const [selectedKey, setSelectedKey] = useState(item?.downloadFormat?.key || options[0]?.key || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

@@ -29,6 +29,7 @@ const membershipOrderSchema = new mongoose.Schema(
     gatewayTransactionId: { type: String, index: true },
     gatewayPayload: mongoose.Schema.Types.Mixed,
     activatedUntil: Date,
+    idempotencyKey: { type: String, trim: true },
   },
   { timestamps: true },
 );
@@ -45,6 +46,14 @@ membershipOrderSchema.index(
   },
 );
 membershipOrderSchema.index({ userId: 1, createdAt: -1 });
+membershipOrderSchema.index(
+  { userId: 1, idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { idempotencyKey: { $type: "string" } },
+    name: "unique_user_membership_idempotency",
+  },
+);
 
 export default isMemoryDb()
   ? createMemoryModel("MembershipOrder")

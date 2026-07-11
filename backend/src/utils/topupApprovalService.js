@@ -4,9 +4,16 @@ import Topup from "../models/Topup.js";
 import TopupPackage from "../models/TopupPackage.js";
 import Voucher from "../models/Voucher.js";
 import VoucherRedemption from "../models/VoucherRedemption.js";
+import PaymentReceipt from "../models/PaymentReceipt.js";
 import { addCredit } from "./creditService.js";
 import { notifyTopupApproved } from "./telegramNotifier.js";
 import { approvedVoucherUseCount } from "./voucherCheckoutService.js";
+
+const LATE_PAYMENT_REJECTION_REASONS = new Set([
+  "expired",
+  "user_cancel",
+  "gateway_error",
+]);
 
 function normalizeVoucherCode(code) {
   return String(code || "").trim().toUpperCase();
@@ -31,6 +38,66 @@ async function createVoucherRedemption(doc, session) {
   if (!session) return VoucherRedemption.create(doc);
   const [redemption] = await VoucherRedemption.create([doc], { session });
   return redemption;
+}
+
+async function claimGatewayTransaction(topup, approvalFields, session = null) {
+  const gatewayTransactionId = String(
+    approvalFields?.gatewayTransactionId || "",
+  ).trim();
+  if (!gatewayTransactionId) return null;
+
+  const receipt = {
+    gatewayTransactionId,
+    provider: String(
+      approvalFields?.gatewayProvider || topup?.gatewayProvider || topup?.type || "",
+    ),
+    topupId: topup._id,
+    amount: Number(topup.amount || 0),
+  };
+
+  try {
+    if (!session) {
+      const duplicate = await PaymentReceipt.findOne({
+        $or: [{ gatewayTransactionId }, { topupId: topup._id }],
+      });
+      if (duplicate) {
+        const error = new Error("Gateway transaction has already been claimed.");
+        error.code = "DUPLICATE_GATEWAY_TRANSACTION";
+        error.status = 409;
+        throw error;
+      }
+      return PaymentReceipt.create(receipt);
+    }
+    const [created] = await PaymentReceipt.create([receipt], { session });
+    return created;
+  } catch (error) {
+    if (
+      error?.code === 11000 ||
+      error?.code === "DUPLICATE_GATEWAY_TRANSACTION"
+    ) {
+      const duplicateError = new Error(
+        "Gateway transaction has already been claimed.",
+      );
+      duplicateError.code = "DUPLICATE_GATEWAY_TRANSACTION";
+      duplicateError.status = 409;
+      throw duplicateError;
+    }
+    throw error;
+  }
+}
+
+function approvableTopupQuery(topup) {
+  if (
+    topup?.status === "rejected" &&
+    LATE_PAYMENT_REJECTION_REASONS.has(String(topup.rejectionReason || ""))
+  ) {
+    return {
+      _id: topup._id,
+      status: "rejected",
+      rejectionReason: topup.rejectionReason,
+    };
+  }
+  return { _id: topup._id, status: "pending" };
 }
 
 async function claimVoucherUsage(topup, session = null) {
@@ -144,6 +211,8 @@ async function assertPackageTopupLimit(topup, session = null) {
 
 async function approvePendingTopupWithSession(topup, approvalFields = {}, session = null) {
   let voucherClaimed = false;
+  let approvedTopup = null;
+  let paymentReceipt = null;
 
   try {
     await assertPackageTopupLimit(topup, session);
@@ -153,12 +222,14 @@ async function approvePendingTopupWithSession(topup, approvalFields = {}, sessio
       voucherClaimed = true;
     }
 
-    const approvedTopup = await Topup.findOneAndUpdate(
-      { _id: topup._id, status: "pending" },
+    approvedTopup = await Topup.findOneAndUpdate(
+      approvableTopupQuery(topup),
       {
         $set: {
           status: "approved",
           paidAt: new Date(),
+          canceledAt: null,
+          rejectionReason: "",
           ...approvalFields
         }
       },
@@ -170,6 +241,12 @@ async function approvePendingTopupWithSession(topup, approvalFields = {}, sessio
       return null;
     }
 
+    paymentReceipt = await claimGatewayTransaction(
+      approvedTopup,
+      approvalFields,
+      session,
+    );
+
     const user = await addCredit(
       approvedTopup.userId._id || approvedTopup.userId,
       approvedTopup.credit,
@@ -177,6 +254,25 @@ async function approvePendingTopupWithSession(topup, approvalFields = {}, sessio
     );
     return { topup: approvedTopup, user };
   } catch (error) {
+    if (!session && approvedTopup) {
+      if (paymentReceipt?._id) {
+        await PaymentReceipt.findByIdAndDelete(paymentReceipt._id).catch(() => {});
+      }
+      await Topup.findOneAndUpdate(
+        { _id: approvedTopup._id, status: "approved" },
+        {
+          $set: {
+            status: topup.status,
+            paidAt: topup.paidAt || null,
+            canceledAt: topup.canceledAt || null,
+            rejectionReason: topup.rejectionReason || "",
+            gatewayTransactionId: topup.gatewayTransactionId || "",
+            gatewayPayload: topup.gatewayPayload || null,
+          },
+        },
+        { new: true },
+      ).catch(() => {});
+    }
     if (voucherClaimed) await releaseVoucherUsage(topup, session);
     throw error;
   }

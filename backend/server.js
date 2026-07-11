@@ -1,10 +1,11 @@
-import dotenv from "dotenv";
+import "dotenv/config";
 import express from "express";
 import helmet from "helmet";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import passport from "passport";
+import mongoose from "mongoose";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { connectDb } from "./src/config/db.js";
 import { cookieSignatureSecret } from "./src/config/secrets.js";
@@ -15,11 +16,10 @@ import { jwtAuth } from "./src/middleware/jwtAuth.js";
 import logger from "./src/utils/logger.js";
 import { notifyServerError } from "./src/utils/telegramNotifier.js";
 
-dotenv.config();
-
 const app = express();
 const port = process.env.PORT || 5000;
 const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+let shuttingDown = false;
 
 function configuredOrigins() {
   const origins = new Set([
@@ -130,12 +130,18 @@ const { default: membershipRoutes } = await import("./src/routes/membershipRoute
 const { default: historyRoutes } = await import("./src/routes/historyRoutes.js");
 const { initializeSettings } = await import("./src/controllers/settingsController.js");
 const { ensureTopupIndexes } = await import("./src/models/Topup.js");
+const { ensurePaymentReceiptIndexes } = await import("./src/models/PaymentReceipt.js");
+const { ensureNotificationReceiptIndexes } = await import("./src/models/NotificationReceipt.js");
 const { awardReferralSignup, ensureReferralCode } = await import("./src/utils/referralService.js");
 const { initializeMarketplaceCategories } = await import("./src/utils/marketplaceSeed.js");
 const { initializeMembershipPlans } = await import("./src/utils/membershipService.js");
-const { startMarketplaceDriveSyncJob } = await import("./src/utils/marketplaceDriveSyncJob.js");
+const { startMarketplaceDriveSyncJob, stopMarketplaceDriveSyncJob } = await import("./src/utils/marketplaceDriveSyncJob.js");
+const { close3D66Browser } = await import("./src/utils/3d66BrowserService.js");
+const { close3D66ProxyAgents } = await import("./src/utils/3d66Service.js");
 
 await ensureTopupIndexes();
+await ensurePaymentReceiptIndexes();
+await ensureNotificationReceiptIndexes();
 await initializeSettings();
 await initializeMarketplaceCategories();
 await initializeMembershipPlans();
@@ -253,6 +259,12 @@ app.use(requestGuard);
 app.use(csrfProtection);
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+app.get("/ready", (_req, res) => {
+  const ready =
+    !shuttingDown &&
+    (isMemoryDb() || mongoose.connection.readyState === 1);
+  return res.status(ready ? 200 : 503).json({ ready });
+});
 app.get("/api/user", currentUser);
 app.use("/api/auth", authRoutes);
 app.use("/api", topupRoutes);
@@ -285,6 +297,55 @@ app.use((error, _req, res, _next) => {
   });
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   logger.info(`Backend listening on http://localhost:${port}`);
+});
+
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  stopMarketplaceDriveSyncJob();
+  logger.info({ signal }, "Graceful shutdown started");
+
+  const forceTimer = setTimeout(() => {
+    logger.error({ signal }, "Graceful shutdown timed out");
+    server.closeAllConnections?.();
+    process.exit(1);
+  }, 30_000);
+  forceTimer.unref();
+
+  let closeError = null;
+  await new Promise((resolve) => {
+    server.close((error) => {
+      closeError = error || null;
+      resolve();
+    });
+  });
+
+  await Promise.allSettled([
+    close3D66Browser(),
+    close3D66ProxyAgents(),
+    mongoose.disconnect(),
+  ]);
+  clearTimeout(forceTimer);
+
+  if (closeError) {
+    logger.error({ err: closeError }, "HTTP server shutdown failed");
+    process.exit(1);
+  }
+  logger.info({ signal }, "Graceful shutdown completed");
+  process.exit(0);
+}
+
+process.once("SIGINT", () => {
+  gracefulShutdown("SIGINT").catch((error) => {
+    logger.error({ err: error }, "Graceful shutdown failed");
+    process.exit(1);
+  });
+});
+process.once("SIGTERM", () => {
+  gracefulShutdown("SIGTERM").catch((error) => {
+    logger.error({ err: error }, "Graceful shutdown failed");
+    process.exit(1);
+  });
 });

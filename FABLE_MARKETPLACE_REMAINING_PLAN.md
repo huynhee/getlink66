@@ -2,6 +2,28 @@
 
 Tai lieu nay danh cho Fable/dev khac tiep tuc lam cac phan con thieu cua marketplace model 3D tren codebase hien tai.
 
+## Trang thai cap nhat 2026-07-11
+
+Toan bo Priority 1-10 trong tai lieu nay da duoc trien khai o muc MVP va da noi vao giao dien admin cu. Cac muc ben duoi duoc giu lai nhu contract/acceptance criteria, khong con la danh sach viec chua lam.
+
+Da hoan thanh:
+
+- Timeline user hop nhat, filter va phan trang tong that.
+- Admin dashboard, user detail/quota/timeline, transaction Credit/Pro, plan, voucher, marketplace va audit.
+- Voucher `credit|pro|all` va lich su voucher Credit/Pro.
+- Image search UI/API, quota Free 10 va Pro 150 moi ngay. Engine hien tai la `catalog_fallback`, chua phai vector similarity.
+- Bulk marketplace, rescan Drive, validation metadata/file, Drive sync theo batch va khoa job qua DB.
+- Proxy cover/preview co cache header/ETag va URL noi bo.
+- Credit/Pro payment idempotency, late payment, receipt chong trung giao dich va Pro daily add-on.
+- Model chi online khi metadata day du va archive `ready`.
+
+Con lai ngoai MVP source hien tai:
+
+- Tool upload model rieng.
+- Plugin 3ds Max.
+- Image similarity/embedding that thay cho `catalog_fallback`.
+- Smoke production voi Mongo replica set, Google Drive that va SePay sandbox.
+
 Repo hien tai dang co:
 
 - He getlink/credit cu.
@@ -62,15 +84,15 @@ Da co cac nhom API chinh:
   - rescan Drive tung model.
   - download/session logs.
 
-Can tiep tuc lam:
+Da hoan thien trong MVP:
 
-- Admin UX day du hon cho cac module ngoai marketplace.
+- Admin UX tren shell cu cho cac module ngoai marketplace.
 - User history timeline hop nhat.
-- Image search backend/quota.
+- Image search backend/quota voi `catalog_fallback`.
 - Voucher tach loai.
-- Payment flow Credit/Pro can duoc test va khoa chat hon.
+- Payment flow Credit/Pro da co idempotency va regression test.
 - Drive sync tu dong theo job.
-- Preview cache/thumbnail production.
+- Preview cache header/ETag; thumbnail resize van do upload tool chiu trach nhiem.
 - Dashboard/audit/log van hanh.
 
 ### Frontend marketplace
@@ -85,7 +107,7 @@ Da co:
 - Grid model vuong, badge Pro nho.
 - Detail co thong so danh muc/render/style/form/color/material/size.
 
-Can tiep tuc lam:
+Da hoan thien trong MVP:
 
 - Lam polish UI va empty/loading/error state day du.
 - User history moi.

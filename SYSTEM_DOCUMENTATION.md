@@ -1,6 +1,6 @@
 # Tai lieu he thong Get Link 3D66
 
-Cap nhat: 2026-07-04  
+Cap nhat: 2026-07-11
 Pham vi doc: toan bo source backend, frontend, route, controller, model, middleware, utility, cau hinh mau va public assets trong repo.
 
 Luu y bao mat: tai lieu nay khong sao chep gia tri that trong `backend/.env`. Cac muc cau hinh duoc mo ta theo ten bien trong `backend/.env.example`.
@@ -30,9 +30,13 @@ Muc tieu nghiep vu chinh:
 ```text
 .
 |-- package.json
+|-- eslint.config.js
+|-- .github/workflows/ci.yml
+|-- docs/
 |-- backend/
 |   |-- server.js
 |   |-- package.json
+|   |-- Dockerfile
 |   |-- .env.example
 |   `-- src/
 |       |-- config/
@@ -44,6 +48,8 @@ Muc tieu nghiep vu chinh:
 `-- frontend/
     |-- index.html
     |-- package.json
+    |-- Dockerfile
+    |-- nginx.conf
     |-- public/
     |-- dist/
     `-- src/
@@ -61,6 +67,10 @@ Root `package.json` chi dong vai tro orchestration:
 - `npm run install:all`: cai dependencies cho backend va frontend.
 - `npm run dev`: chay backend va frontend song song bang `concurrently`.
 - `npm start`: start backend.
+- `npm run lint`: ESLint backend/test/frontend.
+- `npm test`: Node test runner cho backend.
+- `npm run build`: Vite production build.
+- `npm run check`: lint + test + build.
 
 Backend va frontend la 2 package rieng:
 
@@ -73,7 +83,7 @@ Backend va frontend la 2 package rieng:
 
 `server.js` khoi tao Express app va thuc hien cac viec sau:
 
-- Load `.env` bang `dotenv`.
+- Load `.env` bang `import "dotenv/config"` truoc cac import doc env de `LOG_LEVEL` va runtime config co hieu luc dung thu tu.
 - Kiem tra cac secret bat buoc trong production:
   - `JWT_SECRET`
   - `CSRF_HMAC_SECRET`
@@ -85,7 +95,7 @@ Backend va frontend la 2 package rieng:
   - Cac bien SePay neu `SEPAY_ENABLED` khac `false`.
 - Ket noi MongoDB qua `connectDb()`.
 - Import model/controller/route sau khi DB san sang.
-- Goi `ensureTopupIndexes()` de loai index cu khong con phu hop.
+- Goi `ensureTopupIndexes()`, `ensurePaymentReceiptIndexes()` va `ensureNotificationReceiptIndexes()` truoc khi listen.
 - Goi `initializeSettings()` de tao/cap nhat document settings mac dinh va apply runtime env.
 - Cau hinh Express security:
   - `helmet`
@@ -103,6 +113,7 @@ Backend va frontend la 2 package rieng:
   - `csrfProtection`
 - Mount route:
   - `/health`
+  - `/ready`: 200 khi khong drain va Mongo connected (hoac dev memory mode), nguoc lai 503.
   - `/api/user`
   - `/api/auth`
   - `/api`
@@ -111,6 +122,10 @@ Backend va frontend la 2 package rieng:
   - Log loi server bang Pino.
   - Gui Telegram alert neu la loi 5xx.
   - An message noi bo trong production.
+- SIGINT/SIGTERM graceful shutdown:
+  - Dung nhan ket noi HTTP moi va dat readiness false.
+  - Cho request dang chay ket thuc, dong Playwright browser, proxy agents va Mongo.
+  - Force timeout sau 30 giay.
 
 ### 3.2 Database va memory fallback
 
@@ -136,7 +151,9 @@ Neu khong co `MONGO_URI` hoac MongoDB khong ket noi duoc:
 - `countDocuments`
 - `exists`
 - `deleteMany`
+- `deleteOne`
 - chain helpers: `sort`, `limit`, `select`, `lean`, `populate`
+- query/update operators can cho service production nhu `$expr`, `$in`, `$nin`, `$unset`, `$push`, nested path va regex.
 
 Memory store khong thay the MongoDB production. No chi dung khi cau hinh dev cho phep.
 
@@ -154,7 +171,7 @@ Luu tai khoan Google va credit:
   - `referredBy`
   - `referralRewardedAt`
 - 2FA:
-  - `twoFactorSecret`
+  - `twoFactorSecret`: secret moi duoc ma hoa AES-256-GCM; plaintext legacy duoc dual-read va re-encrypt sau verify thanh cong.
   - `isTwoFactorEnabled`
 - ban:
   - `isBanned`
@@ -170,6 +187,7 @@ Luu lich su user tao link:
 - `productId`
 - `fileUrl`
 - `sourceUrl`
+- `resolvedSourceUrl`: URL model 3D66 da duoc resolve theo cookie/sign cua he thong; uu tien dung khi refresh/tai lai.
 - `title`
 - `imageUrl`
 - `creditUsed`
@@ -194,6 +212,7 @@ Cache metadata/file link cua 3D66:
 - `productId`
 - `fileUrl`
 - `sourceUrl`
+- `resolvedSourceUrl`: URL sach/sign cua tai khoan 3D66 trong cookie pool, dung lai de tranh resolve footprint/browser lap lai.
 - `title`
 - `imageUrl`
 - `creditCost`
@@ -235,11 +254,33 @@ Luu giao dich nap credit:
 - `expiresAt`, `paidAt`, `canceledAt`
 - `gatewayTransactionId`
 - `gatewayPayload`
+- `idempotencyKey`: client key de replay request tao topup ma khong tao them order.
 
 Index quan trong:
 
 - Unique partial index `paymentCode` khi `status=pending` de tranh 2 don dang cho cung ma thanh toan.
-- Index theo user, status, paidAt va voucher.
+- Unique partial index `(userId, idempotencyKey)` cho request co key.
+- Index theo user, status, paidAt, package va voucher.
+
+#### `PaymentReceipt`
+
+Receipt bat bien de enforce payment idempotency o database:
+
+- `gatewayTransactionId`: unique.
+- `topupId`: unique.
+- `provider`, `amount`, timestamps.
+
+Receipt duoc claim trong cung transaction approve topup khi production dung Mongo replica set.
+
+#### `NotificationReceipt`
+
+Luu trang thai da doc theo tung user ma khong lam mang `Notification.readBy` tang vo han:
+
+- `notificationId`, `userId`, `readAt`.
+- Unique compound index `(notificationId, userId)`.
+- Index `(userId, readAt)` cho read path.
+
+Read path van hop nhat `readBy` legacy de rollout tuong thich; write moi dung receipt.
 
 #### `TopupPackage`
 
@@ -316,9 +357,12 @@ Luu text trang chu va tham so runtime:
 - Text landing page: hero, pricing, guide, CTA, footer.
 - Referral mode: `both`, `referrer_only`, `off`.
 - Tham so 3D66:
+  - che do resolve model: `search`, `footprint`, `direct`
   - concurrency getlink/preview/refresh
   - paytype value
   - request interval
+  - account marker/search config
+  - proxy rieng cho 3D66
   - browser fallback flags
   - proxy 3D66 rieng cho preview/API/download/browser
   - timeout
@@ -490,8 +534,8 @@ Ghi `AuditLog` cho route admin write. Body duoc sanitize de redacted field nhay 
 
 | Method | Path | Middleware | Y nghia |
 |---|---|---|---|
-| GET | `/google` | auth rate limit | Bat dau Google OAuth, luu `returnTo` va referral code tam vao cookie |
-| GET | `/google/callback` | Passport | Tao JWT cookies va redirect ve frontend |
+| GET | `/google` | auth rate limit | Bat dau Google OAuth, sinh state CSPRNG, luu `returnTo` va referral code tam vao cookie |
+| GET | `/google/callback` | OAuth state, Passport | Verify/consume state, tao JWT cookies va redirect ve frontend |
 | GET | `/csrf` | none | Cap CSRF token |
 | POST | `/logout` | CSRF | Clear auth cookies |
 | GET | `/user` | JWT optional | Lay user hien tai |
@@ -513,7 +557,7 @@ Google OAuth callback:
 | POST | `/getlink/preview` | auth, not banned, rate limit user+IP | Lay metadata model: productId, title, image, creditCost |
 | POST | `/getlink/inspect` | auth, admin | Debug/inspect trang 3D66 |
 | POST | `/getlink` | auth, not banned, rate limit user+IP | Tao download link, tru credit |
-| POST | `/getlink/redownload/:id` | auth, not banned, rate limit user+IP | Chuan bi link tai lai, co the hien popup chon dinh dang |
+| POST | `/getlink/redownload/:id` | auth, not banned, rate limit user+IP | Chon dinh dang va chuan bi link tai lai record cua chinh user |
 | GET | `/getlink/download/:id` | download rate limit | Proxy stream file 3D66 |
 | GET | `/getlink/preview-image/:id` | download rate limit | Proxy tai anh preview |
 | GET | `/getlink/history` | auth | Lich su getlink cua user |
@@ -524,7 +568,7 @@ Google OAuth callback:
 |---|---|---|---|
 | GET | `/credit` | auth | Lay credit hien tai |
 | GET | `/topup/packages` | public | Lay goi nap active |
-| POST | `/topup` | auth, rate limit user+IP | Tao don nap SePay |
+| POST | `/topup` | auth, rate limit user+IP | Tao don nap SePay; ho tro header `Idempotency-Key` |
 | GET | `/topup/history` | auth | Lich su nap cua user |
 | GET | `/topup/:id/status` | auth, rate limit | Poll trang thai topup |
 | POST | `/topup/:id/cancel` | auth, rate limit | Huy don SePay pending |
@@ -564,8 +608,8 @@ Endpoint nay khong leak `usageLimit`, `usedCount`, `_id`, `createdAt`.
 
 | Method | Path | Middleware | Y nghia |
 |---|---|---|---|
-| GET | `/settings` | public | Lay homepage text va runtime settings |
-| POST | `/settings` | auth, admin | Cap nhat settings |
+| GET | `/settings` | public/admin-aware | Guest chi nhan homepage allowlist va resolve mode; admin da 2FA nhan runtime settings sanitized |
+| POST | `/settings` | auth, admin, 2FA, rate limit, audit | Cap nhat settings |
 
 ### 4.7 Guide routes `/api`
 
@@ -641,9 +685,9 @@ Tat ca admin routes dung `requireAuth` va `adminOnly`.
 ### 5.1 Dang nhap Google
 
 1. Frontend tao URL `/api/auth/google?returnTo=...&ref=...`.
-2. Backend validate `returnTo` va referral code, luu cookie tam.
-3. Passport redirect sang Google.
-4. Google callback tra profile ve backend.
+2. Backend validate `returnTo` va referral code, sinh OAuth state bang CSPRNG, luu cac gia tri tam trong httpOnly cookie.
+3. Passport redirect sang Google kem state.
+4. Google callback tra profile/state ve backend; backend so sanh timing-safe va consume cookie state truoc khi Passport xu ly profile.
 5. Backend tim user theo email:
    - Chua co: tao user credit 0.
    - Da co: update role/name/avatar.
@@ -668,34 +712,37 @@ Bat 2FA:
 3. Backend tao TOTP secret, QR code, luu secret tam trong httpOnly cookie `temp2FASecret`.
 4. Admin scan QR va nhap OTP.
 5. POST `/api/auth/2fa/enable`.
-6. Backend verify OTP, luu `twoFactorSecret`, set `isTwoFactorEnabled=true`, log security event va rotate JWT verified.
+6. Backend verify OTP, ma hoa `twoFactorSecret` bang AES-256-GCM, set `isTwoFactorEnabled=true`, log security event va rotate JWT verified.
 
 ### 5.3 Preview model 3D66
 
-1. User nhap URL 3D66 tren `GetlinkBox`.
-2. Frontend POST `/api/getlink/preview`.
-3. Backend validate URL va extract product id.
-4. Neu `ProductCache` da co title/gia tin cay, tra cache.
-5. Neu chua co, backend chon cookie 3D66 bang `with3D66Cookie`.
-6. Request vao queue preview.
-7. `fetch3D66Preview` lay metadata:
+1. User nhap model ID hoac URL 3D66 tuy theo che do trong admin.
+2. Frontend lay `/api/settings` de biet `threed66ModelResolveMode`, doi placeholder/validate input, nhung khong hien ten che do cho user.
+3. Frontend POST `/api/getlink/preview`.
+4. Backend validate input va extract product id.
+   - `search`: chi nhan model ID, backend ghep marker tai khoan he thong neu can.
+   - `footprint`: preview dung link goc user gui de lay metadata nhanh.
+   - `direct`: dung truc tiep URL dau vao.
+5. Neu `ProductCache` da co title/gia tin cay, tra cache.
+6. Neu chua co, backend chon cookie 3D66 bang `with3D66Cookie`.
+7. Request vao queue preview.
+8. `fetch3D66Preview` lay metadata:
    - Neu `THREED66_MOCK !== "false"`: tra mock metadata.
    - Neu production/real mode: uu tien download pop API, fetch HTML, parse dynamic fields, parse metadata, fallback Playwright khi can.
-8. Cache metadata vao `ProductCache`.
-9. Tra productId, title, imageUrl, creditCost.
+9. Cache metadata vao `ProductCache`.
+10. Tra productId, title, imageUrl, creditCost.
 
 ### 5.4 Tao getlink va tru credit
 
-1. Frontend goi POST `/api/getlink` voi:
-   - `url`
-   - `includePreviewImage`
-   - `downloadFormat` neu user da chon dinh dang file.
-2. Backend validate URL.
+1. Frontend goi POST `/api/getlink` voi `modelId` va `includePreviewImage`.
+   - Truong `modelId` co the la model ID hoac full URL da duoc UI validate theo che do runtime.
+   - Gui `downloadFormat` neu user da chon dinh dang file.
+2. Backend validate input.
 3. Lay `productId`.
 4. Tao lock theo `userId:productId` trong Set de chan request dong thoi cung user/cung model.
 5. Tim lich su tai lai mien phi con hop le:
    - Neu co va khong can chon lai format, tra downloadUrl khong tru credit.
-   - Neu model co nhieu format va user chua chon, tra payload `requiresFormatSelection=true`.
+   - Neu model co nhieu dinh dang, co the tra `requiresFormatSelection=true` de frontend cho user chon format truoc khi confirm.
 6. Lay/refresh preview metadata de biet credit can tru.
 7. Check user credit.
 8. Neu user chua gui `downloadFormat`, backend kiem tra popup dinh dang file 3D66:
@@ -706,10 +753,12 @@ Bat 2FA:
 9. Resolve product cache:
    - Neu cache fresh co `fileUrl`, dung cache.
    - Neu chua co hoac het han, goi `fetchFrom3D66` de mua/lay file URL.
+   - Voi che do `footprint`, truoc khi download backend mo link user gui bang Playwright, vao footprint cua tai khoan cookie, F5/reload, lay card model vua xem va click de lay URL co sign cua tai khoan he thong.
+   - URL sign cua he thong duoc luu vao `resolvedSourceUrl`; `sourceUrl` van giu link/input goc de audit va match model.
    - Co per-product lock de tranh nhieu task refresh cung product.
 10. Kiem tra lai redownload sau khi cache xong de tranh race.
-11. Tru credit bang atomic update `credit >= amount`.
-12. Tao `Getlink` record voi `fileUrl`, `sourceUrl`, metadata, `creditUsed` va `downloadFormat`.
+11. Goi `chargeAndCreateGetlink`: tru credit va tao `Getlink` voi URL, metadata va `downloadFormat` trong cung Mongo transaction.
+12. Neu Mongo standalone/memory khong ho tro transaction, fallback co compensation: insert history loi thi tra lai dung credit da tru.
 13. Tao download token HMAC va public URL:
     - `/api/getlink/download/:id?t=...`
     - neu user chon anh preview: `/api/getlink/preview-image/:id?t=...`
@@ -743,7 +792,9 @@ Neu user getlink lai cung model:
    - Neu stream/upstream loi truoc khi thanh cong, rollback lai luot da reserve.
 8. Ho tro range request:
    - Partial download gan nhau trong `PARTIAL_DOWNLOAD_SESSION_MS` khong tinh them luot moi.
-9. Neu `fileUrl` het han hoac upstream tra 401/403/404/410/419, backend refresh bang sourceUrl.
+9. Neu `fileUrl` het han hoac upstream tra 401/403/404/410/419:
+   - Uu tien refresh bang `resolvedSourceUrl` neu co de dung lai link sign cua tai khoan he thong.
+   - Neu sign/token/context het han, fallback ve `sourceUrl` goc de resolve footprint/search lai.
 10. Request file tu 3D66 voi cookie hop le.
 11. Kiem tra upstream co ve file stream, khong phai HTML/JSON.
 12. Proxy headers va stream body ve client.
@@ -768,7 +819,7 @@ Het han tai lai:
 
 1. Frontend load `/api/topup/packages`.
 2. User chon goi va co the apply voucher.
-3. Frontend POST `/api/topup`.
+3. Frontend POST `/api/topup` kem `Idempotency-Key`; double click bi UI loading guard va backend replay cung order.
 4. Backend:
    - Expire cac SePay topup pending da qua han.
    - Validate body.
@@ -784,9 +835,11 @@ Het han tai lai:
    - Cancel/error SePay goi `/api/topup/:id/cancel`.
    - Topup pending cua SePay bi chuyen thang sang `rejected` voi `canceledAt` va `rejectionReason`, khong cho duyet thu cong nua.
 7. SePay goi IPN `/api/payments/sepay/ipn`.
-8. Backend verify secret, status, amount va duplicate transaction.
+8. Backend verify secret, status, amount va claim unique `PaymentReceipt` de chan duplicate transaction.
 9. Goi `approvePendingTopup`.
-10. `approvePendingTopup` dung Mongo transaction neu co MongoDB:
+10. `approvePendingTopup` dung Mongo transaction neu co MongoDB replica set:
+    - Chap nhan pending hoac rejected boi `expired`, `user_cancel`, `gateway_error` neu signed paid event den tre va van hop le.
+    - Claim receipt unique theo gateway transaction/topup.
     - Check package limit.
     - Claim voucher usage neu co.
     - Update topup pending thanh approved.
@@ -824,9 +877,8 @@ Redeem voucher:
    - Neu `off`, bo qua.
    - Tim referrer theo code.
    - Khong cho self-referral.
-   - Tao `Referral`.
-   - Cong credit referrer va co the cong credit user moi.
-   - Neu cap nhat credit that bai, rollback referral/user fields.
+   - Tao `Referral` va cong credit referrer/referred user trong cung Mongo transaction.
+   - Mongo standalone/memory dung fallback co compensation neu mot buoc ghi that bai.
    - Tao notification cho referrer va referred user neu co.
 
 ### 5.9 Notification
@@ -844,6 +896,7 @@ User frontend:
 - Fullscreen notification hien overlay va co the dong tam trong session/tab.
 - Dong fullscreen khong mark read tren server; neu admin van de notification active thi F5/session moi co the hien lai.
 - Dropdown notification mark read qua `/api/notifications/:id/read`.
+- Mark read upsert `NotificationReceipt`; mang `Notification.readBy` legacy khong tang them.
 
 ## 6. Tich hop 3D66
 
@@ -905,7 +958,49 @@ Mock mode:
 - Neu `THREED66_MOCK !== "false"`, preview va fetch tra mock data, khong goi 3D66 that.
 - `.env.example` hien dang dat `THREED66_MOCK=true`.
 
-### 6.3 Playwright browser fallback
+### 6.3 Model resolve modes
+
+Backend co 3 che do resolve model, cau hinh bang `THREED66_MODEL_RESOLVE_MODE` hoac admin UI:
+
+- `search`: user nhap model ID. Backend normalize ID theo `THREED66_ACCOUNT_ID`/`THREED66_ACCOUNT_MARKER`, goi search/checkKeyword bang cookie 3D66 de lay context sach.
+- `footprint`: user nhap full URL. Preview lay nhanh tu link goc, nhung khi download backend dung Playwright:
+  - mo link user gui mot lan bang cookie he thong;
+  - vao `https://user.3d66.com/newUser/index/index/footprint`;
+  - reload de cap nhat footprint;
+  - tim card co cung model suffix, bo qua prefix/marker theo user;
+  - click card de lay URL co `sign` cua tai khoan he thong.
+- `direct`: dung URL user gui truc tiep. Chi nen dung de debug hoac khi chac chan link dau vao hop le voi cookie he thong.
+
+Voi `footprint`, ket qua resolve duoc luu vao `resolvedSourceUrl`. Backend gan marker hash noi bo `resolved=footprint` va `logical=<productId>` trong DB de biet day la URL da resolve; marker nay duoc strip truoc khi goi 3D66 hoac gui referer, khong gui ra upstream.
+
+Cache footprint trong memory:
+
+- Key theo hash cookie + danh sach product id candidates.
+- TTL ngan de tranh mo footprint lap lai trong cung dot thao tac.
+- Neu restart PM2 thi memory cache mat, nhung `resolvedSourceUrl` da luu trong Mongo van con.
+
+Model ID normalization:
+
+- `parse3d66.js` co the tach marker user va ghep marker tai khoan he thong.
+- `THREED66_ACCOUNT_ID=177536980` mac dinh tao marker `89635771`.
+- Co the override bang `THREED66_ACCOUNT_MARKER`.
+
+### 6.4 Proxy rieng cho 3D66
+
+He thong co proxy layer rieng cho request toi 3D66, mac dinh tat de chua mua proxy van chay nhu cu.
+
+- `fetch3D66()` chi gan proxy cho request 3D66 theo stage:
+  - `preview`
+  - `api`
+  - `file`
+  - `browser`
+- Google OAuth, MongoDB, SePay, Telegram va user download vao `3dipl.org` khong di qua proxy nay.
+- Proxy URL la secret, khong tra ra public settings.
+- Admin UI chi hien da cau hinh/chua cau hinh, co the nhap URL moi hoac xoa URL.
+- Neu proxy loi va `THREED66_PROXY_FAIL_CLOSED=false`, backend fallback ve route mac dinh va gui Telegram canh bao.
+- Neu `THREED66_PROXY_FAIL_CLOSED=true`, request loi ro rang thay vi am tham doi route.
+
+### 6.5 Playwright browser fallback
 
 `3d66BrowserService.js` dung Playwright khi:
 
@@ -914,10 +1009,12 @@ Mock mode:
 - Trang co challenge/script-only shell
 - Thieu dynamic fields can de download
 - Download handle loi va `THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK=true`
+- `THREED66_MODEL_RESOLVE_MODE=footprint` can Playwright cho buoc resolve URL sign cua tai khoan he thong.
 
 Co guard SSRF:
 
 - Playwright chi navigate URL thuoc `3d66.com` hoac subdomain.
+- URL noi bo co hash marker se duoc strip truoc khi navigate.
 
 Browser lifecycle:
 
@@ -1081,7 +1178,10 @@ Public mode:
 - Load `/api/guides?language=...`.
 - Neu user da login, load `/api/referral/me`.
 - Demo getlink input:
-  - Kiem tra link co `3d66.com`.
+  - Lay `threed66ModelResolveMode` tu `/api/settings`.
+  - `search`: nhan model ID.
+  - `footprint`/`direct`: nhan full URL 3D66 co `sof`.
+  - Khong hien ten che do cho user, chi doi placeholder/validation.
   - Neu user chua login, redirect OAuth.
   - Neu user da login, vao `/getlink?url=...`.
 - Pricing cards link den `/topup` hoac OAuth.
@@ -1108,7 +1208,8 @@ Admin mode:
 `GetlinkBox.jsx`:
 
 - Load `/api/system/3d66-status`.
-- User paste/nhap link 3D66.
+- Load `/api/settings` de biet che do input.
+- User paste/nhap model ID hoac link 3D66 theo che do runtime.
 - Step 1: POST `/api/getlink/preview`.
 - Hien model info va gia credit.
 - Step 2: POST `/api/getlink`.
@@ -1238,7 +1339,8 @@ Section chinh:
 - 3D66 settings:
   - Tach tab: Tac vu, Tai file, Proxy, Playwright, Cookie, Trang thai.
   - Runtime concurrency, paytype, request interval, Playwright mode, timeout, cookie cooldown, redownload limits.
-  - Proxy Hong Kong: bat/tat proxy, proxy URL secret, stage preview/API/download/browser, fail-closed.
+  - Che do resolve model: `search`, `footprint`, `direct`.
+  - Proxy Hong Kong/3D66: bat/tat proxy, proxy URL secret, stage preview/API/download/browser, fail-closed.
   - Cookie tab: save/test/delete 3D66 cookies.
   - Trang thai tab: queue va cookie pool health.
 - Security:
@@ -1281,6 +1383,8 @@ Admin write actions duoc backend audit qua `auditAdmin`.
 - Admin access phu thuoc role va `ADMIN_EMAILS`, khong chi dua vao DB role.
 - Admin 2FA bat buoc neu user da enable.
 - 2FA setup yeu cau fresh login.
+- Google OAuth dung nonce/state mot lan, cookie httpOnly/SameSite va timing-safe comparison.
+- TOTP secret moi duoc encrypt at rest; response user/admin khong serialize secret.
 
 ### 8.2 CSRF
 
@@ -1297,13 +1401,14 @@ Admin write actions duoc backend audit qua `auditAdmin`.
 - Referral code regex: `^[A-Z0-9]{6,24}$`.
 - URL 3D66 chi cho host 3d66.com/subdomain.
 - Playwright fallback co SSRF guard rieng.
+- Preview image va file download chi cho HTTPS tren 3d66.com/subdomain, validate lai tung redirect, gioi han redirect/timeout va concurrency.
 - Notification/action/guide image URL duoc normalize.
 - Guide content chi render syntax rieng, khong render HTML raw.
 
 ### 8.4 Credit safety
 
-- Tru credit bang atomic query `{ credit: { $gte: amount } }`.
-- Add credit admin co max per action va max stored credit.
+- Tru credit va tao Getlink trong cung transaction; fallback chi dung khi transaction khong duoc ho tro va co compensation.
+- Add credit admin co max per action/max stored credit va ledger `Topup` trong cung transaction/compensated unit of work.
 - Manual credit tao Topup type `manual` de co lich su.
 - Getlink co lock per user/product de tranh double charge.
 - Product cache co lock per product de tranh duplicate 3D66 purchase/fetch.
@@ -1314,10 +1419,12 @@ Admin write actions duoc backend audit qua `auditAdmin`.
 - Payment code dung CSPRNG.
 - SePay IPN verify `x-secret-key`.
 - VietQR webhook verify secret va optional IP allowlist.
-- Duplicate transaction check theo `gatewayTransactionId`.
+- Duplicate transaction enforce bang unique `PaymentReceipt.gatewayTransactionId` va `topupId`.
+- Tao topup enforce unique partial `(userId, idempotencyKey)` khi client gui `Idempotency-Key`.
 - Amount webhook phai >= topup amount.
 - Voucher redeem chi claim khi topup approved.
 - `approvePendingTopup` dung transaction MongoDB neu khong phai memory DB.
+- Signed late payment co the reopen cac rejection reason cho phep; approved receipt van idempotent.
 
 ### 8.6 Download safety
 
@@ -1326,12 +1433,12 @@ Admin write actions duoc backend audit qua `auditAdmin`.
 - IDM/browser khong can cookie auth neu token hop le.
 - Download chi trong redownload window.
 - Gioi han download dong thoi global/user/IP.
-- Backend khong expose `fileUrl` trong history response.
+- Backend history dung explicit allowlist, khong expose `fileUrl`, `sourceUrl` hoac `resolvedSourceUrl`.
 - Proxy stream set `cache-control: no-store`.
 
 ### 8.7 Logging va alert
 
-- Pino logger redact cookie/authorization/secret/value.
+- Pino/audit logger redact recursive cookie/authorization/secret/token/proxy URL va field nhay cam.
 - `SystemLog` loai bo `cookie`, `cookieValue`, `fileUrl`, `headers` khoi details.
 - Telegram alert cho:
   - topup approved
@@ -1393,6 +1500,11 @@ Production can:
 - `THREED66_ORIGIN`
 - `THREED66_TIMEOUT_MS`
 - `THREED66_REQUEST_INTERVAL_MS`
+- `THREED66_ACCOUNT_SEARCH_ENABLED`
+- `THREED66_MODEL_RESOLVE_MODE`
+- `THREED66_MODEL_ID_BASE_URL`: optional override; de trong de dung host/path mac dinh theo prefix model.
+- `THREED66_ACCOUNT_ID`
+- `THREED66_ACCOUNT_MARKER`
 - `THREED66_GETLINK_CONCURRENCY`
 - `THREED66_PREVIEW_CONCURRENCY`
 - `THREED66_REFRESH_CONCURRENCY`
@@ -1412,6 +1524,16 @@ Production can:
 - `THREED66_COOKIE_MAX_FAILURES`
 - `THREED66_COOKIE_COOLDOWN_MS`
 
+Proxy rieng cho 3D66:
+
+- `THREED66_PROXY_ENABLED`
+- `THREED66_PROXY_URL`
+- `THREED66_PROXY_FOR_PREVIEW`
+- `THREED66_PROXY_FOR_API`
+- `THREED66_PROXY_FOR_DOWNLOAD`
+- `THREED66_PROXY_FOR_BROWSER`
+- `THREED66_PROXY_FAIL_CLOSED`
+
 Browser fallback:
 
 - `THREED66_BROWSER_HEADLESS`
@@ -1422,6 +1544,8 @@ Browser fallback:
 - `THREED66_BROWSER_ALWAYS`
 - `THREED66_BROWSER_BLOCK_ASSETS`
 - `THREED66_BROWSER_WAIT_UNTIL`
+- `THREED66_BROWSER_NAV_RETRIES`
+- `THREED66_BROWSER_RETRY_DELAY_MS`
 - `THREED66_BROWSER_POST_COMMIT_WAIT_MS`
 - `THREED66_BROWSER_WAIT_NETWORKIDLE`
 - `THREED66_DISABLE_BROWSER_PAGE_FALLBACK`
@@ -1533,6 +1657,48 @@ Production can dam bao:
 - Neu dung Playwright fallback, can cai browser Chromium cho Playwright.
 - Neu dung marketplace Google Drive, can cau hinh refresh token Drive thay vi chi dung access token tinh.
 
+Test footprint resolve tren VPS, khong mua/tai file:
+
+```bash
+cd /var/www/3dipl/backend
+
+MODEL_URL='DAN_LINK_MODEL_3D66_DAY' node --input-type=module <<'NODE'
+import dotenv from "dotenv";
+dotenv.config();
+
+const mongoose = (await import("mongoose")).default;
+const { connectDb } = await import("./src/config/db.js");
+const { with3D66Cookie } = await import("./src/utils/3d66CookiePool.js");
+const { resolve3D66ModelUrlFromFootprint } =
+  await import("./src/utils/3d66BrowserService.js");
+
+await connectDb();
+
+try {
+  const input = process.env.MODEL_URL;
+  const requested = new URL(input).searchParams.get("sof");
+  const result = await with3D66Cookie((cookie) =>
+    resolve3D66ModelUrlFromFootprint(input, cookie, [requested]),
+  );
+
+  console.log({
+    requested,
+    resolved: result.productId,
+    resolvedUrl: result.url,
+    usedFootprint: result.usedFootprint,
+  });
+} finally {
+  await mongoose.disconnect();
+}
+NODE
+```
+
+Ket qua hop le:
+
+- `usedFootprint: true`.
+- `resolvedUrl` co `sign` cua tai khoan cookie he thong.
+- `requested` va `resolved` co cung duoi model, co the khac prefix/marker user.
+
 ## 11. Cac diem can luu y
 
 ### 11.1 Encoding text
@@ -1585,14 +1751,14 @@ Neu production khong set `PUBLIC_BASE_URL`, backend fallback tu `req.protocol + 
 
 ### Backend utils
 
-- `3d66Service.js`: HTTP/API integration voi 3D66, parse metadata, parse popup format, ProxyAgent theo stage va download URL.
-- `3d66BrowserService.js`: Playwright fallback, browser proxy tuy chon va retry ve route mac dinh neu fail-open.
+- `3d66Service.js`: HTTP/API integration voi 3D66, parse metadata/popup format, resolve mode, proxy routing, cache `resolvedSourceUrl` va download URL.
+- `3d66BrowserService.js`: Playwright fallback, browser proxy va footprint resolver lay URL sign cua tai khoan he thong.
 - `3d66CookiePool.js`: cookie selection, status, failure/cooldown.
 - `3d66Queue.js`: concurrency queues.
 - `asyncLimiter.js`: queue primitive.
 - `creditService.js`: atomic add/deduct credit.
 - `downloadToken.js`: HMAC token cho download.
-- `parse3d66.js`: extract product id tu URL.
+- `parse3d66.js`: extract product id tu URL, normalize model ID theo account marker, tao URL search tu model ID.
 - `pricingService.js`: credit conversion/normalization.
 - `secretBox.js`: AES-256-GCM encrypt/decrypt cookie values va proxy URL secret.
 - `validators.js`: id, voucher, number, string, HTML stripping.
@@ -1625,3 +1791,90 @@ Neu production khong set `PUBLIC_BASE_URL`, backend fallback tu `req.protocol + 
 - `AdminArticles.jsx`: guide article CRUD.
 - `faviconProgress.js`: favicon progress/badge.
 - `styles.css`: toan bo visual style.
+
+## 13. Cap nhat audit va van hanh 2026-07-10
+
+Muc nay ghi cac thay doi cross-cutting sau dot audit `docs/NEW_MODEL_AUDIT.md`. Neu mot mo ta cu o tren mau thuan voi muc nay, hanh vi moi trong source va muc nay duoc uu tien.
+
+### 13.1 Service va model moi
+
+- `getlinkChargeService.js`: unit of work tru credit + tao history bang transaction, co compensation fallback cho dev/Mongo standalone.
+- `manualCreditService.js`: unit of work cong credit admin + ledger Topup.
+- `PaymentReceipt.js`: unique gateway transaction/topup receipt cho payment idempotency.
+- `NotificationReceipt.js`: unique per-user read receipt, thay cho viec tiep tuc day vao `Notification.readBy`.
+- `referralService.js`: referral va credit rewards dung transaction; notification la best-effort sau commit.
+- `topupApprovalService.js`: transaction approve topup gom receipt, state transition, voucher va credit; ho tro signed late payment voi rejection reason cho phep.
+
+### 13.2 API contract va privacy
+
+- Guest `/api/settings` chi nhan cac field landing page can thiet va `threed66ModelResolveMode`; runtime concurrency/proxy/internal metadata chi danh cho admin da qua 2FA va van duoc sanitize.
+- User history khong tra upstream/signed URL. Admin user response dung explicit allowlist va cookie preview chi tra marker `[stored]`.
+- `POST /api/topup` nhan optional `Idempotency-Key`; key hop le bi replay se tra order cu voi `idempotentReplay=true`.
+- `POST /api/getlink/redownload/:id` la route chon format/tai lai cho record thuoc user.
+- `/health` la liveness; `/ready` la readiness co DB/drain state.
+
+### 13.3 Security lifecycle
+
+- OAuth state la nonce CSPRNG mot lan, verify timing-safe va clear cookie sau callback.
+- TOTP encrypt at rest va dual-read legacy. Khong bulk migrate trong deployment.
+- Preview image/file proxy validate HTTPS + host `3d66.com`/subdomain tai moi redirect, co redirect limit, timeout va queue slot.
+- Proxy agent cache gioi han 5 entries; eviction va shutdown deu close agent/socket.
+- Audit settings write co rate limit, admin/2FA guard va persistent audit event; sanitizer recursive khong log credential fragment/proxy URL.
+- Rate limiter khong scan toan bo map tren moi request; cleanup theo chu ky va reset bucket het han.
+
+### 13.4 Runtime, CI va container
+
+- Runtime contract: Node `>=20.18 <21`; CI dung Node 20.20.1 va npm 10.8.2.
+- `eslint.config.js` bao phu backend, test va frontend React/hooks.
+- `.github/workflows/ci.yml` cai dat bang lockfile, chay lint, test, build va dependency audit tren pull request/main.
+- Backend Docker image dung Node 20.20.1, Chromium Playwright, user `node`, port 5000 va healthcheck `/ready`.
+- Frontend Docker build yeu cau `VITE_API_URL`, serve SPA bang nginx unprivileged port 8080 va co `/healthz`.
+- Server xu ly SIGINT/SIGTERM, ngung nhan connection, dong browser/proxy/Mongo va force timeout 30 giay.
+
+Lenh quality gate:
+
+```bash
+npm ci --ignore-scripts
+npm ci --ignore-scripts --prefix backend
+npm ci --ignore-scripts --prefix frontend
+npm run check
+npm audit
+npm audit --omit=dev --prefix backend
+npm audit --prefix frontend
+```
+
+May audit 2026-07-10 khong co Docker CLI, vi vay image manifests phai duoc build/scan va smoke test tren CI/staging truoc production.
+
+### 13.5 Yeu cau database va rollout
+
+- Production phai dung MongoDB replica set de transaction payment/credit/referral co atomicity day du.
+- Startup khoi tao index cho `Topup`, `PaymentReceipt` va `NotificationReceipt` truoc khi listen.
+- Cac collection/index moi la additive. Khong drop trong rollback khan cap; khong downgrade topup approved hoac sua credit tu dong.
+- `Notification.readBy` legacy van duoc doc de tuong thich; write moi dung `NotificationReceipt`.
+- TOTP plaintext legacy duoc re-encrypt sau verify; ban rollback backend phai van co dual-read decrypt.
+- Ke hoach rollout/rollback: `docs/UPGRADE_PLAN.md`.
+- Checklist staging/production va diem human confirmation: `docs/DEPLOYMENT_CHECKLIST.md`.
+
+### 13.6 Gioi han con lai
+
+- Rate limit, product/user lock, download counter va mot so 3D66 queue van theo process; can shared Redis/store truoc khi scale ngang nhieu instance.
+- Admin overview van can aggregation/index benchmark tren dataset production-like.
+- Chua co retention policy duoc phe duyet cho system/audit/gateway payload; khong tu dong them TTL/xoa data trong dot nay.
+- Can staging integration test voi Mongo replica set, Google OAuth, SePay sandbox, 3D66 mock/real flow duoc phe duyet va SIGTERM tren Linux.
+- Frontend con no bao tri/accessibility: tach Admin/styles, lazy load, focus trap/Escape, 404/SEO va E2E async states.
+- Major upgrade Express/Mongoose/React/Vite duoc tach khoi dot patch bao mat nay.
+
+## 14. Cap nhat merge marketplace va main 2026-07-11
+
+- Da merge thay doi tu `main` vao nhanh marketplace, giu dong thoi OAuth state, payment receipt, graceful shutdown, marketplace, membership va Drive sync.
+- Credit va Pro checkout deu co idempotency key. Payment receipt dung chung `gatewayTransactionId`, ngan mot giao dich ngan hang duyet ca Credit va Pro.
+- Signed late payment hop le co the kich hoat lai don Pro bi `expired`, `user_cancel` hoac `gateway_error`; `admin_cancel` van la terminal.
+- Kich hoat Pro, cap nhat order, voucher, quota add-on va payment receipt chay trong Mongo transaction. Memory DB co compensation cho test/local.
+- Daily Pro add-on chi tang `bonusLimit` trong ngay neu user dang co Pro; khong ghi de `proUntil` cua goi dai han.
+- Default Credit/Pro plan chi seed record thieu. Chi ghi de gia/quyen loi khi bat ro `SYNC_DEFAULT_TOPUP_PACKAGES=true` hoac `SYNC_DEFAULT_MEMBERSHIP_PLANS=true`.
+- Model public bat buoc `isPublished=true`, `metadataStatus=complete` va `fileStatus=ready`. Admin khong the publish model thieu archive.
+- Quota download/image search rollback khi request vuot quota hoac tao session/log that bai.
+- Timeline va admin transaction dung total count that, khong con cap tong o 500 record; timeline khong tra source URL/source model ID.
+- Voucher Pro duoc ghi nhan trong filter Voucher cua timeline.
+- Drive sync co process lock, DB lock co stale timeout, batch startup sau 5 giay va dung timer khi graceful shutdown.
+- Admin cu duoc bo sung filter user, KPI Pro/marketplace/model thieu file va tab Audit co search/phan trang.

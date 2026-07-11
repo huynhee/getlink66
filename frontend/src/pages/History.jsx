@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowRightLeft,
   Box,
   CalendarClock,
   Download,
@@ -143,7 +142,11 @@ function metadataLines(event, language) {
     return [other ? `User: ${other}` : "", m.referralCode ? `Mã: ${m.referralCode}` : ""].filter(Boolean);
   }
   if (event.type === "voucher") {
-    return [m.voucherCode ? `Mã: ${m.voucherCode}` : ""].filter(Boolean);
+    return [
+      m.voucherCode ? `Mã: ${m.voucherCode}` : "",
+      m.targetKind ? `${language === "vi" ? "Loại" : "Type"}: ${m.targetKind === "pro" ? "Pro" : "Credit"}` : "",
+      m.discountAmount ? `${language === "vi" ? "Giảm" : "Discount"}: ${formatMoney(m.discountAmount)}` : "",
+    ].filter(Boolean);
   }
   return [];
 }
@@ -158,7 +161,7 @@ export default function History({ language = "vi" }) {
   const [redownloadItem, setRedownloadItem] = useState(null);
   const [redownloadPreparingId, setRedownloadPreparingId] = useState("");
 
-  async function loadTimeline(page = 1, nextFilter = filter) {
+  const loadTimeline = useCallback(async (page = 1, nextFilter = "all") => {
     setLoading(true);
     setError("");
     try {
@@ -171,11 +174,11 @@ export default function History({ language = "vi" }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadTimeline(1, filter);
-  }, [filter]);
+  }, [filter, loadTimeline]);
 
   const activeFilterLabel = useMemo(() => {
     const item = FILTERS.find(([key]) => key === filter);

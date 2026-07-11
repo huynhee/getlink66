@@ -57,8 +57,53 @@ function isDailyMembershipPlan(plan) {
   return String(plan?.code || "").toUpperCase() === "DAILY" || Number(plan?.durationDays || 0) <= 1;
 }
 
-export default function Login({ user = null, onLogin, adminMode = false, returnTo = "/", language = "vi" }) {
+function normalize3D66Input(value = "", resolveMode = "search") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^https?:\/\//i.test(text)) {
+    if (resolveMode === "search") return "";
+    try {
+      const parsed = new URL(text);
+      const host = parsed.hostname.toLowerCase();
+      const is3D66 = host === "3d66.com" || host.endsWith(".3d66.com");
+      return is3D66 && parsed.searchParams.get("sof") ? text : "";
+    } catch {
+      return "";
+    }
+  }
+  if (resolveMode !== "search") return "";
+  return /^[A-Z0-9_-]{8,64}$/i.test(text) && /[A-Z]/i.test(text) && /\d{6,}/.test(text)
+    ? text.toUpperCase()
+    : "";
+}
+
+function inputValueWhileTyping(value = "", resolveMode = "search") {
+  return resolveMode === "search" ? value.toUpperCase() : value;
+}
+
+function inputModeText(resolveMode = "search", language = "vi") {
+  const isVi = language === "vi";
+  if (resolveMode === "footprint") {
+    return {
+      placeholder: isVi ? "Nhập link model" : "Paste the full 3D66 model link",
+      invalid: isVi ? "Vui lòng dán link model." : "Paste a 3D66 model link containing a sof ID.",
+    };
+  }
+  if (resolveMode === "direct") {
+    return {
+      placeholder: isVi ? "Nhập link model" : "Paste the full 3D66 model link",
+      invalid: isVi ? "Vui lòng dán link model." : "Paste a 3D66 model link containing a sof ID.",
+    };
+  }
+  return {
+    placeholder: isVi ? "Nhập mã model" : "Enter a 3D66 model ID",
+    invalid: isVi ? "Vui lòng nhập mã model hợp lệ." : "Enter a valid 3D66 model ID.",
+  };
+}
+
+export default function Login({ user = null, adminMode = false, returnTo = "/", language = "vi" }) {
   const t = { ...(translations[language] || translations.vi) };
+  const userId = user?._id;
   const [demoLink, setDemoLink] = useState("");
   const [demoError, setDemoError] = useState("");
   const [packages, setPackages] = useState([]);
@@ -107,9 +152,12 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
       ? "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn."
       : "Sign in with Google to start using 3D66 Getlink and manage your credit.",
     footerTagline: language === "vi" ? "Hỗ trợ 24/7" : "24/7 support",
+    threed66ModelResolveMode: "search",
     ...HOME_TEXT_DEFAULTS[language]
   });
-  const demoCursorText = demoLink || t.getlinkPlaceholder;
+  const modelResolveMode = siteSettings.threed66ModelResolveMode || "search";
+  const modeText = inputModeText(modelResolveMode, language);
+  const demoCursorText = demoLink || modeText.placeholder;
   const demoCursorX = Math.min(demoCursorText.length * 8.4, 520);
   if (referral?.mode === "referrer_only") {
     t.referralTitle = language === "vi"
@@ -152,14 +200,14 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   }, [adminMode, language, t.systemOfflineMessage]);
 
   React.useEffect(() => {
-    if (!user || adminMode) {
+    if (!userId || adminMode) {
       setReferral(null);
       return;
     }
     api("/api/referral/me")
       .then(setReferral)
       .catch(() => setReferral(null));
-  }, [user?._id, adminMode]);
+  }, [userId, adminMode]);
 
   const pricingPackages = packages.length
     ? packages
@@ -210,8 +258,8 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
   }
 
   function getlinkTarget() {
-    const trimmed = demoLink.trim();
-    return trimmed ? `/getlink?url=${encodeURIComponent(trimmed)}` : "/getlink";
+    const modelInput = normalize3D66Input(demoLink, modelResolveMode);
+    return modelInput ? `/getlink?url=${encodeURIComponent(modelInput)}` : "/getlink";
   }
 
   function handleDemoGetlink(event) {
@@ -220,10 +268,12 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
       setDemoError(t.systemOfflineMessage);
       return;
     }
-    if (!demoLink.includes("3d66.com")) {
-      setDemoError(t.invalid3d66Link);
+    const modelInput = normalize3D66Input(demoLink, modelResolveMode);
+    if (!modelInput) {
+      setDemoError(modeText.invalid);
       return;
     }
+    setDemoLink(modelInput);
     window.location.href = authAwareHref(getlinkTarget());
   }
 
@@ -240,12 +290,13 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
         setDemoError(t.clipboardEmpty);
         return;
       }
-      if (!pasted.includes("3d66.com")) {
-        setDemoError(t.clipboardInvalid3d66);
+      const modelInput = normalize3D66Input(pasted, modelResolveMode);
+      if (!modelInput) {
+        setDemoError(modeText.invalid);
         return;
       }
 
-      setDemoLink(pasted);
+      setDemoLink(modelInput);
     } catch {
       setDemoError(t.clipboardDenied);
     }
@@ -358,13 +409,14 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
               </h2>
               <form onSubmit={handleDemoGetlink} className="inputWrapper">
                 <div className="linkInputWrap terminalInput" style={{ "--cursor-x": `${demoCursorX}px` }}>
-                  <span className="terminalInputMirror" aria-hidden="true">{demoLink || t.getlinkPlaceholder}</span>
+                  <span className="terminalInputMirror" aria-hidden="true">{demoLink || modeText.placeholder}</span>
                   <input
-                    type="url"
-                    placeholder={t.getlinkPlaceholder}
+                    type="text"
+                    inputMode="text"
+                    placeholder={modeText.placeholder}
                     value={demoLink}
                     onChange={(event) => {
-                      setDemoLink(event.target.value);
+                      setDemoLink(inputValueWhileTyping(event.target.value, modelResolveMode));
                       setDemoError("");
                     }}
                     required
@@ -483,7 +535,7 @@ export default function Login({ user = null, onLogin, adminMode = false, returnT
                 >
                   <Sparkles size={18} />
                   <span>Pro</span>
-                  <small>{language === "vi" ? "Quyền tải member/S-VIP" : "Member/S-VIP access"}</small>
+                  <small>{language === "vi" ? "Quyền tải model Pro" : "Pro model access"}</small>
                 </button>
                 <button
                   type="button"

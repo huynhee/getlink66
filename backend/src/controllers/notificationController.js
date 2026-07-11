@@ -1,4 +1,5 @@
 import Notification from "../models/Notification.js";
+import NotificationReceipt from "../models/NotificationReceipt.js";
 import User from "../models/User.js";
 import {
   isSafeId,
@@ -30,7 +31,7 @@ function activeNotificationQuery(userId) {
   };
 }
 
-function serializeNotification(item, userId) {
+function serializeNotification(item, userId, receiptIds = new Set()) {
   const readBy = Array.isArray(item.readBy) ? item.readBy : [];
   return {
     _id: item._id,
@@ -41,7 +42,9 @@ function serializeNotification(item, userId) {
     actionLabel: item.actionLabel || "",
     actionUrl: item.actionUrl || "",
     targetType: item.targetType,
-    isRead: readBy.some((id) => String(id) === String(userId)),
+    isRead:
+      receiptIds.has(String(item._id)) ||
+      readBy.some((id) => String(id) === String(userId)),
     createdAt: item.createdAt,
     startsAt: item.startsAt,
     expiresAt: item.expiresAt,
@@ -68,8 +71,20 @@ export async function listNotifications(req, res, next) {
       .sort({ createdAt: -1 })
       .limit(50)
       .lean();
+    const notificationIds = notifications.map((item) => item._id);
+    const receipts = notificationIds.length
+      ? await NotificationReceipt.find({
+          userId: req.user._id,
+          notificationId: { $in: notificationIds },
+        })
+          .select("notificationId")
+          .lean()
+      : [];
+    const receiptIds = new Set(
+      receipts.map((receipt) => String(receipt.notificationId)),
+    );
     const items = notifications.map((item) =>
-      serializeNotification(item, req.user._id),
+      serializeNotification(item, req.user._id, receiptIds),
     );
     res.json({
       notifications: items,
@@ -92,9 +107,11 @@ export async function markNotificationRead(req, res, next) {
     if (!notification) {
       return res.status(404).json({ message: "Notification not found" });
     }
-    await Notification.findByIdAndUpdate(req.params.id, {
-      $addToSet: { readBy: req.user._id },
-    });
+    await NotificationReceipt.findOneAndUpdate(
+      { notificationId: req.params.id, userId: req.user._id },
+      { $set: { readAt: new Date() } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
     res.json({ ok: true });
   } catch (error) {
     next(error);
@@ -290,6 +307,7 @@ export async function adminUpdateNotification(req, res, next) {
     if (!notification) {
       return res.status(404).json({ message: "Notification not found" });
     }
+    await NotificationReceipt.deleteMany({ notificationId: req.params.id });
     res.json({ notification });
   } catch (error) {
     next(error);
@@ -302,6 +320,7 @@ export async function adminDeleteNotification(req, res, next) {
       return res.status(400).json({ message: "Invalid notification id" });
     }
     await Notification.findByIdAndDelete(req.params.id);
+    await NotificationReceipt.deleteMany({ notificationId: req.params.id });
     res.json({ ok: true });
   } catch (error) {
     next(error);

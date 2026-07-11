@@ -17,26 +17,75 @@ function getByPath(document, path) {
   return path.split(".").reduce((value, key) => value?.[key], document);
 }
 
+function setByPath(document, path, value) {
+  const parts = String(path).split(".");
+  const last = parts.pop();
+  let target = document;
+  for (const part of parts) {
+    if (!target[part] || typeof target[part] !== "object") target[part] = {};
+    target = target[part];
+  }
+  target[last] = value;
+}
+
+function deleteByPath(document, path) {
+  const parts = String(path).split(".");
+  const last = parts.pop();
+  const target = parts.reduce((value, key) => value?.[key], document);
+  if (target && typeof target === "object") delete target[last];
+}
+
+function comparable(value, other) {
+  if (value instanceof Date || other instanceof Date) {
+    return new Date(value).valueOf();
+  }
+  return value;
+}
+
+function expressionValue(document, value) {
+  return typeof value === "string" && value.startsWith("$")
+    ? getByPath(document, value.slice(1))
+    : value;
+}
+
+function matchesExpression(document, expression = {}) {
+  const [[operator, operands] = []] = Object.entries(expression);
+  if (!operator || !Array.isArray(operands) || operands.length !== 2) return false;
+  const left = expressionValue(document, operands[0]);
+  const right = expressionValue(document, operands[1]);
+  if (operator === "$lt") return comparable(left, right) < comparable(right, left);
+  if (operator === "$lte") return comparable(left, right) <= comparable(right, left);
+  if (operator === "$gt") return comparable(left, right) > comparable(right, left);
+  if (operator === "$gte") return comparable(left, right) >= comparable(right, left);
+  if (operator === "$eq") return String(left) === String(right);
+  return false;
+}
+
 function matches(document, query = {}) {
   return Object.entries(query).every(([key, expected]) => {
-    if (key === "$expr") return true;
+    if (key === "$expr") return matchesExpression(document, expected);
     if (key === "$or") return expected.some((item) => matches(document, item));
     if (key === "$and") return expected.every((item) => matches(document, item));
     const actual = getByPath(document, key);
     if (expected instanceof RegExp) return expected.test(String(actual || ""));
     if (expected && typeof expected === "object" && !Array.isArray(expected)) {
-      if ("$gte" in expected && !(actual >= expected.$gte)) return false;
-      if ("$gt" in expected && !(new Date(actual) > new Date(expected.$gt))) return false;
-      if ("$lte" in expected && !(actual <= expected.$lte)) return false;
-      if ("$lt" in expected && !(new Date(actual) < new Date(expected.$lt))) return false;
+      if (expected instanceof Date) {
+        return new Date(actual).valueOf() === expected.valueOf();
+      }
+      if ("$gte" in expected && !(comparable(actual, expected.$gte) >= comparable(expected.$gte, actual))) return false;
+      if ("$gt" in expected && !(comparable(actual, expected.$gt) > comparable(expected.$gt, actual))) return false;
+      if ("$lte" in expected && !(comparable(actual, expected.$lte) <= comparable(expected.$lte, actual))) return false;
+      if ("$lt" in expected && !(comparable(actual, expected.$lt) < comparable(expected.$lt, actual))) return false;
       if ("$ne" in expected && String(actual) === String(expected.$ne)) return false;
       if ("$in" in expected) {
-        const allowed = expected.$in.map(String);
-        if (Array.isArray(actual)) {
-          if (!actual.some((value) => allowed.includes(String(value)))) return false;
-        } else if (!allowed.includes(String(actual))) {
-          return false;
-        }
+        const expectedValues = expected.$in.map(String);
+        const values = Array.isArray(actual) ? actual.map(String) : [String(actual)];
+        if (!values.some((value) => expectedValues.includes(value))) return false;
+      }
+      if ("$nin" in expected) {
+        const blockedValues = expected.$nin.map(String);
+        const values = Array.isArray(actual) ? actual.map(String) : [String(actual)];
+        if (values.some((value) => blockedValues.includes(value))) return false;
       }
       if ("$exists" in expected && (actual !== undefined) !== Boolean(expected.$exists)) return false;
       return true;
@@ -52,23 +101,40 @@ function applyUpdate(document, update = {}, query = {}) {
       document[key] = value;
     }
   });
-  if (update.$setOnInsert && !document._id) Object.assign(document, update.$setOnInsert);
-  if (update.$set) Object.assign(document, update.$set);
+  if (update.$setOnInsert && !document._id) {
+    Object.entries(update.$setOnInsert).forEach(([key, value]) => setByPath(document, key, value));
+  }
+  if (update.$set) {
+    Object.entries(update.$set).forEach(([key, value]) => setByPath(document, key, value));
+  }
   if (update.$inc) {
     Object.entries(update.$inc).forEach(([key, value]) => {
-      document[key] = (document[key] || 0) + value;
+      setByPath(document, key, Number(getByPath(document, key) || 0) + value);
     });
   }
   if (update.$addToSet) {
     Object.entries(update.$addToSet).forEach(([key, value]) => {
-      if (!Array.isArray(document[key])) document[key] = [];
-      if (!document[key].map(String).includes(String(value))) {
-        document[key].push(value);
+      const current = getByPath(document, key);
+      const values = Array.isArray(current) ? current : [];
+      if (!values.map(String).includes(String(value))) {
+        values.push(value);
       }
+      setByPath(document, key, values);
+    });
+  }
+  if (update.$unset) {
+    Object.keys(update.$unset).forEach((key) => deleteByPath(document, key));
+  }
+  if (update.$push) {
+    Object.entries(update.$push).forEach(([key, value]) => {
+      const current = getByPath(document, key);
+      const values = Array.isArray(current) ? current : [];
+      values.push(value);
+      setByPath(document, key, values);
     });
   }
   Object.entries(update).forEach(([key, value]) => {
-    if (!key.startsWith("$")) document[key] = value;
+    if (!key.startsWith("$")) setByPath(document, key, value);
   });
 }
 
@@ -186,13 +252,16 @@ export function createMemoryModel(name) {
       return Promise.all(items.map((item) => this.create(item)));
     },
     find(query = {}) {
-      return chain(collection.filter((document) => matches(document, query)), true);
+      return chain(clone(collection.filter((document) => matches(document, query))), true);
     },
     findOne(query = {}) {
-      return chain(collection.filter((document) => matches(document, query)), false);
+      return chain(clone(collection.filter((document) => matches(document, query))), false);
     },
-    async findById(idValue) {
-      return clone(collection.find((document) => String(document._id) === String(idValue)) || null);
+    findById(idValue) {
+      return chain(
+        clone(collection.filter((document) => String(document._id) === String(idValue))),
+        false,
+      );
     },
     async findOneAndUpdate(query, update, options = {}) {
       let document = collection.find((item) => matches(item, query));
@@ -210,7 +279,7 @@ export function createMemoryModel(name) {
       }
       return clone(document || null);
     },
-    async findByIdAndUpdate(idValue, update) {
+    async findByIdAndUpdate(idValue, update, _options = {}) {
       const document = collection.find((item) => String(item._id) === String(idValue));
       if (!document) return null;
       applyUpdate(document, update);
@@ -223,7 +292,7 @@ export function createMemoryModel(name) {
       const [document] = collection.splice(index, 1);
       return clone(document);
     },
-    async findOneAndDelete(query = {}) {
+    async findOneAndDelete(query = {}, _options = {}) {
       const index = collection.findIndex((item) => matches(item, query));
       if (index === -1) return null;
       const [document] = collection.splice(index, 1);
@@ -236,8 +305,20 @@ export function createMemoryModel(name) {
       const document = collection.find((item) => matches(item, query));
       return document ? { _id: document._id } : null;
     },
-    async deleteMany() {
-      collection.splice(0, collection.length);
+    async deleteOne(query = {}) {
+      const index = collection.findIndex((item) => matches(item, query));
+      if (index === -1) return { acknowledged: true, deletedCount: 0 };
+      collection.splice(index, 1);
+      return { acknowledged: true, deletedCount: 1 };
+    },
+    async deleteMany(query = {}) {
+      let deletedCount = 0;
+      for (let index = collection.length - 1; index >= 0; index -= 1) {
+        if (!matches(collection[index], query)) continue;
+        collection.splice(index, 1);
+        deletedCount += 1;
+      }
+      return { acknowledged: true, deletedCount };
     }
   };
 }

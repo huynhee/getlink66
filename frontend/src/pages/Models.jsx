@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronRight, Download, Filter, ImagePlus, Package, Search, X } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 
@@ -300,11 +300,6 @@ function labelForFacet(filterOptions = {}, facet, value, language = "vi") {
   return filterOptions[facet]?.find((item) => item.value === value)?.label || value;
 }
 
-function labelsForFacetValues(facet, values = [], language = "vi") {
-  if (!Array.isArray(values) || values.length === 0) return "";
-  return values.map((value) => labelForFacet({}, facet, value, language)).join(", ");
-}
-
 function modelCategoryLabel(model = {}, language = "vi") {
   return labelForCategory(model.category, language) || labelForCategory(model.parentCategory, language) || "";
 }
@@ -461,7 +456,7 @@ function FacetSection({ id, title, options = [], values = [], onToggle, onClear,
   );
 }
 
-function ModelCard({ model, onNavigate, language = "vi" }) {
+function ModelCard({ model, onNavigate }) {
   const image = cover(model);
   const href = modelPath(model);
   const hoverMeta = [
@@ -490,8 +485,8 @@ function ModelPreview({ model }) {
   const [activeImage, setActiveImage] = useState(firstPreview);
 
   useEffect(() => {
-    setActiveImage(previewImageSrc(model.previewImages?.[0]) || cover(model));
-  }, [model?._id]);
+    setActiveImage(firstPreview);
+  }, [firstPreview]);
 
   return (
     <div className="marketDetailMedia">
@@ -645,9 +640,7 @@ function ModelListPage({ user, language, onNavigate }) {
     setAccessType("");
   }
 
-  const filterKey = useMemo(() => JSON.stringify(activeFilters), [activeFilters]);
-
-  async function loadModels(page = 1, options = {}) {
+  const loadModels = useCallback(async (page = 1, options = {}) => {
     const query = new URLSearchParams({ page: String(page), limit: "60" });
     if (search.trim()) query.set("q", search.trim());
     if (category) query.set("category", category);
@@ -670,7 +663,7 @@ function ModelListPage({ user, language, onNavigate }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [accessType, activeFilters, category, search]);
 
   async function searchByImage(file) {
     if (!user) {
@@ -725,11 +718,11 @@ function ModelListPage({ user, language, onNavigate }) {
       loadModels(1);
     }, 200);
     return () => window.clearTimeout(timer);
-  }, [search, category, accessType, filterKey]);
+  }, [loadModels]);
 
   const activeFilterCount = useMemo(
     () => Object.values(activeFilters).reduce((total, values) => total + (values?.length || 0), 0),
-    [filterKey],
+    [activeFilters],
   );
   const totalFilterCount = activeFilterCount + (category ? 1 : 0) + (accessType ? 1 : 0);
   const pageItems = useMemo(
@@ -762,7 +755,7 @@ function ModelListPage({ user, language, onNavigate }) {
       });
     });
     return chips;
-  }, [categories, category, accessType, filterOptions, filterKey]);
+  }, [activeFilters, accessType, categories, category, filterOptions, language]);
 
   function goToPage(page) {
     const target = Math.min(Math.max(1, Number(page) || 1), Math.max(1, pagination.totalPages || 1));
@@ -908,7 +901,7 @@ function ModelListPage({ user, language, onNavigate }) {
         {error && <p className="error">{error}</p>}
         {loading && <p className="success">{language === "vi" ? "Đang tải..." : "Loading..."}</p>}
         <div className="marketGrid">
-          {models.map((model) => <ModelCard key={model._id} model={model} onNavigate={onNavigate} language={language} />)}
+          {models.map((model) => <ModelCard key={model._id} model={model} onNavigate={onNavigate} />)}
         </div>
         {!loading && !models.length && (
           <section className="panel emptyState">
@@ -1102,7 +1095,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
         {recommendedModels.length > 0 ? (
           <div className="marketGrid">
             {recommendedModels.map((item) => (
-              <ModelCard key={item._id} model={item} onNavigate={onNavigate} language={language} />
+              <ModelCard key={item._id} model={item} onNavigate={onNavigate} />
             ))}
           </div>
         ) : (

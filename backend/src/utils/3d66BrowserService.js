@@ -5,6 +5,7 @@ const DEFAULT_BROWSER_CONCURRENCY = 2;
 const DEFAULT_BROWSER_QUEUE_MAX = 50;
 const DEFAULT_BROWSER_MAX_TASKS = 100;
 const DEFAULT_BROWSER_MAX_AGE_MS = 30 * 60 * 1000;
+const FOOTPRINT_URL = "https://user.3d66.com/newUser/index/index/footprint";
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
@@ -36,12 +37,17 @@ function assertSafe3D66Url(rawUrl) {
   return parsed;
 }
 
+function stripInternalUrlHash(rawUrl) {
+  const parsed = assertSafe3D66Url(rawUrl);
+  parsed.hash = "";
+  return parsed.toString();
+}
+
 let browserPromise = null;
 let activeBrowser = null;
 let browserLaunchedAt = 0;
 let browserTasksSinceLaunch = 0;
 let browserRecyclePending = false;
-let shutdownHandlersInstalled = false;
 let activeBrowserTasks = 0;
 const browserTaskQueue = [];
 
@@ -183,22 +189,6 @@ async function importChromium() {
   }
 }
 
-function installShutdownHandlers() {
-  if (shutdownHandlersInstalled) return;
-  shutdownHandlersInstalled = true;
-
-  const closeBrowser = async () => {
-    await closeActiveBrowser();
-  };
-
-  process.once("SIGINT", () => {
-    closeBrowser().finally(() => process.exit(0));
-  });
-  process.once("SIGTERM", () => {
-    closeBrowser().finally(() => process.exit(0));
-  });
-}
-
 async function closeActiveBrowser() {
   const browser = activeBrowser;
   activeBrowser = null;
@@ -237,7 +227,6 @@ async function getSharedBrowser() {
         browserTasksSinceLaunch = 0;
         browserRecyclePending = false;
       });
-      installShutdownHandlers();
       return browser;
     })().catch((error) => {
       browserPromise = null;
@@ -329,6 +318,10 @@ async function withBrowserContext(url, cookieValue, callback) {
   });
 }
 
+export async function close3D66Browser() {
+  await closeActiveBrowser();
+}
+
 async function installFastRoutes(context) {
   if (!shouldBlockAssets()) return;
 
@@ -389,9 +382,10 @@ async function evaluateMetadataWithRetry(page, includeDownloadButton = false) {
 async function goto3D66Page(page, url) {
   let lastError;
   const attempts = navigationRetries();
+  const cleanUrl = stripInternalUrlHash(url);
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      await page.goto(url, {
+      await page.goto(cleanUrl, {
         waitUntil: navigationWaitUntil(),
         timeout: timeoutMs(),
       });
@@ -464,9 +458,34 @@ function serializeCookies(cookies = []) {
     .join("; ");
 }
 
-function toNumber(value) {
-  const number = Number(String(value || "").replace(/[^\d.]/g, ""));
-  return Number.isFinite(number) && number > 0 ? number : 0;
+function modelIdFromUrl(value = "") {
+  try {
+    return String(new URL(value).searchParams.get("sof") || "").trim().toUpperCase();
+  } catch {
+    return "";
+  }
+}
+
+function modelIdentitySuffix(value = "") {
+  const match = String(value || "").trim().toUpperCase().match(/^[A-Z]{3}(\d{6,})$/);
+  if (!match) return "";
+  const digits = match[1];
+  return digits.length > 8 ? digits.slice(8) : digits;
+}
+
+function footprintCardMatches(card = {}, expectedProductIds = []) {
+  const cardId = String(card.productId || "").trim().toUpperCase();
+  if (!cardId) return false;
+  const expectedIds = expectedProductIds
+    .map((value) => String(value || "").trim().toUpperCase())
+    .filter(Boolean);
+  if (expectedIds.includes(cardId)) return true;
+
+  const cardSuffix = modelIdentitySuffix(cardId);
+  return Boolean(
+    cardSuffix &&
+      expectedIds.some((productId) => modelIdentitySuffix(productId) === cardSuffix),
+  );
 }
 
 function evaluateMetadata() {
@@ -908,6 +927,122 @@ export async function fetch3D66PageWithBrowser(url, cookieValue) {
       metadata,
       cookieValue: serializeCookies(browserCookies) || cookieValue,
       usedBrowser: true,
+    };
+  });
+}
+
+export async function resolve3D66ModelUrlFromFootprint(
+  url,
+  cookieValue,
+  expectedProductIds = [],
+) {
+  assertSafe3D66Url(url);
+  return withBrowserContext(url, cookieValue, async ({ context, page }) => {
+    await goto3D66Page(page, url);
+    await page.waitForTimeout(Math.max(500, postCommitWaitMs())).catch(() => {});
+
+    await goto3D66Page(page, FOOTPRINT_URL);
+    await page.reload({
+      waitUntil: navigationWaitUntil(),
+      timeout: timeoutMs(),
+    }).catch(() => {});
+    await page
+      .waitForSelector('a[href*="/reshtmla/"][href*="sof="]', {
+        timeout: Math.min(timeoutMs(), 15000),
+      })
+      .catch(() => {});
+
+    const sourceProductId = modelIdFromUrl(url);
+    const expectedIds = [...new Set([sourceProductId, ...expectedProductIds].filter(Boolean))];
+    await page
+      .waitForFunction(
+        (productIds) => {
+          const suffix = (value = "") => {
+            const match = String(value).trim().toUpperCase().match(/^[A-Z]{3}(\d{6,})$/);
+            if (!match) return "";
+            return match[1].length > 8 ? match[1].slice(8) : match[1];
+          };
+          const expected = productIds.map((value) => String(value).trim().toUpperCase());
+          const expectedSuffixes = expected.map(suffix).filter(Boolean);
+          return Array.from(
+            document.querySelectorAll('a[href*="/reshtmla/"][href*="sof="]'),
+          ).some((anchor) => {
+            try {
+              const id = String(
+                new URL(anchor.getAttribute("href") || "", location.href).searchParams.get("sof") || "",
+              ).toUpperCase();
+              return expected.includes(id) || expectedSuffixes.includes(suffix(id));
+            } catch {
+              return false;
+            }
+          });
+        },
+        expectedIds,
+        { timeout: Math.min(timeoutMs(), 15000) },
+      )
+      .catch(() => {});
+
+    const cards = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('a[href*="/reshtmla/"][href*="sof="]'))
+        .map((anchor, index) => {
+          try {
+            const href = new URL(anchor.getAttribute("href") || "", location.href).toString();
+            return {
+              href,
+              productId: new URL(href).searchParams.get("sof") || "",
+              index,
+            };
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean),
+    );
+
+    const selected = cards.find((card) => footprintCardMatches(card, expectedIds));
+    if (!selected) {
+      throw browserHttpError(
+        "Không tìm thấy đúng model vừa mở trong lịch sử truy cập 3D66.",
+        502,
+        {
+          expectedProductIds: expectedIds,
+          footprintProductIds: cards.slice(0, 10).map((card) => card.productId),
+        },
+      );
+    }
+
+    assertSafe3D66Url(selected.href);
+    const popupPromise = page
+      .waitForEvent("popup", { timeout: Math.min(timeoutMs(), 10000) })
+      .catch(() => null);
+    await page.evaluate((href) => {
+      const anchor = Array.from(
+        document.querySelectorAll('a[href*="/reshtmla/"][href*="sof="]'),
+      ).find((item) => {
+        try {
+          return new URL(item.getAttribute("href") || "", location.href).toString() === href;
+        } catch {
+          return false;
+        }
+      });
+      anchor?.click();
+    }, selected.href);
+
+    const popup = await popupPromise;
+    if (popup) {
+      await popup.waitForLoadState("commit", { timeout: timeoutMs() }).catch(() => {});
+      await popup.waitForTimeout(postCommitWaitMs()).catch(() => {});
+    }
+    const resolvedUrl =
+      popup && popup.url() && popup.url() !== "about:blank" ? popup.url() : selected.href;
+    assertSafe3D66Url(resolvedUrl);
+
+    const browserCookies = await context.cookies();
+    return {
+      url: resolvedUrl,
+      productId: modelIdFromUrl(resolvedUrl) || selected.productId,
+      cookieValue: serializeCookies(browserCookies) || cookieValue,
+      usedFootprint: true,
     };
   });
 }

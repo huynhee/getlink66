@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Check, Copy, Gift, CreditCard, QrCode, Sparkles, Wallet } from "lucide-react";
 import { api } from "../api.js";
 import { translations } from "../i18n.js";
@@ -67,6 +67,11 @@ function isDailyMembershipPlan(plan) {
   return String(plan?.code || "").toUpperCase() === "DAILY" || Number(plan?.durationDays || 0) <= 1;
 }
 
+function createIdempotencyKey() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `topup-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+}
+
 export default function Topup({ user, onUserChange, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const locale = language === "vi" ? "vi-VN" : "en-US";
@@ -107,6 +112,9 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     removals.forEach((key) => url.searchParams.delete(key));
     window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
   }
+  const [submitting, setSubmitting] = useState(false);
+  const membershipRequestKeyRef = useRef("");
+  const topupRequestKeyRef = useRef("");
 
   useEffect(() => {
     api("/api/topup/packages").then((data) => {
@@ -125,17 +133,16 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         const nextPlans = data.plans || [];
         setMembershipPlans(nextPlans);
         const planId = queryParam("planId");
-        if (planId && nextPlans.some((item) => String(item._id) === String(planId))) {
-          setSelectedMembershipPlanId(planId);
-        } else if (!selectedMembershipPlanId && nextPlans[0]) {
-          setSelectedMembershipPlanId(nextPlans[0]._id);
-        }
+        setSelectedMembershipPlanId((current) => {
+          if (planId && nextPlans.some((item) => String(item._id) === String(planId))) return planId;
+          return current || nextPlans[0]?._id || "";
+        });
       })
       .catch((err) => setProError(err.message));
   }, []);
 
   useEffect(() => {
-    if (!user) {
+    if (!user?._id) {
       setMembership(null);
       return;
     }
@@ -240,7 +247,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     }, 3000);
 
     return () => window.clearInterval(timer);
-  }, [onUserChange, user]);
+  }, [language, onUserChange, t.checkingPayment, t.paymentCanceled, t.paymentError, user]);
 
   useEffect(() => {
     if (!payment || payment.status !== "pending") return undefined;
@@ -269,7 +276,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     }, 5000);
 
     return () => window.clearInterval(timer);
-  }, [payment, onUserChange, user]);
+  }, [language, onUserChange, payment, t.paymentCanceled, user]);
 
   useEffect(() => {
     const paymentStatus = new URLSearchParams(window.location.search).get("payment");
@@ -393,6 +400,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
 
   async function checkoutMembership() {
     changeTopupMode("pro");
+    if (proLoading || membershipRequestKeyRef.current) return;
     if (!user) {
       setProError(language === "vi" ? "Vui lòng đăng nhập trước khi mua Pro." : "Please sign in before buying Pro.");
       return;
@@ -402,11 +410,13 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
       return;
     }
     setProLoading(true);
+    membershipRequestKeyRef.current = createIdempotencyKey();
     setProMessage("");
     setProError("");
     try {
       const data = await api("/api/membership/checkout", {
         method: "POST",
+        headers: { "Idempotency-Key": membershipRequestKeyRef.current },
         body: JSON.stringify({
           planId: selectedMembershipPlan._id,
           voucherCode: voucherTargetsMembership ? appliedVoucher?.code : undefined,
@@ -422,17 +432,21 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     } catch (err) {
       setProError(err.message);
     } finally {
+      membershipRequestKeyRef.current = "";
       setProLoading(false);
     }
   }
 
   async function topup() {
     changeTopupMode("credit");
+    if (submitting || topupRequestKeyRef.current) return;
     if (!selectedPackage) {
       setError(t.selectPackageBeforePayment);
       return;
     }
 
+    setSubmitting(true);
+    topupRequestKeyRef.current = createIdempotencyKey();
     try {
       setMessage("");
       setError("");
@@ -440,6 +454,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
       setLastPaidPayment(null);
       const data = await api("/api/topup", {
         method: "POST",
+        headers: { "Idempotency-Key": topupRequestKeyRef.current },
         body: JSON.stringify({
           packageId: selectedPackage._id,
           type: "sepay",
@@ -453,9 +468,13 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
       setMessage(t.redirectingPayment);
       if (!submitPaymentCheckout(data.payment)) {
         setMessage(t.paymentOrderCreated);
+        topupRequestKeyRef.current = "";
+        setSubmitting(false);
       }
     } catch (err) {
       setError(err.message);
+      topupRequestKeyRef.current = "";
+      setSubmitting(false);
     }
   }
 
@@ -518,8 +537,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           <strong>Pro</strong>
           <span>
             {language === "vi"
-              ? "Dùng để mở quyền thành viên: tải model member/S-VIP, tải nhanh và quota theo ngày."
-              : "Used to unlock membership access: member/S-VIP models, fast downloads, and daily quota."}
+              ? "Dùng để mở quyền thành viên: tải model Pro, tải nhanh và quota theo ngày."
+              : "Used to unlock membership access: Pro models, fast downloads, and daily quota."}
           </span>
           <small>{language === "vi" ? "Không cộng thêm số dư Credit." : "Does not add Credit balance."}</small>
         </button>
@@ -533,8 +552,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
             <h2><Sparkles size={20} /> {language === "vi" ? "Mua Pro" : "Buy Pro"}</h2>
             <p className="muted">
               {language === "vi"
-                ? "Pro kích hoạt quyền tải model member/S-VIP, 100 lượt mỗi ngày, tải nhanh và không cộng credit."
-                : "Pro unlocks member/S-VIP models, 100 downloads per day, fast download, and does not add credits."}
+                ? "Pro kích hoạt quyền tải model Pro, 100 lượt mỗi ngày, tải nhanh và không cộng credit."
+                : "Pro unlocks Pro models, 100 downloads per day, fast download, and does not add credits."}
             </p>
           </div>
           {membership?.active && (
@@ -694,9 +713,9 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               <p>{t.selectPackageHelp}</p>
             </div>
           )}
-          <button className="primaryButton" type="button" disabled={!selectedPackage} onClick={topup}>
+          <button className="primaryButton" type="button" disabled={!selectedPackage || submitting} onClick={topup}>
             <CreditCard size={18} />
-            {t.topupNow}
+            {submitting ? t.redirectingPayment : t.topupNow}
           </button>
         </div>
         {message && <p className="success" style={{ marginTop: 14 }}>{message}</p>}

@@ -24,7 +24,7 @@ const emptyMembershipPlan = {
   durationDays: "",
   dailyDownloadLimit: "100",
   badge: "",
-  features: "100 lượt tải model mỗi ngày\nTải nhanh, không chờ 30s\nTải model Pro / S-VIP",
+  features: "100 lượt tải model mỗi ngày\nTải nhanh, không chờ 30s\nTải model Pro",
   isActive: true
 };
 
@@ -122,6 +122,7 @@ const defaultSiteSettings = {
   threed66PreviewConcurrency: 1,
   threed66RefreshConcurrency: 1,
   threed66PaytypeValue: "4",
+  threed66ModelResolveMode: "search",
   threed66RequestIntervalMs: 2500,
   threed66BrowserConcurrency: 1,
   threed66BrowserAlways: false,
@@ -160,6 +161,17 @@ function formatNumber(value, locale = "vi-VN") {
   return Number(value || 0).toLocaleString(locale);
 }
 
+function visible3D66Url(value = "") {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return String(value).split("#")[0];
+  }
+}
+
 function toDatetimeLocal(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -175,10 +187,6 @@ function voucherTargetKind(voucher) {
   if (Number(voucher?.creditBonus || 0) > 0 || applicablePackageIds.length > 0) return "credit";
   if (Number(voucher?.discountPercent || 0) > 0) return "all";
   return "credit";
-}
-
-function isProVoucher(voucher) {
-  return voucherTargetKind(voucher) === "pro";
 }
 
 function voucherMatchesMode(voucher, mode) {
@@ -200,6 +208,7 @@ export default function Admin({ user, language = "vi" }) {
   const [threed66SettingsTab, setThreed66SettingsTab] = useState("tasks");
   const [revenuePeriod, setRevenuePeriod] = useState("day");
   const [overview, setOverview] = useState(null);
+  const [dashboard, setDashboard] = useState(null);
   const [users, setUsers] = useState([]);
   const [packages, setPackages] = useState([]);
   const [membershipPlans, setMembershipPlans] = useState([]);
@@ -214,6 +223,10 @@ export default function Admin({ user, language = "vi" }) {
   const [cookieRecords, setCookieRecords] = useState([]);
   const [cookiePool, setCookiePool] = useState(null);
   const [systemLogs, setSystemLogs] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditSearch, setAuditSearch] = useState("");
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPagination, setAuditPagination] = useState({ page: 1, pageSize: 30, total: 0, totalPages: 1 });
   const [getlinkRecords, setGetlinkRecords] = useState([]);
   const [getlinkSearch, setGetlinkSearch] = useState("");
   const [getlinkPage, setGetlinkPage] = useState(1);
@@ -225,6 +238,7 @@ export default function Admin({ user, language = "vi" }) {
   const [topupPage, setTopupPage] = useState(1);
   const [topupPagination, setTopupPagination] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
   const [userSearch, setUserSearch] = useState("");
+  const [userFilter, setUserFilter] = useState("all");
   const [userSort, setUserSort] = useState("created-desc");
   const [userPage, setUserPage] = useState(1);
   const [userPagination, setUserPagination] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
@@ -262,9 +276,11 @@ export default function Admin({ user, language = "vi" }) {
   const [twoFactorToken, setTwoFactorToken] = useState("");
   const [twoFactorMsg, setTwoFactorMsg] = useState("");
 
-  async function loadData() {
-    const [oRes, pRes, planRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
+  const loadData = React.useCallback(async () => {
+    const dashboardPeriod = revenuePeriod === "day" ? "day" : revenuePeriod === "month" ? "month" : "month";
+    const [oRes, dRes, pRes, planRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
       api(`/api/admin/overview?period=${revenuePeriod}`),
+      api(`/api/admin/dashboard?period=${dashboardPeriod}`),
       api("/api/admin/topup-packages"),
       api("/api/admin/membership-plans"),
       api("/api/admin/vouchers"),
@@ -277,6 +293,7 @@ export default function Admin({ user, language = "vi" }) {
       api("/api/settings")
     ]);
     setOverview(oRes.overview || null);
+    setDashboard(dRes.dashboard || null);
     setPackages(pRes.packages || []);
     setMembershipPlans(planRes.plans || []);
     setVouchers(vRes.vouchers || []);
@@ -287,12 +304,13 @@ export default function Admin({ user, language = "vi" }) {
     setNotifications(nRes.notifications || []);
     setReferrals(rRes.referrals || []);
     setSiteSettings({ ...defaultSiteSettings, ...(settingRes.settings || {}) });
-  }
+  }, [revenuePeriod]);
 
-  async function loadUsers() {
+  const loadUsers = React.useCallback(async () => {
     const query = new URLSearchParams({
       page: String(userPage),
       sort: userSort,
+      filter: userFilter,
     });
     if (userSearch.trim()) query.set("search", userSearch.trim());
     const data = await api(`/api/admin/users?${query.toString()}`);
@@ -300,9 +318,9 @@ export default function Admin({ user, language = "vi" }) {
     const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
     setUserPagination(pagination);
     if (pagination.page !== userPage) setUserPage(pagination.page);
-  }
+  }, [userFilter, userPage, userSearch, userSort]);
 
-  async function loadGetlinks() {
+  const loadGetlinks = React.useCallback(async () => {
     const query = new URLSearchParams({ page: String(getlinkPage) });
     if (getlinkSearch.trim()) query.set("search", getlinkSearch.trim());
     const data = await api(`/api/admin/getlinks?${query.toString()}`);
@@ -310,9 +328,9 @@ export default function Admin({ user, language = "vi" }) {
     const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
     setGetlinkPagination(pagination);
     if (pagination.page !== getlinkPage) setGetlinkPage(pagination.page);
-  }
+  }, [getlinkPage, getlinkSearch]);
 
-  async function loadTopups() {
+  const loadTopups = React.useCallback(async () => {
     const query = new URLSearchParams({
       page: String(topupPage),
       kind: transactionKind,
@@ -324,7 +342,17 @@ export default function Admin({ user, language = "vi" }) {
     const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
     setTopupPagination(pagination);
     if (pagination.page !== topupPage) setTopupPage(pagination.page);
-  }
+  }, [topupPage, topupSearch, topupStatus, transactionKind]);
+
+  const loadAuditLogs = React.useCallback(async () => {
+    const query = new URLSearchParams({ page: String(auditPage), limit: "30" });
+    if (auditSearch.trim()) query.set("search", auditSearch.trim());
+    const data = await api(`/api/admin/audit-logs?${query.toString()}`);
+    setAuditLogs(data.logs || []);
+    const pagination = data.pagination || { page: 1, pageSize: 30, total: 0, totalPages: 1 };
+    setAuditPagination(pagination);
+    if (pagination.page !== auditPage) setAuditPage(pagination.page);
+  }, [auditPage, auditSearch]);
 
   async function reviewTransaction(item, action) {
     if (!item?.rawId) return;
@@ -343,28 +371,35 @@ export default function Admin({ user, language = "vi" }) {
 
   useEffect(() => {
     loadData().catch(console.error);
-  }, [revenuePeriod]);
+  }, [loadData]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       loadUsers().catch(console.error);
     }, 250);
     return () => clearTimeout(timer);
-  }, [userSearch, userSort, userPage]);
+  }, [loadUsers]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       loadGetlinks().catch(console.error);
     }, 250);
     return () => clearTimeout(timer);
-  }, [getlinkSearch, getlinkPage]);
+  }, [loadGetlinks]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       loadTopups().catch(console.error);
     }, 250);
     return () => clearTimeout(timer);
-  }, [topupSearch, topupStatus, transactionKind, topupPage]);
+  }, [loadTopups]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadAuditLogs().catch(console.error);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [loadAuditLogs]);
 
   function fillPackageForm(pack) {
     setEditingPackageId(pack?._id || "");
@@ -660,6 +695,7 @@ export default function Admin({ user, language = "vi" }) {
           threed66PreviewConcurrency: Number(siteSettings.threed66PreviewConcurrency || 1),
           threed66RefreshConcurrency: Number(siteSettings.threed66RefreshConcurrency || 1),
           threed66PaytypeValue: String(siteSettings.threed66PaytypeValue || "4").trim(),
+          threed66ModelResolveMode: String(siteSettings.threed66ModelResolveMode || "search"),
           threed66RequestIntervalMs: Number(siteSettings.threed66RequestIntervalMs || 2500),
           threed66BrowserConcurrency: Number(siteSettings.threed66BrowserConcurrency || 1),
           threed66BrowserAlways: Boolean(siteSettings.threed66BrowserAlways),
@@ -914,6 +950,7 @@ export default function Admin({ user, language = "vi" }) {
   const recentGetlinks = overview?.recentGetlinks || [];
   const recentTopups = overview?.recentTopups || [];
   const topPackages = overview?.topPackages || [];
+  const adminKpis = dashboard?.kpis || {};
   const maxPackageRevenue = Math.max(...topPackages.map((item) => Number(item.revenue || 0)), 1);
   const cookieHealthLabel = Number(cookieStats.active || 0) > 0
     ? l("Có cookie sẵn sàng", "Cookie ready")
@@ -946,6 +983,30 @@ export default function Admin({ user, language = "vi" }) {
       detail: cookieHealthLabel,
       icon: Cookie,
       tone: Number(cookieStats.active || 0) > 0 ? "green" : "danger",
+    },
+    {
+      label: l("Doanh thu Pro", "Pro revenue"),
+      value: formatMoney(adminKpis.proRevenue),
+      detail: l(`${formatNumber(adminKpis.activePro, locale)} tài khoản Pro`, `${formatNumber(adminKpis.activePro, locale)} active Pro accounts`),
+      icon: Zap,
+      tone: "magenta",
+    },
+    {
+      label: l("Tải model", "Model downloads"),
+      value: formatNumber(adminKpis.marketplaceDownloads, locale),
+      detail: l(`${formatNumber(adminKpis.sessions, locale)} phiên tải`, `${formatNumber(adminKpis.sessions, locale)} download sessions`),
+      icon: Package,
+      tone: "cyan",
+    },
+    {
+      label: l("Model thiếu file", "Models missing files"),
+      value: formatNumber(adminKpis.missingModels, locale),
+      detail: l(
+        `${formatNumber(adminKpis.incompleteModels, locale)} thiếu metadata · ${formatNumber(adminKpis.readyModels, locale)} sẵn sàng`,
+        `${formatNumber(adminKpis.incompleteModels, locale)} incomplete · ${formatNumber(adminKpis.readyModels, locale)} ready`,
+      ),
+      icon: AlertTriangle,
+      tone: Number(adminKpis.missingModels || 0) > 0 ? "danger" : "green",
     },
   ];
   const systemHealthItems = [
@@ -1006,6 +1067,7 @@ export default function Admin({ user, language = "vi" }) {
     { key: "topups", label: l("Lịch sử nạp", "Top-up history"), icon: CreditCard, count: topupPagination.total },
     { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
     { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
+    { key: "audit", label: "Audit", icon: HistoryIcon, count: auditPagination.total },
   ];
   const homeTextGroups = [
     {
@@ -1221,11 +1283,11 @@ export default function Admin({ user, language = "vi" }) {
       help: l("Mặc định tắt: proxy lỗi sẽ tự chuyển về IP VPS và gửi cảnh báo Telegram. Bật nếu muốn dừng hẳn khi proxy lỗi.", "Off by default: proxy failures fall back to the VPS IP and send a Telegram alert. Enable to stop requests when proxy fails."),
     },
   ];
-  const currentPlaywrightMode = Boolean(siteSettings.threed66BrowserAlways)
+  const currentPlaywrightMode = siteSettings.threed66BrowserAlways
     ? "always"
-    : Boolean(siteSettings.threed66DisableBrowserPageFallback) &&
-        Boolean(siteSettings.threed66DisableBrowserDownloadFallback) &&
-        !Boolean(siteSettings.threed66DownloadHandleBrowserFallback)
+    : siteSettings.threed66DisableBrowserPageFallback &&
+        siteSettings.threed66DisableBrowserDownloadFallback &&
+        !siteSettings.threed66DownloadHandleBrowserFallback
       ? "off"
       : "fallback";
   const playwrightModes = [
@@ -1243,6 +1305,32 @@ export default function Admin({ user, language = "vi" }) {
       value: "always",
       label: l("Luôn Playwright", "Always Playwright"),
       help: l("Ép preview/getlink đi qua browser để test model khó. Tốn RAM/CPU hơn.", "Force preview/getlink through the browser for hard models. Uses more RAM/CPU."),
+    },
+  ];
+  const modelResolveModes = [
+    {
+      value: "search",
+      label: l("Tìm bằng ID", "Search by ID"),
+      help: l(
+        "Dùng cookie gọi search 3D66 để lấy URL model. Phù hợp khi user chỉ nhập mã model.",
+        "Use the cookie to search 3D66 for the model URL. Best when users enter only a model ID.",
+      ),
+    },
+    {
+      value: "footprint",
+      label: l("Lấy qua lịch sử truy cập", "Resolve via footprint"),
+      help: l(
+        "Preview đọc link user cho nhanh. Khi tải, Playwright mở link, làm mới lịch sử truy cập và lấy URL thuộc tài khoản cookie.",
+        "Preview the submitted link directly. On download, Playwright opens it, refreshes footprint history, and uses the cookie account URL.",
+      ),
+    },
+    {
+      value: "direct",
+      label: l("Dùng link trực tiếp", "Use direct URL"),
+      help: l(
+        "Dùng nguyên link đầu vào cho cả preview và tải. Chỉ nên dùng để kiểm tra.",
+        "Use the submitted URL for both preview and download. Intended for diagnostics only.",
+      ),
     },
   ];
   const threed66SettingsTabs = [
@@ -2144,6 +2232,20 @@ export default function Admin({ user, language = "vi" }) {
             {threed66SettingsTab === "tasks" && (
             <div className="runtimeSettingGroup">
               <h3>{l("Tác vụ sang 3D66", "3D66 task settings")}</h3>
+              <div className="runtimeModeGrid" style={{ marginBottom: 12 }}>
+                {modelResolveModes.map((mode) => (
+                  <button
+                    key={mode.value}
+                    type="button"
+                    className={`runtimeModeButton ${siteSettings.threed66ModelResolveMode === mode.value ? "active" : ""}`}
+                    aria-pressed={siteSettings.threed66ModelResolveMode === mode.value}
+                    onClick={() => updateRuntimeSetting("threed66ModelResolveMode", mode.value)}
+                  >
+                    <strong>{mode.label}</strong>
+                    <small>{mode.help}</small>
+                  </button>
+                ))}
+              </div>
               <div className="runtimeSettingList">
                 {threed66RuntimeSettings.map((setting) => (
                   <label className="runtimeSettingRow" key={setting.field}>
@@ -2414,6 +2516,62 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
+      {activeSection === "data" && dataSection === "audit" && (
+        <section className="panel">
+          <h2><HistoryIcon size={20} /> {l("Nhật ký thao tác admin", "Admin audit log")}</h2>
+          <div className="adminTableToolbar" style={{ marginTop: 14 }}>
+            <label className="adminSearchField">
+              <Search size={15} />
+              <input
+                value={auditSearch}
+                onChange={(event) => {
+                  setAuditSearch(event.target.value);
+                  setAuditPage(1);
+                }}
+                placeholder={l("Tìm action, admin hoặc đối tượng", "Search action, admin, or target")}
+              />
+            </label>
+          </div>
+          <div className="table logTable" style={{ marginTop: 16 }}>
+            {auditLogs.map((item) => (
+              <div className="tableRow" key={item._id}>
+                <span className={`badge ${Number(item.statusCode || 200) >= 400 ? "error" : "success"}`}>
+                  {item.action}
+                </span>
+                <strong>{item.actor?.email || item.actorEmail || "admin"}</strong>
+                <span>{item.target || item.targetId || "system"}</span>
+                <span>HTTP {item.statusCode || 200}</span>
+                <time>{new Date(item.createdAt).toLocaleString(locale)}</time>
+              </div>
+            ))}
+            {!auditLogs.length && (
+              <p className="muted" style={{ textAlign: "center", padding: 16 }}>
+                {l("Chưa có nhật ký phù hợp.", "No matching audit entries.")}
+              </p>
+            )}
+          </div>
+          <div className="adminPagination">
+            <button
+              type="button"
+              className="smallButton"
+              disabled={auditPagination.page <= 1}
+              onClick={() => setAuditPage((page) => Math.max(1, page - 1))}
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <span>{auditPagination.page} / {auditPagination.totalPages}</span>
+            <button
+              type="button"
+              className="smallButton"
+              disabled={auditPagination.page >= auditPagination.totalPages}
+              onClick={() => setAuditPage((page) => Math.min(auditPagination.totalPages, page + 1))}
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        </section>
+      )}
+
       {activeSection === "data" && dataSection === "getlinks" && (
         <section className="panel">
           <h2><FileDown size={20} /> {l("Lịch sử getlink đã trừ credit", "Charged getlink history")}</h2>
@@ -2446,11 +2604,18 @@ export default function Admin({ user, language = "vi" }) {
                 <div className="getlinkAuditModel">
                   <strong>{item.productId || "3D66"}</strong>
                   <span>{item.title || l("Không có tên model", "No model title")}</span>
-                  {item.sourceUrl && (
-                    <a href={item.sourceUrl} target="_blank" rel="noreferrer">
-                      {l("Mở link gốc", "Open source")}
-                    </a>
-                  )}
+                  <div className="getlinkAuditLinks">
+                    {item.sourceUrl && (
+                      <a href={item.sourceUrl} target="_blank" rel="noreferrer">
+                        {l("Link user gửi", "User link")}
+                      </a>
+                    )}
+                    {item.resolvedSourceUrl && (
+                      <a href={visible3D66Url(item.resolvedSourceUrl)} target="_blank" rel="noreferrer">
+                        {l("Link clear", "Cleared link")}
+                      </a>
+                    )}
+                  </div>
                 </div>
                 <span className={`badge ${Number(item.modelPrice || 0) !== Number(item.creditDeducted || 0) ? "error" : ""}`}>
                   {l("Giá", "Price")}: <CoinAmount value={Number(item.modelPrice || 0).toLocaleString(locale)} />{!item.priceKnown ? ` (${l("chưa chắc", "unconfirmed")})` : ""}
@@ -2512,6 +2677,20 @@ export default function Admin({ user, language = "vi" }) {
                 placeholder={l("Tìm email, tên gói hoặc mã giao dịch", "Search email, package, or transaction code")}
               />
             </label>
+            <select
+              value={userFilter}
+              onChange={(event) => {
+                setUserFilter(event.target.value);
+                setUserPage(1);
+              }}
+              aria-label={l("Lọc người dùng", "Filter users")}
+            >
+              <option value="all">{l("Tất cả tài khoản", "All accounts")}</option>
+              <option value="free">Free</option>
+              <option value="pro">Pro</option>
+              <option value="admin">Admin</option>
+              <option value="banned">{l("Đã khóa", "Banned")}</option>
+            </select>
             <select
               value={transactionKind}
               onChange={(event) => {

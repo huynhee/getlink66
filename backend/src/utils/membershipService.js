@@ -1,7 +1,10 @@
 import crypto from "node:crypto";
+import mongoose from "mongoose";
+import { isMemoryDb } from "../config/memoryStore.js";
 import DailyDownloadQuota from "../models/DailyDownloadQuota.js";
 import MembershipPlan from "../models/MembershipPlan.js";
 import MembershipOrder from "../models/MembershipOrder.js";
+import PaymentReceipt from "../models/PaymentReceipt.js";
 import User from "../models/User.js";
 import Voucher from "../models/Voucher.js";
 import { approvedVoucherUseCount } from "./voucherCheckoutService.js";
@@ -34,7 +37,7 @@ export const DEFAULT_MEMBERSHIP_PLANS = [
     durationDays: 90,
     expiresEndOfDay: true,
     badge: "3 MONTHS",
-    features: ["149k/month x 3 months", "100 downloads/day", "S-VIP access"],
+    features: ["149k/month x 3 months", "100 downloads/day", "Pro models"],
     sortOrder: 30,
   },
   {
@@ -44,7 +47,7 @@ export const DEFAULT_MEMBERSHIP_PLANS = [
     durationDays: 365,
     expiresEndOfDay: true,
     badge: "12 MONTHS",
-    features: ["99k/month x 12 months", "100 downloads/day", "S-VIP access"],
+    features: ["99k/month x 12 months", "100 downloads/day", "Pro models"],
     sortOrder: 40,
   },
 ];
@@ -76,27 +79,33 @@ export function createMembershipPaymentCode() {
 }
 
 export async function initializeMembershipPlans() {
-  const count = await MembershipPlan.countDocuments({});
-  if (count > 0 && process.env.SYNC_DEFAULT_MEMBERSHIP_PLANS === "false") return;
+  const syncDefaults = process.env.SYNC_DEFAULT_MEMBERSHIP_PLANS === "true";
   await Promise.all(
-    DEFAULT_MEMBERSHIP_PLANS.map((plan) =>
-      MembershipPlan.findOneAndUpdate(
+    DEFAULT_MEMBERSHIP_PLANS.map((plan) => {
+      const defaults = {
+        ...plan,
+        tier: "member",
+        dailyDownloadLimit: 100,
+        isActive: true,
+      };
+      return MembershipPlan.findOneAndUpdate(
         { code: plan.code },
-        {
-          $set: {
-            ...plan,
-            tier: "member",
-            dailyDownloadLimit: 100,
-            isActive: true,
-          },
-        },
-        { upsert: true, new: true },
-      ),
-    ),
+        syncDefaults ? { $set: defaults } : { $setOnInsert: defaults },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+    }),
   );
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const LATE_PAYMENT_REJECTION_REASONS = new Set(["expired", "user_cancel", "gateway_error"]);
+
+async function execMaybeSession(queryOrPromise, session = null) {
+  if (session && typeof queryOrPromise?.session === "function") {
+    return queryOrPromise.session(session);
+  }
+  return queryOrPromise;
+}
 
 function vietnamDateParts(date = new Date()) {
   const shifted = new Date(date.getTime() + 7 * 60 * 60 * 1000);
@@ -131,7 +140,7 @@ function addMembershipTime(user, order) {
   return endOfVietnamDay(target);
 }
 
-async function addDailyQuotaBoost(user, order) {
+async function addDailyQuotaBoost(user, order, session = null) {
   const amount = Math.max(1, Number(order.dailyDownloadLimit || 100));
   const dayKey = vietnamDayKey();
   const resetAt = nextVietnamReset();
@@ -153,11 +162,11 @@ async function addDailyQuotaBoost(user, order) {
       $set: { resetAt },
       $inc: { bonusLimit: amount },
     },
-    { upsert: true, new: true },
+    { upsert: true, new: true, session },
   );
 }
 
-async function releaseDailyQuotaBoost(user, order) {
+async function releaseDailyQuotaBoost(user, order, session = null) {
   if (!user?._id) return;
   const amount = Math.max(1, Number(order.dailyDownloadLimit || 100));
   await DailyDownloadQuota.findOneAndUpdate(
@@ -168,20 +177,20 @@ async function releaseDailyQuotaBoost(user, order) {
       tier: "member",
     },
     { $inc: { bonusLimit: -amount } },
-    { new: true },
+    { new: true, session },
   ).catch(() => {});
 }
 
-async function releaseVoucherCounter(code) {
+async function releaseVoucherCounter(code, session = null) {
   if (!code) return;
   await Voucher.findOneAndUpdate(
     { code },
     { $inc: { usedCount: -1 } },
-    { new: true },
+    { new: true, session },
   );
 }
 
-async function claimMembershipVoucher(order) {
+async function claimMembershipVoucher(order, session = null) {
   const code = String(order?.voucherCode || "").trim().toUpperCase();
   if (!code) return false;
 
@@ -192,7 +201,7 @@ async function claimMembershipVoucher(order) {
       $expr: { $lt: ["$usedCount", "$usageLimit"] },
     },
     { $inc: { usedCount: 1 } },
-    { new: true },
+    { new: true, session },
   );
   if (!voucher) {
     const error = new Error("Voucher đã hết hạn hoặc hết lượt dùng, không thể hoàn tất giao dịch.");
@@ -204,7 +213,7 @@ async function claimMembershipVoucher(order) {
   if (perUserLimit > 0) {
     const approvedByUser = await approvedVoucherUseCount(order.userId, code);
     if (approvedByUser >= perUserLimit) {
-      await releaseVoucherCounter(code);
+      await releaseVoucherCounter(code, session);
       const error = new Error("Tài khoản này đã đạt giới hạn sử dụng voucher.");
       error.status = 409;
       throw error;
@@ -214,11 +223,59 @@ async function claimMembershipVoucher(order) {
   return true;
 }
 
-export async function approvePendingMembershipOrder(order, approvalFields = {}) {
-  const current = await MembershipOrder.findOne({ _id: order._id, status: "pending" });
+function approvableMembershipOrderQuery(order) {
+  if (
+    order?.status === "rejected" &&
+    LATE_PAYMENT_REJECTION_REASONS.has(String(order.rejectionReason || ""))
+  ) {
+    return { _id: order._id, status: "rejected", rejectionReason: order.rejectionReason };
+  }
+  return { _id: order._id, status: "pending" };
+}
+
+async function claimMembershipPayment(order, approvalFields, session = null) {
+  const gatewayTransactionId = String(approvalFields?.gatewayTransactionId || "").trim();
+  if (!gatewayTransactionId) return null;
+  const receipt = {
+    gatewayTransactionId,
+    provider: String(approvalFields?.gatewayProvider || order.gatewayProvider || ""),
+    membershipOrderId: order._id,
+    amount: Number(order.amount || 0),
+  };
+  try {
+    if (!session) {
+      const duplicate = await PaymentReceipt.findOne({
+        $or: [{ gatewayTransactionId }, { membershipOrderId: order._id }],
+      });
+      if (duplicate) {
+        const error = new Error("Gateway transaction has already been claimed.");
+        error.code = "DUPLICATE_GATEWAY_TRANSACTION";
+        error.status = 409;
+        throw error;
+      }
+      return PaymentReceipt.create(receipt);
+    }
+    const [created] = await PaymentReceipt.create([receipt], { session });
+    return created;
+  } catch (error) {
+    if (error?.code === 11000 || error?.code === "DUPLICATE_GATEWAY_TRANSACTION") {
+      const duplicateError = new Error("Gateway transaction has already been claimed.");
+      duplicateError.code = "DUPLICATE_GATEWAY_TRANSACTION";
+      duplicateError.status = 409;
+      throw duplicateError;
+    }
+    throw error;
+  }
+}
+
+async function approveMembershipOrderWithSession(order, approvalFields = {}, session = null) {
+  const current = await execMaybeSession(
+    MembershipOrder.findOne(approvableMembershipOrderQuery(order)),
+    session,
+  );
   if (!current) return null;
 
-  const user = await User.findById(current.userId);
+  const user = await execMaybeSession(User.findById(current.userId), session);
   if (!user) {
     const error = new Error("User not found");
     error.status = 404;
@@ -230,16 +287,19 @@ export async function approvePendingMembershipOrder(order, approvalFields = {}) 
   let voucherClaimed = false;
   let quotaBoosted = false;
   let approvedOrder = null;
+  let paymentReceipt = null;
   try {
-    voucherClaimed = await claimMembershipVoucher(current);
-    const quotaBoost = shouldBoostToday ? await addDailyQuotaBoost(user, current) : null;
+    voucherClaimed = await claimMembershipVoucher(current, session);
+    const quotaBoost = shouldBoostToday ? await addDailyQuotaBoost(user, current, session) : null;
     quotaBoosted = Boolean(quotaBoost);
     approvedOrder = await MembershipOrder.findOneAndUpdate(
-      { _id: current._id, status: "pending" },
+      approvableMembershipOrderQuery(current),
       {
         $set: {
           status: "approved",
           paidAt: new Date(),
+          canceledAt: null,
+          rejectionReason: "",
           activatedUntil: shouldBoostToday ? endOfVietnamDay(new Date()) : activatedUntil,
           isQuotaAddon: shouldBoostToday,
           quotaBoostAmount: shouldBoostToday ? Number(current.dailyDownloadLimit || 100) : 0,
@@ -247,33 +307,83 @@ export async function approvePendingMembershipOrder(order, approvalFields = {}) 
           ...approvalFields,
         },
       },
-      { new: true },
+      { new: true, session },
     );
+    if (!approvedOrder) {
+      if (!session) {
+        if (quotaBoosted) await releaseDailyQuotaBoost(user, current);
+        if (voucherClaimed) await releaseVoucherCounter(current.voucherCode);
+      }
+      return null;
+    }
+
+    paymentReceipt = await claimMembershipPayment(approvedOrder, approvalFields, session);
+
+    const updatedUser = shouldBoostToday
+      ? await execMaybeSession(User.findById(current.userId), session)
+      : await User.findByIdAndUpdate(
+        current.userId,
+        {
+          $set: {
+            proUntil: activatedUntil,
+            proPlanId: current.planId,
+            proActivatedAt: new Date(),
+            proDailyDownloadLimit: Number(current.dailyDownloadLimit || 100),
+          },
+        },
+        { new: true, session },
+      );
+    if (!updatedUser) {
+      const error = new Error("User not found while activating membership");
+      error.status = 409;
+      throw error;
+    }
+    return { order: approvedOrder, user: updatedUser };
   } catch (error) {
-    if (quotaBoosted) await releaseDailyQuotaBoost(user, current);
-    if (voucherClaimed) await releaseVoucherCounter(current.voucherCode);
+    if (!session) {
+      if (paymentReceipt?._id) {
+        await PaymentReceipt.findByIdAndDelete(paymentReceipt._id).catch(() => {});
+      }
+      if (approvedOrder) {
+        await MembershipOrder.findOneAndUpdate(
+          { _id: approvedOrder._id, status: "approved" },
+          {
+            $set: {
+              status: current.status,
+              paidAt: current.paidAt || null,
+              canceledAt: current.canceledAt || null,
+              rejectionReason: current.rejectionReason || "",
+              gatewayProvider: current.gatewayProvider || "",
+              gatewayTransactionId: current.gatewayTransactionId || "",
+              gatewayPayload: current.gatewayPayload || null,
+              activatedUntil: current.activatedUntil || null,
+              isQuotaAddon: Boolean(current.isQuotaAddon),
+              quotaBoostAmount: Number(current.quotaBoostAmount || 0),
+              quotaBoostDayKey: current.quotaBoostDayKey || "",
+            },
+          },
+          { new: true },
+        ).catch(() => {});
+      }
+      if (quotaBoosted) await releaseDailyQuotaBoost(user, current);
+      if (voucherClaimed) await releaseVoucherCounter(current.voucherCode);
+    }
     throw error;
   }
-  if (!approvedOrder) {
-    if (quotaBoosted) await releaseDailyQuotaBoost(user, current);
-    if (voucherClaimed) await releaseVoucherCounter(current.voucherCode);
-    return null;
+}
+
+export async function approvePendingMembershipOrder(order, approvalFields = {}) {
+  if (isMemoryDb()) {
+    return approveMembershipOrderWithSession(order, approvalFields);
   }
-
-  const updatedUser = shouldBoostToday
-    ? await User.findById(current.userId)
-    : await User.findByIdAndUpdate(
-      current.userId,
-      {
-        $set: {
-          proUntil: activatedUntil,
-          proPlanId: current.planId,
-          proActivatedAt: new Date(),
-          proDailyDownloadLimit: Number(current.dailyDownloadLimit || 100),
-        },
-      },
-      { new: true },
-    );
-
-  return { order: approvedOrder, user: updatedUser };
+  const session = await mongoose.startSession();
+  let result = null;
+  try {
+    await session.withTransaction(async () => {
+      result = await approveMembershipOrderWithSession(order, approvalFields, session);
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
 }

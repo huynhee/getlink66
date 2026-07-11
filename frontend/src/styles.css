@@ -6394,6 +6394,16 @@ label {
   font-size: 12px;
 }
 
+.getlinkAuditLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.getlinkAuditLinks a + a {
+  color: var(--accent-cyan);
+}
+
 .topupAuditPackage span,
 .topupAuditAmount span,
 .topupAuditPayment span {
