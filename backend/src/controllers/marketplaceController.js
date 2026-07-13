@@ -12,8 +12,15 @@ import {
   verifyDownloadSession,
 } from "../utils/marketplaceDownloadService.js";
 import { isProActive } from "../utils/membershipService.js";
-import { openGoogleDriveFileStream, openStorageStream } from "../utils/storageProvider.js";
+import { openDemoMarketplaceImageStream, openGoogleDriveFileStream, openStorageStream } from "../utils/storageProvider.js";
 import { searchMarketplaceImage } from "../utils/marketplaceImageSearchProvider.js";
+import {
+  discoveryIdentityQuery,
+  rankMarketplaceRecommendations,
+  semanticRecommendations,
+  semanticTextSearch,
+  sortByDiscoveryMatches,
+} from "../utils/marketplaceDiscovery.js";
 
 const PAGE_SIZE = 60;
 const IMAGE_SEARCH_FREE_LIMIT = 10;
@@ -50,9 +57,9 @@ function publicImageRef(model, image, url) {
 }
 
 function publicCoverImage(model) {
-  if (model.coverImage?.driveFileId) return publicImageRef(model, model.coverImage, coverUrl(model));
   const firstPreview = (model.previewImages || []).find((image) => image?.driveFileId);
-  return firstPreview ? publicImageRef(model, firstPreview, previewUrl(model, 0)) : null;
+  if (firstPreview) return publicImageRef(model, firstPreview, coverUrl(model));
+  return model.coverImage?.driveFileId ? publicImageRef(model, model.coverImage, coverUrl(model)) : null;
 }
 
 function publicPreviewImages(model) {
@@ -137,19 +144,34 @@ function publicModel(model, options = {}) {
     isPublished: Boolean(model.isPublished),
     fileSize: Number(model.fileSize || 0),
     downloadCount: Number(model.downloadCount || 0),
+    isDemo: model.source?.provider === "demo",
     createdAt: model.createdAt,
     updatedAt: model.updatedAt,
   };
 }
 
-async function recommendedModelsFor(model, limit = 8) {
-  if (!model?._id) return [];
+function recommendationSignals(model) {
   const signals = [];
   const categoryId = refId(model.categoryId);
   const parentCategoryId = refId(model.parentCategoryId);
   if (categoryId) signals.push({ categoryId });
   if (parentCategoryId) signals.push({ parentCategoryId });
-  if (model.accessType) signals.push({ accessType: model.accessType });
+  if (model.renderer) signals.push({ renderer: model.renderer });
+  if (model.styles?.length) signals.push({ styles: { $in: model.styles } });
+  if (model.renderers?.length) signals.push({ renderers: { $in: model.renderers } });
+  if (model.forms?.length) signals.push({ forms: { $in: model.forms } });
+  if (model.colors?.length) signals.push({ colors: { $in: model.colors } });
+  if (model.materials?.length) signals.push({ materials: { $in: model.materials } });
+  return signals;
+}
+
+async function recommendedModelsFor(model, options = {}) {
+  if (!model?._id) return { models: [], total: 0, engine: "local_hybrid" };
+  const offset = Math.max(0, Number(options.offset || 0));
+  const limit = Math.min(60, Math.max(1, Number(options.limit || 6)));
+  const desiredCount = Math.min(60, offset + limit);
+  const semantic = await semanticRecommendations(model, 180);
+  const signals = recommendationSignals(model);
   const query = {
     _id: { $ne: model._id },
     isPublished: true,
@@ -159,22 +181,39 @@ async function recommendedModelsFor(model, limit = 8) {
   };
   const candidates = await MarketplaceModel.find(query)
     .sort({ downloadCount: -1, createdAt: -1 })
-    .limit(Math.max(limit * 2, limit))
+    .limit(720)
     .populate("categoryId", "title titleEn slug sourceCategoryId")
     .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
     .lean();
-  return candidates
-    .map((item) => {
-      let score = 0;
-      if (String(refId(item.categoryId) || "") === String(categoryId || "")) score += 6;
-      if (String(refId(item.parentCategoryId) || "") === String(parentCategoryId || "")) score += 3;
-      if (item.accessType === model.accessType) score += 2;
-      if (item.renderer && item.renderer === model.renderer) score += 1;
-      return { item, score };
+
+  const semanticQuery = discoveryIdentityQuery(semantic.matches);
+  if (semanticQuery) {
+    const semanticCandidates = await MarketplaceModel.find({
+      isPublished: true,
+      metadataStatus: "complete",
+      fileStatus: "ready",
+      _id: { $ne: model._id },
+      ...semanticQuery,
     })
-    .sort((a, b) => b.score - a.score || new Date(b.item.createdAt || 0) - new Date(a.item.createdAt || 0))
-    .slice(0, limit)
-    .map(({ item }) => publicModel(item, { includePreviews: false }));
+      .limit(180)
+      .populate("categoryId", "title titleEn slug sourceCategoryId")
+      .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
+      .lean();
+    const seen = new Set(candidates.map((candidate) => String(candidate._id)));
+    semanticCandidates.forEach((candidate) => {
+      if (!seen.has(String(candidate._id))) candidates.push(candidate);
+    });
+  }
+
+  const ranked = rankMarketplaceRecommendations(model, candidates, {
+    semanticMatches: semantic.matches,
+    limit: Math.max(desiredCount, 60),
+  });
+  return {
+    models: ranked.slice(offset, offset + limit).map((item) => publicModel(item, { includePreviews: false })),
+    total: Math.min(60, ranked.length),
+    engine: semantic.matches.length ? semantic.provider : "local_hybrid",
+  };
 }
 
 export async function listMarketplaceCategories(_req, res, next) {
@@ -276,7 +315,11 @@ export async function listMarketplaceModels(req, res, next) {
     if (["missing", "pending_upload", "ready", "failed"].includes(fileStatus)) query.fileStatus = fileStatus;
     const categoryQuery = await categoryFilter(req.query.category);
     addNestedFilter(query, categoryQuery);
-    if (search) {
+    const semanticSearch = search ? await semanticTextSearch(search, 1_000) : { matches: [], provider: "catalog" };
+    const semanticQuery = discoveryIdentityQuery(semanticSearch.matches);
+    if (semanticQuery) {
+      addNestedFilter(query, semanticQuery);
+    } else if (search) {
       const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       const searchQuery = {
         $or: [
@@ -290,16 +333,20 @@ export async function listMarketplaceModels(req, res, next) {
     const total = await MarketplaceModel.countDocuments(query);
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const safePage = Math.min(page, totalPages);
-    const models = await MarketplaceModel.find(query)
+    let models = await MarketplaceModel.find(query)
       .sort({ createdAt: -1 })
-      .skip((safePage - 1) * limit)
-      .limit(limit)
+      .skip(semanticQuery ? 0 : (safePage - 1) * limit)
+      .limit(semanticQuery ? Math.min(1_000, total) : limit)
       .populate("categoryId", "title titleEn slug sourceCategoryId")
       .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
       .lean();
+    if (semanticQuery) {
+      models = sortByDiscoveryMatches(models, semanticSearch.matches).slice((safePage - 1) * limit, safePage * limit);
+    }
     res.json({
       models: models.map((model) => publicModel(model, { includePreviews: false })),
       pagination: { page: safePage, pageSize: limit, total, totalPages },
+      search: { engine: semanticQuery ? semanticSearch.provider : "catalog" },
     });
   } catch (error) {
     next(error);
@@ -478,15 +525,51 @@ export async function getMarketplaceModel(req, res, next) {
       .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
       .lean();
     if (!model) return res.status(404).json({ message: "Model not found" });
-    const recommendedModels = await recommendedModelsFor(model);
-    res.json({ model: publicModel(model), recommendedModels });
+    const recommendations = await recommendedModelsFor(model, { limit: 6 });
+    res.json({
+      model: publicModel(model),
+      recommendedModels: recommendations.models,
+      recommendations: {
+        total: recommendations.total,
+        hasMore: recommendations.total > recommendations.models.length,
+        engine: recommendations.engine,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listMarketplaceModelRecommendations(req, res, next) {
+  try {
+    const slugOrId = String(req.params.slug || "").trim();
+    const lookup = [{ slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready" }];
+    if (isSafeId(slugOrId)) lookup.push({ _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready" });
+    const model = await MarketplaceModel.findOne({ $or: lookup }).lean();
+    if (!model) return res.status(404).json({ message: "Model not found" });
+    const offset = Math.min(59, Math.max(0, Number(req.query.offset || 6)));
+    const limit = Math.min(54, Math.max(1, Number(req.query.limit || 54)));
+    const recommendations = await recommendedModelsFor(model, { offset, limit });
+    res.json({
+      models: recommendations.models,
+      pagination: {
+        offset,
+        limit,
+        total: recommendations.total,
+        hasMore: offset + recommendations.models.length < recommendations.total,
+      },
+      discovery: { engine: recommendations.engine },
+    });
   } catch (error) {
     next(error);
   }
 }
 
 function streamImageRef(res, next, image, defaultFileName) {
-  return openGoogleDriveFileStream(image.driveFileId, image.fileName || defaultFileName).then((file) => {
+  const openStream = String(image.driveFileId || "").startsWith("demo:")
+    ? Promise.resolve(openDemoMarketplaceImageStream())
+    : openGoogleDriveFileStream(image.driveFileId, image.fileName || defaultFileName);
+  return openStream.then((file) => {
     const etag = crypto.createHash("sha1").update(String(image.driveFileId || "")).digest("hex");
     res.setHeader("cache-control", "public, max-age=31536000, immutable");
     res.setHeader("etag", `"${etag}"`);
@@ -507,9 +590,8 @@ export async function streamMarketplaceCover(req, res, next) {
       .select("title coverImage previewImages")
       .lean();
     if (!model) return res.status(404).json({ message: "Model not found" });
-    const cover = model.coverImage?.driveFileId
-      ? model.coverImage
-      : (model.previewImages || []).find((image) => image?.driveFileId);
+    const cover = (model.previewImages || []).find((image) => image?.driveFileId)
+      || (model.coverImage?.driveFileId ? model.coverImage : null);
     if (!cover?.driveFileId) return res.status(404).json({ message: "Cover not found" });
     await streamImageRef(res, next, cover, "cover.jpg");
   } catch (error) {

@@ -115,8 +115,8 @@ function TwoFactorModal({ onVerify, language = "vi" }) {
   }
 
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
-      <div className="panel" style={{ width: 400, background: "#111", border: "1px solid var(--border)" }}>
+    <div className="twoFactorOverlay">
+      <div className="panel twoFactorCard">
         <h2 style={{ marginBottom: 16 }}>{t.twoFactorTitle}</h2>
         <p style={{ marginBottom: 16, color: "var(--muted)" }}>{t.twoFactorBody}</p>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -180,7 +180,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState(() => pageFromPath(window.location.pathname));
   const [loading, setLoading] = useState(true);
-  const [path, setPath] = useState(window.location.pathname);
+  const [path, setPath] = useState(`${window.location.pathname}${window.location.search}`);
   const [language, setLanguage] = useState(getInitialLanguage);
   const [theme, setTheme] = useState(getInitialTheme);
   const [banOverlayClosed, setBanOverlayClosed] = useState(false);
@@ -213,7 +213,7 @@ function App() {
   function navigate(nextPath) {
     window.history.pushState({}, "", nextPath);
     const nextUrl = new URL(nextPath, window.location.origin);
-    setPath(nextUrl.pathname);
+    setPath(`${nextUrl.pathname}${nextUrl.search}`);
     setPage(pageFromPath(nextUrl.pathname));
   }
 
@@ -262,7 +262,7 @@ function App() {
 
   useEffect(() => {
     const onPopState = () => {
-      setPath(window.location.pathname);
+      setPath(`${window.location.pathname}${window.location.search}`);
       setPage(pageFromPath(window.location.pathname));
     };
     window.addEventListener("popstate", onPopState);

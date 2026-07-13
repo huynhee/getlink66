@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { AlertCircle, ArrowRight, BookOpen, ChevronRight, Chrome, ClipboardPaste, ShieldCheck, Sparkles, UserPlus, Wallet } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import GuideContent from "../components/GuideContent.jsx";
+import SiteFooter from "../components/SiteFooter.jsx";
+import { ModelCard } from "./Models.jsx";
 import { translations } from "../i18n.js";
 
 const HOME_TEXT_DEFAULTS = {
@@ -108,6 +110,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const [demoError, setDemoError] = useState("");
   const [packages, setPackages] = useState([]);
   const [membershipPlans, setMembershipPlans] = useState([]);
+  const [featuredModels, setFeaturedModels] = useState([]);
+  const [featuredModelsLoading, setFeaturedModelsLoading] = useState(true);
   const [homeTopupMode, setHomeTopupMode] = useState("credit");
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
   const [referral, setReferral] = useState(null);
@@ -166,14 +170,27 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   }
 
   React.useEffect(() => {
+    setSiteSettings((current) => ({ ...current, ...HOME_TEXT_DEFAULTS[language] }));
+  }, [language]);
+
+  React.useEffect(() => {
     if (!adminMode) {
       api("/api/settings")
         .then((data) => {
           if (data?.settings) {
-            setSiteSettings((current) => ({ ...current, ...data.settings }));
+            setSiteSettings((current) => ({
+              ...current,
+              ...data.settings,
+              ...(language === "en" ? HOME_TEXT_DEFAULTS.en : {}),
+            }));
           }
         })
         .catch(console.error);
+      setFeaturedModelsLoading(true);
+      api("/api/marketplace/models?limit=12&page=1")
+        .then((data) => setFeaturedModels((data.models || []).slice(0, 12)))
+        .catch(() => setFeaturedModels([]))
+        .finally(() => setFeaturedModelsLoading(false));
       api("/api/topup/packages")
         .then((data) => setPackages(data.packages || []))
         .catch(console.error);
@@ -482,6 +499,39 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
         </section>
       )}
 
+      {!adminMode && (
+        <section className="homeModelsSection" aria-labelledby="home-models-title">
+          <div className="homeModelsHeader">
+            <div>
+              <span className="eyebrowSignal">{language === "vi" ? "Thư viện 3D" : "3D library"}</span>
+              <h2 id="home-models-title">{language === "vi" ? "Model mới đề xuất" : "Recommended new models"}</h2>
+              <p>
+                {language === "vi"
+                  ? "Khám phá model Free và Pro mới nhất, tải trực tiếp trên web hoặc qua plugin."
+                  : "Explore the latest Free and Pro models, ready for web and plugin downloads."}
+              </p>
+            </div>
+            <a className="smallButton" href="/models">
+              {language === "vi" ? "Xem thư viện" : "View library"} <ChevronRight size={16} />
+            </a>
+          </div>
+          {featuredModelsLoading ? (
+            <div className="homeModelGrid" aria-label={language === "vi" ? "Đang tải model" : "Loading models"}>
+              {Array.from({ length: 12 }).map((_, index) => <span className="homeModelSkeleton" key={index} />)}
+            </div>
+          ) : featuredModels.length ? (
+            <div className="homeModelGrid">
+              {featuredModels.map((model) => <ModelCard key={model._id} model={model} />)}
+            </div>
+          ) : (
+            <div className="homeModelsEmpty">
+              <span>{language === "vi" ? "Model đang được cập nhật." : "Models are being updated."}</span>
+              <a href="/models">{language === "vi" ? "Mở thư viện" : "Open library"}</a>
+            </div>
+          )}
+        </section>
+      )}
+
       {adminMode && (
         <section className="loginPage adminLoginPage">
           <div className="panel loginPanel has-window-controls">
@@ -738,28 +788,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
             </a>
           </section>
 
-          <footer className="landingFooter">
-            <div className="footerBrand">
-              <strong>3DIPL</strong>
-              <span>{siteSettings.footerTagline || t.support247}</span>
-            </div>
-            <nav>
-              <h3>{t.product}</h3>
-              <a href="#">{t.features}</a>
-              <a href="#pricing">{t.pricing}</a>
-              <a href="/guide">{t.docs}</a>
-            </nav>
-            <nav>
-              <h3>{t.support}</h3>
-              <a href="https://discord.gg/azu9mX6GhB" target="_blank" rel="noreferrer">Discord</a>
-              <a href="https://www.facebook.com/groups/960223243551548" target="_blank" rel="noreferrer">Facebook Group</a>
-            </nav>
-            <nav>
-              <h3>{t.legal}</h3>
-              <a href="/privacy">{t.privacy}</a>
-              <a href="/terms">{t.terms}</a>
-            </nav>
-          </footer>
+          <SiteFooter language={language} tagline={siteSettings.footerTagline || t.support247} />
         </>
       )}
     </div>

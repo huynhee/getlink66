@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
+    "drive:auth": "node scripts/google-drive-auth.js",
+    "drive:check": "node scripts/google-drive-check.js",
+    "seed:models": "node scripts/marketplace-demo-seed.js",
     "test": "node --test"
   },
   "dependencies": {

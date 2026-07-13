@@ -1,5 +1,5 @@
 /* ==========================================================================
-   TrollLLM Cyber Dark Design System
+   3DIPL application design system
    ========================================================================== */
 
 :root {
@@ -9623,5 +9623,1140 @@ html[data-theme="dark"] .inviteSectionTag {
   .topupCheckoutBox button {
     width: 100%;
     min-width: 0;
+  }
+}
+
+/* ==========================================================================
+   Unified application surfaces, pagination, marketplace and admin mobile
+   ========================================================================== */
+.accountMenuContent,
+.account.open .accountMenuContent,
+.notificationDropdown,
+.twoFactorCard,
+.revenueChartPanel,
+.adminKpiCard,
+.overviewCard,
+.marketAdminFact,
+.marketAdminFacetPicker,
+.downloadGuideBanner,
+.referralGetlinkInvite,
+.inviteHero,
+.inviteStats,
+.inviteLinkPanel,
+.inviteHistoryPanel,
+.inviteSteps,
+.result,
+.guideNav button,
+.inlineCheck,
+.userCreditHistoryPanel {
+  color: var(--text-primary);
+  background: var(--panel-bg);
+  border-color: var(--border-light);
+  box-shadow: var(--shadow-md);
+  clip-path: none;
+}
+
+.accountStatusRow,
+.notificationDropdown button,
+.systemHealthItem,
+.adminActivityItem,
+.packageBarItem,
+.signalRail {
+  background: var(--surface-2);
+  border-color: var(--border-light);
+}
+
+.accountStatusHeader,
+.accountStatusRow,
+.accountMenuActions,
+.notificationDropdownHeader {
+  color: var(--text-primary);
+}
+
+.accountStatusHeader span,
+.accountStatusRow span,
+.accountStatusRow small,
+.notificationDropdown p {
+  color: var(--text-secondary);
+}
+
+.accountStatusRow strong,
+.accountStatusHeader strong {
+  color: var(--text-primary);
+}
+
+.languageToggle {
+  width: auto;
+  min-height: 34px;
+  display: inline-grid;
+  grid-template-columns: repeat(2, 31px);
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--control-bg);
+}
+
+.languageToggle button {
+  width: 31px;
+  min-width: 31px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.languageToggle button.active {
+  color: var(--text-primary);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--border-light);
+}
+
+.twoFactorOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: color-mix(in srgb, var(--bg-app) 78%, transparent);
+  backdrop-filter: blur(7px);
+}
+
+.marketImageSearchOverlay,
+.marketAdminConflictOverlay {
+  background: color-mix(in srgb, var(--bg-app) 74%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.twoFactorCard {
+  width: min(400px, 100%);
+}
+
+.revenueChartPanel {
+  overflow: hidden;
+}
+
+.chartControls {
+  background: var(--control-bg);
+  border-color: var(--border-light);
+}
+
+.chartBarTrack {
+  background-color: var(--surface-2);
+  background-image: repeating-linear-gradient(
+    to top,
+    color-mix(in srgb, var(--text-primary) 6%, transparent) 0,
+    color-mix(in srgb, var(--text-primary) 6%, transparent) 1px,
+    transparent 1px,
+    transparent 34px
+  );
+  border-color: color-mix(in srgb, var(--neon-green) 24%, var(--border-light));
+}
+
+.chartTooltip {
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border-color: color-mix(in srgb, var(--neon-green) 42%, var(--border-light));
+  box-shadow: var(--shadow-md);
+  clip-path: none;
+}
+
+.packageBarTrack {
+  background: var(--surface-3);
+  border-color: var(--border-light);
+}
+
+.appPagination {
+  width: 100%;
+  min-width: 0;
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin-top: 20px;
+  padding: 12px 16px;
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.appPaginationTotal {
+  font-size: 12px;
+}
+
+.appPaginationTotal strong {
+  color: var(--text-primary);
+}
+
+.appPaginationPages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.appPaginationPages button {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.appPaginationPages button:hover:not(:disabled) {
+  color: var(--neon-green);
+  border-color: var(--neon-green);
+}
+
+.appPaginationPages button.active {
+  color: var(--bg-app);
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+}
+
+.appPaginationPages button:disabled {
+  opacity: 0.35;
+}
+
+.appPaginationGap {
+  width: 22px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.appPaginationJump {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.appPaginationJump input {
+  width: 54px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 6px;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.homeModelsSection {
+  display: grid;
+  gap: 20px;
+  padding: 54px 0 14px;
+}
+
+.homeModelsHeader {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.homeModelsHeader h2 {
+  margin: 7px 0 6px;
+  font-size: clamp(25px, 3vw, 38px);
+  letter-spacing: 0;
+}
+
+.homeModelsHeader p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.homeModelGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.homeModelGrid .marketModelCard > strong {
+  font-size: 12px;
+}
+
+.homeModelSkeleton {
+  display: block;
+  aspect-ratio: 1 / 1.14;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(100deg, var(--surface-2) 28%, var(--surface-3) 42%, var(--surface-2) 58%);
+  background-size: 220% 100%;
+  animation: homeModelLoading 1.25s linear infinite;
+}
+
+@keyframes homeModelLoading {
+  to { background-position-x: -220%; }
+}
+
+.homeModelsEmpty {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  border-block: 1px solid var(--border-light);
+}
+
+.homeModelsEmpty a,
+.marketSectionHeader > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--neon-cyan);
+}
+
+.marketDetailPage {
+  width: min(100%, 1220px);
+  gap: 22px;
+}
+
+.marketDetailTopbar {
+  min-height: 38px;
+}
+
+.marketBackButton {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.marketDetailBreadcrumb {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketDetailHero {
+  grid-template-columns: minmax(0, 1.45fr) minmax(330px, 0.78fr);
+  gap: 24px;
+}
+
+.marketDetailImage {
+  position: relative;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.marketDetailImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.marketGalleryControls {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+}
+
+.marketGalleryControls button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+}
+
+.marketGalleryControls button:hover {
+  background: var(--surface-3);
+}
+
+.marketGalleryControls span {
+  min-width: 40px;
+  font-size: 11px;
+  text-align: center;
+}
+
+.marketPreviewStrip {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
+.marketPreviewStrip button {
+  border-radius: var(--radius-sm);
+  clip-path: none;
+}
+
+.marketDetailInfo {
+  position: sticky;
+  top: 92px;
+  align-self: start;
+  gap: 16px;
+  padding: 22px;
+  border-radius: var(--radius-md);
+}
+
+.marketDetailInfo h1 {
+  font-size: clamp(27px, 3vw, 40px);
+  letter-spacing: 0;
+}
+
+.marketDetailCategory {
+  margin: -7px 0 0;
+  font-size: 13px;
+}
+
+.marketDetailQuickFacts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-block: 1px solid var(--border-light);
+}
+
+.marketDetailQuickFacts > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 13px 10px;
+  border-right: 1px solid var(--border-light);
+}
+
+.marketDetailQuickFacts > div:first-child { padding-left: 0; }
+.marketDetailQuickFacts > div:last-child { padding-right: 0; border-right: 0; }
+.marketDetailQuickFacts svg { color: var(--neon-cyan); }
+.marketDetailQuickFacts span { color: var(--text-tertiary); font-size: 10px; text-transform: uppercase; }
+.marketDetailQuickFacts strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+.marketDetailActions .primaryButton {
+  width: 100%;
+  min-height: 46px;
+}
+
+.marketDetailMeta {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.marketDetailFacetChip {
+  background: var(--surface-1);
+  border-radius: 5px;
+  clip-path: none;
+}
+
+.marketSectionHeader > a {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.marketRecommendationInitialGrid,
+.marketRecommendationExpandedGrid {
+  display: grid;
+  align-items: start;
+  gap: 14px;
+}
+
+.marketRecommendationInitialGrid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.marketRecommendationExpandedGrid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin-top: 18px;
+  gap: 14px;
+}
+
+.marketRecommendationInitialGrid .marketModelCard > strong,
+.marketRecommendationExpandedGrid .marketModelCard > strong {
+  font-size: 11px;
+}
+
+.marketRecommendationToggle {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 20px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.marketRecommendationToggle:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+.marketRecommendationError {
+  margin-top: 10px;
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .homeModelGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .marketRecommendationInitialGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .marketRecommendationExpandedGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .marketDetailHero { grid-template-columns: 1fr; }
+  .marketDetailInfo { position: static; }
+}
+
+@media (max-width: 760px) {
+  .adminSectionNav,
+  .adminDataNav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .adminSectionNav button,
+  .adminDataNav button {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .adminKpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .adminKpiCard {
+    min-height: 104px;
+    padding: 12px;
+  }
+
+  .adminKpiCard strong {
+    font-size: 24px;
+  }
+
+  .revenueChartPanel {
+    padding: 14px;
+  }
+
+  .revenueChart,
+  .revenueChart.month,
+  .revenueChart.year {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: repeat(var(--chart-columns, 14), minmax(0, 1fr));
+    gap: 3px;
+    overflow: visible;
+  }
+
+  .revenueChart.month { --chart-columns: 12; }
+  .revenueChart.year { --chart-columns: 5; }
+  .chartBarItem { min-width: 0; }
+  .chartBarItem span { font-size: 8px; overflow: hidden; text-overflow: clip; }
+
+  .homeModelGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .marketRecommendationInitialGrid,
+  .marketRecommendationExpandedGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .homeModelsHeader { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 560px) {
+  .appPagination {
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .appPaginationPages { width: 100%; max-width: 100%; overflow-x: auto; justify-content: center; padding-bottom: 2px; }
+  .appPaginationJump { width: 100%; justify-content: center; }
+  .homeModelGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .marketDetailQuickFacts { grid-template-columns: 1fr; }
+  .marketDetailQuickFacts > div { grid-template-columns: 22px 1fr auto; align-items: center; padding: 10px 0; border-right: 0; border-bottom: 1px solid var(--border-light); }
+  .marketDetailQuickFacts > div:last-child { border-bottom: 0; }
+  .marketDetailQuickFacts > div:first-child { padding-top: 10px; }
+  .marketDetailQuickFacts > div:last-child { padding-bottom: 10px; }
+  .marketPreviewStrip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .marketRecommendationInitialGrid,
+  .marketRecommendationExpandedGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .marketRecommendations .marketModelCard > strong { font-size: 11px; }
+  .marketMetaRow { grid-template-columns: 1fr; gap: 5px; align-items: start; }
+  .marketSectionHeader { align-items: flex-start; }
+}
+
+@media (max-width: 420px) {
+  .adminSectionNav,
+  .adminDataNav { grid-template-columns: 1fr; }
+  .adminKpiGrid { grid-template-columns: 1fr; }
+}
+
+/* Marketplace detail gallery and shared footer alignment */
+.siteFooter {
+  grid-template-columns: minmax(220px, 1.5fr) repeat(4, minmax(130px, 1fr));
+}
+
+.marketPageFooter,
+.marketDetailFooter {
+  width: 100%;
+  margin: 42px 0 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.marketCategoryRow.parent {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+}
+
+.marketModelThumb > .badge {
+  inset: 6px 6px auto auto;
+  width: auto;
+  height: 16px;
+  min-height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 5px;
+  border-radius: 2px;
+  box-shadow: none;
+  transform: none;
+}
+
+.marketDetailBadges {
+  min-height: 28px;
+  align-items: center;
+}
+
+.marketDetailBadges .badge {
+  height: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 11px;
+  border-radius: 5px;
+  box-shadow: none;
+  line-height: 1;
+}
+
+.marketDetailBreadcrumb {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.marketDetailBreadcrumb a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.marketDetailBreadcrumb a:hover,
+.marketDetailBreadcrumb a:focus-visible {
+  color: var(--neon-cyan);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.marketDetailHero {
+  align-items: stretch;
+}
+
+.marketDetailMedia.hasPreviews {
+  grid-template-columns: 76px minmax(0, 1fr);
+  grid-template-rows: minmax(0, auto);
+  align-items: start;
+  gap: 12px;
+}
+
+.marketDetailMedia.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.marketDetailMedia.hasPreviews .marketDetailImage {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.marketDetailMedia.single .marketDetailImage {
+  grid-column: 1;
+}
+
+.marketPreviewStrip {
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 9px;
+  max-height: 650px;
+  padding: 1px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.marketPreviewStrip button {
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 1 / 1;
+  border: 2px solid transparent;
+  background: var(--surface-1);
+}
+
+.marketPreviewStrip button.active {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--neon-cyan) 34%, transparent);
+}
+
+.marketPreviewStrip img {
+  object-fit: cover;
+}
+
+.marketGalleryControls {
+  inset: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.marketGalleryControls button {
+  position: absolute;
+  top: 50%;
+  width: 40px;
+  height: 48px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-1) 86%, transparent);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 0.16s ease, background 0.16s ease;
+}
+
+.marketGalleryControls button.previous { left: 12px; }
+.marketGalleryControls button.next { right: 12px; }
+
+.marketDetailImage:hover .marketGalleryControls button,
+.marketDetailImage:focus-within .marketGalleryControls button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.marketGalleryControls span {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  min-width: 44px;
+  padding: 5px 8px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  border: 1px solid var(--border-light);
+  border-radius: 5px;
+  transform: translateX(-50%);
+}
+
+.marketDetailInfo {
+  align-self: stretch;
+  min-height: 100%;
+}
+
+.marketDetailFacetChip.form,
+.marketDetailFacetChip.color {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  justify-content: center;
+  padding: 0;
+}
+
+.marketDetailFacetChip.form .marketShapeIcon {
+  width: 20px;
+  height: 20px;
+}
+
+.marketDetailFacetChip.color .marketColorSwatch {
+  width: 18px;
+  height: 18px;
+}
+
+.marketRecommendations {
+  margin-top: 34px;
+}
+
+.marketFacetOption.color {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  place-items: center;
+  gap: 0;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  outline: 0;
+}
+
+.marketFacetOption.color .marketColorSwatch {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.marketFacetOption.color.active {
+  border-color: var(--neon-green);
+  outline: 0;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--neon-green) 24%, transparent);
+}
+
+.marketFacetOption.color:hover,
+.marketFacetOption.color:focus-visible {
+  border-color: color-mix(in srgb, var(--neon-cyan) 64%, transparent);
+  outline: 0;
+}
+
+@media (max-width: 1100px) {
+  .siteFooter {
+    grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(150px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .marketDetailInfo {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .siteFooter {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .siteFooter .footerBrand {
+    grid-column: 1 / -1;
+  }
+
+  .marketDetailMedia.hasPreviews {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+
+  .marketDetailMedia.hasPreviews .marketDetailImage {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .marketPreviewStrip {
+    grid-column: 1;
+    grid-row: 2;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .marketGalleryControls button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .marketRecommendations {
+    margin-top: 22px;
+  }
+}
+
+@media (max-width: 520px) {
+  .siteFooter {
+    grid-template-columns: 1fr;
+  }
+
+  .siteFooter .footerBrand {
+    grid-column: auto;
+  }
+}
+
+/* Consistent application UX across public, account and admin screens */
+.panel {
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.panel:hover {
+  border-color: var(--border-light);
+  box-shadow: var(--shadow-md);
+  transform: none;
+}
+
+.panel:focus-within {
+  border-color: color-mix(in srgb, var(--neon-cyan) 38%, var(--border-light));
+}
+
+.pricingCard:hover,
+.package:hover,
+.voucherCard:hover,
+.membershipPlanCard:hover,
+.topupPackageCard:hover {
+  transform: translateY(-2px);
+}
+
+.topupPurposeItem {
+  background: var(--surface-1);
+  border-radius: var(--radius-md);
+  clip-path: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.topupPurposeItem:hover,
+.topupPurposeItem:focus-visible,
+.topupPurposeItem.active {
+  background: color-mix(in srgb, var(--neon-green) 8%, var(--surface-1));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--neon-green) 15%, transparent), var(--shadow-sm);
+}
+
+.invitePanelHeader {
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border-bottom-color: var(--border-light);
+}
+
+.invitePanelHeader span {
+  color: var(--text-secondary);
+}
+
+.adminPage .adminSubTabs button {
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border-color: var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.adminPage .adminSubTabs button:hover:not(:disabled) {
+  color: var(--neon-cyan);
+  background: var(--surface-3);
+  border-color: color-mix(in srgb, var(--neon-cyan) 48%, var(--border-light));
+}
+
+.adminPage .adminSubTabs button.active,
+.adminPage .adminSubTabs button.active:hover:not(:disabled) {
+  color: var(--neon-green);
+  background: color-mix(in srgb, var(--neon-green) 9%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--neon-green) 62%, var(--border-light));
+}
+
+.adminPage .packageActions span,
+.adminPage .packageActions button {
+  color: var(--text-secondary);
+  background: var(--surface-3);
+  border-color: var(--border-light);
+  border-radius: var(--radius-sm);
+  clip-path: none;
+}
+
+.adminPage .packageActions span:hover,
+.adminPage .packageActions button:hover {
+  color: var(--neon-green);
+  background: color-mix(in srgb, var(--neon-green) 8%, var(--surface-3));
+  border-color: color-mix(in srgb, var(--neon-green) 54%, var(--border-light));
+}
+
+.adminPage .voucherEditor,
+.adminPage .voucherPackagePicker,
+.adminPage .voucherScopeSummary,
+.adminPage .voucherValue,
+.adminPage .voucherMetaGrid div,
+.adminPage .voucherApplies {
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border-color: var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.adminPage .voucherActiveToggle {
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border-color: var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.adminPage .voucherActiveToggle input,
+.adminPage .voucherPackagePicker input {
+  appearance: auto;
+  flex: 0 0 16px;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  box-shadow: none;
+}
+
+.adminPage .voucherPackagePicker label {
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border-color: var(--border-light);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.adminPage .voucherPackagePicker label:hover {
+  color: var(--text-primary);
+  background: var(--surface-3);
+  border-color: color-mix(in srgb, var(--neon-cyan) 42%, var(--border-light));
+}
+
+.adminPage .voucherPackagePicker label:has(input:checked) {
+  color: var(--neon-green);
+  background: color-mix(in srgb, var(--neon-green) 9%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--neon-green) 58%, var(--border-light));
+}
+
+.adminPage .voucherCard {
+  color: var(--text-primary);
+  background: var(--panel-bg) !important;
+  border-color: var(--border-light);
+}
+
+.historyFilterGroups {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.historyFilterGroup {
+  min-width: 0;
+}
+
+.historyFilterBar button,
+.adminSectionNav button,
+.adminDataNav button,
+.chartControls button,
+.segmentedControl button {
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.timelineEventCard,
+.marketAdminLogItem,
+.adminTimelineItem,
+.tableRow {
+  border-radius: var(--radius-sm);
+  clip-path: none;
+}
+
+.historyTimelinePanel > .appPagination,
+.marketContent > .appPagination {
+  margin-top: 8px;
+}
+
+@media (max-width: 640px) {
+  .historyHeader {
+    align-items: flex-start;
+  }
+
+  .historyHeaderActions {
+    flex: 1 0 100%;
+    justify-content: flex-start;
+  }
+
+  .historyFilterGroups {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 14px;
+    padding: 14px 0;
+  }
+
+  .historyFilterGroup {
+    width: 100%;
+  }
+
+  .historyFilterBar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .historyFilterBar button {
+    min-width: 0;
+    justify-content: center;
+    padding: 0 8px;
+  }
+
+  .timelineEventCard {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .timelineEventIcon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .timelineEventSide {
+    grid-column: 2;
+    justify-items: start;
+  }
+}
+
+@media (max-width: 420px) {
+  .adminSectionNav,
+  .adminDataNav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .adminSectionNav button,
+  .adminDataNav button {
+    min-height: 52px;
+    padding: 0 9px;
+    font-size: 10px;
+  }
+
+  .adminKpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .adminKpiCard {
+    min-height: 116px;
   }
 }

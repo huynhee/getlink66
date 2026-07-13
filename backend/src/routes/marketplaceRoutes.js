@@ -3,6 +3,7 @@ import {
   createDownloadSession,
   downloadSessionFile,
   getMarketplaceModel,
+  listMarketplaceModelRecommendations,
   listMarketplaceCategories,
   listMarketplaceFilters,
   listMarketplaceModels,
@@ -30,6 +31,7 @@ router.get("/marketplace/models", listMarketplaceModels);
 router.post("/marketplace/image-search", imageSearchLimit, searchMarketplaceByImage);
 router.get("/marketplace/models/:id/cover", streamMarketplaceCover);
 router.get("/marketplace/models/:id/preview/:index", streamMarketplacePreview);
+router.get("/marketplace/models/:slug/recommendations", listMarketplaceModelRecommendations);
 router.get("/marketplace/models/:slug", getMarketplaceModel);
 router.post("/marketplace/models/:id/download-session", downloadSessionLimit, createDownloadSession);
 router.post("/plugin/models/:id/download-session", downloadSessionLimit, createDownloadSession);

@@ -139,6 +139,11 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     error.status = 409;
     throw error;
   }
+  if (model.source?.provider === "demo") {
+    const error = new Error("Model mẫu chỉ dùng để kiểm tra giao diện, không có file tải.");
+    error.status = 409;
+    throw error;
+  }
 
   const tier = accessTier(req);
   if (!canAccessModel(model, tier)) {

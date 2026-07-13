@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
+import { fileURLToPath } from "node:url";
 
 function localRoot() {
   return String(process.env.MARKETPLACE_LOCAL_STORAGE_ROOT || "").trim();
@@ -24,6 +25,7 @@ function googleDriveToken() {
 
 let cachedGoogleDriveToken = "";
 let cachedGoogleDriveTokenExpiresAt = 0;
+let googleDriveRefreshPromise = null;
 
 function googleDriveRefreshConfig() {
   return {
@@ -38,40 +40,66 @@ function hasGoogleDriveRefreshConfig() {
   return Boolean(config.clientId && config.clientSecret && config.refreshToken);
 }
 
+export function getGoogleDriveAuthStatus() {
+  const config = googleDriveRefreshConfig();
+  const staticAccessToken = googleDriveToken();
+  const automaticRefresh = Boolean(config.clientId && config.clientSecret && config.refreshToken);
+  return {
+    mode: automaticRefresh ? "oauth_refresh" : staticAccessToken ? "static_access_token" : "missing",
+    automaticRefresh,
+    hasClientCredentials: Boolean(config.clientId && config.clientSecret),
+    hasRefreshToken: Boolean(config.refreshToken),
+    hasStaticAccessToken: Boolean(staticAccessToken),
+  };
+}
+
 async function refreshGoogleDriveToken({ force = false } = {}) {
   if (!hasGoogleDriveRefreshConfig()) return "";
   if (!force && cachedGoogleDriveToken && cachedGoogleDriveTokenExpiresAt > Date.now() + 60_000) {
     return cachedGoogleDriveToken;
   }
+  if (googleDriveRefreshPromise) return googleDriveRefreshPromise;
 
-  const config = googleDriveRefreshConfig();
-  const body = new URLSearchParams({
-    client_id: config.clientId,
-    client_secret: config.clientSecret,
-    refresh_token: config.refreshToken,
-    grant_type: "refresh_token",
-  });
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body,
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    const error = new Error(`Google Drive token refresh failed: ${response.status} ${text.slice(0, 160)}`);
-    error.status = 502;
-    throw error;
+  googleDriveRefreshPromise = (async () => {
+    const config = googleDriveRefreshConfig();
+    const body = new URLSearchParams({
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      refresh_token: config.refreshToken,
+      grant_type: "refresh_token",
+    });
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    const responseText = await response.text();
+    const payload = JSON.parse(responseText || "{}");
+    if (!response.ok) {
+      const reason = payload.error === "invalid_grant"
+        ? "Refresh token không còn hợp lệ. Kiểm tra OAuth app đã ở In production rồi chạy npm run drive:auth."
+        : (payload.error_description || payload.error || `HTTP ${response.status}`);
+      const error = new Error(`Google Drive token refresh failed: ${reason}`);
+      error.status = 502;
+      error.code = "GOOGLE_DRIVE_TOKEN_REFRESH_FAILED";
+      throw error;
+    }
+    const accessToken = String(payload.access_token || "").trim();
+    if (!accessToken) {
+      const error = new Error("Google Drive token refresh did not return an access token.");
+      error.status = 502;
+      throw error;
+    }
+    cachedGoogleDriveToken = accessToken;
+    cachedGoogleDriveTokenExpiresAt = Date.now() + Math.max(60, Number(payload.expires_in || 3600) - 60) * 1000;
+    return cachedGoogleDriveToken;
+  })();
+
+  try {
+    return await googleDriveRefreshPromise;
+  } finally {
+    googleDriveRefreshPromise = null;
   }
-  const payload = JSON.parse(text || "{}");
-  const accessToken = String(payload.access_token || "").trim();
-  if (!accessToken) {
-    const error = new Error("Google Drive token refresh did not return an access token.");
-    error.status = 502;
-    throw error;
-  }
-  cachedGoogleDriveToken = accessToken;
-  cachedGoogleDriveTokenExpiresAt = Date.now() + Math.max(60, Number(payload.expires_in || 3600) - 60) * 1000;
-  return cachedGoogleDriveToken;
 }
 
 async function getGoogleDriveToken({ forceRefresh = false } = {}) {
@@ -250,6 +278,16 @@ export async function getGoogleDriveFileMetadata(fileId, options = {}) {
     throw error;
   }
   return JSON.parse(text || "{}");
+}
+
+export function openDemoMarketplaceImageStream() {
+  const target = fileURLToPath(new URL("../../../frontend/public/3dipl-d.jpg", import.meta.url));
+  return {
+    stream: fs.createReadStream(target),
+    contentLength: fs.statSync(target).size,
+    contentType: "image/jpeg",
+    fileName: "3dipl-d.jpg",
+  };
 }
 
 export async function updateGoogleDriveFileContent(fileId, content, options = {}) {

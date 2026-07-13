@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ChevronRight, ClipboardPaste, Download, Filter, Image as ImageIcon, ImagePlus, Loader2, Package, Search, Upload, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Download, Filter, HardDrive, Image as ImageIcon, ImagePlus, Loader2, Package, Search, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
+import Pagination from "../components/Pagination.jsx";
+import SiteFooter from "../components/SiteFooter.jsx";
 
 const EMPTY_FILTERS = {
   style: [],
@@ -214,7 +216,7 @@ const CATEGORY_LABELS_VI = {
 };
 
 function cover(model = {}) {
-  const image = model.coverImage || model.previewImages?.[0];
+  const image = model.previewImages?.[0] || model.coverImage;
   const url = image?.cachedUrl || image?.url || "";
   return url.startsWith("/api/") ? buildApiUrl(url) : url;
 }
@@ -241,6 +243,14 @@ function modelPath(model = {}) {
 function detailSlugFromPath(path = "") {
   const match = String(path).match(/^\/models\/([^/?#]+)/);
   return match ? decodeURIComponent(match[1]) : "";
+}
+
+function categoryFromPath(path = "") {
+  try {
+    return new URL(String(path || "/models"), window.location.origin).searchParams.get("category") || "";
+  } catch {
+    return "";
+  }
 }
 
 function navigateTo(path, onNavigate, event) {
@@ -317,8 +327,7 @@ function CategoryButton({ category, selected, isOpen, onOpen, onSelect, language
 
   function selectParent() {
     if (hasChildren) {
-      onOpen(isOpen ? "" : category.slug);
-      return;
+      onOpen(category.slug);
     }
     onSelect(parentSelected ? "" : category.slug);
   }
@@ -331,7 +340,7 @@ function CategoryButton({ category, selected, isOpen, onOpen, onSelect, language
         aria-expanded={hasChildren ? isOpen : undefined}
         onClick={selectParent}
       >
-        {!hasChildren && <span className={`marketCategoryCheck ${parentSelected ? "checked" : ""}`} aria-hidden="true" />}
+        <span className={`marketCategoryCheck ${parentSelected ? "checked" : ""}`} aria-hidden="true" />
         <span>{labelForCategory(category, language)}</span>
         {hasChildren && <ChevronRight className="marketCategoryArrow" size={15} aria-hidden="true" />}
       </button>
@@ -341,10 +350,10 @@ function CategoryButton({ category, selected, isOpen, onOpen, onSelect, language
             <button
               type="button"
               key={child._id || child.slug}
-              className={`marketCategoryRow child ${selected === child.slug ? "active" : ""}`}
+              className={`marketCategoryRow child ${parentSelected || selected === child.slug ? "active" : ""}`}
               onClick={() => onSelect(selected === child.slug ? "" : child.slug)}
             >
-              <span className={`marketCategoryCheck ${selected === child.slug ? "checked" : ""}`} aria-hidden="true" />
+              <span className={`marketCategoryCheck ${parentSelected || selected === child.slug ? "checked" : ""}`} aria-hidden="true" />
               <span>{labelForCategory(child, language)}</span>
             </button>
           ))}
@@ -358,32 +367,6 @@ function toggleListValue(items, value) {
   return items.includes(value)
     ? items.filter((item) => item !== value)
     : [...items, value];
-}
-
-function paginationItems(currentPage = 1, totalPages = 1) {
-  const total = Math.max(1, Number(totalPages) || 1);
-  const current = Math.min(total, Math.max(1, Number(currentPage) || 1));
-  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
-
-  const pages = new Set([1, total, current - 1, current, current + 1]);
-  if (current <= 3) {
-    pages.add(2);
-    pages.add(3);
-    pages.add(4);
-  }
-  if (current >= total - 2) {
-    pages.add(total - 3);
-    pages.add(total - 2);
-    pages.add(total - 1);
-  }
-
-  const ordered = Array.from(pages)
-    .filter((page) => page >= 1 && page <= total)
-    .sort((a, b) => a - b);
-  return ordered.flatMap((page, index) => {
-    if (index === 0) return [page];
-    return page - ordered[index - 1] > 1 ? [`gap-${ordered[index - 1]}-${page}`, page] : [page];
-  });
 }
 
 function ShapeIcon({ value }) {
@@ -456,7 +439,7 @@ function FacetSection({ id, title, options = [], values = [], onToggle, onClear,
   );
 }
 
-function ModelCard({ model, onNavigate }) {
+export function ModelCard({ model, onNavigate }) {
   const image = cover(model);
   const href = modelPath(model);
   const hoverMeta = [
@@ -480,34 +463,40 @@ function ModelCard({ model, onNavigate }) {
 }
 
 function ModelPreview({ model }) {
-  const images = model.previewImages || [];
-  const firstPreview = previewImageSrc(images[0]) || cover(model);
-  const [activeImage, setActiveImage] = useState(firstPreview);
+  const images = useMemo(() => {
+    const previews = (model.previewImages || [])
+      .map((image) => ({ ...image, url: previewImageSrc(image) }))
+      .filter((image) => image?.url);
+    const candidates = previews.length
+      ? previews
+      : [model.coverImage ? { ...model.coverImage, url: cover(model) } : null].filter(Boolean);
+    return candidates.filter((image, index) => candidates.findIndex((item) => item.url === image.url) === index);
+  }, [model]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const activeImage = images[activeIndex]?.url || "";
 
   useEffect(() => {
-    setActiveImage(firstPreview);
-  }, [firstPreview]);
+    setActiveIndex(0);
+  }, [model._id]);
+
+  function moveImage(direction) {
+    if (images.length <= 1) return;
+    setActiveIndex((current) => (current + direction + images.length) % images.length);
+  }
 
   return (
-    <div className="marketDetailMedia">
-      <div className={`marketDetailImage ${activeImage ? "" : "empty"}`}>
-        {activeImage ? (
-          <img src={activeImage} alt={model.title} referrerPolicy="no-referrer" />
-        ) : (
-          <Package size={48} />
-        )}
-      </div>
+    <div className={`marketDetailMedia ${images.length > 1 ? "hasPreviews" : "single"}`}>
       {images.length > 1 && (
         <div className="marketPreviewStrip">
           {images.slice(0, 8).map((image, index) => {
-            const src = previewImageSrc(image);
+            const src = image.url;
             if (!src) return null;
             return (
               <button
                 type="button"
                 key={`${src}-${index}`}
-                className={src === activeImage ? "active" : ""}
-                onClick={() => setActiveImage(src)}
+                className={index === activeIndex ? "active" : ""}
+                onClick={() => setActiveIndex(index)}
                 aria-label={`Preview ${index + 1}`}
               >
                 <img src={src} alt={image.alt || model.title} loading="lazy" referrerPolicy="no-referrer" />
@@ -516,6 +505,20 @@ function ModelPreview({ model }) {
           })}
         </div>
       )}
+      <div className={`marketDetailImage ${activeImage ? "" : "empty"}`}>
+        {activeImage ? (
+          <img src={activeImage} alt={model.title} referrerPolicy="no-referrer" />
+        ) : (
+          <Package size={48} />
+        )}
+        {images.length > 1 && (
+          <div className="marketGalleryControls">
+            <button className="previous" type="button" onClick={() => moveImage(-1)} aria-label="Previous image"><ChevronLeft size={22} /></button>
+            <span>{activeIndex + 1}/{images.length}</span>
+            <button className="next" type="button" onClick={() => moveImage(1)} aria-label="Next image"><ChevronRight size={22} /></button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -541,7 +544,7 @@ function DetailFacetList({ facet, values = [], filterOptions = {}, language = "v
                 aria-hidden="true"
               />
             )}
-            <span>{label}</span>
+            {!["form", "color"].includes(facet) && <span>{label}</span>}
           </span>
         );
       })}
@@ -773,13 +776,13 @@ function ImageSearchDialog({
   );
 }
 
-function ModelListPage({ user, language, onNavigate }) {
+function ModelListPage({ user, language, path, onNavigate }) {
   const [categories, setCategories] = useState([]);
   const [filterOptions, setFilterOptions] = useState({});
   const [models, setModels] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState(() => categoryFromPath(path));
   const [openCategory, setOpenCategory] = useState("");
   const [activeFilters, setActiveFilters] = useState(EMPTY_FILTERS);
   const [accessType, setAccessType] = useState("");
@@ -817,8 +820,15 @@ function ModelListPage({ user, language, onNavigate }) {
     }));
   }
 
+  const selectCategory = useCallback((nextCategory) => {
+    const normalized = String(nextCategory || "");
+    setCategory(normalized);
+    const nextPath = normalized ? `/models?category=${encodeURIComponent(normalized)}` : "/models";
+    if (path !== nextPath) onNavigate?.(nextPath);
+  }, [onNavigate, path]);
+
   function clearAllFilters() {
-    setCategory("");
+    selectCategory("");
     setOpenCategory("");
     setActiveFilters(EMPTY_FILTERS);
     setAccessType("");
@@ -921,6 +931,11 @@ function ModelListPage({ user, language, onNavigate }) {
   }, []);
 
   useEffect(() => {
+    const nextCategory = categoryFromPath(path);
+    setCategory((current) => current === nextCategory ? current : nextCategory);
+  }, [path]);
+
+  useEffect(() => {
     if (!category || openCategory) return;
     const parentSlug = parentSlugForCategory(categories, category);
     if (parentSlug) setOpenCategory(parentSlug);
@@ -938,17 +953,13 @@ function ModelListPage({ user, language, onNavigate }) {
     [activeFilters],
   );
   const totalFilterCount = activeFilterCount + (category ? 1 : 0) + (accessType ? 1 : 0);
-  const pageItems = useMemo(
-    () => paginationItems(pagination.page, pagination.totalPages),
-    [pagination.page, pagination.totalPages],
-  );
   const filterChips = useMemo(() => {
     const chips = [];
     if (category) {
       chips.push({
         key: `category:${category}`,
         label: labelForCategory(findCategoryBySlug(categories, category), language) || category,
-        onRemove: () => setCategory(""),
+        onRemove: () => selectCategory(""),
       });
     }
     if (accessType) {
@@ -968,7 +979,7 @@ function ModelListPage({ user, language, onNavigate }) {
       });
     });
     return chips;
-  }, [activeFilters, accessType, categories, category, filterOptions, language]);
+  }, [activeFilters, accessType, categories, category, filterOptions, language, selectCategory]);
 
   function goToPage(page) {
     const target = Math.min(Math.max(1, Number(page) || 1), Math.max(1, pagination.totalPages || 1));
@@ -1009,7 +1020,7 @@ function ModelListPage({ user, language, onNavigate }) {
               <button
                 type="button"
                 className="marketFacetClear"
-                onClick={() => setCategory("")}
+                onClick={() => selectCategory("")}
                 aria-label={textFor(language, "Xóa danh mục", "Clear category")}
                 title={textFor(language, "Xóa danh mục", "Clear category")}
               >
@@ -1026,7 +1037,7 @@ function ModelListPage({ user, language, onNavigate }) {
                 selected={category}
                 isOpen={openCategory === item.slug}
                 onOpen={setOpenCategory}
-                onSelect={setCategory}
+                onSelect={selectCategory}
                 language={language}
               />
             ))}
@@ -1124,30 +1135,15 @@ function ModelListPage({ user, language, onNavigate }) {
             <p>{language === "vi" ? "Chưa có model phù hợp." : "No matching models yet."}</p>
           </section>
         )}
-        <nav className="marketPagination" aria-label={textFor(language, "Phân trang model", "Model pagination")}>
-          <span>{pagination.page}/{pagination.totalPages}</span>
-          <button type="button" disabled={pagination.page <= 1 || loading} onClick={() => goToPage(1)}>{textFor(language, "Đầu", "First")}</button>
-          <button type="button" disabled={pagination.page <= 1 || loading} onClick={() => goToPage(pagination.page - 1)}>{textFor(language, "Trước", "Prev")}</button>
-          <div className="marketPageNumbers">
-            {pageItems.map((item) => (
-              typeof item === "number" ? (
-                <button
-                  type="button"
-                  key={item}
-                  className={item === pagination.page ? "active" : ""}
-                  disabled={loading}
-                  onClick={() => goToPage(item)}
-                >
-                  {item}
-                </button>
-              ) : (
-                <span key={item}>...</span>
-              )
-            ))}
-          </div>
-          <button type="button" disabled={pagination.page >= pagination.totalPages || loading} onClick={() => goToPage(pagination.page + 1)}>{textFor(language, "Sau", "Next")}</button>
-          <button type="button" disabled={pagination.page >= pagination.totalPages || loading} onClick={() => goToPage(pagination.totalPages)}>{textFor(language, "Cuối", "Last")}</button>
-        </nav>
+        <Pagination
+          page={pagination.page}
+          totalPages={pagination.totalPages}
+          total={pagination.total}
+          onPageChange={goToPage}
+          loading={loading}
+          language={language}
+          itemLabel="model"
+        />
         </section>
       </div>
       <ImageSearchDialog
@@ -1162,6 +1158,7 @@ function ModelListPage({ user, language, onNavigate }) {
         onSearch={submitImageSearch}
         onClose={closeImageSearchDialog}
       />
+      <SiteFooter language={language} className="marketPageFooter" />
     </>
   );
 }
@@ -1169,6 +1166,11 @@ function ModelListPage({ user, language, onNavigate }) {
 function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
   const [model, setModel] = useState(null);
   const [recommendedModels, setRecommendedModels] = useState([]);
+  const [expandedRecommendations, setExpandedRecommendations] = useState([]);
+  const [recommendationInfo, setRecommendationInfo] = useState({ total: 0, hasMore: false });
+  const [recommendationsExpanded, setRecommendationsExpanded] = useState(false);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [recommendationsError, setRecommendationsError] = useState("");
   const [filterOptions, setFilterOptions] = useState(EMPTY_FILTERS);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -1180,6 +1182,10 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
     setLoading(true);
     setMessage("");
     setError("");
+    setExpandedRecommendations([]);
+    setRecommendationInfo({ total: 0, hasMore: false });
+    setRecommendationsExpanded(false);
+    setRecommendationsError("");
     Promise.all([
       api(`/api/marketplace/models/${encodeURIComponent(slug)}`),
       api("/api/marketplace/filters").catch(() => ({ filters: EMPTY_FILTERS })),
@@ -1188,6 +1194,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
         if (!active) return;
         setModel(data.model || null);
         setRecommendedModels(data.recommendedModels || []);
+        setRecommendationInfo(data.recommendations || { total: data.recommendedModels?.length || 0, hasMore: false });
         setFilterOptions(filterData.filters || EMPTY_FILTERS);
       })
       .catch((err) => {
@@ -1200,6 +1207,35 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
       active = false;
     };
   }, [slug]);
+
+  async function toggleMoreRecommendations() {
+    if (recommendationsExpanded) {
+      setRecommendationsExpanded(false);
+      return;
+    }
+    if (expandedRecommendations.length) {
+      setRecommendationsExpanded(true);
+      return;
+    }
+    setRecommendationsLoading(true);
+    setRecommendationsError("");
+    try {
+      const data = await api(
+        `/api/marketplace/models/${encodeURIComponent(model?.slug || model?._id || slug)}/recommendations?offset=6&limit=54`,
+      );
+      setExpandedRecommendations(data.models || []);
+      setRecommendationInfo((current) => ({
+        ...current,
+        total: data.pagination?.total ?? current.total,
+        hasMore: Boolean(data.pagination?.hasMore),
+      }));
+      setRecommendationsExpanded(true);
+    } catch (err) {
+      setRecommendationsError(err.message);
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  }
 
   async function downloadModel() {
     if (!model) return;
@@ -1249,35 +1285,72 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
     );
   }
 
-  const canDownload = model.fileStatus === "ready";
+  const fileReady = model.fileStatus === "ready";
+  const isDemo = Boolean(model.isDemo);
+  const requiresPro = model.accessType !== "free" && !user?.isPro && user?.role !== "admin";
+  const canDownload = fileReady && !requiresPro && !isDemo;
+  const categoryLabel = modelCategoryLabel(model, language);
+  const categoryTrail = [model.parentCategory, model.category]
+    .filter((item) => item?.slug)
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.slug === item.slug) === index);
 
   return (
     <div className="marketDetailPage">
       <div className="marketDetailTopbar">
-        <button type="button" className="smallButton" onClick={() => navigateTo("/models", onNavigate)}>
+        <button type="button" className="marketBackButton" onClick={() => navigateTo("/models", onNavigate)}>
           <ArrowLeft size={16} />
-          {textFor(language, "Model", "Models")}
+          {textFor(language, "Tất cả model", "All models")}
         </button>
-        <span className="badge">{user?.isPro ? "Member" : user ? "Free" : "Guest"}</span>
+        <nav className="marketDetailBreadcrumb" aria-label={textFor(language, "Danh mục model", "Model category")}>
+          {categoryTrail.length ? categoryTrail.map((item, index) => {
+            const href = `/models?category=${encodeURIComponent(item.slug)}`;
+            return (
+              <React.Fragment key={item.slug}>
+                {index > 0 && <span aria-hidden="true">/</span>}
+                <a href={href} onClick={(event) => navigateTo(href, onNavigate, event)}>{labelForCategory(item, language)}</a>
+              </React.Fragment>
+            );
+          }) : <span>{categoryLabel || textFor(language, "Thư viện model", "Model library")}</span>}
+        </nav>
       </div>
 
       <section className="marketDetailHero">
         <ModelPreview model={model} />
-        <div className="marketDetailInfo panel">
+        <aside className="marketDetailInfo panel">
           <div className="marketDetailBadges">
+            {isDemo && <span className="badge">DEMO</span>}
             <span className={`badge ${accessBadgeClass(model.accessType)}`}>{accessLabel(model.accessType)}</span>
-            <span className={`badge ${statusBadgeClass(model.fileStatus)}`}>{model.fileStatus || "missing"}</span>
+            <span className={`badge ${statusBadgeClass(model.fileStatus)}`}>
+              {fileReady ? textFor(language, "Sẵn sàng", "Ready") : textFor(language, "Chưa sẵn sàng", "Not ready")}
+            </span>
           </div>
           <h1>{model.title}</h1>
-
-          <div className="marketDetailActions">
-            <button className="primaryButton" type="button" disabled={downloading || !canDownload} onClick={downloadModel}>
-              <Download size={18} />
-              {downloading ? (language === "vi" ? "Đang tạo..." : "Creating...") : language === "vi" ? "Tải model" : "Download model"}
-            </button>
+          <div className="marketDetailQuickFacts">
+            <div><Sparkles size={17} /><span>Renderer</span><strong>{model.renderer || model.renderers?.[0] || "-"}</strong></div>
+            <div><HardDrive size={17} /><span>{textFor(language, "Dung lượng", "Size")}</span><strong>{model.sizeText || formatBytes(model.fileSize)}</strong></div>
+            <div><ShieldCheck size={17} /><span>{textFor(language, "Quyền tải", "Access")}</span><strong>{accessLabel(model.accessType).toUpperCase()}</strong></div>
           </div>
 
-          {!canDownload && (
+          <div className="marketDetailActions">
+            {isDemo ? (
+              <button className="primaryButton" type="button" disabled>
+                <Package size={18} />
+                {textFor(language, "Model mẫu giao diện", "Interface demo model")}
+              </button>
+            ) : requiresPro ? (
+              <button className="primaryButton" type="button" onClick={() => navigateTo("/topup?mode=pro", onNavigate)}>
+                <ShieldCheck size={18} />
+                {textFor(language, "Nâng cấp Pro để tải", "Upgrade to Pro")}
+              </button>
+            ) : (
+              <button className="primaryButton" type="button" disabled={downloading || !canDownload} onClick={downloadModel}>
+                <Download size={18} />
+                {downloading ? textFor(language, "Đang tạo phiên tải...", "Creating download...") : textFor(language, "Tải model", "Download model")}
+              </button>
+            )}
+          </div>
+
+          {!fileReady && (
             <p className="error">
               {language === "vi" ? "Model này chưa gắn file sẵn sàng tải." : "This model does not have a ready file yet."}
             </p>
@@ -1286,7 +1359,6 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
           {error && <p className="error">{error}</p>}
 
           <div className="marketDetailMeta">
-            <ModelMetaRow label={textFor(language, "Danh mục", "Category")} value={modelCategoryLabel(model, language)} />
             <ModelMetaRow label="Renderer">
               <DetailFacetList
                 facet="render"
@@ -1308,31 +1380,56 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
             <ModelMetaRow label={textFor(language, "Vật liệu", "Material")}>
               <DetailFacetList facet="material" values={model.materials} filterOptions={filterOptions} language={language} />
             </ModelMetaRow>
-            <ModelMetaRow label={textFor(language, "Dung lượng", "Size")} value={model.sizeText || formatBytes(model.fileSize)} />
           </div>
-        </div>
+        </aside>
       </section>
 
       <section className="marketRecommendations">
         <div className="marketSectionHeader">
           <div>
             <h2>{language === "vi" ? "Model đề xuất" : "Recommended models"}</h2>
-            <p>{language === "vi" ? "Cùng danh mục, quyền tải hoặc renderer liên quan." : "Matched by category, access type, or renderer."}</p>
+            <p>{language === "vi" ? "Các model có mức độ liên quan cao nhất." : "The most relevant related models."}</p>
           </div>
-          <span>{recommendedModels.length}</span>
         </div>
         {recommendedModels.length > 0 ? (
-          <div className="marketGrid">
-            {recommendedModels.map((item) => (
-              <ModelCard key={item._id} model={item} onNavigate={onNavigate} />
-            ))}
-          </div>
+          <>
+            <div className="marketRecommendationInitialGrid">
+              {recommendedModels.slice(0, 6).map((item) => (
+                <ModelCard key={item._id} model={item} onNavigate={onNavigate} />
+              ))}
+            </div>
+            {recommendationsExpanded && expandedRecommendations.length > 0 && (
+              <div className="marketRecommendationExpandedGrid">
+                {expandedRecommendations.map((item) => (
+                  <ModelCard key={item._id} model={item} onNavigate={onNavigate} />
+                ))}
+              </div>
+            )}
+            {(recommendationInfo.hasMore || expandedRecommendations.length > 0) && (
+              <button
+                type="button"
+                className="marketRecommendationToggle"
+                disabled={recommendationsLoading}
+                onClick={toggleMoreRecommendations}
+                aria-expanded={recommendationsExpanded}
+              >
+                {recommendationsLoading ? <Loader2 className="spin" size={16} /> : recommendationsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                {recommendationsLoading
+                  ? textFor(language, "Đang tải đề xuất...", "Loading recommendations...")
+                  : recommendationsExpanded
+                    ? textFor(language, "Thu gọn", "Show less")
+                    : textFor(language, "Xem thêm", "Show more")}
+              </button>
+            )}
+            {recommendationsError && <p className="error marketRecommendationError">{recommendationsError}</p>}
+          </>
         ) : (
           <section className="panel emptyState">
             <p>{language === "vi" ? "Chưa có model đề xuất." : "No recommendations yet."}</p>
           </section>
         )}
       </section>
+      <SiteFooter language={language} className="marketDetailFooter" />
     </div>
   );
 }
@@ -1342,5 +1439,5 @@ export default function Models({ user, language = "vi", path = "/models", onNavi
   if (slug) {
     return <ModelDetailPage slug={slug} user={user} language={language} onNavigate={onNavigate} onUserChange={onUserChange} />;
   }
-  return <ModelListPage user={user} language={language} onNavigate={onNavigate} />;
+  return <ModelListPage user={user} language={language} path={path} onNavigate={onNavigate} />;
 }

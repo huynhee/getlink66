@@ -1,8 +1,9 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Archive, Ban, BarChart3, Check, ChevronLeft, ChevronRight, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Gauge, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Archive, Ban, BarChart3, Check, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Gauge, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import AdminMarketplace from "../components/AdminMarketplace.jsx";
 import CoinAmount from "../components/CoinAmount.jsx";
+import Pagination from "../components/Pagination.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
 
@@ -179,6 +180,13 @@ function toDatetimeLocal(value) {
   if (Number.isNaN(date.getTime())) return "";
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 16);
+}
+
+function toDateInput(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 function voucherTargetKind(voucher) {
@@ -945,7 +953,7 @@ export default function Admin({ user, language = "vi" }) {
       setUserTimeline(timelineRes.events || []);
       setUserTimelineType(timelineRes.type || timelineType);
       setProAdjustForm({
-        proUntil: toDatetimeLocal(profileUser.proUntil),
+        proUntil: toDateInput(profileUser.proUntil),
         proDailyDownloadLimit: String(profileUser.proDailyDownloadLimit ?? 100)
       });
     } catch (err) {
@@ -1440,7 +1448,7 @@ export default function Admin({ user, language = "vi" }) {
   }), {});
 
   return (
-    <div className="stack">
+    <div className="stack adminPage">
       <section className="panel">
         <h2>{l("Quản trị hệ thống", "System administration")}</h2>
         <nav className="adminSectionNav" aria-label="Admin sections">
@@ -2701,25 +2709,14 @@ export default function Admin({ user, language = "vi" }) {
               </p>
             )}
           </div>
-          <div className="adminPagination">
-            <button
-              type="button"
-              className="smallButton"
-              disabled={auditPagination.page <= 1}
-              onClick={() => setAuditPage((page) => Math.max(1, page - 1))}
-            >
-              <ChevronLeft size={15} />
-            </button>
-            <span>{auditPagination.page} / {auditPagination.totalPages}</span>
-            <button
-              type="button"
-              className="smallButton"
-              disabled={auditPagination.page >= auditPagination.totalPages}
-              onClick={() => setAuditPage((page) => Math.min(auditPagination.totalPages, page + 1))}
-            >
-              <ChevronRight size={15} />
-            </button>
-          </div>
+          <Pagination
+            page={auditPagination.page}
+            totalPages={auditPagination.totalPages}
+            total={auditPagination.total}
+            onPageChange={setAuditPage}
+            language={language}
+            itemLabel={l("nhật ký", "logs")}
+          />
         </section>
       )}
 
@@ -2784,29 +2781,14 @@ export default function Admin({ user, language = "vi" }) {
               </p>
             )}
           </div>
-          <div className="adminPagination">
-            <button
-              type="button"
-              className="smallButton"
-              disabled={getlinkPagination.page <= 1}
-              onClick={() => setGetlinkPage((page) => Math.max(1, page - 1))}
-              title={l("Trang trước", "Previous page")}
-            >
-              <ChevronLeft size={15} />
-            </button>
-            <span>
-              {l("Trang", "Page")} {getlinkPagination.page}/{getlinkPagination.totalPages} - {getlinkPagination.total} {l("dòng", "rows")}
-            </span>
-            <button
-              type="button"
-              className="smallButton"
-              disabled={getlinkPagination.page >= getlinkPagination.totalPages}
-              onClick={() => setGetlinkPage((page) => Math.min(getlinkPagination.totalPages, page + 1))}
-              title={l("Trang sau", "Next page")}
-            >
-              <ChevronRight size={15} />
-            </button>
-          </div>
+          <Pagination
+            page={getlinkPagination.page}
+            totalPages={getlinkPagination.totalPages}
+            total={getlinkPagination.total}
+            onPageChange={setGetlinkPage}
+            language={language}
+            itemLabel={l("lượt getlink", "getlinks")}
+          />
         </section>
       )}
 
@@ -2920,29 +2902,14 @@ export default function Admin({ user, language = "vi" }) {
               </p>
             )}
           </div>
-          <div className="adminPagination">
-            <button
-              type="button"
-              className="smallButton"
-              disabled={topupPagination.page <= 1}
-              onClick={() => setTopupPage((page) => Math.max(1, page - 1))}
-              title={l("Trang trước", "Previous page")}
-            >
-              <ChevronLeft size={15} />
-            </button>
-            <span>
-              {l("Trang", "Page")} {topupPagination.page}/{topupPagination.totalPages} - {topupPagination.total} {l("giao dịch", "transactions")}
-            </span>
-            <button
-              type="button"
-              className="smallButton"
-              disabled={topupPagination.page >= topupPagination.totalPages}
-              onClick={() => setTopupPage((page) => Math.min(topupPagination.totalPages, page + 1))}
-              title={l("Trang sau", "Next page")}
-            >
-              <ChevronRight size={15} />
-            </button>
-          </div>
+          <Pagination
+            page={topupPagination.page}
+            totalPages={topupPagination.totalPages}
+            total={topupPagination.total}
+            onPageChange={setTopupPage}
+            language={language}
+            itemLabel={l("giao dịch", "transactions")}
+          />
         </section>
       )}
 
@@ -3055,7 +3022,7 @@ export default function Admin({ user, language = "vi" }) {
                   <span>{l("Dùng khi cần hỗ trợ user hoặc xử lý đơn Pro lỗi webhook.", "Use for support or failed Pro webhook cases.")}</span>
                 </div>
                 <input
-                  type="datetime-local"
+                  type="date"
                   value={proAdjustForm.proUntil}
                   onChange={(e) => setProAdjustForm({ ...proAdjustForm, proUntil: e.target.value })}
                   title={l("Ngày hết hạn Pro", "Pro expiry")}
@@ -3196,29 +3163,14 @@ export default function Admin({ user, language = "vi" }) {
             ))}
             {!users.length && <p className="muted" style={{ textAlign: "center", padding: 24 }}>{l("Chưa có người dùng.", "No users yet.")}</p>}
           </div>
-          <div className="adminPagination">
-            <button
-              type="button"
-              className="smallButton"
-              disabled={userPagination.page <= 1}
-              onClick={() => setUserPage((page) => Math.max(1, page - 1))}
-              title={l("Trang trước", "Previous page")}
-            >
-              <ChevronLeft size={15} />
-            </button>
-            <span>
-              {l("Trang", "Page")} {userPagination.page}/{userPagination.totalPages} - {userPagination.total} {l("user", "users")}
-            </span>
-            <button
-              type="button"
-              className="smallButton"
-              disabled={userPagination.page >= userPagination.totalPages}
-              onClick={() => setUserPage((page) => Math.min(userPagination.totalPages, page + 1))}
-              title={l("Trang sau", "Next page")}
-            >
-              <ChevronRight size={15} />
-            </button>
-          </div>
+          <Pagination
+            page={userPagination.page}
+            totalPages={userPagination.totalPages}
+            total={userPagination.total}
+            onPageChange={setUserPage}
+            language={language}
+            itemLabel={l("người dùng", "users")}
+          />
         </section>
       )}
 

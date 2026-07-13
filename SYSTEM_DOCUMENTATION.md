@@ -1629,6 +1629,7 @@ SePay:
 - `GOOGLE_DRIVE_CLIENT_ID`
 - `GOOGLE_DRIVE_CLIENT_SECRET`
 - `GOOGLE_DRIVE_REFRESH_TOKEN`
+- `GOOGLE_DRIVE_OAUTH_REDIRECT_URI`
 - `GOOGLE_DRIVE_ACCESS_TOKEN`
 - `GOOGLE_DRIVE_BEARER_TOKEN`
 - `MARKETPLACE_DRIVE_ROOT_FOLDER_ID`
@@ -1650,6 +1651,38 @@ Production nen dung refresh token co scope `https://www.googleapis.com/auth/driv
 Access token tinh chi nen dung test ngan han. Hai feature flag write/changes mac dinh
 false de rollout migration an toan. Contract day du:
 `MARKETPLACE_DATA_CONTRACT.md`.
+
+#### 9.8.1 Cau hinh Drive token tu gia han
+
+`GOOGLE_DRIVE_ACCESS_TOKEN` chi song ngan han (thuong khoang mot gio). Cau hinh production
+phai dung bo ba OAuth Client ID, Client Secret va Refresh Token. Backend se tu doi refresh
+token lay access token moi, cache token trong RAM va retry mot lan neu Drive tra HTTP 401.
+
+1. Bat Google Drive API trong Google Cloud project.
+2. Trong Google Auth Platform, chuyen Publishing status tu `Testing` sang `In production`.
+3. Tao OAuth Client loai `Web application` va them Authorized redirect URI chinh xac:
+   `http://127.0.0.1:53682/oauth2/callback`.
+4. Dien `GOOGLE_DRIVE_CLIENT_ID` va `GOOGLE_DRIVE_CLIENT_SECRET` vao `backend/.env`.
+5. Chay lenh sau tu root repository:
+
+```bash
+npm run drive:auth --prefix backend
+```
+
+Trinh duyet se mo trang Google cap scope Drive. Sau khi dong y, script kiem tra Drive API,
+ghi `GOOGLE_DRIVE_REFRESH_TOKEN` vao `backend/.env` va xoa access token tinh. Khong copy
+refresh token vao source code, log hoac frontend. Khoi dong lai backend, sau do kiem tra:
+
+```bash
+npm run drive:check --prefix backend
+```
+
+Ket qua dung phai la `Drive auth mode: oauth_refresh`, `Automatic refresh: yes` va
+`Drive API: ok`. Admin Marketplace cung hien `Xac thuc Drive: Tu gia han`.
+
+Neu refresh token bi `invalid_grant`, kiem tra OAuth app con o `In production`, tai khoan
+chua thu hoi quyen ung dung va khong tao refresh token lap lai qua nhieu lan. Sau do chay
+lai `drive:auth` de cap mot token moi.
 
 ## 10. Van hanh local
 

@@ -9,6 +9,7 @@ import DailyDownloadQuota from "../models/DailyDownloadQuota.js";
 import { securityEvent } from "../utils/logger.js";
 import { SESSION_EXPIRED_MESSAGE } from "../utils/authMessages.js";
 import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
+import { endOfVietnamDay, normalizeProUntil } from "../utils/membershipService.js";
 
 const SAFE_RETURN_PATH = /^\/[a-zA-Z0-9\-_/]*(?:\?[a-zA-Z0-9._~%=&-]*)?$/;
 const SAFE_REFERRAL_CODE = /^[a-zA-Z0-9]{6,24}$/;
@@ -217,7 +218,7 @@ export async function devLogin(req, res, next) {
     };
 
     if (proEnabled) {
-      update.$set.proUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      update.$set.proUntil = endOfVietnamDay(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
       update.$set.proDailyDownloadLimit = 100;
     }
 
@@ -245,6 +246,12 @@ export function logout(_req, res) {
 export async function currentUser(req, res, next) {
   try {
     if (!req.user) return res.json({ user: null });
+
+    const normalizedProUntil = normalizeProUntil(req.user.proUntil);
+    if (normalizedProUntil && normalizedProUntil.getTime() !== new Date(req.user.proUntil).getTime()) {
+      req.user.proUntil = normalizedProUntil;
+      await User.findByIdAndUpdate(req.user._id, { $set: { proUntil: normalizedProUntil } });
+    }
 
     // If user is admin and has 2FA enabled, but hasn't verified this session
     const requires2FA =

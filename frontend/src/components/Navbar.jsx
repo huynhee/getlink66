@@ -6,25 +6,33 @@ import { translations } from "../i18n.js";
 import { setFaviconNotificationCount } from "../utils/faviconProgress.js";
 
 function LanguageToggle({ language, onLanguageChange }) {
-  const nextLanguage = language === "vi" ? "en" : "vi";
-  const currentLanguage = language === "vi" ? "vi" : "en";
-  const label = `Switch to ${nextLanguage.toUpperCase()}`;
   return (
-    <button
-      type="button"
-      className="iconButton languageSingleToggle"
-      onClick={() => onLanguageChange?.(nextLanguage)}
-      title={label}
-      aria-label={label}
+    <div
+      className="languageToggle"
+      role="group"
+      aria-label={language === "vi" ? "Chọn ngôn ngữ" : "Choose language"}
     >
-      <span>{currentLanguage.toUpperCase()}</span>
-    </button>
+      {["vi", "en"].map((value) => (
+        <button
+          type="button"
+          key={value}
+          className={language === value ? "active" : ""}
+          onClick={() => onLanguageChange?.(value)}
+          aria-pressed={language === value}
+          title={value === "vi" ? "Tiếng Việt" : "English"}
+        >
+          {value.toUpperCase()}
+        </button>
+      ))}
+    </div>
   );
 }
 
-function ThemeToggle({ theme = "dark", onThemeToggle }) {
+function ThemeToggle({ theme = "dark", language = "vi", onThemeToggle }) {
   const isLight = theme === "light";
-  const label = isLight ? "Switch to dark mode" : "Switch to light mode";
+  const label = language === "vi"
+    ? (isLight ? "Chuyển sang giao diện tối" : "Chuyển sang giao diện sáng")
+    : (isLight ? "Switch to dark mode" : "Switch to light mode");
   return (
     <button
       type="button"
@@ -286,7 +294,7 @@ export default function Navbar({
                 {!notifications.length && <p>{t.noNotifications}</p>}
               </div>
             </div>
-            <ThemeToggle theme={theme} onThemeToggle={onThemeToggle} />
+            <ThemeToggle theme={theme} language={language} onThemeToggle={onThemeToggle} />
             <LanguageToggle language={language} onLanguageChange={onLanguageChange} />
             <button
               type="button"
@@ -369,8 +377,8 @@ export default function Navbar({
               <Chrome size={15} />
               {t.googleLogin}
             </a>
+            <ThemeToggle theme={theme} language={language} onThemeToggle={onThemeToggle} />
             <LanguageToggle language={language} onLanguageChange={onLanguageChange} />
-            <ThemeToggle theme={theme} onThemeToggle={onThemeToggle} />
           </div>
         )}
       </div>

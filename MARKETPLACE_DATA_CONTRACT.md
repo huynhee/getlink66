@@ -398,6 +398,7 @@ folder ID hoac storage link.
 GOOGLE_DRIVE_CLIENT_ID=
 GOOGLE_DRIVE_CLIENT_SECRET=
 GOOGLE_DRIVE_REFRESH_TOKEN=
+GOOGLE_DRIVE_OAUTH_REDIRECT_URI=http://127.0.0.1:53682/oauth2/callback
 GOOGLE_DRIVE_ACCESS_TOKEN=
 MARKETPLACE_DRIVE_ROOT_FOLDER_ID=
 MARKETPLACE_DRIVE_BACKUP_FOLDER_ID=
@@ -410,7 +411,10 @@ MARKETPLACE_DRIVE_QUEUE_MAX_ATTEMPTS=8
 MARKETPLACE_DRIVE_QUEUE_RETRY_BASE_SECONDS=30
 ```
 
-Production dung refresh token. Access token tinh chi phu hop test ngan han.
+Production dung refresh token. Access token tinh chi phu hop test ngan han. Tao refresh
+token bang `npm run drive:auth`, khoi dong lai backend va xac minh bang
+`npm run drive:check`. OAuth Consent Screen phai o `In production`; trang thai `Testing`
+lam refresh token co Drive scope het han sau 7 ngay.
 
 ## 14. Code map
 
@@ -424,3 +428,51 @@ Production dung refresh token. Access token tinh chi phu hop test ngan han.
 - Admin API: `backend/src/controllers/marketplaceAdminController.js`.
 - Admin UI: `frontend/src/components/AdminMarketplace.jsx`.
 - Regression tests: `backend/test/marketplace-drive-sync.test.js`.
+## 13. Search and recommendation discovery
+
+The public web API owns pagination, access filters and MongoDB catalog validation. Semantic retrieval is delegated to an optional discovery service so vectors never consume the MongoDB catalog quota.
+
+Production target:
+
+- SigLIP 2 encodes cover/preview images and multilingual model text into a shared dense vector space.
+- Qdrant stores vectors keyed by `sourceModelId` and combines dense similarity with sparse keyword retrieval.
+- The discovery service returns only model IDs and scores. The backend re-checks publish/file/access state in MongoDB before returning a model.
+- Backend ranking fuses semantic order with category, renderer, style, form, color, material, popularity and recency signals, then applies diversity reranking.
+- Without the discovery service, text search falls back to catalog matching and recommendations use the local hybrid ranker.
+
+Environment:
+
+```env
+MARKETPLACE_DISCOVERY_URL=http://discovery-service:8080
+MARKETPLACE_DISCOVERY_API_KEY=
+MARKETPLACE_DISCOVERY_TIMEOUT_MS=8000
+```
+
+Service contract:
+
+```http
+POST /search
+Content-Type: application/json
+
+{"query":"ghe tua lung vai mau be","limit":1000}
+```
+
+```http
+POST /recommendations
+Content-Type: application/json
+
+{"modelId":"6373049","limit":180,"metadata":{"title":"...","styles":["modern"]}}
+```
+
+Both endpoints return:
+
+```json
+{
+  "provider": "siglip2_qdrant",
+  "matches": [
+    { "modelId": "6373049", "score": 0.91 }
+  ]
+}
+```
+
+Recommendation delivery is deliberately incremental. Model detail returns six records. `GET /api/marketplace/models/:slug/recommendations?offset=6&limit=54` loads the remaining 54 records only after the user expands the section.

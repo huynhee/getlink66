@@ -134,6 +134,7 @@ const { ensurePaymentReceiptIndexes } = await import("./src/models/PaymentReceip
 const { ensureNotificationReceiptIndexes } = await import("./src/models/NotificationReceipt.js");
 const { awardReferralSignup, ensureReferralCode } = await import("./src/utils/referralService.js");
 const { initializeMarketplaceCategories } = await import("./src/utils/marketplaceSeed.js");
+const { seedMarketplaceDemoModels } = await import("./src/utils/marketplaceDemoSeed.js");
 const { initializeMembershipPlans } = await import("./src/utils/membershipService.js");
 const { startMarketplaceDriveSyncJob, stopMarketplaceDriveSyncJob } = await import("./src/utils/marketplaceDriveSyncJob.js");
 const { close3D66Browser } = await import("./src/utils/3d66BrowserService.js");
@@ -144,6 +145,10 @@ await ensurePaymentReceiptIndexes();
 await ensureNotificationReceiptIndexes();
 await initializeSettings();
 await initializeMarketplaceCategories();
+if (process.env.SEED_MARKETPLACE_DEMO === "true") {
+  const demoSeed = await seedMarketplaceDemoModels();
+  logger.info({ count: demoSeed.created }, "Marketplace demo models initialized");
+}
 await initializeMembershipPlans();
 startMarketplaceDriveSyncJob();
 

@@ -12,7 +12,7 @@ import DailyImageSearchQuota from "../models/DailyImageSearchQuota.js";
 import SystemLog from "../models/SystemLog.js";
 import AuditLog from "../models/AuditLog.js";
 import { approvePendingTopup } from "../utils/topupApprovalService.js";
-import { approvePendingMembershipOrder, isProActive, nextVietnamReset, vietnamDayKey } from "../utils/membershipService.js";
+import { approvePendingMembershipOrder, isProActive, nextVietnamReset, normalizeProUntil, vietnamDayKey } from "../utils/membershipService.js";
 import { buildUserTimeline } from "../utils/timelineService.js";
 import { isSafeId, limitedString, rejectUnknownKeys } from "../utils/validators.js";
 
@@ -328,7 +328,7 @@ export async function adminAdjustUserPro(req, res, next) {
       if (req.body.proUntil !== undefined) {
         const proUntil = parseDate(req.body.proUntil);
         if (!proUntil) return res.status(400).json({ message: "Invalid Pro expiry" });
-        patch.proUntil = proUntil;
+        patch.proUntil = normalizeProUntil(proUntil);
         patch.proActivatedAt = new Date();
       }
       if (req.body.proDailyDownloadLimit !== undefined) {

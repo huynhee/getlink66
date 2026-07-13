@@ -10,7 +10,19 @@ const { default: MembershipOrder } = await import("../src/models/MembershipOrder
 const { default: DailyDownloadQuota } = await import("../src/models/DailyDownloadQuota.js");
 const { default: PaymentReceipt } = await import("../src/models/PaymentReceipt.js");
 const { sepayIpn } = await import("../src/controllers/paymentController.js");
-const { approvePendingMembershipOrder, vietnamDayKey } = await import("../src/utils/membershipService.js");
+const {
+  approvePendingMembershipOrder,
+  endOfVietnamDay,
+  nextVietnamReset,
+  vietnamDayKey,
+} = await import("../src/utils/membershipService.js");
+
+test("Vietnam membership boundaries end and reset at local midnight", () => {
+  const duringDay = new Date("2026-07-13T09:17:00.000Z");
+
+  assert.equal(endOfVietnamDay(duringDay).toISOString(), "2026-07-13T16:59:59.999Z");
+  assert.equal(nextVietnamReset(duringDay).toISOString(), "2026-07-13T17:00:00.000Z");
+});
 
 function sepayRequest(paymentCode, transactionId, amount = 50000) {
   return {
@@ -74,6 +86,9 @@ test("a signed late Pro payment activates once", async () => {
   assert.equal(first.payload.ok, true);
   const activatedUser = await User.findById(user._id);
   assert.ok(new Date(activatedUser.proUntil) > new Date());
+  assert.equal(new Date(activatedUser.proUntil).getUTCHours(), 16);
+  assert.equal(new Date(activatedUser.proUntil).getUTCMinutes(), 59);
+  assert.equal(new Date(activatedUser.proUntil).getUTCSeconds(), 59);
 
   const second = await invokeIpn(sepayRequest(order.paymentCode, "late-pro-tx-1"));
   assert.equal(second.payload.ok, true);

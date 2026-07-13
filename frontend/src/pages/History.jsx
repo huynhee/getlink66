@@ -13,6 +13,7 @@ import {
   Wallet,
 } from "lucide-react";
 import CoinAmount from "../components/CoinAmount.jsx";
+import Pagination from "../components/Pagination.jsx";
 import RedownloadFormatModal from "../components/RedownloadFormatModal.jsx";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
@@ -384,17 +385,15 @@ export default function History({ language = "vi" }) {
         )}
       </div>
 
-      <div className="adminPagination">
-        <button className="smallButton" disabled={pagination.page <= 1 || loading} onClick={() => loadTimeline(pagination.page - 1, filter)}>
-          {language === "vi" ? "Trước" : "Prev"}
-        </button>
-        <span>
-          {language === "vi" ? "Trang" : "Page"} {pagination.page}/{pagination.totalPages} - {pagination.total}
-        </span>
-        <button className="smallButton" disabled={pagination.page >= pagination.totalPages || loading} onClick={() => loadTimeline(pagination.page + 1, filter)}>
-          {language === "vi" ? "Sau" : "Next"}
-        </button>
-      </div>
+      <Pagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        total={pagination.total}
+        onPageChange={(nextPage) => loadTimeline(nextPage, filter)}
+        loading={loading}
+        language={language}
+        itemLabel={language === "vi" ? "sự kiện" : "events"}
+      />
 
       <RedownloadFormatModal
         item={redownloadItem}

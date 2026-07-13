@@ -17,6 +17,8 @@ import {
   X,
 } from "lucide-react";
 import { api } from "../api.js";
+import Pagination from "./Pagination.jsx";
+import { text } from "../i18n.js";
 
 const emptyDriveImportForm = {
   rootFolderId: "",
@@ -41,12 +43,6 @@ const fileStatusLabels = {
   pending_upload: "Chờ upload",
   ready: "Sẵn sàng",
   failed: "Lỗi file",
-};
-
-const metadataStatusLabels = {
-  all: "Tất cả metadata",
-  complete: "Đủ metadata",
-  incomplete: "Thiếu metadata",
 };
 
 const accessLabels = {
@@ -164,7 +160,8 @@ function valuesToCsv(values = []) {
   return [...new Set(values.filter(Boolean))].join(", ");
 }
 
-function optionLabel(option) {
+function optionLabel(option, language = "vi") {
+  if (language === "en") return option.label || option.value;
   return facetLabelsVi[option.value] || option.label || option.value;
 }
 
@@ -172,7 +169,8 @@ function categoryValue(category = {}) {
   return String(category.sourceCategoryId || category.slug || category._id || "");
 }
 
-function categoryLabel(category = {}) {
+function categoryLabel(category = {}, language = "vi") {
+  if (language === "en") return category.titleEn || category.title || category.slug || categoryValue(category);
   return category.title || category.titleEn || category.slug || categoryValue(category);
 }
 
@@ -227,13 +225,13 @@ function ModelFact({ label, value, detail }) {
   );
 }
 
-function MissingFields({ fields = [] }) {
+function MissingFields({ fields = [], language = "vi" }) {
   if (!fields.length) return null;
   return (
     <div className="marketAdminMissing">
       <AlertTriangle size={15} />
-      <strong>Thiếu dữ liệu:</strong>
-      {fields.map((field) => <span key={field}>{missingLabels[field] || field}</span>)}
+      <strong>{text(language, "Thiếu dữ liệu:", "Missing data:")}</strong>
+      {fields.map((field) => <span key={field}>{language === "en" ? field : (missingLabels[field] || field)}</span>)}
     </div>
   );
 }
@@ -246,7 +244,7 @@ function EditSectionTitle({ icon: Icon, title }) {
   );
 }
 
-function CategorySelect({ value, categories = [], onChange }) {
+function CategorySelect({ value, categories = [], onChange, language = "vi" }) {
   const path = findCategoryPath(categories, value);
   const parentValue = path[0] ? categoryValue(path[0]) : "";
   const selectedParent = categories.find((category) => categoryValue(category) === parentValue) || null;
@@ -261,37 +259,39 @@ function CategorySelect({ value, categories = [], onChange }) {
   return (
     <div className="marketAdminCategoryPicker">
       <label>
-        <span>Danh mục mẹ</span>
+        <span>{text(language, "Danh mục mẹ", "Parent category")}</span>
         <select value={parentValue} onChange={(event) => handleParentChange(event.target.value)}>
-          <option value="">Chọn danh mục mẹ</option>
+          <option value="">{text(language, "Chọn danh mục mẹ", "Select parent category")}</option>
           {categories.map((category) => (
             <option key={category._id || category.slug} value={categoryValue(category)}>
-              {categoryLabel(category)}
+              {categoryLabel(category, language)}
             </option>
           ))}
         </select>
       </label>
       {children.length > 0 && (
         <label>
-          <span>Danh mục con</span>
+          <span>{text(language, "Danh mục con", "Subcategory")}</span>
           <select value={selectedChildValue} onChange={(event) => onChange(event.target.value)}>
-            <option value="">Chọn danh mục con</option>
+            <option value="">{text(language, "Chọn danh mục con", "Select subcategory")}</option>
             {children.map((category) => (
               <option key={category._id || category.slug} value={categoryValue(category)}>
-                {categoryLabel(category)}
+                {categoryLabel(category, language)}
               </option>
             ))}
           </select>
         </label>
       )}
       {value && !findCategoryByValue(categories, value) && (
-        <span className="marketAdminCategoryHint">Giá trị hiện tại chưa có trong cây danh mục: {value}</span>
+        <span className="marketAdminCategoryHint">
+          {text(language, "Giá trị hiện tại chưa có trong cây danh mục:", "Current value is not in the category tree:")} {value}
+        </span>
       )}
     </div>
   );
 }
 
-function FacetPicker({ field, value, options = [], onChange }) {
+function FacetPicker({ field, value, options = [], onChange, language = "vi" }) {
   const selected = csvToValues(value);
 
   function toggle(nextValue) {
@@ -303,7 +303,7 @@ function FacetPicker({ field, value, options = [], onChange }) {
 
   return (
     <div className={`marketAdminFacetPicker ${field}`}>
-      <span>{facetTitles[field]}</span>
+      <span>{language === "en" ? ({ styles: "Style", renderers: "Render", forms: "Form", colors: "Color", materials: "Material" }[field] || field) : facetTitles[field]}</span>
       <div>
         {options.map((option) => {
           const active = selected.includes(option.value);
@@ -316,7 +316,7 @@ function FacetPicker({ field, value, options = [], onChange }) {
               title={option.value}
             >
               {option.hex && <i style={{ backgroundColor: option.hex }} />}
-              {optionLabel(option)}
+              {optionLabel(option, language)}
             </button>
           );
         })}
@@ -325,13 +325,19 @@ function FacetPicker({ field, value, options = [], onChange }) {
   );
 }
 
-function ModelSummary({ model, selected, selectedForBulk, onBulkToggle, onEdit }) {
+function ModelSummary({ model, selected, selectedForBulk, onBulkToggle, onEdit, language = "vi" }) {
   const state = publicState(model);
   const missing = model.metadataMissingFields || [];
+  const localizedState = {
+    draft: text(language, "Bản nháp", "Draft"),
+    incomplete: text(language, "Thiếu metadata", "Incomplete metadata"),
+    pending: text(language, "Thiếu file", "Missing file"),
+    online: text(language, "Đang online", "Online"),
+  }[state.key] || state.label;
   return (
     <article className={`marketAdminItem ${state.key} ${selected ? "selected" : ""}`}>
       <div className="marketAdminModelHead">
-        <label className="marketAdminBulkCheck" title="Chọn model">
+        <label className="marketAdminBulkCheck" title={text(language, "Chọn model", "Select model")}>
           <input
             type="checkbox"
             checked={selectedForBulk}
@@ -346,36 +352,37 @@ function ModelSummary({ model, selected, selectedForBulk, onBulkToggle, onEdit }
           <span>{model.slug}</span>
         </div>
         <div className="marketAdminBadges">
-          <span className={`badge ${statusClass(state.key)}`}>{state.label}</span>
+          <span className={`badge ${statusClass(state.key)}`}>{localizedState}</span>
           <span className={`badge ${statusClass(model.metadataStatus)}`}>
-            {metadataStatusLabels[model.metadataStatus] || "Thiếu metadata"}
+            {model.metadataStatus === "complete" ? text(language, "Đủ metadata", "Metadata ready") : text(language, "Thiếu metadata", "Incomplete metadata")}
           </span>
           <span className={`badge ${statusClass(model.fileStatus)}`}>
-            {fileStatusLabels[model.fileStatus] || model.fileStatus || "Thiếu file"}
+            {model.fileStatus === "ready" ? text(language, "Sẵn sàng", "Ready") : (language === "en" ? (model.fileStatus || "Missing file") : (fileStatusLabels[model.fileStatus] || "Thiếu file"))}
           </span>
           <span className="badge">{accessLabels[model.accessType] || model.accessType}</span>
         </div>
       </div>
 
-      <MissingFields fields={missing} />
+      <MissingFields fields={missing} language={language} />
 
       <div className="marketAdminModelGrid">
-        <ModelFact label="File nén" value={formatBytes(model.fileSize)} detail={model.archiveExt || "archive"} />
-        <ModelFact label="Ảnh cover" value={model.coverImage?.driveFileId ? "Đã gắn" : "Thiếu"} detail={model.coverImage?.fileName} />
-        <ModelFact label="Preview" value={`${model.previewImages?.length || 0} ảnh`} detail={model.metadataFileName || "metadata"} />
-        <ModelFact label="Lần quét Drive" value={formatDate(model.lastDriveScanAt)} detail={model.driveFolderName || model.source?.slug} />
+        <ModelFact label={text(language, "File nén", "Archive")} value={formatBytes(model.fileSize)} detail={model.archiveExt || "archive"} />
+        <ModelFact label={text(language, "Ảnh cover", "Cover image")} value={model.coverImage?.driveFileId ? text(language, "Đã gắn", "Attached") : text(language, "Thiếu", "Missing")} detail={model.coverImage?.fileName} />
+        <ModelFact label="Preview" value={`${model.previewImages?.length || 0} ${text(language, "ảnh", "images")}`} detail={model.metadataFileName || "metadata"} />
+        <ModelFact label={text(language, "Lần quét Drive", "Last Drive scan")} value={formatDate(model.lastDriveScanAt)} detail={model.driveFolderName || model.source?.slug} />
       </div>
 
       <div className="marketAdminModelActions">
         <button type="button" className="primaryButton" onClick={() => onEdit(model)}>
-          <Pencil size={16} /> Chỉnh sửa model
+          <Pencil size={16} /> {text(language, "Chỉnh sửa model", "Edit model")}
         </button>
       </div>
     </article>
   );
 }
 
-export default function AdminMarketplace() {
+export default function AdminMarketplace({ language = "vi" }) {
+  const l = (vi, en) => text(language, vi, en);
   const [activeTab, setActiveTab] = useState("import");
   const [models, setModels] = useState([]);
   const [stats, setStats] = useState(null);
@@ -826,31 +833,34 @@ export default function AdminMarketplace() {
     <section className="panel adminMarketplace">
       <div className="marketAdminHeader">
         <div>
-          <h2><Database size={20} /> Quản lý model</h2>
-          <p className="muted">Google Drive lưu file nén, ảnh preview và metadata gốc. Mongo chỉ lưu dữ liệu nhẹ để tìm kiếm, publish và ghi lịch sử.</p>
+          <h2><Database size={20} /> {l("Quản lý model", "Model management")}</h2>
+          <p className="muted">{l(
+            "Google Drive lưu file nén, ảnh preview và metadata gốc. Mongo chỉ lưu dữ liệu nhẹ để tìm kiếm, publish và ghi lịch sử.",
+            "Google Drive stores archives, previews, and source metadata. Mongo stores the lightweight search, publishing, and history index.",
+          )}</p>
         </div>
         <button type="button" className="smallButton" onClick={cleanupRawMetadata}>
-          <RefreshCw size={15} /> Dọn dữ liệu Mongo
+          <RefreshCw size={15} /> {l("Dọn dữ liệu Mongo", "Clean Mongo data")}
         </button>
       </div>
 
       {stats && (
         <div className="marketAdminKpis">
-          <KpiCard icon={Package} label="Tổng model" value={stats.models} />
-          <KpiCard icon={ListChecks} label="Đủ metadata" value={stats.completeMetadata} tone="success" />
-          <KpiCard icon={AlertTriangle} label="Thiếu metadata" value={stats.incompleteMetadata} tone="warning" />
-          <KpiCard icon={CheckCircle2} label="File sẵn sàng" value={stats.ready} tone="success" />
-          <KpiCard icon={AlertTriangle} label="Thiếu file" value={stats.missing} tone="warning" />
-          <KpiCard icon={EyeOff} label="Bản nháp" value={stats.draft} />
+          <KpiCard icon={Package} label={l("Tổng model", "Total models")} value={stats.models} />
+          <KpiCard icon={ListChecks} label={l("Đủ metadata", "Metadata ready")} value={stats.completeMetadata} tone="success" />
+          <KpiCard icon={AlertTriangle} label={l("Thiếu metadata", "Incomplete metadata")} value={stats.incompleteMetadata} tone="warning" />
+          <KpiCard icon={CheckCircle2} label={l("File sẵn sàng", "Files ready")} value={stats.ready} tone="success" />
+          <KpiCard icon={AlertTriangle} label={l("Thiếu file", "Missing files")} value={stats.missing} tone="warning" />
+          <KpiCard icon={EyeOff} label={l("Bản nháp", "Drafts")} value={stats.draft} />
         </div>
       )}
 
-      <div className="marketAdminTabs" role="tablist" aria-label="Khu quản lý model">
+      <div className="marketAdminTabs" role="tablist" aria-label={l("Khu quản lý model", "Model management sections")}>
         {[
-          ["import", "Import / đồng bộ", UploadCloud],
-          ["search", "Tìm kiếm model", Search],
-          ["edit", "Chỉnh sửa model", Pencil],
-          ["logs", "Nhật ký tải", Clock3],
+          ["import", l("Import / đồng bộ", "Import / sync"), UploadCloud],
+          ["search", l("Tìm kiếm model", "Search models"), Search],
+          ["edit", l("Chỉnh sửa model", "Edit model"), Pencil],
+          ["logs", l("Nhật ký tải", "Download logs"), Clock3],
         ].map(([key, label, Icon]) => (
           <button
             type="button"
@@ -868,12 +878,12 @@ export default function AdminMarketplace() {
         <div className="marketAdminWorkbench single">
           <form className="marketAdminForm marketAdminSyncPanel" onSubmit={importDriveFolder}>
             <div className="marketAdminPanelTitle">
-              <h3>Đối soát toàn bộ Drive</h3>
-              <span className="badge pending">Chỉ chạy thủ công</span>
+              <h3>{l("Đối soát toàn bộ Drive", "Full Drive reconciliation")}</h3>
+              <span className="badge pending">{l("Chỉ chạy thủ công", "Manual only")}</span>
             </div>
             <div className="marketAdminFieldGrid">
               <label>
-                <span>Thư mục models trên Drive</span>
+                <span>{l("Thư mục models trên Drive", "Models folder on Drive")}</span>
                 <input
                   value={driveImportForm.rootFolderId}
                   onChange={(event) => updateDriveImport("rootFolderId", event.target.value)}
@@ -882,15 +892,15 @@ export default function AdminMarketplace() {
                 />
               </label>
               <label>
-                <span>Token trang tiếp theo</span>
+                <span>{l("Token trang tiếp theo", "Next page token")}</span>
                 <input
                   value={driveImportForm.pageToken}
                   onChange={(event) => updateDriveImport("pageToken", event.target.value)}
-                  placeholder="Tự điền sau mỗi batch"
+                  placeholder={l("Tự điền sau mỗi batch", "Filled after each batch")}
                 />
               </label>
               <label>
-                <span>Số folder mỗi batch</span>
+                <span>{l("Số folder mỗi batch", "Folders per batch")}</span>
                 <input
                   type="number"
                   min="1"
@@ -905,19 +915,19 @@ export default function AdminMarketplace() {
                 updateDriveImport("pageToken", "");
                 setReconcileReset(true);
               }}>
-                Reset token
+                {l("Đặt lại token", "Reset token")}
               </button>
               <button className="primaryButton">
-                <UploadCloud size={17} /> {driveImportForm.pageToken ? "Quét batch tiếp theo" : "Quét batch đầu tiên"}
+                <UploadCloud size={17} /> {driveImportForm.pageToken ? l("Quét batch tiếp theo", "Scan next batch") : l("Quét batch đầu tiên", "Scan first batch")}
               </button>
             </div>
             {lastScan && (
               <div className="marketAdminScanResult">
-                <span>{lastScan.scannedFolders || 0} đã quét</span>
-                <span>{lastScan.createdCount || 0} tạo mới</span>
-                <span>{lastScan.updatedCount || 0} cập nhật</span>
-                <span>{lastScan.unchangedCount || 0} không đổi</span>
-                <span>{lastScan.hasMore ? "Còn batch tiếp" : "Đã hết"}</span>
+                <span>{lastScan.scannedFolders || 0} {l("đã quét", "scanned")}</span>
+                <span>{lastScan.createdCount || 0} {l("tạo mới", "created")}</span>
+                <span>{lastScan.updatedCount || 0} {l("cập nhật", "updated")}</span>
+                <span>{lastScan.unchangedCount || 0} {l("không đổi", "unchanged")}</span>
+                <span>{lastScan.hasMore ? l("Còn batch tiếp", "More batches") : l("Đã hết", "Complete")}</span>
               </div>
             )}
           </form>
@@ -926,7 +936,7 @@ export default function AdminMarketplace() {
             <div className="marketAdminPanelTitle">
               <h3>Changes API</h3>
               <span className={`badge ${syncInfo?.config?.enabled ? "success" : "pending"}`}>
-                {syncInfo?.config?.enabled ? "Đang bật" : "Đang tắt"}
+                {syncInfo?.config?.enabled ? l("Đang bật", "Enabled") : l("Đang tắt", "Disabled")}
               </span>
             </div>
             <div className="marketAdminFieldGrid">
@@ -938,9 +948,16 @@ export default function AdminMarketplace() {
                   placeholder="MARKETPLACE_DRIVE_ROOT_FOLDER_ID"
                 />
               </label>
-              <ModelFact label="Chu kỳ poll" value={syncInfo?.config?.pollSeconds || "-"} detail="giây" />
-              <ModelFact label="Hàng đợi" value={String(syncInfo?.queue?.pending ?? 0)} detail={`${syncInfo?.queue?.failed || 0} lỗi`} />
-              <ModelFact label="Trạng thái" value={syncInfo?.state?.status || "idle"} detail={syncInfo?.state?.lastChangesError || syncInfo?.state?.lastError || ""} />
+              <ModelFact label={l("Chu kỳ poll", "Poll interval")} value={syncInfo?.config?.pollSeconds || "-"} detail={l("giây", "seconds")} />
+              <ModelFact
+                label={l("Xác thực Drive", "Drive authentication")}
+                value={syncInfo?.config?.auth?.automaticRefresh ? l("Tự gia hạn", "Automatic refresh") : l("Token tạm", "Temporary token")}
+                detail={syncInfo?.config?.auth?.automaticRefresh
+                  ? l("Không cần thay access token thủ công", "No manual access-token replacement")
+                  : l("Chạy npm run drive:auth", "Run npm run drive:auth")}
+              />
+              <ModelFact label={l("Hàng đợi", "Queue")} value={String(syncInfo?.queue?.pending ?? 0)} detail={`${syncInfo?.queue?.failed || 0} ${l("lỗi", "failed")}`} />
+              <ModelFact label={l("Trạng thái", "Status")} value={syncInfo?.state?.status || "idle"} detail={syncInfo?.state?.lastChangesError || syncInfo?.state?.lastError || ""} />
             </div>
             {syncInfo?.state && (
               <div className="marketAdminScanResult">
@@ -962,16 +979,16 @@ export default function AdminMarketplace() {
             )}
             <div className="marketAdminFieldGrid">
               <label>
-                <span>Đồng bộ đúng một folder model</span>
+                <span>{l("Đồng bộ đúng một folder model", "Sync one model folder")}</span>
                 <input value={syncFolderId} onChange={(event) => setSyncFolderId(event.target.value)} placeholder="Drive model folder URL / ID" />
               </label>
             </div>
             <div className="marketAdminSyncActions">
               <button type="button" className="smallButton" onClick={syncOneDriveFolder} disabled={folderSyncRunning || !syncFolderId.trim()}>
-                <RefreshCw size={17} /> {folderSyncRunning ? "Đang đồng bộ..." : "Sync một model"}
+                <RefreshCw size={17} /> {folderSyncRunning ? l("Đang đồng bộ...", "Syncing...") : l("Sync một model", "Sync one model")}
               </button>
               <button type="button" className="primaryButton" onClick={runDriveSyncNow} disabled={syncRunning || !(syncRootFolderId || driveImportForm.rootFolderId)}>
-                <RefreshCw size={17} /> {syncRunning ? "Đang đọc changes..." : "Đọc Changes API ngay"}
+                <RefreshCw size={17} /> {syncRunning ? l("Đang đọc changes...", "Reading changes...") : l("Đọc Changes API ngay", "Read Changes API now")}
               </button>
             </div>
           </section>
@@ -980,19 +997,19 @@ export default function AdminMarketplace() {
             <summary><Database size={16} /> Migration metadata V2</summary>
             <div className="marketAdminSyncActions">
               <button type="button" className="smallButton" disabled={migrationRunning} onClick={() => runMetadataMigration(true)}>
-                Kiểm tra batch đầu
+                {l("Kiểm tra batch đầu", "Check first batch")}
               </button>
               <button type="button" className="primaryButton" disabled={migrationRunning} onClick={() => runMetadataMigration(false)}>
-                {migrationRunning ? "Đang xử lý..." : "Backup và migrate batch đầu"}
+                {migrationRunning ? l("Đang xử lý...", "Processing...") : l("Backup và migrate batch đầu", "Back up and migrate first batch")}
               </button>
             </div>
             {migrationResult && (
               <div className="marketAdminScanResult">
-                <span>Đã kiểm tra: {migrationResult.inspected || 0}</span>
+                <span>{l("Đã kiểm tra", "Inspected")}: {migrationResult.inspected || 0}</span>
                 <span>Batch: {migrationResult.page || 1}/{migrationResult.totalPages || 1}</span>
-                <span>Cần đổi: {migrationResult.changed || 0}</span>
-                <span>Đã ghi: {migrationResult.migrated || 0}</span>
-                <span>Bỏ qua: {migrationResult.skipped?.length || 0}</span>
+                <span>{l("Cần đổi", "Changes needed")}: {migrationResult.changed || 0}</span>
+                <span>{l("Đã ghi", "Written")}: {migrationResult.migrated || 0}</span>
+                <span>{l("Bỏ qua", "Skipped")}: {migrationResult.skipped?.length || 0}</span>
               </div>
             )}
           </details>
@@ -1005,47 +1022,47 @@ export default function AdminMarketplace() {
           <div className="adminTableToolbar marketAdminToolbar">
             <label className="adminSearchField">
               <Search size={15} />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm model theo tên hoặc slug..." />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={l("Tìm model theo tên hoặc slug...", "Search by model name or slug...")} />
             </label>
             <select value={metadataStatus} onChange={(event) => setMetadataStatus(event.target.value)}>
-              <option value="all">Tất cả metadata</option>
-              <option value="complete">Đủ metadata</option>
-              <option value="incomplete">Thiếu metadata</option>
+              <option value="all">{l("Tất cả metadata", "All metadata")}</option>
+              <option value="complete">{l("Đủ metadata", "Metadata ready")}</option>
+              <option value="incomplete">{l("Thiếu metadata", "Incomplete metadata")}</option>
             </select>
             <select value={fileStatus} onChange={(event) => setFileStatus(event.target.value)}>
-              <option value="all">Tất cả file</option>
-              <option value="missing">Thiếu file</option>
-              <option value="pending_upload">Chờ upload</option>
-              <option value="ready">Sẵn sàng</option>
-              <option value="failed">Lỗi file</option>
+              <option value="all">{l("Tất cả file", "All files")}</option>
+              <option value="missing">{l("Thiếu file", "Missing file")}</option>
+              <option value="pending_upload">{l("Chờ upload", "Pending upload")}</option>
+              <option value="ready">{l("Sẵn sàng", "Ready")}</option>
+              <option value="failed">{l("Lỗi file", "File error")}</option>
             </select>
             <select value={published} onChange={(event) => setPublished(event.target.value)}>
-              <option value="all">Tất cả publish</option>
-              <option value="published">Đã xuất bản</option>
-              <option value="unpublished">Bản nháp</option>
+              <option value="all">{l("Tất cả publish", "All publishing states")}</option>
+              <option value="published">{l("Đã xuất bản", "Published")}</option>
+              <option value="unpublished">{l("Bản nháp", "Draft")}</option>
             </select>
             <select value={accessType} onChange={(event) => setAccessType(event.target.value)}>
-              <option value="all">Tất cả quyền</option>
+              <option value="all">{l("Tất cả quyền", "All access")}</option>
               <option value="free">Free</option>
               <option value="member">Pro</option>
             </select>
             <span className={`marketFilterCount ${activeFilterCount ? "active" : ""}`}>{activeFilterCount}</span>
             {activeFilterCount > 0 && (
-              <button type="button" className="smallButton" onClick={clearFilters}>Xóa lọc</button>
+              <button type="button" className="smallButton" onClick={clearFilters}>{l("Xóa lọc", "Clear filters")}</button>
             )}
           </div>
 
           <div className="marketAdminBulkBar">
             <label className="checkboxInline">
               <input type="checkbox" checked={allPageSelected} onChange={toggleSelectPage} />
-              Chọn trang này
+              {l("Chọn trang này", "Select this page")}
             </label>
-            <span>{selectedModelIds.length} model đã chọn</span>
+            <span>{selectedModelIds.length} {l("model đã chọn", "models selected")}</span>
             <select value={bulkAction} onChange={(event) => setBulkAction(event.target.value)}>
-              <option value="publish">Xuất bản</option>
-              <option value="unpublish">Chuyển nháp</option>
-              <option value="access">Đổi quyền tải</option>
-              <option value="rescan">Quét lại Drive</option>
+              <option value="publish">{l("Xuất bản", "Publish")}</option>
+              <option value="unpublish">{l("Chuyển nháp", "Move to draft")}</option>
+              <option value="access">{l("Đổi quyền tải", "Change access")}</option>
+              <option value="rescan">{l("Quét lại Drive", "Rescan Drive")}</option>
             </select>
             {bulkAction === "access" && (
               <select value={bulkAccessType} onChange={(event) => setBulkAccessType(event.target.value)}>
@@ -1054,7 +1071,7 @@ export default function AdminMarketplace() {
               </select>
             )}
             <button type="button" className="smallButton" disabled={!selectedModelIds.length || bulkRunning} onClick={runBulkAction}>
-              <RefreshCw size={15} /> {bulkRunning ? "Đang xử lý..." : "Áp dụng"}
+              <RefreshCw size={15} /> {bulkRunning ? l("Đang xử lý...", "Processing...") : l("Áp dụng", "Apply")}
             </button>
           </div>
 
@@ -1067,16 +1084,20 @@ export default function AdminMarketplace() {
                 selectedForBulk={selectedModelIds.includes(model._id)}
                 onBulkToggle={toggleSelectedModel}
                 onEdit={selectForEdit}
+                language={language}
               />
             ))}
-            {!models.length && <p className="muted">Chưa có model phù hợp.</p>}
+            {!models.length && <p className="muted">{l("Chưa có model phù hợp.", "No matching models.")}</p>}
           </div>
 
-          <div className="adminPagination">
-            <button className="smallButton" disabled={pagination.page <= 1} onClick={() => goToPage(pagination.page - 1)}>Trước</button>
-            <span>Trang {pagination.page}/{pagination.totalPages} - {pagination.total} model</span>
-            <button className="smallButton" disabled={pagination.page >= pagination.totalPages} onClick={() => goToPage(pagination.page + 1)}>Sau</button>
-          </div>
+          <Pagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            total={pagination.total}
+            onPageChange={goToPage}
+            language={language}
+            itemLabel="model"
+          />
         </>
       )}
 
@@ -1085,10 +1106,10 @@ export default function AdminMarketplace() {
           {!currentSelectedModel ? (
             <section className="marketAdminEmpty">
               <Package size={36} />
-              <h3>Chưa chọn model</h3>
-              <p>Vào tab Tìm kiếm model, chọn đúng model rồi bấm Chỉnh sửa model.</p>
+              <h3>{l("Chưa chọn model", "No model selected")}</h3>
+              <p>{l("Vào tab Tìm kiếm model, chọn đúng model rồi bấm Chỉnh sửa model.", "Open Search models, choose a model, then select Edit model.")}</p>
               <button type="button" className="primaryButton" onClick={() => setActiveTab("search")}>
-                <Search size={16} /> Đi tới tìm kiếm
+                <Search size={16} /> {l("Đi tới tìm kiếm", "Go to search")}
               </button>
             </section>
           ) : (
@@ -1099,41 +1120,48 @@ export default function AdminMarketplace() {
                   <p>{currentSelectedModel.slug}</p>
                 </div>
                 <div className="marketAdminBadges">
-                  <span className={`badge ${statusClass(selectedState.key)}`}>{selectedState.label}</span>
+                  <span className={`badge ${statusClass(selectedState.key)}`}>
+                    {{
+                      draft: l("Bản nháp", "Draft"),
+                      incomplete: l("Thiếu metadata", "Incomplete metadata"),
+                      pending: l("Thiếu file", "Missing file"),
+                      online: l("Đang online", "Online"),
+                    }[selectedState.key] || selectedState.label}
+                  </span>
                   <span className={`badge ${statusClass(currentSelectedModel.metadataStatus)}`}>
-                    {metadataStatusLabels[currentSelectedModel.metadataStatus] || "Thiếu metadata"}
+                    {currentSelectedModel.metadataStatus === "complete" ? l("Đủ metadata", "Metadata ready") : l("Thiếu metadata", "Incomplete metadata")}
                   </span>
                   <span className={`badge ${statusClass(currentSelectedModel.fileStatus)}`}>
-                    {fileStatusLabels[currentSelectedModel.fileStatus] || currentSelectedModel.fileStatus}
+                    {currentSelectedModel.fileStatus === "ready" ? l("Sẵn sàng", "Ready") : (language === "en" ? currentSelectedModel.fileStatus : (fileStatusLabels[currentSelectedModel.fileStatus] || currentSelectedModel.fileStatus))}
                   </span>
                 </div>
               </div>
 
-              <MissingFields fields={currentSelectedModel.metadataMissingFields || []} />
+              <MissingFields fields={currentSelectedModel.metadataMissingFields || []} language={language} />
 
               <div className="marketAdminModelGrid">
-                <ModelFact label="File nén" value={formatBytes(currentSelectedModel.fileSize)} detail={currentSelectedModel.archiveExt || "archive"} />
-                <ModelFact label="Ảnh cover" value={currentSelectedModel.coverImage?.driveFileId ? "Đã gắn" : "Thiếu"} detail={currentSelectedModel.coverImage?.fileName} />
-                <ModelFact label="Metadata Drive" value={`Revision ${currentSelectedModel.metadataRevision || 0}`} detail={currentSelectedModel.metadataFileName || "Thiếu metadata"} />
-                <ModelFact label="Đồng bộ" value={currentSelectedModel.syncStatus || "missing"} detail={currentSelectedModel.syncError || formatDate(currentSelectedModel.lastDriveScanAt)} />
+                <ModelFact label={l("File nén", "Archive")} value={formatBytes(currentSelectedModel.fileSize)} detail={currentSelectedModel.archiveExt || "archive"} />
+                <ModelFact label={l("Ảnh cover", "Cover image")} value={currentSelectedModel.coverImage?.driveFileId ? l("Đã gắn", "Attached") : l("Thiếu", "Missing")} detail={currentSelectedModel.coverImage?.fileName} />
+                <ModelFact label="Drive metadata" value={`Revision ${currentSelectedModel.metadataRevision || 0}`} detail={currentSelectedModel.metadataFileName || l("Thiếu metadata", "Missing metadata")} />
+                <ModelFact label={l("Đồng bộ", "Sync")} value={currentSelectedModel.syncStatus || "missing"} detail={currentSelectedModel.syncError || formatDate(currentSelectedModel.lastDriveScanAt)} />
               </div>
 
               <section className="marketAdminEditSection">
                 <EditSectionTitle
                   icon={ListChecks}
-                  title="Metadata trên Drive"
+                  title={l("Metadata trên Drive", "Metadata on Drive")}
                 />
                 <div className="marketAdminFieldGrid">
                   <label>
-                    <span>Mã model</span>
+                    <span>{l("Mã model", "Model ID")}</span>
                     <input value={selectedMetadataForm.sourceModelId} disabled />
                   </label>
                   <label>
-                    <span>Tên model</span>
+                    <span>{l("Tên model", "Model name")}</span>
                     <input value={selectedMetadataForm.title} onChange={(event) => updateMetadata(currentSelectedModel, "title", event.target.value)} />
                   </label>
                   <label>
-                    <span>Quyền tải</span>
+                    <span>{l("Quyền tải", "Download access")}</span>
                     <select value={selectedMetadataForm.accessType} onChange={(event) => updateMetadata(currentSelectedModel, "accessType", event.target.value)}>
                       <option value="free">Free</option>
                       <option value="member">Pro</option>
@@ -1143,13 +1171,14 @@ export default function AdminMarketplace() {
                     value={selectedMetadataForm.sourceCategoryId}
                     categories={categoryTree}
                     onChange={(value) => updateMetadata(currentSelectedModel, "sourceCategoryId", value)}
+                    language={language}
                   />
                   <label>
-                    <span>Renderer hiển thị</span>
+                    <span>{l("Renderer hiển thị", "Display renderer")}</span>
                     <select value={selectedMetadataForm.renderer} onChange={(event) => updateMetadata(currentSelectedModel, "renderer", event.target.value)}>
-                      <option value="">Chọn renderer</option>
+                      <option value="">{l("Chọn renderer", "Select renderer")}</option>
                       {(filterOptions.render || []).map((option) => (
-                        <option key={option.value} value={option.label || option.value}>{optionLabel(option)}</option>
+                        <option key={option.value} value={option.label || option.value}>{optionLabel(option, language)}</option>
                       ))}
                     </select>
                   </label>
@@ -1162,12 +1191,13 @@ export default function AdminMarketplace() {
                       value={selectedMetadataForm[field]}
                       options={filterOptions[filterKey] || []}
                       onChange={(value) => updateMetadata(currentSelectedModel, field, value)}
+                      language={language}
                     />
                   ))}
                 </div>
                 <div className="marketAdminSyncActions">
                   <button type="button" className="primaryButton" disabled={metadataSavingId === currentSelectedModel._id} onClick={() => saveModelMetadata(currentSelectedModel)}>
-                    <Save size={16} /> {metadataSavingId === currentSelectedModel._id ? "Đang ghi Drive..." : "Lưu metadata lên Drive"}
+                    <Save size={16} /> {metadataSavingId === currentSelectedModel._id ? l("Đang ghi Drive...", "Writing to Drive...") : l("Lưu metadata lên Drive", "Save metadata to Drive")}
                   </button>
                 </div>
               </section>
@@ -1175,7 +1205,7 @@ export default function AdminMarketplace() {
               <section className="marketAdminEditSection">
                 <EditSectionTitle
                   icon={Eye}
-                  title="Trạng thái hiển thị"
+                  title={l("Trạng thái hiển thị", "Publishing state")}
                 />
                 <div className="marketAdminQuickControls">
                   <label>
@@ -1183,20 +1213,20 @@ export default function AdminMarketplace() {
                     <input value={selectedOperationalForm.slug} onChange={(event) => updateModelState(currentSelectedModel, "slug", event.target.value)} />
                   </label>
                   <label>
-                    <span>Mong muốn xuất bản</span>
+                    <span>{l("Mong muốn xuất bản", "Desired publishing state")}</span>
                     <select value={String(selectedOperationalForm.desiredPublished)} onChange={(event) => updateModelState(currentSelectedModel, "desiredPublished", event.target.value === "true")}>
-                      <option value="true">Cho phép xuất bản</option>
-                      <option value="false">Bản nháp</option>
+                      <option value="true">{l("Cho phép xuất bản", "Allow publishing")}</option>
+                      <option value="false">{l("Bản nháp", "Draft")}</option>
                     </select>
                   </label>
-                  <ModelFact label="Trạng thái thực tế" value={currentSelectedModel.isPublished ? "Đang online" : "Đang offline"} detail={(currentSelectedModel.publicationBlockers || []).join(", ") || "Không có blocker"} />
+                  <ModelFact label={l("Trạng thái thực tế", "Actual state")} value={currentSelectedModel.isPublished ? l("Đang online", "Online") : l("Đang offline", "Offline")} detail={(currentSelectedModel.publicationBlockers || []).join(", ") || l("Không có blocker", "No blockers")} />
                 </div>
                 <div className="marketAdminSyncActions">
                   <button type="button" className="smallButton" onClick={() => rescanDriveFolder(currentSelectedModel)} disabled={!currentSelectedModel.driveFolderId}>
-                    <RefreshCw size={16} /> Đồng bộ lại folder này
+                    <RefreshCw size={16} /> {l("Đồng bộ lại folder này", "Resync this folder")}
                   </button>
                   <button type="button" className="primaryButton" onClick={() => saveModelState(currentSelectedModel)}>
-                    <Save size={16} /> Lưu trạng thái web
+                    <Save size={16} /> {l("Lưu trạng thái web", "Save web state")}
                   </button>
                 </div>
               </section>
@@ -1209,7 +1239,7 @@ export default function AdminMarketplace() {
       {activeTab === "logs" && (
         <div className="marketAdminAuditGrid">
           <section className="panel">
-            <h3>Nhật ký tải model</h3>
+            <h3>{l("Nhật ký tải model", "Model download logs")}</h3>
             <div className="marketAdminLogList">
               {downloads.map((item) => (
                 <div className="marketAdminLogItem" key={item._id}>
@@ -1217,27 +1247,27 @@ export default function AdminMarketplace() {
                     <strong>{item.modelId?.title || "Model"}</strong>
                     <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || "guest"} - {item.clientType} - {item.accessTier}</span>
                   </div>
-                  <span className={`badge ${item.quotaCharged ? "success" : ""}`}>{item.quotaCharged ? "Tính lượt" : "Miễn lượt"}</span>
+                  <span className={`badge ${item.quotaCharged ? "success" : ""}`}>{item.quotaCharged ? l("Tính lượt", "Quota charged") : l("Miễn lượt", "No quota charge")}</span>
                   <span>{formatDate(item.createdAt)}</span>
                 </div>
               ))}
-              {!downloads.length && <p className="muted">Chưa có log tải.</p>}
+              {!downloads.length && <p className="muted">{l("Chưa có log tải.", "No download logs yet.")}</p>}
             </div>
           </section>
           <section className="panel">
-            <h3>Phiên tải gần đây</h3>
+            <h3>{l("Phiên tải gần đây", "Recent download sessions")}</h3>
             <div className="marketAdminLogList">
               {sessions.map((item) => (
                 <div className="marketAdminLogItem" key={item._id}>
                   <div>
-                    <strong>{item.modelId?.title || "Phiên tải"}</strong>
+                    <strong>{item.modelId?.title || l("Phiên tải", "Download session")}</strong>
                     <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || "guest"} - {item.clientType} - {item.accessTier}</span>
                   </div>
                   <span className={`badge ${statusClass(item.status)}`}>{item.status}</span>
                   <span>{formatDate(item.createdAt)}</span>
                 </div>
               ))}
-              {!sessions.length && <p className="muted">Chưa có phiên tải.</p>}
+              {!sessions.length && <p className="muted">{l("Chưa có phiên tải.", "No download sessions yet.")}</p>}
             </div>
           </section>
         </div>
@@ -1250,10 +1280,10 @@ export default function AdminMarketplace() {
           <section className="marketAdminConflictDialog" role="dialog" aria-modal="true" aria-labelledby="metadata-conflict-title">
             <header>
               <div>
-                <h3 id="metadata-conflict-title"><GitCompareArrows size={18} /> Metadata đã thay đổi trên Drive</h3>
-                <p>Bản đang sửa chưa được ghi đè. Hãy nạp bản Drive mới nhất, kiểm tra rồi lưu lại.</p>
+                <h3 id="metadata-conflict-title"><GitCompareArrows size={18} /> {l("Metadata đã thay đổi trên Drive", "Metadata changed on Drive")}</h3>
+                <p>{l("Bản đang sửa chưa được ghi đè. Hãy nạp bản Drive mới nhất, kiểm tra rồi lưu lại.", "Your edits were not overwritten. Load the latest Drive version, review it, then save again.")}</p>
               </div>
-              <button type="button" className="iconButton" onClick={() => setMetadataConflict(null)} aria-label="Đóng">
+              <button type="button" className="iconButton" onClick={() => setMetadataConflict(null)} aria-label={l("Đóng", "Close")}>
                 <X size={18} />
               </button>
             </header>
@@ -1261,15 +1291,15 @@ export default function AdminMarketplace() {
               {(metadataConflict.diff || []).map((item) => (
                 <div key={item.field}>
                   <strong>{item.field}</strong>
-                  <span><b>Bản đang sửa</b>{Array.isArray(item.before) ? item.before.join(", ") : String(item.before ?? "")}</span>
-                  <span><b>Bản trên Drive</b>{Array.isArray(item.after) ? item.after.join(", ") : String(item.after ?? "")}</span>
+                  <span><b>{l("Bản đang sửa", "Current edit")}</b>{Array.isArray(item.before) ? item.before.join(", ") : String(item.before ?? "")}</span>
+                  <span><b>{l("Bản trên Drive", "Drive version")}</b>{Array.isArray(item.after) ? item.after.join(", ") : String(item.after ?? "")}</span>
                 </div>
               ))}
-              {!metadataConflict.diff?.length && <p>Drive version đã đổi nhưng các trường metadata hiện không khác.</p>}
+              {!metadataConflict.diff?.length && <p>{l("Drive version đã đổi nhưng các trường metadata hiện không khác.", "The Drive version changed, but the metadata fields currently match.")}</p>}
             </div>
             <footer>
-              <button type="button" className="smallButton" onClick={() => setMetadataConflict(null)}>Giữ form đang sửa</button>
-              <button type="button" className="primaryButton" onClick={loadConflictVersion}>Nạp bản mới nhất từ Drive</button>
+              <button type="button" className="smallButton" onClick={() => setMetadataConflict(null)}>{l("Giữ form đang sửa", "Keep current form")}</button>
+              <button type="button" className="primaryButton" onClick={loadConflictVersion}>{l("Nạp bản mới nhất từ Drive", "Load latest Drive version")}</button>
             </footer>
           </section>
         </div>

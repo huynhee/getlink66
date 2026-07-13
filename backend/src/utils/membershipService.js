@@ -118,12 +118,19 @@ export function vietnamDayKey(date = new Date()) {
 
 export function nextVietnamReset(date = new Date()) {
   const [year, month, day] = vietnamDayKey(date).split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day + 1, 17, 0, 0, 0));
+  return new Date(Date.UTC(year, month - 1, day, 17, 0, 0, 0));
 }
 
-function endOfVietnamDay(date = new Date()) {
+export function endOfVietnamDay(date = new Date()) {
   const [year, month, day] = vietnamDateParts(date);
   return new Date(Date.UTC(year, month - 1, day, 16, 59, 59, 999));
+}
+
+export function normalizeProUntil(proUntil) {
+  if (!proUntil) return null;
+  const date = new Date(proUntil);
+  if (Number.isNaN(date.valueOf())) return null;
+  return endOfVietnamDay(date);
 }
 
 function isDailyPlan(order) {

@@ -2,6 +2,7 @@ import MarketplaceDriveChange from "../models/MarketplaceDriveChange.js";
 import MarketplaceDriveSyncState from "../models/MarketplaceDriveSyncState.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import {
+  getGoogleDriveAuthStatus,
   getGoogleDriveFileMetadata,
   getGoogleDriveStartPageToken,
   listGoogleDriveChanges,
@@ -58,6 +59,7 @@ export function marketplaceDriveSyncConfig() {
     queueBatchSize: queueBatchSize(),
     maxAttempts: maxAttempts(),
     writeEnabled: String(process.env.MARKETPLACE_DRIVE_WRITE_ENABLED || "false").toLowerCase() === "true",
+    auth: getGoogleDriveAuthStatus(),
   };
 }
 
