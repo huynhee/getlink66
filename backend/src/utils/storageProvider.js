@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { Readable } from "node:stream";
 
 function localRoot() {
@@ -105,6 +106,27 @@ async function fetchGoogleDrive(url, options = {}) {
   return response;
 }
 
+export function googleDriveWriteEnabled() {
+  return String(process.env.MARKETPLACE_DRIVE_WRITE_ENABLED || "false").toLowerCase() === "true";
+}
+
+function assertGoogleDriveWriteEnabled() {
+  if (googleDriveWriteEnabled()) return;
+  const error = new Error("Marketplace Drive writes are disabled.");
+  error.status = 503;
+  throw error;
+}
+
+async function googleDriveJson(response, operation) {
+  const text = await response.text();
+  if (!response.ok) {
+    const error = new Error(`Google Drive ${operation} failed: ${response.status} ${text.slice(0, 240)}`);
+    error.status = response.status === 404 ? 404 : response.status === 403 ? 403 : 502;
+    throw error;
+  }
+  return JSON.parse(text || "{}");
+}
+
 function escapeDriveQueryValue(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
@@ -161,7 +183,7 @@ export async function listGoogleDriveFolderPage(folderId, options = {}) {
 
   const pageSize = Math.min(1000, Math.max(1, Number(options.pageSize || 200)));
   const fields = options.fields ||
-    "nextPageToken,files(id,name,mimeType,size,imageMediaMetadata(width,height),modifiedTime)";
+    "nextPageToken,files(id,name,mimeType,size,imageMediaMetadata(width,height),modifiedTime,version,parents,trashed,driveId)";
   const url = new URL("https://www.googleapis.com/drive/v3/files");
   url.searchParams.set("q", `'${escapeDriveQueryValue(normalizedFolderId)}' in parents and trashed=false`);
   url.searchParams.set("fields", fields);
@@ -195,7 +217,7 @@ export async function listGoogleDriveFolderFiles(folderId, options = {}) {
 
   const pageSize = Math.min(1000, Math.max(1, Number(options.pageSize || 200)));
   const fields = options.fields ||
-    "nextPageToken,files(id,name,mimeType,size,imageMediaMetadata(width,height),modifiedTime)";
+    "nextPageToken,files(id,name,mimeType,size,imageMediaMetadata(width,height),modifiedTime,version,parents,trashed,driveId)";
   const files = [];
   let pageToken = String(options.pageToken || "");
   do {
@@ -215,7 +237,7 @@ export async function getGoogleDriveFileMetadata(fileId, options = {}) {
     throw error;
   }
 
-  const fields = options.fields || "id,name,mimeType,size,imageMediaMetadata(width,height),modifiedTime";
+  const fields = options.fields || "id,name,mimeType,size,imageMediaMetadata(width,height),modifiedTime,version,parents,trashed,driveId";
   const url = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(normalizedFileId)}`);
   url.searchParams.set("fields", fields);
   url.searchParams.set("supportsAllDrives", "true");
@@ -228,6 +250,92 @@ export async function getGoogleDriveFileMetadata(fileId, options = {}) {
     throw error;
   }
   return JSON.parse(text || "{}");
+}
+
+export async function updateGoogleDriveFileContent(fileId, content, options = {}) {
+  assertGoogleDriveWriteEnabled();
+  const normalizedFileId = String(fileId || "").trim();
+  if (!normalizedFileId) {
+    const error = new Error("Google Drive fileId is required for update.");
+    error.status = 400;
+    throw error;
+  }
+  const body = Buffer.isBuffer(content) ? content : Buffer.from(content);
+  const url = new URL(`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(normalizedFileId)}`);
+  url.searchParams.set("uploadType", "media");
+  url.searchParams.set("supportsAllDrives", "true");
+  url.searchParams.set("fields", "id,name,mimeType,size,modifiedTime,version,parents,driveId");
+  const response = await fetchGoogleDrive(url, {
+    method: "PATCH",
+    headers: { "content-type": options.contentType || "application/octet-stream" },
+    body,
+  });
+  return googleDriveJson(response, "file update");
+}
+
+export async function createGoogleDriveFile({ folderId, fileName, content, contentType } = {}) {
+  assertGoogleDriveWriteEnabled();
+  const normalizedFolderId = String(folderId || "").trim();
+  if (!normalizedFolderId) {
+    const error = new Error("Google Drive parent folderId is required.");
+    error.status = 400;
+    throw error;
+  }
+  const boundary = `codex-${crypto.randomBytes(12).toString("hex")}`;
+  const media = Buffer.isBuffer(content) ? content : Buffer.from(content || "");
+  const metadata = Buffer.from(JSON.stringify({
+    name: String(fileName || "metadata.json.gz").trim() || "metadata.json.gz",
+    parents: [normalizedFolderId],
+  }));
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`),
+    metadata,
+    Buffer.from(`\r\n--${boundary}\r\nContent-Type: ${contentType || "application/octet-stream"}\r\n\r\n`),
+    media,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  const url = new URL("https://www.googleapis.com/upload/drive/v3/files");
+  url.searchParams.set("uploadType", "multipart");
+  url.searchParams.set("supportsAllDrives", "true");
+  url.searchParams.set("fields", "id,name,mimeType,size,modifiedTime,version,parents,driveId");
+  const response = await fetchGoogleDrive(url, {
+    method: "POST",
+    headers: { "content-type": `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  return googleDriveJson(response, "file create");
+}
+
+export async function getGoogleDriveStartPageToken(options = {}) {
+  const url = new URL("https://www.googleapis.com/drive/v3/changes/startPageToken");
+  url.searchParams.set("supportsAllDrives", "true");
+  if (options.driveId) url.searchParams.set("driveId", String(options.driveId));
+  const response = await fetchGoogleDrive(url);
+  const payload = await googleDriveJson(response, "changes start token");
+  return String(payload.startPageToken || "");
+}
+
+export async function listGoogleDriveChanges(pageToken, options = {}) {
+  const token = String(pageToken || "").trim();
+  if (!token) {
+    const error = new Error("Google Drive changes pageToken is required.");
+    error.status = 400;
+    throw error;
+  }
+  const url = new URL("https://www.googleapis.com/drive/v3/changes");
+  url.searchParams.set("pageToken", token);
+  url.searchParams.set("pageSize", String(Math.min(1000, Math.max(1, Number(options.pageSize || 100)))));
+  url.searchParams.set("includeRemoved", "true");
+  url.searchParams.set("supportsAllDrives", "true");
+  url.searchParams.set("includeItemsFromAllDrives", "true");
+  url.searchParams.set("spaces", "drive");
+  url.searchParams.set(
+    "fields",
+    "nextPageToken,newStartPageToken,changes(fileId,removed,time,changeType,driveId,file(id,name,mimeType,size,modifiedTime,version,parents,trashed,driveId))",
+  );
+  if (options.driveId) url.searchParams.set("driveId", String(options.driveId));
+  const response = await fetchGoogleDrive(url);
+  return googleDriveJson(response, "changes list");
 }
 
 export async function openStorageStream(session) {

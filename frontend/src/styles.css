@@ -3229,6 +3229,101 @@ button:disabled {
   color: var(--text-secondary);
 }
 
+.marketAdminQueueErrors {
+  display: grid;
+  gap: 6px;
+}
+
+.marketAdminQueueErrors > div {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--error) 42%, var(--border-light));
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.marketAdminQueueErrors span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.marketAdminConflictOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1700;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(1, 7, 12, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.marketAdminConflictDialog {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 40px);
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+  border: 1px solid var(--warning);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg);
+}
+
+.marketAdminConflictDialog header,
+.marketAdminConflictDialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.marketAdminConflictDialog h3,
+.marketAdminConflictDialog p {
+  margin: 0;
+}
+
+.marketAdminConflictDialog h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.marketAdminConflictDialog header p {
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.marketAdminConflictList {
+  display: grid;
+  gap: 8px;
+}
+
+.marketAdminConflictList > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.55fr) repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--border-light);
+}
+
+.marketAdminConflictList span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+}
+
+.marketAdminConflictList b {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
 @media (max-width: 1100px) {
   .marketAdminKpis,
   .marketAdminWorkbench,
@@ -3254,6 +3349,19 @@ button:disabled {
   }
 
   .marketAdminEditHeader {
+    flex-direction: column;
+  }
+
+  .marketAdminConflictList > div {
+    grid-template-columns: 1fr;
+  }
+
+  .marketAdminQueueErrors > div {
+    grid-template-columns: 1fr;
+  }
+
+  .marketAdminConflictDialog footer {
+    align-items: stretch;
     flex-direction: column;
   }
 }

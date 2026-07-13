@@ -9,6 +9,13 @@ const SENSITIVE_KEYS = new Set([
   "value",
   "cookievalue",
   "threed66proxyurl",
+  "expectedmetadatahash",
+  "expecteddriveversion",
+  "drivefileid",
+  "metadatadrivefileid",
+  "coverdrivefileid",
+  "drivefolderid",
+  "rootfolderid",
 ]);
 
 /**

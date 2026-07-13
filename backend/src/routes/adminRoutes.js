@@ -54,8 +54,13 @@ import {
   adminListMarketplaceDownloads,
   adminListMarketplaceModels,
   adminMarketplaceStats,
+  adminMigrateMarketplaceDriveMetadata,
+  adminReconcileMarketplaceDrive,
   adminRescanMarketplaceModelDriveFolder,
+  adminSyncMarketplaceDriveFolder,
+  adminUpdateMarketplaceMetadata,
   adminUpdateMarketplaceModel,
+  adminUpdateMarketplaceState,
 } from "../controllers/marketplaceAdminController.js";
 import {
   adminMarketplaceDriveSyncState,
@@ -143,7 +148,12 @@ router.post("/marketplace/models/bulk", adminWriteLimit, auditAdmin("BULK_MARKET
 router.get("/marketplace/sync-state", adminMarketplaceDriveSyncState);
 router.post("/marketplace/sync-run", adminWriteLimit, auditAdmin("RUN_MARKETPLACE_DRIVE_SYNC"), adminRunMarketplaceDriveSync);
 router.put("/marketplace/models/:id", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_MODEL"), adminUpdateMarketplaceModel);
+router.put("/marketplace/models/:id/metadata", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_DRIVE_METADATA"), adminUpdateMarketplaceMetadata);
+router.patch("/marketplace/models/:id/state", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_MODEL_STATE"), adminUpdateMarketplaceState);
 router.post("/marketplace/models/:id/rescan-drive", adminWriteLimit, auditAdmin("RESCAN_MARKETPLACE_MODEL_DRIVE"), adminRescanMarketplaceModelDriveFolder);
+router.post("/marketplace/drive/sync-folder", adminWriteLimit, auditAdmin("SYNC_MARKETPLACE_DRIVE_FOLDER"), adminSyncMarketplaceDriveFolder);
+router.post("/marketplace/drive/reconcile", adminWriteLimit, auditAdmin("RECONCILE_MARKETPLACE_DRIVE"), adminReconcileMarketplaceDrive);
+router.post("/marketplace/drive/migrate-metadata", adminWriteLimit, auditAdmin("MIGRATE_MARKETPLACE_DRIVE_METADATA"), adminMigrateMarketplaceDriveMetadata);
 router.post("/marketplace/models/:id/attach-file", adminWriteLimit, auditAdmin("ATTACH_MARKETPLACE_FILE"), adminAttachMarketplaceFile);
 router.post("/marketplace/models/:id/attach-assets", adminWriteLimit, auditAdmin("ATTACH_MARKETPLACE_ASSETS"), adminAttachMarketplaceAssets);
 

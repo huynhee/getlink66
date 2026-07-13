@@ -1631,8 +1631,25 @@ SePay:
 - `GOOGLE_DRIVE_REFRESH_TOKEN`
 - `GOOGLE_DRIVE_ACCESS_TOKEN`
 - `GOOGLE_DRIVE_BEARER_TOKEN`
+- `MARKETPLACE_DRIVE_ROOT_FOLDER_ID`
+- `MARKETPLACE_DRIVE_BACKUP_FOLDER_ID`
+- `MARKETPLACE_DRIVE_WRITE_ENABLED`
+- `MARKETPLACE_DRIVE_CHANGES_ENABLED`
+- `MARKETPLACE_DRIVE_CHANGES_POLL_SECONDS`
+- `MARKETPLACE_DRIVE_CHANGES_BATCH_SIZE`
+- `MARKETPLACE_DRIVE_QUEUE_BATCH_SIZE`
+- `MARKETPLACE_DRIVE_QUEUE_MAX_ATTEMPTS`
+- `MARKETPLACE_DRIVE_QUEUE_RETRY_BASE_SECONDS`
 
-Marketplace model/cover/preview/file co the luu tren Google Drive va stream qua backend. Production nen dung `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN` de backend tu refresh access token. `GOOGLE_DRIVE_ACCESS_TOKEN`/`GOOGLE_DRIVE_BEARER_TOKEN` chi nen dung test ngan han vi OAuth access token thuong het han nhanh.
+Marketplace dung Google Drive lam canonical source cho metadata, archive, cover va
+preview. MongoDB chi la catalog index va noi luu state van hanh. Admin metadata save
+ghi Drive, verify read-back, sau do moi sync Mongo. Changes API poll theo folder;
+automatic full root scanner cu khong con duoc dung.
+
+Production nen dung refresh token co scope `https://www.googleapis.com/auth/drive`.
+Access token tinh chi nen dung test ngan han. Hai feature flag write/changes mac dinh
+false de rollout migration an toan. Contract day du:
+`MARKETPLACE_DATA_CONTRACT.md`.
 
 ## 10. Van hanh local
 

@@ -132,7 +132,6 @@ function publicModel(model, options = {}) {
     colors: model.colors || [],
     materials: model.materials || [],
     renderer: model.renderer || "",
-    sizeText: model.sizeText || "",
     accessType: model.accessType || "member",
     fileStatus: model.fileStatus || "missing",
     isPublished: Boolean(model.isPublished),

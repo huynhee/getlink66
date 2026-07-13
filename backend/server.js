@@ -293,7 +293,8 @@ app.use((error, _req, res, _next) => {
   res.status(status).json({
     message: status >= 500 && isProduction
       ? "Internal server error"
-      : error.message || "Internal server error"
+      : error.message || "Internal server error",
+    ...(typeof error.code === "string" && error.code ? { code: error.code } : {}),
   });
 });
 

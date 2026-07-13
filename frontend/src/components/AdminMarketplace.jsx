@@ -6,8 +6,7 @@ import {
   Database,
   Eye,
   EyeOff,
-  FileArchive,
-  Image as ImageIcon,
+  GitCompareArrows,
   ListChecks,
   Package,
   Pencil,
@@ -15,25 +14,9 @@ import {
   Save,
   Search,
   UploadCloud,
+  X,
 } from "lucide-react";
 import { api } from "../api.js";
-
-const emptyImportForm = {
-  sourceModelId: "",
-  sourceSlug: "",
-  sourceCategoryId: "",
-  title: "",
-  slug: "",
-  styles: "",
-  renderers: "",
-  forms: "",
-  colors: "",
-  materials: "",
-  renderer: "",
-  sizeText: "",
-  accessType: "member",
-  isPublished: true,
-};
 
 const emptyDriveImportForm = {
   rootFolderId: "",
@@ -224,20 +207,6 @@ function publicState(model) {
   return { key: "online", label: "Đang online" };
 }
 
-function previewLines(model) {
-  return (model.previewImages || [])
-    .filter((item) => item.driveFileId)
-    .map((item) => [
-      item.driveFileId || "",
-      item.fileName || "",
-      item.width || "",
-      item.height || "",
-      item.size || "",
-      item.alt || "",
-    ].join("|"))
-    .join("\n");
-}
-
 function KpiCard({ icon: Icon, label, value, tone = "" }) {
   return (
     <div className={`marketAdminKpi ${tone}`}>
@@ -421,16 +390,22 @@ export default function AdminMarketplace() {
   const [sessions, setSessions] = useState([]);
   const [categoryTree, setCategoryTree] = useState([]);
   const [filterOptions, setFilterOptions] = useState({});
-  const [importForm, setImportForm] = useState(emptyImportForm);
   const [driveImportForm, setDriveImportForm] = useState(emptyDriveImportForm);
-  const [attachById, setAttachById] = useState({});
-  const [assetById, setAssetById] = useState({});
   const [metadataById, setMetadataById] = useState({});
+  const [stateById, setStateById] = useState({});
+  const [metadataVersionById, setMetadataVersionById] = useState({});
   const [selectedModel, setSelectedModel] = useState(null);
   const [lastScan, setLastScan] = useState(null);
+  const [reconcileReset, setReconcileReset] = useState(false);
   const [syncInfo, setSyncInfo] = useState(null);
   const [syncRootFolderId, setSyncRootFolderId] = useState("");
   const [syncRunning, setSyncRunning] = useState(false);
+  const [syncFolderId, setSyncFolderId] = useState("");
+  const [folderSyncRunning, setFolderSyncRunning] = useState(false);
+  const [migrationRunning, setMigrationRunning] = useState(false);
+  const [migrationResult, setMigrationResult] = useState(null);
+  const [metadataSavingId, setMetadataSavingId] = useState("");
+  const [metadataConflict, setMetadataConflict] = useState(null);
   const [selectedModelIds, setSelectedModelIds] = useState([]);
   const [bulkAction, setBulkAction] = useState("publish");
   const [bulkAccessType, setBulkAccessType] = useState("member");
@@ -448,10 +423,6 @@ export default function AdminMarketplace() {
       (search.trim() ? 1 : 0);
   }, [fileStatus, accessType, published, metadataStatus, search]);
 
-  function updateImport(field, value) {
-    setImportForm((current) => ({ ...current, [field]: value }));
-  }
-
   function updateDriveImport(field, value) {
     setDriveImportForm((current) => ({ ...current, [field]: value }));
   }
@@ -462,61 +433,25 @@ export default function AdminMarketplace() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function attachForm(model) {
-    return attachById[model._id] || {
-      storageProvider: model.storageProvider || "google_drive",
-      storageKey: model.storageKey || "",
-      driveFileId: model.driveFileId || "",
-      telegramFileRef: model.telegramFileRef || "",
-      archiveExt: model.archiveExt || "zip",
-      fileSize: model.fileSize || "",
-      sha256: model.sha256 || "",
-      fileStatus: model.fileStatus === "ready" ? "ready" : "pending_upload",
-    };
-  }
-
-  function updateAttach(model, field, value) {
-    setAttachById((current) => ({
-      ...current,
-      [model._id]: { ...attachForm(model), [field]: value },
-    }));
-  }
-
-  function assetForm(model) {
-    return assetById[model._id] || {
-      coverDriveFileId: model.coverImage?.driveFileId || "",
-      coverFileName: model.coverImage?.fileName || "",
-      coverWidth: model.coverImage?.width || "",
-      coverHeight: model.coverImage?.height || "",
-      coverSize: model.coverImage?.size || "",
-      coverAlt: model.coverImage?.alt || "",
-      previewImages: previewLines(model),
-      metadataDriveFileId: model.metadataDriveFileId || "",
-      metadataFileName: model.metadataFileName || "",
-      metadataSize: model.metadataSize || "",
-    };
-  }
-
-  function updateAsset(model, field, value) {
-    setAssetById((current) => ({
-      ...current,
-      [model._id]: { ...assetForm(model), [field]: value },
-    }));
-  }
-
   function metadataForm(model) {
     return metadataById[model._id] || {
+      sourceModelId: model.metadataSourceModelId || model.driveFolderName || "",
       title: model.title || "",
-      slug: model.slug || "",
-      sourceSlug: model.source?.slug || "",
       sourceCategoryId: model.categorySourceId || model.source?.categoryId || "",
+      accessType: accessControlValue(model.accessType),
       styles: (model.styles || []).join(", "),
       renderers: (model.renderers || []).join(", "),
       forms: (model.forms || []).join(", "),
       colors: (model.colors || []).join(", "),
       materials: (model.materials || []).join(", "),
       renderer: model.renderer || "",
-      sizeText: model.sizeText || "",
+    };
+  }
+
+  function stateForm(model) {
+    return stateById[model._id] || {
+      slug: model.slug || "",
+      desiredPublished: Boolean(model.desiredPublished ?? model.isPublished),
     };
   }
 
@@ -524,6 +459,13 @@ export default function AdminMarketplace() {
     setMetadataById((current) => ({
       ...current,
       [model._id]: { ...metadataForm(model), [field]: value },
+    }));
+  }
+
+  function updateModelState(model, field, value) {
+    setStateById((current) => ({
+      ...current,
+      [model._id]: { ...stateForm(model), [field]: value },
     }));
   }
 
@@ -567,43 +509,22 @@ export default function AdminMarketplace() {
     loadTaxonomy().catch((err) => setError(err.message));
   }, []);
 
-  async function importModel(event) {
-    event.preventDefault();
-    setMessage("");
-    setError("");
-    try {
-      if (categoryHasChildren(categoryTree, importForm.sourceCategoryId)) {
-        setError("Danh mục đang chọn còn danh mục con. Hãy chọn danh mục con trước khi import.");
-        return;
-      }
-      const data = await api("/api/admin/marketplace/models/import-metadata", {
-        method: "POST",
-        body: JSON.stringify(importForm),
-      });
-      setImportForm(emptyImportForm);
-      setMessage(`Đã import ${data.model?.title || ""}`);
-      await loadModels(1);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
   async function importDriveFolder(event) {
     event.preventDefault();
     setMessage("");
     setError("");
     try {
-      const data = await api("/api/admin/marketplace/import-drive-folder", {
+      const data = await api("/api/admin/marketplace/drive/reconcile", {
         method: "POST",
         body: JSON.stringify({
           rootFolderId: driveImportForm.rootFolderId,
-          pageToken: driveImportForm.pageToken,
           limit: Number(driveImportForm.limit || 20),
-          accessType: driveImportForm.accessType,
-          isPublished: driveImportForm.isPublished,
+          ...(driveImportForm.pageToken ? { pageToken: driveImportForm.pageToken } : {}),
+          ...(reconcileReset ? { reset: true } : {}),
         }),
       });
       setLastScan(data);
+      setReconcileReset(false);
       setDriveImportForm((current) => ({ ...current, pageToken: data.nextPageToken || "" }));
       setMessage(
         `Đã quét Drive: ${data.createdCount || 0} tạo mới, ` +
@@ -627,9 +548,8 @@ export default function AdminMarketplace() {
       });
       setSyncInfo((current) => ({ ...(current || {}), state: data.state || current?.state || null }));
       setMessage(
-        `Đã chạy sync Drive: ${data.scannedFolders || 0} folder, ` +
-        `${data.createdCount || 0} tạo mới, ${data.updatedCount || 0} cập nhật, ${data.unchangedCount || 0} không đổi` +
-        (data.cycleCompleted ? ". Đã hết một vòng quét." : ". Còn batch tiếp theo."),
+        `Đã đọc ${data.changesCount || 0} thay đổi, thêm ${data.queuedCount || 0} folder vào hàng đợi, ` +
+        `xử lý ${data.scannedFolders || 0} folder, lỗi ${data.failedCount || 0}.`,
       );
       await loadModels(1);
     } catch (err) {
@@ -639,51 +559,45 @@ export default function AdminMarketplace() {
     }
   }
 
-  async function attachFile(model) {
+  async function syncOneDriveFolder() {
+    if (!syncFolderId.trim()) return;
     setMessage("");
     setError("");
+    setFolderSyncRunning(true);
     try {
-      const form = attachForm(model);
-      const data = await api(`/api/admin/marketplace/models/${model._id}/attach-file`, {
+      const data = await api("/api/admin/marketplace/drive/sync-folder", {
         method: "POST",
-        body: JSON.stringify({
-          ...form,
-          fileSize: Number(form.fileSize || 0),
-        }),
+        body: JSON.stringify({ driveFolderId: syncFolderId.trim() }),
       });
-      setSelectedModel(data.model || model);
-      setMessage(`Đã gắn file cho ${data.model?.title || model.title}`);
-      await loadModels(page);
+      setSyncFolderId("");
+      setMessage(`Đã đồng bộ ${data.model?.title || "model"}; chỉ một folder được đọc.`);
+      await loadModels(1);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setFolderSyncRunning(false);
     }
   }
 
-  async function attachAssets(model) {
+  async function runMetadataMigration(dryRun) {
+    if (!dryRun && !window.confirm("Ghi metadata Mongo hiện tại lên Drive cho batch này? Một file backup sẽ được tạo trước.")) return;
     setMessage("");
     setError("");
+    setMigrationRunning(true);
     try {
-      const form = assetForm(model);
-      const data = await api(`/api/admin/marketplace/models/${model._id}/attach-assets`, {
+      const data = await api("/api/admin/marketplace/drive/migrate-metadata", {
         method: "POST",
-        body: JSON.stringify({
-          coverDriveFileId: form.coverDriveFileId,
-          coverFileName: form.coverFileName,
-          coverWidth: Number(form.coverWidth || 0),
-          coverHeight: Number(form.coverHeight || 0),
-          coverSize: Number(form.coverSize || 0),
-          coverAlt: form.coverAlt,
-          previewImages: form.previewImages,
-          metadataDriveFileId: form.metadataDriveFileId,
-          metadataFileName: form.metadataFileName,
-          metadataSize: Number(form.metadataSize || 0),
-        }),
+        body: JSON.stringify({ limit: 20, dryRun }),
       });
-      setSelectedModel(data.model || model);
-      setMessage(`Đã gắn ảnh/metadata cho ${data.model?.title || model.title}`);
-      await loadModels(page);
+      setMigrationResult(data);
+      setMessage(dryRun
+        ? `Dry-run: ${data.changed || 0}/${data.inspected || 0} model cần migration.`
+        : `Đã migration ${data.migrated || 0} model; ${data.skipped?.length || 0} model bị bỏ qua.`);
+      if (!dryRun) await loadModels(1);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setMigrationRunning(false);
     }
   }
 
@@ -696,16 +610,6 @@ export default function AdminMarketplace() {
         body: JSON.stringify({}),
       });
       setSelectedModel(data.model || model);
-      setAttachById((current) => {
-        const next = { ...current };
-        delete next[model._id];
-        return next;
-      });
-      setAssetById((current) => {
-        const next = { ...current };
-        delete next[model._id];
-        return next;
-      });
       setMetadataById((current) => {
         const next = { ...current };
         delete next[model._id];
@@ -724,26 +628,35 @@ export default function AdminMarketplace() {
   async function saveModelMetadata(model) {
     setMessage("");
     setError("");
+    setMetadataSavingId(model._id);
     try {
       const form = metadataForm(model);
       if (categoryHasChildren(categoryTree, form.sourceCategoryId)) {
         setError("Danh mục đang chọn còn danh mục con. Hãy chọn danh mục con trước khi lưu.");
         return;
       }
-      const data = await api(`/api/admin/marketplace/models/${model._id}`, {
+      const expected = metadataVersionById[model._id] || {
+        metadataHash: model.metadataHash || "",
+        driveVersion: model.metadataDriveVersion || "",
+      };
+      const data = await api(`/api/admin/marketplace/models/${model._id}/metadata`, {
         method: "PUT",
         body: JSON.stringify({
-          title: form.title,
-          slug: form.slug,
-          sourceSlug: form.sourceSlug,
-          sourceCategoryId: form.sourceCategoryId,
-          styles: form.styles,
-          renderers: form.renderers,
-          forms: form.forms,
-          colors: form.colors,
-          materials: form.materials,
-          renderer: form.renderer,
-          sizeText: form.sizeText,
+          metadata: {
+            sourceModelId: form.sourceModelId,
+            title: form.title,
+            sourceCategoryId: form.sourceCategoryId,
+            accessType: form.accessType,
+            styles: form.styles,
+            renderers: form.renderers,
+            forms: form.forms,
+            colors: form.colors,
+            materials: form.materials,
+            renderer: form.renderer,
+            sha256: model.sha256 || "",
+          },
+          expectedMetadataHash: expected.metadataHash,
+          expectedDriveVersion: expected.driveVersion,
         }),
       });
       setSelectedModel(data.model || model);
@@ -752,11 +665,49 @@ export default function AdminMarketplace() {
         delete next[model._id];
         return next;
       });
-      setMessage(`Đã cập nhật phân loại cho ${data.model?.title || model.title}`);
+      setMetadataVersionById((current) => {
+        const next = { ...current };
+        delete next[model._id];
+        return next;
+      });
+      setMessage(`Drive đã xác nhận metadata revision ${data.metadata?.revision || data.model?.metadataRevision || "-"}.`);
       await loadModels(page);
     } catch (err) {
-      setError(err.message);
+      if (err.code === "METADATA_CONFLICT") {
+        setMetadataConflict({ model, form: metadataForm(model), ...err.data });
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setMetadataSavingId("");
     }
+  }
+
+  function loadConflictVersion() {
+    if (!metadataConflict?.model?._id || !metadataConflict.current?.metadata) return;
+    const model = metadataConflict.model;
+    const current = metadataConflict.current;
+    setMetadataById((forms) => ({
+      ...forms,
+      [model._id]: {
+        ...metadataForm(model),
+        ...current.metadata,
+        styles: (current.metadata.styles || []).join(", "),
+        renderers: (current.metadata.renderers || []).join(", "),
+        forms: (current.metadata.forms || []).join(", "),
+        colors: (current.metadata.colors || []).join(", "),
+        materials: (current.metadata.materials || []).join(", "),
+      },
+    }));
+    setMetadataVersionById((versions) => ({
+      ...versions,
+      [model._id]: {
+        metadataHash: current.metadataHash || "",
+        driveVersion: current.driveVersion || "",
+      },
+    }));
+    setMetadataConflict(null);
+    setMessage("Đã nạp bản mới nhất từ Drive vào form. Kiểm tra rồi bấm lưu lại.");
   }
 
   async function cleanupRawMetadata() {
@@ -778,15 +729,32 @@ export default function AdminMarketplace() {
     setMessage("");
     setError("");
     try {
-      const data = await api(`/api/admin/marketplace/models/${model._id}`, {
-        method: "PUT",
+      const data = await api(`/api/admin/marketplace/models/${model._id}/state`, {
+        method: "PATCH",
         body: JSON.stringify(patch),
       });
       setSelectedModel(data.model || model);
       await loadModels(page);
+      return data;
     } catch (err) {
       setError(err.message);
+      return null;
     }
+  }
+
+  async function saveModelState(model) {
+    const form = stateForm(model);
+    const data = await quickUpdate(model, {
+      slug: form.slug,
+      desiredPublished: form.desiredPublished,
+    });
+    if (!data) return;
+    setStateById((current) => {
+      const next = { ...current };
+      delete next[model._id];
+      return next;
+    });
+    setMessage("Đã cập nhật trạng thái vận hành trên web.");
   }
 
   function toggleSelectedModel(id) {
@@ -850,9 +818,8 @@ export default function AdminMarketplace() {
   }
 
   const selectedState = currentSelectedModel ? publicState(currentSelectedModel) : null;
-  const selectedAttachForm = currentSelectedModel ? attachForm(currentSelectedModel) : null;
-  const selectedAssetForm = currentSelectedModel ? assetForm(currentSelectedModel) : null;
   const selectedMetadataForm = currentSelectedModel ? metadataForm(currentSelectedModel) : null;
+  const selectedOperationalForm = currentSelectedModel ? stateForm(currentSelectedModel) : null;
   const allPageSelected = models.length > 0 && models.every((model) => selectedModelIds.includes(model._id));
 
   return (
@@ -901,8 +868,8 @@ export default function AdminMarketplace() {
         <div className="marketAdminWorkbench single">
           <form className="marketAdminForm marketAdminSyncPanel" onSubmit={importDriveFolder}>
             <div className="marketAdminPanelTitle">
-              <h3>Đồng bộ Google Drive</h3>
-              <span className="badge pending">Quét theo batch</span>
+              <h3>Đối soát toàn bộ Drive</h3>
+              <span className="badge pending">Chỉ chạy thủ công</span>
             </div>
             <div className="marketAdminFieldGrid">
               <label>
@@ -932,24 +899,12 @@ export default function AdminMarketplace() {
                   onChange={(event) => updateDriveImport("limit", event.target.value)}
                 />
               </label>
-              <label>
-                <span>Quyền tải mặc định</span>
-                <select value={driveImportForm.accessType} onChange={(event) => updateDriveImport("accessType", event.target.value)}>
-                  <option value="free">Free</option>
-                  <option value="member">Pro</option>
-                </select>
-              </label>
             </div>
             <div className="marketAdminSyncActions">
-              <label className="checkboxInline">
-                <input
-                  type="checkbox"
-                  checked={driveImportForm.isPublished}
-                  onChange={(event) => updateDriveImport("isPublished", event.target.checked)}
-                />
-                Xuất bản nếu model đủ metadata
-              </label>
-              <button type="button" className="smallButton" onClick={() => updateDriveImport("pageToken", "")}>
+              <button type="button" className="smallButton" onClick={() => {
+                updateDriveImport("pageToken", "");
+                setReconcileReset(true);
+              }}>
                 Reset token
               </button>
               <button className="primaryButton">
@@ -969,7 +924,7 @@ export default function AdminMarketplace() {
 
           <section className="marketAdminForm marketAdminSyncPanel">
             <div className="marketAdminPanelTitle">
-              <h3>Sync tự động</h3>
+              <h3>Changes API</h3>
               <span className={`badge ${syncInfo?.config?.enabled ? "success" : "pending"}`}>
                 {syncInfo?.config?.enabled ? "Đang bật" : "Đang tắt"}
               </span>
@@ -983,71 +938,65 @@ export default function AdminMarketplace() {
                   placeholder="MARKETPLACE_DRIVE_ROOT_FOLDER_ID"
                 />
               </label>
-              <ModelFact label="Batch size" value={syncInfo?.config?.batchSize || "-"} detail="folder/lần" />
-              <ModelFact label="Interval" value={syncInfo?.config?.intervalMinutes || "-"} detail="phút" />
-              <ModelFact label="Trạng thái" value={syncInfo?.state?.status || "idle"} detail={syncInfo?.state?.lastError || ""} />
+              <ModelFact label="Chu kỳ poll" value={syncInfo?.config?.pollSeconds || "-"} detail="giây" />
+              <ModelFact label="Hàng đợi" value={String(syncInfo?.queue?.pending ?? 0)} detail={`${syncInfo?.queue?.failed || 0} lỗi`} />
+              <ModelFact label="Trạng thái" value={syncInfo?.state?.status || "idle"} detail={syncInfo?.state?.lastChangesError || syncInfo?.state?.lastError || ""} />
             </div>
             {syncInfo?.state && (
               <div className="marketAdminScanResult">
-                <span>Token: {syncInfo.state.pageToken ? "còn batch" : "đầu vòng"}</span>
-                <span>Tạo: {syncInfo.state.createdCount || 0}</span>
-                <span>Cập nhật: {syncInfo.state.updatedCount || 0}</span>
-                <span>Không đổi: {syncInfo.state.unchangedCount || 0}</span>
-                <span>Vòng: {syncInfo.state.cycleCount || 0}</span>
+                <span>Token: {syncInfo.state.changesPageToken ? "đã khởi tạo" : "chưa khởi tạo"}</span>
+                <span>Change gần nhất: {syncInfo.state.lastChangesCount || 0}</span>
+                <span>Poll: {formatDate(syncInfo.state.lastChangesPollAt)}</span>
               </div>
             )}
+            {!!syncInfo?.queue?.recentFailures?.length && (
+              <div className="marketAdminQueueErrors">
+                {syncInfo.queue.recentFailures.map((item) => (
+                  <div key={item._id || item.driveFolderId}>
+                    <strong>{item.driveFolderId}</strong>
+                    <span>{item.lastError || "Đồng bộ thất bại"}</span>
+                    <span>{item.attempts || 0}/8 lần</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="marketAdminFieldGrid">
+              <label>
+                <span>Đồng bộ đúng một folder model</span>
+                <input value={syncFolderId} onChange={(event) => setSyncFolderId(event.target.value)} placeholder="Drive model folder URL / ID" />
+              </label>
+            </div>
             <div className="marketAdminSyncActions">
+              <button type="button" className="smallButton" onClick={syncOneDriveFolder} disabled={folderSyncRunning || !syncFolderId.trim()}>
+                <RefreshCw size={17} /> {folderSyncRunning ? "Đang đồng bộ..." : "Sync một model"}
+              </button>
               <button type="button" className="primaryButton" onClick={runDriveSyncNow} disabled={syncRunning || !(syncRootFolderId || driveImportForm.rootFolderId)}>
-                <RefreshCw size={17} /> {syncRunning ? "Đang chạy..." : "Chạy sync 1 batch"}
+                <RefreshCw size={17} /> {syncRunning ? "Đang đọc changes..." : "Đọc Changes API ngay"}
               </button>
             </div>
           </section>
 
           <details className="marketAdminForm marketAdminManualImport">
-            <summary><Save size={16} /> Import metadata thủ công</summary>
-            <form onSubmit={importModel}>
-              <div className="marketAdminFieldGrid">
-                <label><span>Mã catalog</span><input value={importForm.sourceModelId} onChange={(event) => updateImport("sourceModelId", event.target.value)} required /></label>
-                <label><span>Tên model</span><input value={importForm.title} onChange={(event) => updateImport("title", event.target.value)} required /></label>
-                <label><span>Slug web</span><input value={importForm.slug} onChange={(event) => updateImport("slug", event.target.value)} placeholder="outdoor-kitchen-145" /></label>
-                  <CategorySelect
-                    value={importForm.sourceCategoryId}
-                    categories={categoryTree}
-                    onChange={(value) => updateImport("sourceCategoryId", value)}
-                  />
-                <label><span>Slug nguồn</span><input value={importForm.sourceSlug} onChange={(event) => updateImport("sourceSlug", event.target.value)} /></label>
-                <label><span>Dung lượng hiển thị</span><input value={importForm.sizeText} onChange={(event) => updateImport("sizeText", event.target.value)} placeholder="25 MB" /></label>
-                <label><span>Renderer hiển thị</span><select value={importForm.renderer} onChange={(event) => updateImport("renderer", event.target.value)}>
-                  <option value="">Chọn renderer</option>
-                  {(filterOptions.render || []).map((option) => (
-                    <option key={option.value} value={option.label || option.value}>{optionLabel(option)}</option>
-                  ))}
-                </select></label>
-                <label><span>Quyền tải</span><select value={importForm.accessType} onChange={(event) => updateImport("accessType", event.target.value)}>
-                  <option value="free">Free</option>
-                  <option value="member">Pro</option>
-                </select></label>
+            <summary><Database size={16} /> Migration metadata V2</summary>
+            <div className="marketAdminSyncActions">
+              <button type="button" className="smallButton" disabled={migrationRunning} onClick={() => runMetadataMigration(true)}>
+                Kiểm tra batch đầu
+              </button>
+              <button type="button" className="primaryButton" disabled={migrationRunning} onClick={() => runMetadataMigration(false)}>
+                {migrationRunning ? "Đang xử lý..." : "Backup và migrate batch đầu"}
+              </button>
+            </div>
+            {migrationResult && (
+              <div className="marketAdminScanResult">
+                <span>Đã kiểm tra: {migrationResult.inspected || 0}</span>
+                <span>Batch: {migrationResult.page || 1}/{migrationResult.totalPages || 1}</span>
+                <span>Cần đổi: {migrationResult.changed || 0}</span>
+                <span>Đã ghi: {migrationResult.migrated || 0}</span>
+                <span>Bỏ qua: {migrationResult.skipped?.length || 0}</span>
               </div>
-              <div className="marketAdminFacetGrid">
-                {Object.entries(facetOptionMap).map(([field, filterKey]) => (
-                  <FacetPicker
-                    key={field}
-                    field={field}
-                    value={importForm[field]}
-                    options={filterOptions[filterKey] || []}
-                    onChange={(value) => updateImport(field, value)}
-                  />
-                ))}
-              </div>
-              <div className="marketAdminSyncActions">
-                <label className="checkboxInline">
-                  <input type="checkbox" checked={importForm.isPublished} onChange={(event) => updateImport("isPublished", event.target.checked)} />
-                  Xuất bản nếu đủ metadata
-                </label>
-                <button className="primaryButton"><Save size={17} /> Import / cập nhật</button>
-              </div>
-            </form>
+            )}
           </details>
+
         </div>
       )}
 
@@ -1165,27 +1114,30 @@ export default function AdminMarketplace() {
               <div className="marketAdminModelGrid">
                 <ModelFact label="File nén" value={formatBytes(currentSelectedModel.fileSize)} detail={currentSelectedModel.archiveExt || "archive"} />
                 <ModelFact label="Ảnh cover" value={currentSelectedModel.coverImage?.driveFileId ? "Đã gắn" : "Thiếu"} detail={currentSelectedModel.coverImage?.fileName} />
-                <ModelFact label="Preview" value={`${currentSelectedModel.previewImages?.length || 0} ảnh`} detail={currentSelectedModel.metadataFileName || "metadata"} />
-                <ModelFact label="Lần quét Drive" value={formatDate(currentSelectedModel.lastDriveScanAt)} detail={currentSelectedModel.driveFolderName || currentSelectedModel.source?.slug} />
+                <ModelFact label="Metadata Drive" value={`Revision ${currentSelectedModel.metadataRevision || 0}`} detail={currentSelectedModel.metadataFileName || "Thiếu metadata"} />
+                <ModelFact label="Đồng bộ" value={currentSelectedModel.syncStatus || "missing"} detail={currentSelectedModel.syncError || formatDate(currentSelectedModel.lastDriveScanAt)} />
               </div>
 
               <section className="marketAdminEditSection">
                 <EditSectionTitle
                   icon={ListChecks}
-                  title="Thông tin phân loại và bộ lọc"
+                  title="Metadata trên Drive"
                 />
                 <div className="marketAdminFieldGrid">
+                  <label>
+                    <span>Mã model</span>
+                    <input value={selectedMetadataForm.sourceModelId} disabled />
+                  </label>
                   <label>
                     <span>Tên model</span>
                     <input value={selectedMetadataForm.title} onChange={(event) => updateMetadata(currentSelectedModel, "title", event.target.value)} />
                   </label>
                   <label>
-                    <span>Slug web</span>
-                    <input value={selectedMetadataForm.slug} onChange={(event) => updateMetadata(currentSelectedModel, "slug", event.target.value)} />
-                  </label>
-                  <label>
-                    <span>Slug nguồn</span>
-                    <input value={selectedMetadataForm.sourceSlug} onChange={(event) => updateMetadata(currentSelectedModel, "sourceSlug", event.target.value)} />
+                    <span>Quyền tải</span>
+                    <select value={selectedMetadataForm.accessType} onChange={(event) => updateMetadata(currentSelectedModel, "accessType", event.target.value)}>
+                      <option value="free">Free</option>
+                      <option value="member">Pro</option>
+                    </select>
                   </label>
                   <CategorySelect
                     value={selectedMetadataForm.sourceCategoryId}
@@ -1201,10 +1153,6 @@ export default function AdminMarketplace() {
                       ))}
                     </select>
                   </label>
-                  <label>
-                    <span>Dung lượng hiển thị</span>
-                    <input value={selectedMetadataForm.sizeText} onChange={(event) => updateMetadata(currentSelectedModel, "sizeText", event.target.value)} placeholder="25 MB" />
-                  </label>
                 </div>
                 <div className="marketAdminFacetGrid">
                   {Object.entries(facetOptionMap).map(([field, filterKey]) => (
@@ -1218,8 +1166,8 @@ export default function AdminMarketplace() {
                   ))}
                 </div>
                 <div className="marketAdminSyncActions">
-                  <button type="button" className="primaryButton" onClick={() => saveModelMetadata(currentSelectedModel)}>
-                    <Save size={16} /> Lưu phân loại / bộ lọc
+                  <button type="button" className="primaryButton" disabled={metadataSavingId === currentSelectedModel._id} onClick={() => saveModelMetadata(currentSelectedModel)}>
+                    <Save size={16} /> {metadataSavingId === currentSelectedModel._id ? "Đang ghi Drive..." : "Lưu metadata lên Drive"}
                   </button>
                 </div>
               </section>
@@ -1231,127 +1179,28 @@ export default function AdminMarketplace() {
                 />
                 <div className="marketAdminQuickControls">
                   <label>
-                    <span>Quyền tải</span>
-                    <select value={accessControlValue(currentSelectedModel.accessType)} onChange={(event) => quickUpdate(currentSelectedModel, { accessType: event.target.value })}>
-                      <option value="free">Free</option>
-                      <option value="member">Pro</option>
-                    </select>
+                    <span>Slug web</span>
+                    <input value={selectedOperationalForm.slug} onChange={(event) => updateModelState(currentSelectedModel, "slug", event.target.value)} />
                   </label>
                   <label>
-                    <span>Publish</span>
-                    <select value={String(Boolean(currentSelectedModel.isPublished))} onChange={(event) => quickUpdate(currentSelectedModel, { isPublished: event.target.value === "true" })}>
-                      <option value="true">Đã xuất bản</option>
+                    <span>Mong muốn xuất bản</span>
+                    <select value={String(selectedOperationalForm.desiredPublished)} onChange={(event) => updateModelState(currentSelectedModel, "desiredPublished", event.target.value === "true")}>
+                      <option value="true">Cho phép xuất bản</option>
                       <option value="false">Bản nháp</option>
                     </select>
                   </label>
-                  <label>
-                    <span>Trạng thái file</span>
-                    <select value={currentSelectedModel.fileStatus} onChange={(event) => quickUpdate(currentSelectedModel, { fileStatus: event.target.value })}>
-                      <option value="missing">Thiếu file</option>
-                      <option value="pending_upload">Chờ upload</option>
-                      <option value="ready">Sẵn sàng</option>
-                      <option value="failed">Lỗi file</option>
-                    </select>
-                  </label>
+                  <ModelFact label="Trạng thái thực tế" value={currentSelectedModel.isPublished ? "Đang online" : "Đang offline"} detail={(currentSelectedModel.publicationBlockers || []).join(", ") || "Không có blocker"} />
                 </div>
-              </section>
-
-              <section className="marketAdminEditSection">
-                <EditSectionTitle
-                  icon={FileArchive}
-                  title="File nén tải về"
-                />
-                <div className="marketAttachGrid">
-                  <label>
-                    <span>Storage</span>
-                    <select value={selectedAttachForm.storageProvider} onChange={(event) => updateAttach(currentSelectedModel, "storageProvider", event.target.value)}>
-                      <option value="google_drive">Google Drive</option>
-                      <option value="b2">Backblaze B2</option>
-                      <option value="r2">Cloudflare R2</option>
-                      <option value="local">Local</option>
-                      <option value="telegram">Telegram</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>Drive file ID</span>
-                    <input value={selectedAttachForm.driveFileId} onChange={(event) => updateAttach(currentSelectedModel, "driveFileId", event.target.value)} placeholder="Drive file ID của file nén" />
-                  </label>
-                  <label>
-                    <span>Storage key</span>
-                    <input value={selectedAttachForm.storageKey} onChange={(event) => updateAttach(currentSelectedModel, "storageKey", event.target.value)} placeholder="Storage key" />
-                  </label>
-                  <label>
-                    <span>Đuôi file</span>
-                    <input value={selectedAttachForm.archiveExt} onChange={(event) => updateAttach(currentSelectedModel, "archiveExt", event.target.value)} placeholder="zip / rar / 7z" />
-                  </label>
-                  <label>
-                    <span>Dung lượng</span>
-                    <input type="number" value={selectedAttachForm.fileSize} onChange={(event) => updateAttach(currentSelectedModel, "fileSize", event.target.value)} placeholder="Dung lượng byte" />
-                  </label>
-                  <label>
-                    <span>SHA-256</span>
-                    <input value={selectedAttachForm.sha256} onChange={(event) => updateAttach(currentSelectedModel, "sha256", event.target.value)} placeholder="SHA-256" />
-                  </label>
-                  <button type="button" className="smallButton" onClick={() => attachFile(currentSelectedModel)}>
-                    <UploadCloud size={15} /> Gắn file nén
-                  </button>
-                </div>
-              </section>
-
-              <section className="marketAdminEditSection">
-                <EditSectionTitle
-                  icon={ImageIcon}
-                  title="Ảnh cover, preview và metadata gốc"
-                />
-                <div className="marketAssetGrid">
-                  <label>
-                    <span>Cover Drive ID</span>
-                    <input value={selectedAssetForm.coverDriveFileId} onChange={(event) => updateAsset(currentSelectedModel, "coverDriveFileId", event.target.value)} placeholder="Drive file ID của cover" />
-                  </label>
-                  <label>
-                    <span>Tên cover</span>
-                    <input value={selectedAssetForm.coverFileName} onChange={(event) => updateAsset(currentSelectedModel, "coverFileName", event.target.value)} placeholder="cover.jpg" />
-                  </label>
-                  <label>
-                    <span>Rộng cover</span>
-                    <input type="number" value={selectedAssetForm.coverWidth} onChange={(event) => updateAsset(currentSelectedModel, "coverWidth", event.target.value)} placeholder="Chiều rộng cover" />
-                  </label>
-                  <label>
-                    <span>Cao cover</span>
-                    <input type="number" value={selectedAssetForm.coverHeight} onChange={(event) => updateAsset(currentSelectedModel, "coverHeight", event.target.value)} placeholder="Chiều cao cover" />
-                  </label>
-                  <label>
-                    <span>Dung lượng cover</span>
-                    <input type="number" value={selectedAssetForm.coverSize} onChange={(event) => updateAsset(currentSelectedModel, "coverSize", event.target.value)} placeholder="Dung lượng cover" />
-                  </label>
-                  <label>
-                    <span>Alt cover</span>
-                    <input value={selectedAssetForm.coverAlt} onChange={(event) => updateAsset(currentSelectedModel, "coverAlt", event.target.value)} placeholder="Alt cover" />
-                  </label>
-                  <label className="marketAssetWide">
-                    <span>Preview images</span>
-                    <textarea value={selectedAssetForm.previewImages} onChange={(event) => updateAsset(currentSelectedModel, "previewImages", event.target.value)} placeholder="previewDriveFileId|preview-01.jpg|width|height|size|alt" />
-                  </label>
-                  <label>
-                    <span>Metadata Drive ID</span>
-                    <input value={selectedAssetForm.metadataDriveFileId} onChange={(event) => updateAsset(currentSelectedModel, "metadataDriveFileId", event.target.value)} placeholder="Drive file ID metadata.json.gz" />
-                  </label>
-                  <label>
-                    <span>Tên metadata</span>
-                    <input value={selectedAssetForm.metadataFileName} onChange={(event) => updateAsset(currentSelectedModel, "metadataFileName", event.target.value)} placeholder="metadata.json.gz" />
-                  </label>
-                  <label>
-                    <span>Dung lượng metadata</span>
-                    <input type="number" value={selectedAssetForm.metadataSize} onChange={(event) => updateAsset(currentSelectedModel, "metadataSize", event.target.value)} placeholder="Dung lượng metadata" />
-                  </label>
+                <div className="marketAdminSyncActions">
                   <button type="button" className="smallButton" onClick={() => rescanDriveFolder(currentSelectedModel)} disabled={!currentSelectedModel.driveFolderId}>
-                    <RefreshCw size={15} /> Quét lại Drive
+                    <RefreshCw size={16} /> Đồng bộ lại folder này
                   </button>
-                  <button type="button" className="smallButton" onClick={() => attachAssets(currentSelectedModel)}>
-                    <UploadCloud size={15} /> Gắn ảnh / metadata
+                  <button type="button" className="primaryButton" onClick={() => saveModelState(currentSelectedModel)}>
+                    <Save size={16} /> Lưu trạng thái web
                   </button>
                 </div>
               </section>
+
             </>
           )}
         </div>
@@ -1390,6 +1239,38 @@ export default function AdminMarketplace() {
               ))}
               {!sessions.length && <p className="muted">Chưa có phiên tải.</p>}
             </div>
+          </section>
+        </div>
+      )}
+
+      {metadataConflict && (
+        <div className="marketAdminConflictOverlay" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setMetadataConflict(null);
+        }}>
+          <section className="marketAdminConflictDialog" role="dialog" aria-modal="true" aria-labelledby="metadata-conflict-title">
+            <header>
+              <div>
+                <h3 id="metadata-conflict-title"><GitCompareArrows size={18} /> Metadata đã thay đổi trên Drive</h3>
+                <p>Bản đang sửa chưa được ghi đè. Hãy nạp bản Drive mới nhất, kiểm tra rồi lưu lại.</p>
+              </div>
+              <button type="button" className="iconButton" onClick={() => setMetadataConflict(null)} aria-label="Đóng">
+                <X size={18} />
+              </button>
+            </header>
+            <div className="marketAdminConflictList">
+              {(metadataConflict.diff || []).map((item) => (
+                <div key={item.field}>
+                  <strong>{item.field}</strong>
+                  <span><b>Bản đang sửa</b>{Array.isArray(item.before) ? item.before.join(", ") : String(item.before ?? "")}</span>
+                  <span><b>Bản trên Drive</b>{Array.isArray(item.after) ? item.after.join(", ") : String(item.after ?? "")}</span>
+                </div>
+              ))}
+              {!metadataConflict.diff?.length && <p>Drive version đã đổi nhưng các trường metadata hiện không khác.</p>}
+            </div>
+            <footer>
+              <button type="button" className="smallButton" onClick={() => setMetadataConflict(null)}>Giữ form đang sửa</button>
+              <button type="button" className="primaryButton" onClick={loadConflictVersion}>Nạp bản mới nhất từ Drive</button>
+            </footer>
           </section>
         </div>
       )}

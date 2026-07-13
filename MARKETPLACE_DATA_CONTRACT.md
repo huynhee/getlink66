@@ -1,180 +1,116 @@
-# Marketplace data contract
+# Marketplace model data contract V2
 
-Tai lieu nay la chuan duy nhat cho pipeline:
+Tai lieu nay la source of truth cho marketplace model. Moi thay doi cua upload tool,
+backend, admin, web va plugin 3ds Max phai tuan theo contract nay.
 
 ```text
-upload tool -> cloud storage -> admin scanner/API -> MongoDB -> web -> 3ds Max plugin
+upload tool -> Google Drive -> sync-folder / Changes API -> MongoDB index -> web/plugin
 ```
 
-Muc tieu:
+## 1. Nguyen tac bat bien
 
-- Khong co field tu do nhu `tags`, `description`, `source.raw`, `source.url`.
-- MongoDB chi luu catalog index va du lieu van hanh nhe.
-- Cloud luu toan bo file nang: archive, cover, preview, metadata raw dang `.json.gz`.
-- Web/plugin chi lam viec qua backend API, khong nhin thay Drive link hoac Drive file ID that.
-- Category va filter phai chon tu bo gia tri co dinh.
+1. Google Drive la canonical source cho metadata va asset model.
+2. MongoDB la catalog index va noi luu du lieu van hanh, khong phai ban sao file.
+3. Admin ghi metadata len Drive thanh cong va doc xac nhan xong moi cap nhat Mongo.
+4. Mot model thay doi chi sync folder cua model do.
+5. Changes API phat hien thay doi thu cong. Full reconciliation chi chay khi admin yeu cau.
+6. Web va plugin khong nhan Drive ID, Drive URL, metadata hash hay storage key.
+7. Public slug va `desiredPublished` khong bi Drive rescan ghi de.
+8. Metadata chi nhan controlled vocabulary trong source code.
 
-## 1. Ownership
+## 2. Data ownership
 
-### Upload tool owns
+### Google Drive owns
 
-- Tao folder model tren cloud.
-- Upload file nen chinh, cover, preview, metadata `.json.gz`, checksum.
-- Resize cover ve anh vuong.
-- Goi API scan/attach neu can cap nhat nhanh hon scanner batch.
-
-Upload tool co the dat quyen tai trong `metadata.json` bang `accessType`. Neu metadata khong co `accessType`, admin scan batch hoac admin panel se dung quyen tai mac dinh.
-
-### Cloud storage owns
-
-- `model.zip`, `model.rar`, hoac `model.7z`.
-- `cover.jpg`, `cover.jpeg`, hoac `cover.png`.
-- `preview-01.jpg`, `preview-02.jpeg`, `preview-03.png`, ...
 - `metadata.json.gz`.
-- `model.sha256`.
+- `model.zip`, `model.rar` hoac `model.7z`.
+- `cover.jpg`, `cover.jpeg` hoac `cover.png`.
+- `preview-01.jpg`, `preview-02.png`, ...
+- `model.sha256` neu upload tool tao file checksum rieng.
+- Drive file version, modified time va parent relationship.
 
-Cloud path chi de quan ly noi bo. Mongo luu Drive file ID, khong luu public URL.
+Metadata Drive owns:
+
+- `sourceModelId`, `title`, `sourceCategoryId`.
+- `accessType`: `free` hoac `member` (UI hien thi `member` la Pro).
+- `renderer`, `styles`, `renderers`, `forms`, `colors`, `materials`.
+- SHA-256 cua archive.
 
 ### MongoDB owns
 
-- User, order, quota, history, download session.
-- Catalog index nhe: title, slug, category, filters, file status, drive IDs, sha256, file size.
-- Khong luu anh, file nen, raw JSON lon, source URL, tag, description.
+- Public `slug`.
+- `desiredPublished`.
+- `isPublished` da tinh.
+- `publicationBlockers` va `syncStatus`.
+- User, Pro, quota, payment, download session, history va audit.
+- Catalog index nhe de list/search/filter.
+- Drive references noi bo de backend stream file.
+- Download count va cac moc thoi gian van hanh.
 
-### Web owns
+### Upload tool owns (phase sau)
 
-- Public list/detail/search.
-- Preview proxy: web chi thay `/api/marketplace/models/:id/cover` va `/preview/:index`.
-- Download session creation.
+- Validate va upload dung folder/file naming.
+- Tao metadata V2 va checksum.
+- Upload xong goi `POST /api/admin/marketplace/drive/sync-folder`.
+- Khong ghi Mongo truc tiep.
 
-### Plugin owns
+### Web/plugin owns
 
-- Goi cung download-session API voi web.
-- Tai file ve cache local.
-- Verify `sha256` neu co.
-- Giai nen va merge/import `.max` bang 3ds Max.
+- Chi goi public catalog va download-session API.
+- Preview qua backend proxy.
+- Plugin verify checksum, giai nen va merge `.max` sau khi tai.
 
-Plugin khong duoc dung Drive link truc tiep.
-
-## 2. Canonical IDs
-
-Moi model co cac ID rieng:
-
-| Field | Owner | Purpose | Public |
-| --- | --- | --- | --- |
-| `sourceModelId` | upload metadata | Ma catalog doi chieu noi bo, vi du ID cu tu nguon | No |
-| `driveFolderId` | cloud/admin scanner | Dinh danh folder that tren Drive | No |
-| `slug` | web/backend | URL noi bo cua web | Yes |
-| `_id` | MongoDB | Internal API identity | Yes, safe |
-
-Rule:
-
-- `sourceModelId` la opaque ID, khong phai URL.
-- Khong luu link nguon ngoai.
-- Neu doi title, khong nen doi slug cu khi model da publish, de tranh gay link chet.
-
-## 3. Cloud folder standard
-
-Root:
+## 3. Folder va file naming
 
 ```text
-/3dipl/
-  /models/
-    /{sourceModelId}-{slug}/
+/3dipl/models/
+  /{sourceModelId}-{slug}/
+    metadata.json.gz
+    model.zip
+    model.sha256
+    cover.jpg
+    preview-01.jpg
+    preview-02.png
 ```
 
-Vi du:
+Folder cu `{sourceModelId}.{hash}` van doc duoc de migration. Folder moi nen dung
+`{sourceModelId}-{slug}`.
 
-```text
-/3dipl/models/6373049-outdoor-kitchen-145/
-```
+Required de model online:
 
-Allowed files:
+- Metadata hop le.
+- Mot archive hop le.
+- Mot cover hop le.
+- Leaf category va du filter bat buoc.
 
-```text
-model.zip | model.rar | model.7z
-model.sha256
-cover.jpg | cover.jpeg | cover.png
-preview-01.jpg | preview-01.jpeg | preview-01.png
-preview-02.jpg | preview-02.jpeg | preview-02.png
-metadata.json.gz
-```
+Preview phu la optional. Xoa preview phu khong lam model offline.
 
-Folder cu dang co dang `{sourceModelId}.{hash}` van duoc scanner nhan, nhung chuan moi nen dung `{sourceModelId}-{slug}`.
+Allowed archive extensions: `zip`, `rar`, `7z`.
 
-## 4. File rules
+Allowed image extensions: `jpg`, `jpeg`, `png`.
 
-### Archive
+`metadata.json.gz` toi da 256 KB sau khi giai nen.
 
-- Required de model tai duoc.
-- Ten chuan: `model.zip`, `model.rar`, hoac `model.7z`.
-- Scanner fallback: `{sourceModelId}.*`, file trung ten folder, sau do file nen lon nhat.
-- Archive extension chi de backend dat download filename, khong phai marketplace filter.
+## 4. Metadata schema V2
 
-### Cover
-
-- Required de model hien dep tren grid.
-- Chi dung `jpg`, `jpeg`, `png`.
-- Anh vuong, khuyen nghi 392-512 px moi canh.
-- Nen < 200 KB neu la JPG/JPEG.
-- Ten chuan: `cover.jpg`, `cover.jpeg`, hoac `cover.png`.
-
-### Preview
-
-- Optional cho trang detail.
-- Ten chuan: `preview-01.jpg`, `preview-02.jpg`, ...
-- Chi dung `jpg`, `jpeg`, `png`.
-- Khuyen nghi khoang 1200 px canh dai.
-
-### Metadata
-
-- Required de model du metadata.
-- Ten chuan: `metadata.json.gz`.
-- Tool nen gzip JSON truoc khi upload.
-- Backend scan doc file nay, map cac field hop le vao Mongo, bo qua field khong hop le.
-
-### Checksum
-
-- Recommended.
-- Ten chuan: `model.sha256`.
-- Noi dung chi can chua 64 hex chars cua archive.
-- Backend luu vao Mongo va tra trong download session de plugin verify.
-
-## 5. `metadata.json` schema
-
-Allowed fields only:
+Canonical JSON truoc khi gzip:
 
 ```json
 {
+  "schemaVersion": 2,
+  "revision": 1,
+  "updatedAt": "2026-07-13T00:00:00.000Z",
   "sourceModelId": "6373049",
   "title": "Outdoor Kitchen 145",
-  "sourceSlug": "outdoor-kitchen-145",
   "sourceCategoryId": "256",
   "accessType": "member",
   "renderer": "Corona",
   "styles": ["modern"],
   "renderers": ["corona"],
   "forms": ["rectangle"],
-  "colors": ["black", "wood"],
-  "materials": ["metal", "wood"],
-  "sizeText": "25 MB",
-  "sha256": "64_hex_characters"
-}
-```
-
-Do not send:
-
-```json
-{
-  "description": "not allowed",
-  "tags": ["not allowed"],
-  "sourceUrl": "not allowed",
-  "source": { "raw": "not allowed" },
-  "format": "not allowed",
-  "version": "not allowed",
-  "polygons": "not allowed",
-  "fileName": "not allowed",
-  "driveFileId": "not allowed"
+  "colors": ["black"],
+  "materials": ["metal"],
+  "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 }
 ```
 
@@ -182,229 +118,309 @@ Field rules:
 
 | Field | Required | Rule |
 | --- | --- | --- |
-| `sourceModelId` | Yes | String, stable opaque ID |
-| `title` | Yes | Display title, max 200 chars |
-| `sourceSlug` | Optional | Internal slug fallback, max 160 chars |
-| `sourceCategoryId` | Yes | Must match a leaf category |
-| `accessType` | Optional | `free`, `member`, or `pro`; `pro` is normalized to `member` |
-| `renderer` | Optional | Display label only, example `Corona` |
-| `styles` | Yes | Values from `MARKETPLACE_FILTERS.style` |
-| `renderers` | Yes | Values from `MARKETPLACE_FILTERS.render` |
-| `forms` | Yes | Values from `MARKETPLACE_FILTERS.form` |
-| `colors` | Yes | Values from `MARKETPLACE_FILTERS.color` |
-| `materials` | Yes | Values from `MARKETPLACE_FILTERS.material` |
-| `sizeText` | Optional | Display text, example `25 MB` |
-| `sha256` | Recommended | 64 hex chars of archive |
+| `schemaVersion` | Yes | Luon la `2` khi backend ghi |
+| `revision` | Yes | Integer tang 1 sau moi lan save |
+| `updatedAt` | Yes | ISO-8601 UTC do backend tao |
+| `sourceModelId` | Yes | Opaque stable ID, max 80 chars |
+| `title` | Yes | Max 200 chars |
+| `sourceCategoryId` | Yes | Phai map den leaf category |
+| `accessType` | Yes | `free` hoac `member`; legacy `pro` normalize thanh `member` |
+| `renderer` | No | Label hien thi, max 80 chars |
+| `styles` | Yes | Controlled vocabulary `style` |
+| `renderers` | Yes | Controlled vocabulary `render` |
+| `forms` | Yes | Controlled vocabulary `form` |
+| `colors` | Yes | Controlled vocabulary `color` |
+| `materials` | Yes | Controlled vocabulary `material` |
+| `sha256` | Recommended | Dung 64 lowercase hex chars |
 
-Model chi duoc publish khi du:
+Khong co `sourceSlug`, `sizeText`, `description`, `tags`, URL nguon, format,
+3ds Max version, polygon count, Drive ID hoac raw payload trong schema V2.
 
-- Leaf category.
-- Style.
-- Render.
-- Form.
-- Color.
-- Material.
-- File archive ready.
+Dung luong hien thi lay tu `fileSize` cua archive tren Drive. Public slug thuoc Mongo.
 
-## 6. Controlled vocabularies
+## 5. Controlled vocabulary
 
 Source of truth:
 
-- Categories: `backend/src/data/marketplaceCategories.js`
-- Filters: `backend/src/data/marketplaceFilters.js`
+- Categories: `backend/src/data/marketplaceCategories.js`.
+- Filters: `backend/src/data/marketplaceFilters.js`.
 
-Allowed filters:
+Allowed values hien tai:
 
-- `style`: `classic`, `modern`, `ethnic`
-- `render`: `vray`, `corona`, `standard`
-- `form`: `round`, `oval`, `square`, `rectangle`, `triangle`, `diamond`, `pentagon`, `star`, `angle`, `bioform`
-- `color`: `white`, `gray`, `black`, `brown`, `red`, `orange`, `yellow`, `beige`, `pink`, `magenta`, `purple`, `blue`, `sky`, `cyan`, `lime`, `green`
-- `material`: `brick`, `ceramics`, `concrete`, `fabric`, `fur`, `glass`, `gypsum`, `leather`, `liquid`, `metal`, `organics`, `paper`, `plastic`, `rattan`, `stone`, `wood`
+- `style`: `classic`, `modern`, `ethnic`.
+- `render`: `vray`, `corona`, `standard`.
+- `form`: `round`, `oval`, `square`, `rectangle`, `triangle`, `diamond`,
+  `pentagon`, `star`, `angle`, `bioform`.
+- `color`: `white`, `gray`, `black`, `brown`, `red`, `orange`, `yellow`,
+  `beige`, `pink`, `magenta`, `purple`, `blue`, `sky`, `cyan`, `lime`, `green`.
+- `material`: `brick`, `ceramics`, `concrete`, `fabric`, `fur`, `glass`,
+  `gypsum`, `leather`, `liquid`, `metal`, `organics`, `paper`, `plastic`,
+  `rattan`, `stone`, `wood`.
 
-Khong co filter `format`.
+Value la English system key. UI co the dich label sang tieng Viet.
 
-## 7. Mongo compact model
+## 6. Mongo catalog index
 
-Mongo `MarketplaceModel` chi luu:
+`MarketplaceModel` luu cac nhom field sau:
 
-- `source.provider`, `source.modelId`, `source.slug`, `source.categoryId`, `source.syncedAt`
-- `title`, `slug`
-- `categoryId`, `parentCategoryId`, `categorySourceId`
-- `coverImage`, `previewImages`
-- `driveFolderId`, `driveFolderName`, `driveSignature`, `lastDriveScanAt`, `lastDriveChangeAt`
-- `styles`, `renderers`, `forms`, `colors`, `materials`, `renderer`, `sizeText`
-- `metadataStatus`, `metadataMissingFields`
-- `accessType`, `isPublished`, `fileStatus`
-- `storageProvider`, `storageKey`, `driveFileId`, `telegramFileRef`
-- `archiveExt`, `fileSize`, `sha256`
-- `metadataDriveFileId`, `metadataFileName`, `metadataSize`
-- `downloadCount`
+### Identity va public state
 
-`accessType` allowed values:
+- `_id`, `slug`, `title`.
+- `source.provider`, `source.modelId`, `source.slug`, `source.categoryId`.
+- `metadataSourceModelId`.
+- `desiredPublished`, `isPublished`, `publicationBlockers`.
 
-- `free`: guest/free/pro deu co the tai theo quota.
-- `member`: chi Pro/admin tai duoc. UI hien thi la Pro.
+### Search/filter index
 
-Mongo khong luu:
+- `categoryId`, `parentCategoryId`, `categorySourceId`.
+- `styles`, `renderers`, `forms`, `colors`, `materials`, `renderer`.
+- `accessType`, `metadataStatus`, `metadataMissingFields`.
 
-- `description`
-- `tags`
-- `source.raw`
-- `source.url`
-- external source link
-- raw metadata JSON
-- file binary
-- image binary
-- Drive public link
-- model credit price
+### Storage references
 
-## 8. Admin API boundaries
+- `driveFolderId`, `driveFolderName`, `driveSignature`.
+- `driveFileId`, `archiveExt`, `fileSize`, `sha256`, `fileStatus`.
+- `coverImage`, `previewImages`.
+- `metadataDriveFileId`, `metadataFileName`, `metadataSize`.
 
-Batch scan:
+### Sync state
 
-```text
-POST /api/admin/marketplace/import-drive-folder
-```
+- `metadataHash`, `metadataRevision`, `metadataDriveVersion`,
+  `metadataModifiedTime`.
+- `syncStatus`, `syncError`.
+- `lastDriveScanAt`, `lastDriveChangeAt`.
 
-Manual metadata import:
+Mongo khong luu binary, raw JSON, public Drive URL, external source URL,
+description, tags, format/version/polygon hoac model credit price.
+
+## 7. Publication state machine
 
 ```text
-POST /api/admin/marketplace/models/import-metadata
+isPublished = desiredPublished && publicationBlockers.length === 0
 ```
 
-Manual model update:
+Required blockers:
 
-```text
-PUT /api/admin/marketplace/models/:id
+- `metadata_file`: metadata thieu/khong doc duoc.
+- `archive`: file nen thieu.
+- `cover`: cover thieu.
+- `category`: category khong ton tai hoac khong phai leaf.
+- `style`, `render`, `form`, `color`, `material`: metadata thieu/invalid.
+
+Rules:
+
+- Admin unpublish dat `desiredPublished=false`; rescan khong duoc tu bat lai.
+- Admin publish dat `desiredPublished=true`; model chi online khi khong co blocker.
+- Model moi du du lieu co `desiredPublished=true` va tu online.
+- Mat archive/cover/metadata se offline nhung record/history van con.
+- Khoi phuc required file se online lai neu `desiredPublished=true`.
+- Mat preview phu chi cap nhat `previewImages`.
+
+## 8. Per-model sync
+
+Central service:
+
+`backend/src/utils/marketplaceDriveService.js`
+
+`syncMarketplaceDriveFolder({ driveFolderId, force })`:
+
+1. Doc metadata cua folder model.
+2. List file con cua duy nhat folder do.
+3. Chon metadata/archive/cover/preview theo naming.
+4. Validate schema/category/vocabulary.
+5. Tinh signature, blockers, storage refs va sync state.
+6. Upsert dung mot `MarketplaceModel`.
+7. Giu public slug va manual unpublish.
+
+Upload/sua mot model khong goi root scan.
+
+`force=false` bo qua read metadata khi Drive signature khong doi. `force=true`
+doc lai folder, dung cho admin save, Changes worker va upload tool callback.
+
+## 9. Admin metadata write va conflict
+
+Endpoint:
+
+```http
+PUT /api/admin/marketplace/models/:id/metadata
 ```
 
-Attach archive:
-
-```text
-POST /api/admin/marketplace/models/:id/attach-file
-```
-
-Attach cover/preview/metadata refs:
-
-```text
-POST /api/admin/marketplace/models/:id/attach-assets
-```
-
-Tool upload co the dung attach APIs neu da upload file len Drive va co Drive file IDs.
-
-## 9. Public web API boundaries
-
-List categories:
-
-```text
-GET /api/marketplace/categories
-```
-
-List filters:
-
-```text
-GET /api/marketplace/filters
-```
-
-List/search models:
-
-```text
-GET /api/marketplace/models
-```
-
-Model detail:
-
-```text
-GET /api/marketplace/models/:slug
-```
-
-Cover/preview proxy:
-
-```text
-GET /api/marketplace/models/:id/cover
-GET /api/marketplace/models/:id/preview/:index
-```
-
-Public API must not return:
-
-- Drive file ID.
-- Drive public URL.
-- Source URL.
-- Raw metadata.
-- Storage key.
-
-## 10. Download and plugin contract
-
-Web:
-
-```text
-POST /api/marketplace/models/:id/download-session
-GET  /api/download/session/:id/file?t=:token
-```
-
-Plugin:
-
-```text
-POST /api/plugin/models/:id/download-session
-GET  /api/download/session/:id/file?t=:token
-```
-
-Session response:
+Request:
 
 ```json
 {
-  "session": {
-    "_id": "mongo_session_id",
-    "expiresAt": "2026-07-06T10:00:00.000Z",
-    "fileName": "outdoor-kitchen-145.zip",
-    "fileSize": 26200794,
-    "sha256": "64_hex_chars_or_empty"
-  },
-  "downloadUrl": "/api/download/session/:id/file?t=:token",
-  "remaining": 99,
-  "resetAt": "2026-07-06T17:00:00.000Z"
+  "metadata": { "title": "..." },
+  "expectedMetadataHash": "...",
+  "expectedDriveVersion": "..."
 }
 ```
 
-Plugin flow:
+Write order bat buoc:
 
-1. Call plugin download-session API.
-2. Download file from `downloadUrl`.
-3. Save to local cache.
-4. If `sha256` exists, verify downloaded archive.
-5. Extract archive.
-6. Find main `.max`.
-7. Call 3ds Max merge/import.
+1. List folder va doc metadata Drive moi nhat.
+2. So `expectedMetadataHash` va `expectedDriveVersion`.
+3. Validate canonical metadata.
+4. Tang revision, gzip va `files.update` giu nguyen Drive file ID.
+5. Neu chua co metadata, tao `metadata.json.gz` trong folder model.
+6. Doc lai file vua ghi va verify hash.
+7. Sync dung folder do vao Mongo.
 
-## 11. Update flow
+Drive write fail thi Mongo catalog khong doi.
 
-Scanner uses `driveSignature`:
+Neu hash/version khac, API tra:
 
-- `created`: folder not in Mongo.
-- `updated`: folder exists but file list/name/size/modified time changed.
-- `unchanged`: folder signature unchanged.
+```json
+{
+  "code": "METADATA_CONFLICT",
+  "current": {
+    "metadata": {},
+    "metadataHash": "...",
+    "driveVersion": "..."
+  },
+  "diff": [
+    { "field": "title", "before": "Admin edit", "after": "Drive edit" }
+  ]
+}
+```
 
-For 200k models:
+Admin phai nap ban Drive moi nhat vao form va bam save lai. Khong co
+last-write-wins hoac force overwrite ngam.
 
-- Do not rescan all folders in one request.
-- Use batch `limit` and `pageToken`.
-- Upload tool should call attach APIs for hot updates.
-- Full rescan is for recovery or periodic audit only.
+Operational state dung endpoint rieng:
 
-## 12. Validation checklist for upload tool
+```http
+PATCH /api/admin/marketplace/models/:id/state
+```
 
-Before upload:
+Chi nhan `slug` va `desiredPublished` (legacy `isPublished` duoc map thanh y dinh).
 
-- Folder name matches `{sourceModelId}-{slug}`.
-- Archive is `model.zip`, `model.rar`, or `model.7z`.
-- Cover exists, is square, and is JPG/JPEG/PNG.
-- Metadata has no forbidden fields.
-- `sourceCategoryId` is a leaf category.
-- Facets are valid controlled values.
-- `model.sha256` matches archive.
+## 10. Changes API worker
 
-After upload:
+Worker:
 
-- Store Drive file IDs from upload result.
-- Call attach APIs or wait for scanner batch.
-- Do not expose Drive links to users.
+`backend/src/utils/marketplaceDriveSyncJob.js`
+
+- Poll mac dinh 120 giay.
+- Doc toi da 100 change moi page.
+- Map file change ve `driveFolderId` qua parent hoac Drive ref trong Mongo.
+- Upsert `MarketplaceDriveChange` theo `(rootFolderId, driveFolderId)`.
+- Nhieu file change trong cung folder chi tao mot queue item.
+- Xu ly toi da 20 folder moi batch.
+- Retry toi da 8 lan, exponential backoff.
+- Moi enqueue tang `generation`; change den trong luc folder dang sync duoc giu lai cho pass ke tiep.
+- Queue item `processing` qua 15 phut duoc coi la stale va co the claim lai.
+- State lock ngan hai backend instance poll cung token.
+- Changes token chi advance sau khi enqueue xong page.
+- Worker loi khong lam mat token; page co the doc lai va queue van deduplicate.
+
+`MarketplaceDriveSyncState.changesPageToken` khac token reconciliation.
+
+Worker root scan cu da tat. `MARKETPLACE_DRIVE_SYNC_ENABLED` khong con duoc dung.
+
+## 11. Manual reconciliation va migration
+
+### Reconciliation
+
+```http
+POST /api/admin/marketplace/drive/reconcile
+```
+
+Full scan la thao tac khoi phuc/doi soat manual. API luu checkpoint page token
+trong `MarketplaceDriveSyncState` de co the resume. Khong co timer tu dong goi API nay.
+
+### Migration Mongo-wins lan dau
+
+```http
+POST /api/admin/marketplace/drive/migrate-metadata
+```
+
+- `dryRun=true`: inspect batch, khong ghi.
+- `dryRun=false`: tao `.jsonl.gz` backup metadata Drive cu truoc khi ghi.
+- Metadata compact Mongo hien tai duoc chuyen thanh schema V2.
+- Chi ghi file co diff, thieu metadata hoac schema cu.
+- Doc xac nhan va sync sau tung write.
+- Checkpoint page duoc luu trong sync state.
+- Batch co model loi giu nguyen checkpoint de admin sua va retry.
+- `desiredPublished` duoc backfill tu `isPublished` trong migration write.
+- Trong luc migration dang chay hoac dang loi, metadata edit, attach, reconcile va Changes worker tra `423 MARKETPLACE_MIGRATION_LOCKED`.
+- Migration complete xoa Changes token cu de worker lay start token moi sau full reconciliation.
+
+Thu tu rollout:
+
+1. Backup Mongo.
+2. Tat upload/admin metadata edit.
+3. De `MARKETPLACE_DRIVE_WRITE_ENABLED=false` va
+   `MARKETPLACE_DRIVE_CHANGES_ENABLED=false`.
+4. Chay migration dry-run.
+5. Cap OAuth refresh token scope `https://www.googleapis.com/auth/drive`.
+6. Bat Drive write, migration tung batch va review backup/error.
+7. Chay manual reconciliation het root.
+8. Bat Changes worker; lan dau worker lay start token sau migration.
+9. Mo lai admin edit/upload.
+
+Rollback: tat hai feature flag. Mongo backup va Drive metadata backup van duoc giu.
+
+## 12. API contract
+
+Admin write routes:
+
+```text
+PUT   /api/admin/marketplace/models/:id/metadata
+PATCH /api/admin/marketplace/models/:id/state
+POST  /api/admin/marketplace/drive/sync-folder
+POST  /api/admin/marketplace/drive/reconcile
+POST  /api/admin/marketplace/drive/migrate-metadata
+POST  /api/admin/marketplace/sync-run
+```
+
+Compatibility routes `attach-file` va `attach-assets` van ton tai cho migration.
+Neu model da co `driveFolderId`, backend verify tat ca file thuoc dung parent folder
+roi sync folder; admin UI khong hien form Drive ID nua.
+
+Public routes:
+
+```text
+GET  /api/marketplace/categories
+GET  /api/marketplace/filters
+GET  /api/marketplace/models
+GET  /api/marketplace/models/:slug
+GET  /api/marketplace/models/:id/cover
+GET  /api/marketplace/models/:id/preview/:index
+POST /api/marketplace/models/:id/download-session
+```
+
+Public JSON chi tra URL proxy anh. Khong tra Drive ID, metadata hash/version,
+folder ID hoac storage link.
+
+## 13. Environment
+
+```dotenv
+GOOGLE_DRIVE_CLIENT_ID=
+GOOGLE_DRIVE_CLIENT_SECRET=
+GOOGLE_DRIVE_REFRESH_TOKEN=
+GOOGLE_DRIVE_ACCESS_TOKEN=
+MARKETPLACE_DRIVE_ROOT_FOLDER_ID=
+MARKETPLACE_DRIVE_BACKUP_FOLDER_ID=
+MARKETPLACE_DRIVE_WRITE_ENABLED=false
+MARKETPLACE_DRIVE_CHANGES_ENABLED=false
+MARKETPLACE_DRIVE_CHANGES_POLL_SECONDS=120
+MARKETPLACE_DRIVE_CHANGES_BATCH_SIZE=100
+MARKETPLACE_DRIVE_QUEUE_BATCH_SIZE=20
+MARKETPLACE_DRIVE_QUEUE_MAX_ATTEMPTS=8
+MARKETPLACE_DRIVE_QUEUE_RETRY_BASE_SECONDS=30
+```
+
+Production dung refresh token. Access token tinh chi phu hop test ngan han.
+
+## 14. Code map
+
+- Metadata normalize/hash/diff: `backend/src/utils/marketplaceMetadata.js`.
+- Drive read/write/Changes client: `backend/src/utils/storageProvider.js`.
+- Folder sync/write conflict: `backend/src/utils/marketplaceDriveService.js`.
+- Changes queue worker: `backend/src/utils/marketplaceDriveSyncJob.js`.
+- Catalog schema: `backend/src/models/MarketplaceModel.js`.
+- Queue schema: `backend/src/models/MarketplaceDriveChange.js`.
+- Token/checkpoint schema: `backend/src/models/MarketplaceDriveSyncState.js`.
+- Admin API: `backend/src/controllers/marketplaceAdminController.js`.
+- Admin UI: `frontend/src/components/AdminMarketplace.jsx`.
+- Regression tests: `backend/test/marketplace-drive-sync.test.js`.

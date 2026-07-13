@@ -1,16 +1,19 @@
-import MarketplaceCategory from "../models/MarketplaceCategory.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
+import MarketplaceDriveSyncState from "../models/MarketplaceDriveSyncState.js";
 import DownloadSession from "../models/DownloadSession.js";
 import ModelDownload from "../models/ModelDownload.js";
-import { MARKETPLACE_FILTERS } from "../data/marketplaceFilters.js";
-import crypto from "node:crypto";
 import zlib from "node:zlib";
 import {
+  createGoogleDriveFile,
   getGoogleDriveFileMetadata,
-  listGoogleDriveFolderFiles,
   listGoogleDriveFolderPage,
-  readGoogleDriveFileBuffer,
 } from "../utils/storageProvider.js";
+import {
+  inspectMarketplaceModelMetadata,
+  syncMarketplaceDriveFolder,
+  writeMarketplaceModelMetadata,
+} from "../utils/marketplaceDriveService.js";
+import { metadataFromMarketplaceModel } from "../utils/marketplaceMetadata.js";
 import { isSafeId, limitedString, rejectUnknownKeys, sanitizeString } from "../utils/validators.js";
 
 const ADMIN_MODEL_PAGE_SIZE = 20;
@@ -88,27 +91,6 @@ function normalizeCoverImage(value = {}) {
   };
 }
 
-function normalizeFacetValue(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/v-ray/g, "vray")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function normalizeFacetList(value, maxItems = 24) {
-  const items = Array.isArray(value)
-    ? value
-    : String(value || "").split(/[,\n]/);
-  return [...new Set(items.map(normalizeFacetValue).filter(Boolean))].slice(0, maxItems);
-}
-
-function normalizeFixedFacetList(value, facetKey, maxItems = 24) {
-  const allowed = new Set((MARKETPLACE_FILTERS[facetKey] || []).map((item) => item.value));
-  return normalizeFacetList(value, maxItems).filter((item) => allowed.has(item));
-}
-
 function normalizeBoolean(value, fallback = false) {
   if (value === undefined || value === null || value === "") return fallback;
   if (typeof value === "boolean") return value;
@@ -144,19 +126,6 @@ function metadataCompleteness(model = {}) {
   };
 }
 
-function applyMetadataCompleteness(payload, requestedPublish = payload.isPublished) {
-  const completeness = metadataCompleteness(payload);
-  payload.metadataStatus = completeness.metadataStatus;
-  payload.metadataMissingFields = completeness.metadataMissingFields;
-  if (
-    requestedPublish === true &&
-    (completeness.metadataStatus !== "complete" || payload.fileStatus !== "ready")
-  ) {
-    payload.isPublished = false;
-  }
-  return payload;
-}
-
 function extractDriveId(value = "") {
   const raw = String(value || "").trim();
   const match = raw.match(/\/folders\/([^/?#]+)/i) ||
@@ -175,341 +144,8 @@ function archiveExtension(name = "") {
   return ["zip", "rar", "7z"].includes(ext) ? ext : "zip";
 }
 
-function normalizedName(name = "") {
-  return String(name || "").trim().toLowerCase();
-}
-
-function normalizedBaseName(name = "") {
-  return normalizedName(name)
-    .replace(/\.json\.gz$/, "")
-    .replace(/\.[a-z0-9]+$/, "");
-}
-
-function naturalCompareName(a, b) {
-  return String(a?.name || "").localeCompare(String(b?.name || ""), "en", {
-    numeric: true,
-    sensitivity: "base",
-  });
-}
-
-function sourceIdFromFolderName(folderName = "", fallback = "") {
-  const value = String(folderName || "").trim();
-  const match = value.match(/^(\d{4,})(?:[._\-\s]|$)/) || value.match(/(?:^|[._\-\s])(\d{4,})(?:[._\-\s]|$)/);
-  return sanitizeString(match?.[1] || fallback, 80);
-}
-
-function titleFromFolderName(folderName = "", sourceModelId = "") {
-  let value = String(folderName || "").trim();
-  if (sourceModelId) {
-    value = value.replace(new RegExp(`^${sourceModelId}[._\\-\\s]*`, "i"), "");
-  }
-  value = value.replace(/[._\-\s]*[a-f0-9]{10,}$/i, "");
-  value = value.replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim();
-  if (!value || /^[a-f0-9]{8,}$/i.test(value.replace(/\s+/g, ""))) {
-    return sourceModelId ? `Model ${sourceModelId}` : String(folderName || "").trim();
-  }
-  return value.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
-}
-
 function isDriveFolder(file) {
   return file?.mimeType === "application/vnd.google-apps.folder";
-}
-
-function isImageFile(file) {
-  const ext = fileExtension(file?.name);
-  return String(file?.mimeType || "").startsWith("image/") || ["jpg", "jpeg", "png", "webp"].includes(ext);
-}
-
-function isArchiveFile(file) {
-  const ext = fileExtension(file?.name);
-  const mime = String(file?.mimeType || "").toLowerCase();
-  return ["zip", "rar", "7z"].includes(ext) ||
-    mime.includes("zip") ||
-    mime.includes("rar") ||
-    mime.includes("compressed") ||
-    mime.includes("7z");
-}
-
-function isMetadataFile(file) {
-  const name = String(file?.name || "").toLowerCase();
-  return name.endsWith(".json") || name.endsWith(".json.gz");
-}
-
-function isChecksumFile(file) {
-  const name = normalizedName(file?.name);
-  return name === "model.sha256" || name === "sha256.txt" || name.endsWith(".sha256");
-}
-
-function pickArchiveFile(files = [], sourceModelId = "", folderName = "") {
-  const folderBase = normalizedBaseName(folderName);
-  const id = normalizedName(sourceModelId);
-  return [...files].sort((a, b) => {
-    function score(file) {
-      const name = normalizedName(file?.name);
-      const base = normalizedBaseName(file?.name);
-      if (/^model\.(zip|rar|7z)$/.test(name)) return 0;
-      if (id && new RegExp(`^${id}\\.(zip|rar|7z)$`).test(name)) return 1;
-      if (folderBase && base === folderBase) return 2;
-      if (base.includes("model")) return 4;
-      return 10;
-    }
-    const diff = score(a) - score(b);
-    if (diff) return diff;
-    return Number(b?.size || 0) - Number(a?.size || 0) || naturalCompareName(a, b);
-  })[0];
-}
-
-function pickMetadataFile(files = [], sourceModelId = "") {
-  const id = normalizedName(sourceModelId);
-  return [...files].filter(isMetadataFile).sort((a, b) => {
-    function score(file) {
-      const name = normalizedName(file?.name);
-      const base = normalizedBaseName(file?.name);
-      if (name === "metadata.json.gz") return 0;
-      if (name === "metadata.json") return 1;
-      if (id && (name === `${id}.json.gz` || name === `${id}.json`)) return 2;
-      if (base.includes("metadata")) return 3;
-      return 10;
-    }
-    return score(a) - score(b) || naturalCompareName(a, b);
-  })[0];
-}
-
-function pickChecksumFile(files = []) {
-  return [...files].filter(isChecksumFile).sort((a, b) => {
-    function score(file) {
-      const name = normalizedName(file?.name);
-      if (name === "model.sha256") return 0;
-      if (name === "sha256.txt") return 1;
-      return 10;
-    }
-    return score(a) - score(b) || naturalCompareName(a, b);
-  })[0];
-}
-
-function firstValue(...values) {
-  return values.find((value) => {
-    if (Array.isArray(value)) return value.length > 0;
-    return value !== undefined && value !== null && String(value).trim() !== "";
-  });
-}
-
-function pathValue(source, path) {
-  return String(path || "")
-    .split(".")
-    .reduce((current, key) => {
-      if (current === undefined || current === null) return undefined;
-      return current[key];
-    }, source);
-}
-
-function pickValue(source, paths = []) {
-  for (const path of paths) {
-    const value = pathValue(source, path);
-    if (Array.isArray(value) ? value.length : value !== undefined && value !== null && String(value).trim() !== "") {
-      return value;
-    }
-  }
-  return undefined;
-}
-
-function metadataArray(value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => {
-      if (typeof item === "string" || typeof item === "number") return String(item);
-      return item?.value || item?.slug || item?.name || item?.title || item?.label || "";
-    }).filter(Boolean);
-  }
-  if (value && typeof value === "object") {
-    return Object.values(value).map((item) => {
-      if (typeof item === "string" || typeof item === "number") return String(item);
-      return item?.value || item?.slug || item?.name || item?.title || item?.label || "";
-    }).filter(Boolean);
-  }
-  return String(value || "").split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
-}
-
-async function readDriveMetadataJson(file) {
-  if (!file?.id) return null;
-  const buffer = await readGoogleDriveFileBuffer(file.id, {
-    fileName: file.name,
-    maxBytes: 10 * 1024 * 1024,
-  });
-  let body = buffer.toString("utf8");
-  if (String(file.name || "").toLowerCase().endsWith(".gz")) {
-    try {
-      body = zlib.gunzipSync(buffer).toString("utf8");
-    } catch {
-      body = buffer.toString("utf8");
-    }
-  }
-  const parsed = JSON.parse(body);
-  return parsed?.model || parsed?.data || parsed;
-}
-
-async function readDriveChecksum(file) {
-  if (!file?.id) return "";
-  const buffer = await readGoogleDriveFileBuffer(file.id, {
-    fileName: file.name,
-    maxBytes: 64 * 1024,
-  });
-  return String(buffer.toString("utf8").match(/[a-f0-9]{64}/i)?.[0] || "").toLowerCase();
-}
-
-function metadataPayload(rawMetadata = {}, fallback = {}) {
-  const sourceModelId = sanitizeString(
-    firstValue(
-      pickValue(rawMetadata, ["source.modelId", "sourceModelId", "modelId", "id"]),
-      fallback.sourceModelId,
-    ),
-    80,
-  );
-  const title = sanitizeString(
-    firstValue(
-      pickValue(rawMetadata, ["title", "name", "modelName", "displayName"]),
-      fallback.title,
-    ),
-    200,
-  );
-  const sourceSlug = sanitizeString(
-    firstValue(
-      pickValue(rawMetadata, ["source.slug", "sourceSlug", "slug"]),
-      fallback.sourceSlug,
-    ),
-    160,
-  );
-  const sourceCategoryId = String(firstValue(
-    pickValue(rawMetadata, ["source.categoryId", "sourceCategoryId", "categoryId", "category.slug", "category"]),
-    fallback.sourceCategoryId,
-  ) || "").trim();
-  const accessType = normalizeMarketplaceAccessType(firstValue(
-    pickValue(rawMetadata, ["accessType", "access", "tier", "plan"]),
-    fallback.accessType,
-  ));
-
-  return {
-    sourceModelId,
-    title,
-    sourceSlug,
-    sourceCategoryId,
-    accessType,
-    styles: normalizeFixedFacetList(metadataArray(firstValue(pickValue(rawMetadata, ["styles", "style"]), [])), "style"),
-    renderers: normalizeFixedFacetList(metadataArray(firstValue(pickValue(rawMetadata, ["renderers", "renderer", "render"]), [])), "render"),
-    forms: normalizeFixedFacetList(metadataArray(firstValue(pickValue(rawMetadata, ["forms", "form", "shape"]), [])), "form"),
-    colors: normalizeFixedFacetList(metadataArray(firstValue(pickValue(rawMetadata, ["colors", "color"]), [])), "color"),
-    materials: normalizeFixedFacetList(metadataArray(firstValue(pickValue(rawMetadata, ["materials", "material"]), [])), "material"),
-    renderer: limitedString(firstValue(pickValue(rawMetadata, ["renderer", "render"]), ""), 80),
-    sizeText: limitedString(firstValue(pickValue(rawMetadata, ["sizeText", "size", "fileSizeText"]), ""), 80),
-    sha256: String(firstValue(pickValue(rawMetadata, ["sha256", "file.sha256", "checksum"]), ""))
-      .trim()
-      .toLowerCase()
-      .match(/[a-f0-9]{64}/i)?.[0] || "",
-  };
-}
-
-function driveImageRef(file, alt = "") {
-  return {
-    driveFileId: limitedString(file?.id, 160),
-    fileName: limitedString(file?.name, 240),
-    width: Math.max(0, Math.round(Number(file?.imageMediaMetadata?.width || 0))),
-    height: Math.max(0, Math.round(Number(file?.imageMediaMetadata?.height || 0))),
-    size: Math.max(0, Number(file?.size || 0)),
-    alt: sanitizeString(alt, 120),
-  };
-}
-
-function pickCoverImage(images, sourceModelId = "") {
-  const id = normalizedName(sourceModelId);
-  return [...images].sort((a, b) => {
-    const aName = String(a.name || "").toLowerCase();
-    const bName = String(b.name || "").toLowerCase();
-    function score(file, name) {
-      const base = normalizedBaseName(name);
-      const width = Number(file?.imageMediaMetadata?.width || 0);
-      if (base === "cover") return 0;
-      if (base === "thumb" || base === "thumbnail") return 1;
-      if (id && (base === `${id}-cover` || base === `${id}_cover`)) return 2;
-      if (base.includes("cover")) return 3;
-      if (width > 0 && width <= 640) return 5;
-      return 10;
-    }
-    const diff = score(a, aName) - score(b, bName);
-    if (diff) return diff;
-    return Number(a.size || 0) - Number(b.size || 0) || naturalCompareName(a, b);
-  })[0];
-}
-
-function pickPreviewImages(images, cover) {
-  const coverId = cover?.id || "";
-  return [...images]
-    .filter((file) => file.id !== coverId)
-    .sort((a, b) => {
-      function score(file) {
-        const base = normalizedBaseName(file?.name);
-        const previewMatch = base.match(/^preview[-_\s]?(\d+)/);
-        if (previewMatch) return Number(previewMatch[1]);
-        if (base === "preview") return 100;
-        if (base.includes("preview")) return 200;
-        return 1000;
-      }
-      return score(a) - score(b) || naturalCompareName(a, b);
-    })
-    .slice(0, 20);
-}
-
-function driveFolderSignature(folder, files = []) {
-  const payload = {
-    folder: {
-      id: folder?.id || "",
-      name: folder?.name || "",
-      modifiedTime: folder?.modifiedTime || "",
-    },
-    files: files
-      .map((file) => ({
-        id: file?.id || "",
-        name: file?.name || "",
-        mimeType: file?.mimeType || "",
-        size: String(file?.size || ""),
-        modifiedTime: file?.modifiedTime || "",
-      }))
-      .sort((a, b) => `${a.name}:${a.id}`.localeCompare(`${b.name}:${b.id}`)),
-  };
-  return crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
-}
-
-function driveModelLookup({ folderId, folderName, folderSourceModelId, sourceModelId, slug }) {
-  const lookup = [
-    { driveFolderId: folderId },
-    { "source.provider": "drive", "source.modelId": folderId },
-    { "source.slug": folderName },
-  ];
-  const fallbackSlug = slugify(slug || folderName || sourceModelId || folderSourceModelId);
-  if (fallbackSlug) lookup.push({ slug: fallbackSlug });
-  const ids = [...new Set([sourceModelId, folderSourceModelId].filter(Boolean))];
-  ids.forEach((id) => {
-    lookup.push({ "source.provider": "3dsky", "source.modelId": id });
-    lookup.push({ "source.provider": "catalog", "source.modelId": id });
-  });
-  return { $or: lookup };
-}
-
-async function resolveCategory(sourceCategoryId) {
-  const value = String(sourceCategoryId || "").trim();
-  if (!value) return { categoryId: null, parentCategoryId: null, categorySourceId: "" };
-  const category = await MarketplaceCategory.findOne({
-    $or: [
-      { sourceCategoryId: value },
-      { slug: value.toLowerCase() },
-      ...(isSafeId(value) ? [{ _id: value }] : []),
-    ],
-  });
-  if (!category) return { categoryId: null, parentCategoryId: null, categorySourceId: value };
-  const hasChildren = await MarketplaceCategory.exists({ parentId: category._id });
-  if (hasChildren) {
-    return { categoryId: null, parentCategoryId: category._id, categorySourceId: value };
-  }
-  const parentId = category.parentId || null;
-  return { categoryId: category._id, parentCategoryId: parentId, categorySourceId: category.sourceCategoryId };
 }
 
 function adminModel(model) {
@@ -518,19 +154,16 @@ function adminModel(model) {
   return doc;
 }
 
-const marketplaceLegacyUnset = {
-  "source.raw": "",
-  "source.url": "",
-  formats: "",
-  format: "",
-  version: "",
-  polygons: "",
-  fileName: "",
-  mainMaxFile: "",
-  description: "",
-  tags: "",
-  creditPrice: "",
-};
+async function assertMarketplaceMigrationUnlocked() {
+  const rootFolderId = extractDriveId(process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID);
+  if (!rootFolderId) return;
+  const state = await MarketplaceDriveSyncState.findOne({ rootFolderId }).select("migrationStatus").lean();
+  if (!["running", "error"].includes(state?.migrationStatus)) return;
+  const error = new Error("Marketplace metadata migration is active. Metadata upload and Drive sync are locked.");
+  error.status = 423;
+  error.code = "MARKETPLACE_MIGRATION_LOCKED";
+  throw error;
+}
 
 export async function adminListMarketplaceModels(req, res, next) {
   try {
@@ -570,151 +203,35 @@ export async function adminListMarketplaceModels(req, res, next) {
   }
 }
 
-export async function adminImport3dskyModel(req, res, next) {
-  try {
-    const unknownKey = rejectUnknownKeys(req.body, [
-      "sourceModelId",
-      "sourceSlug",
-      "sourceCategoryId",
-      "title",
-      "slug",
-      "coverImage",
-      "previewImages",
-      "styles",
-      "renderers",
-      "forms",
-      "colors",
-      "materials",
-      "renderer",
-      "sizeText",
-      "accessType",
-      "isPublished",
-      "raw",
-    ]);
-    if (unknownKey) return res.status(400).json({ message: "Invalid model import request" });
-    const sourceModelId = sanitizeString(req.body.sourceModelId, 80);
-    const title = sanitizeString(req.body.title, 200);
-    if (!sourceModelId || !title) {
-      return res.status(400).json({ message: "sourceModelId and title are required" });
-    }
-    const sourceSlug = sanitizeString(req.body.sourceSlug, 160);
-    const modelSlug = slugify(req.body.slug || sourceSlug || `${title}-${sourceModelId}`);
-    const categoryFields = await resolveCategory(req.body.sourceCategoryId);
-    const accessType = normalizeMarketplaceAccessType(req.body.accessType);
-    const payload = {
-      source: {
-        provider: "catalog",
-        modelId: sourceModelId,
-        slug: sourceSlug,
-        categoryId: String(req.body.sourceCategoryId || "").trim(),
-        syncedAt: new Date(),
-      },
-      title,
-      slug: modelSlug,
-      ...categoryFields,
-      styles: normalizeFixedFacetList(req.body.styles, "style"),
-      renderers: normalizeFixedFacetList(req.body.renderers || req.body.renderer, "render"),
-      forms: normalizeFixedFacetList(req.body.forms, "form"),
-      colors: normalizeFixedFacetList(req.body.colors, "color"),
-      materials: normalizeFixedFacetList(req.body.materials, "material"),
-      renderer: limitedString(req.body.renderer, 80),
-      sizeText: limitedString(req.body.sizeText, 80),
-      accessType,
-      isPublished: Boolean(req.body.isPublished),
-    };
-    applyMetadataCompleteness(payload, Boolean(req.body.isPublished));
-    const model = await MarketplaceModel.findOneAndUpdate(
-      { "source.provider": "catalog", "source.modelId": sourceModelId },
-      {
-        $set: payload,
-        $unset: {
-          "source.raw": "",
-          "source.url": "",
-          formats: "",
-          format: "",
-          version: "",
-          polygons: "",
-          fileName: "",
-          mainMaxFile: "",
-          description: "",
-          tags: "",
-          creditPrice: "",
-        },
-        $setOnInsert: { fileStatus: "missing" },
-      },
-      { upsert: true, new: true },
-    );
-    res.json({ model: adminModel(model) });
-  } catch (error) {
-    if (error?.code === 11000) return res.status(409).json({ message: "Model slug or source already exists" });
-    next(error);
-  }
+export async function adminImport3dskyModel(_req, res) {
+  return res.status(410).json({
+    message: "Direct Mongo metadata import is disabled. Upload the Drive folder and call drive/sync-folder.",
+    code: "DRIVE_CANONICAL_SOURCE_REQUIRED",
+  });
 }
 
 export async function adminUpdateMarketplaceModel(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
-    const allowed = [
-      "title",
-      "slug",
-      "sourceSlug",
-      "coverImage",
-      "previewImages",
-      "styles",
-      "renderers",
-      "forms",
-      "colors",
-      "materials",
-      "renderer",
-      "sizeText",
-      "accessType",
-      "isPublished",
-      "fileStatus",
-      "sourceCategoryId",
-      "metadataDriveFileId",
-      "metadataFileName",
-      "metadataSize",
-    ];
+    const allowed = ["slug", "isPublished", "desiredPublished"];
     const unknownKey = rejectUnknownKeys(req.body, allowed);
     if (unknownKey) return res.status(400).json({ message: "Invalid model update request" });
     const payload = {};
-    if (req.body.title !== undefined) payload.title = sanitizeString(req.body.title, 200);
     if (req.body.slug !== undefined) {
       const nextSlug = slugify(req.body.slug);
       if (!nextSlug) return res.status(400).json({ message: "Model slug is required" });
       payload.slug = nextSlug;
     }
-    if (req.body.sourceSlug !== undefined) payload["source.slug"] = sanitizeString(req.body.sourceSlug, 160);
-    if (req.body.coverImage !== undefined) payload.coverImage = normalizeCoverImage(req.body.coverImage);
-    if (req.body.previewImages !== undefined) payload.previewImages = normalizePreviewImages(req.body.previewImages);
-    if (req.body.styles !== undefined) payload.styles = normalizeFixedFacetList(req.body.styles, "style");
-    if (req.body.renderers !== undefined) payload.renderers = normalizeFixedFacetList(req.body.renderers, "render");
-    if (req.body.forms !== undefined) payload.forms = normalizeFixedFacetList(req.body.forms, "form");
-    if (req.body.colors !== undefined) payload.colors = normalizeFixedFacetList(req.body.colors, "color");
-    if (req.body.materials !== undefined) payload.materials = normalizeFixedFacetList(req.body.materials, "material");
-    ["renderer", "sizeText"].forEach((field) => {
-      if (req.body[field] !== undefined) payload[field] = limitedString(req.body[field], 80);
-    });
-    if (req.body.accessType !== undefined) payload.accessType = normalizeMarketplaceAccessType(req.body.accessType);
-    if (req.body.isPublished !== undefined) payload.isPublished = Boolean(req.body.isPublished);
-    if (["missing", "pending_upload", "ready", "failed"].includes(req.body.fileStatus)) payload.fileStatus = req.body.fileStatus;
-    if (req.body.sourceCategoryId !== undefined) Object.assign(payload, await resolveCategory(req.body.sourceCategoryId));
-    if (req.body.metadataDriveFileId !== undefined) payload.metadataDriveFileId = limitedString(req.body.metadataDriveFileId, 160);
-    if (req.body.metadataFileName !== undefined) payload.metadataFileName = limitedString(req.body.metadataFileName, 240);
-    if (req.body.metadataSize !== undefined) payload.metadataSize = Math.max(0, Number(req.body.metadataSize || 0));
     const currentModel = await MarketplaceModel.findById(req.params.id).lean();
     if (!currentModel) return res.status(404).json({ message: "Model not found" });
-    const mergedModel = { ...currentModel, ...payload };
-    const completeness = metadataCompleteness(mergedModel);
-    const requestedPublish = payload.isPublished === undefined ? Boolean(currentModel.isPublished) : payload.isPublished;
-    payload.metadataStatus = completeness.metadataStatus;
-    payload.metadataMissingFields = completeness.metadataMissingFields;
-    if (
-      requestedPublish &&
-      (completeness.metadataStatus !== "complete" || mergedModel.fileStatus !== "ready")
-    ) {
-      payload.isPublished = false;
-    }
+    const requestedPublish = req.body.desiredPublished === undefined
+      ? req.body.isPublished === undefined ? Boolean(currentModel.desiredPublished ?? currentModel.isPublished) : Boolean(req.body.isPublished)
+      : Boolean(req.body.desiredPublished);
+    payload.desiredPublished = requestedPublish;
+    payload.isPublished = requestedPublish &&
+      currentModel.metadataStatus === "complete" &&
+      currentModel.fileStatus === "ready" &&
+      !(currentModel.publicationBlockers || []).length;
     const model = await MarketplaceModel.findByIdAndUpdate(
       req.params.id,
       { $set: payload, $unset: { description: "", tags: "", creditPrice: "" } },
@@ -728,8 +245,69 @@ export async function adminUpdateMarketplaceModel(req, res, next) {
   }
 }
 
+async function assertDriveFilesBelongToModel(model, fileIds = []) {
+  if (!model?.driveFolderId) {
+    const error = new Error("Model does not have a Google Drive folder.");
+    error.status = 400;
+    throw error;
+  }
+  const uniqueIds = [...new Set(fileIds.map(extractDriveId).filter(Boolean))];
+  const files = await Promise.all(uniqueIds.map((fileId) => getGoogleDriveFileMetadata(fileId, {
+    fields: "id,name,mimeType,parents,trashed,version,modifiedTime,driveId",
+  })));
+  const invalid = files.find((file) => file.trashed || !(file.parents || []).includes(model.driveFolderId));
+  if (invalid) {
+    const error = new Error(`Drive file ${invalid.name || invalid.id} does not belong to the model folder.`);
+    error.status = 400;
+    error.code = "DRIVE_FILE_PARENT_MISMATCH";
+    throw error;
+  }
+  return files;
+}
+
+export async function adminUpdateMarketplaceMetadata(req, res, next) {
+  try {
+    await assertMarketplaceMigrationUnlocked();
+    if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
+    const unknownKey = rejectUnknownKeys(req.body, ["metadata", "expectedMetadataHash", "expectedDriveVersion"]);
+    if (unknownKey || !req.body.metadata || typeof req.body.metadata !== "object") {
+      return res.status(400).json({ message: "Invalid marketplace metadata request" });
+    }
+    const model = await MarketplaceModel.findById(req.params.id).lean();
+    if (!model) return res.status(404).json({ message: "Model not found" });
+    const result = await writeMarketplaceModelMetadata(model, req.body.metadata, {
+      metadataHash: limitedString(req.body.expectedMetadataHash, 80),
+      driveVersion: limitedString(req.body.expectedDriveVersion, 80),
+    });
+    return res.json({
+      model: adminModel(result.model),
+      metadata: result.metadata,
+      metadataHash: result.metadataHash,
+      driveVersion: result.driveVersion,
+    });
+  } catch (error) {
+    if (error?.code === "METADATA_CONFLICT") {
+      return res.status(409).json({
+        message: error.message,
+        code: error.code,
+        current: error.current,
+        diff: error.diff || [],
+      });
+    }
+    if (error?.code === "METADATA_INVALID") {
+      return res.status(error.status || 400).json({ message: error.message, code: error.code, details: error.details || [] });
+    }
+    return next(error);
+  }
+}
+
+export async function adminUpdateMarketplaceState(req, res, next) {
+  return adminUpdateMarketplaceModel(req, res, next);
+}
+
 export async function adminAttachMarketplaceFile(req, res, next) {
   try {
+    await assertMarketplaceMigrationUnlocked();
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
     const unknownKey = rejectUnknownKeys(req.body, [
       "storageProvider",
@@ -750,6 +328,15 @@ export async function adminAttachMarketplaceFile(req, res, next) {
     const fileStatus = ["missing", "pending_upload", "ready", "failed"].includes(req.body.fileStatus)
       ? req.body.fileStatus
       : "ready";
+    const existing = await MarketplaceModel.findById(req.params.id).lean();
+    if (!existing) return res.status(404).json({ message: "Model not found" });
+    if (storageProvider === "google_drive" && existing.driveFolderId) {
+      const driveFileId = extractDriveId(req.body.driveFileId);
+      if (!driveFileId) return res.status(400).json({ message: "Google Drive file id is required" });
+      await assertDriveFilesBelongToModel(existing, [driveFileId]);
+      const result = await syncMarketplaceDriveFolder({ driveFolderId: existing.driveFolderId, force: true });
+      return res.json({ model: adminModel(result.model), compatibilityMode: true });
+    }
     const model = await MarketplaceModel.findByIdAndUpdate(
       req.params.id,
       {
@@ -777,6 +364,7 @@ export async function adminAttachMarketplaceFile(req, res, next) {
 
 export async function adminAttachMarketplaceAssets(req, res, next) {
   try {
+    await assertMarketplaceMigrationUnlocked();
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
     const unknownKey = rejectUnknownKeys(req.body, [
       "previewImages",
@@ -826,6 +414,19 @@ export async function adminAttachMarketplaceAssets(req, res, next) {
     if (!Object.keys(payload).length) {
       return res.status(400).json({ message: "No marketplace assets provided" });
     }
+    const existing = await MarketplaceModel.findById(req.params.id).lean();
+    if (!existing) return res.status(404).json({ message: "Model not found" });
+    if (existing.driveFolderId) {
+      const driveFileIds = [
+        payload.coverImage?.driveFileId,
+        payload.metadataDriveFileId,
+        ...(payload.previewImages || []).map((item) => item.driveFileId),
+      ].filter(Boolean);
+      if (!driveFileIds.length) return res.status(400).json({ message: "At least one Google Drive file id is required" });
+      await assertDriveFilesBelongToModel(existing, driveFileIds);
+      const result = await syncMarketplaceDriveFolder({ driveFolderId: existing.driveFolderId, force: true });
+      return res.json({ model: adminModel(result.model), compatibilityMode: true });
+    }
     const model = await MarketplaceModel.findByIdAndUpdate(req.params.id, { $set: payload }, { new: true });
     if (!model) return res.status(404).json({ message: "Model not found" });
     res.json({ model: adminModel(model) });
@@ -840,119 +441,12 @@ export async function rescanMarketplaceModelDrive(existing) {
     error.status = 400;
     throw error;
   }
-
-  const now = new Date();
-    const folderMetadata = await getGoogleDriveFileMetadata(existing.driveFolderId, {
-      fields: "id,name,mimeType,modifiedTime",
-    });
-    const folder = {
-      id: folderMetadata.id || existing.driveFolderId,
-      name: folderMetadata.name || existing.driveFolderName || existing.source?.slug || existing.slug || String(existing._id),
-      modifiedTime: folderMetadata.modifiedTime || "",
-    };
-    const folderName = sanitizeString(folder.name, 200);
-    const folderSourceModelId = sourceIdFromFolderName(
-      folderName,
-      existing.source?.modelId || existing.slug || String(existing._id),
-    );
-    const files = await listGoogleDriveFolderFiles(folder.id);
-    const driveSignature = driveFolderSignature(folder, files);
-    const images = files.filter(isImageFile);
-    const archives = files.filter(isArchiveFile);
-    const metadata = pickMetadataFile(files, folderSourceModelId);
-    const checksumFile = pickChecksumFile(files);
-    let rawMetadata = null;
-    let metadataError = "";
-
-    if (metadata) {
-      try {
-        rawMetadata = await readDriveMetadataJson(metadata);
-      } catch (error) {
-        metadataError = error?.message || "metadata_parse_failed";
-      }
-    }
-
-    const meta = metadataPayload(rawMetadata || {}, {
-      sourceModelId: folderSourceModelId,
-      sourceSlug: existing.source?.slug || folderName,
-      sourceCategoryId: existing.categorySourceId || existing.source?.categoryId || "",
-      title: existing.title || titleFromFolderName(folderName, folderSourceModelId),
-      accessType: existing.accessType || "member",
-    });
-    const sourceModelId = meta.sourceModelId || folderSourceModelId;
-    const title = meta.title || existing.title || titleFromFolderName(folderName, sourceModelId);
-    const archive = pickArchiveFile(archives, sourceModelId, folderName);
-    const cover = pickCoverImage(images, sourceModelId);
-    const previewImages = pickPreviewImages(images, cover).map((file) => driveImageRef(file, title));
-    let sha256FromFile = "";
-
-    if (checksumFile) {
-      try {
-        sha256FromFile = await readDriveChecksum(checksumFile);
-      } catch {
-        sha256FromFile = "";
-      }
-    }
-
-    const categoryFields = await resolveCategory(meta.sourceCategoryId || existing.categorySourceId || existing.source?.categoryId);
-    const payload = {
-      source: {
-        provider: "drive",
-        modelId: folder.id,
-        slug: meta.sourceSlug || existing.source?.slug || folderName,
-        categoryId: meta.sourceCategoryId || existing.categorySourceId || existing.source?.categoryId || "",
-        syncedAt: now,
-      },
-      title,
-      slug: existing.slug || slugify(meta.sourceSlug || title || sourceModelId),
-      ...categoryFields,
-      driveFolderId: folder.id,
-      driveFolderName: folderName,
-      driveSignature,
-      lastDriveScanAt: now,
-      lastDriveChangeAt: existing.driveSignature !== driveSignature ? now : existing.lastDriveChangeAt,
-      styles: meta.styles?.length ? meta.styles : existing.styles || [],
-      renderers: meta.renderers?.length ? meta.renderers : existing.renderers || [],
-      forms: meta.forms?.length ? meta.forms : existing.forms || [],
-      colors: meta.colors?.length ? meta.colors : existing.colors || [],
-      materials: meta.materials?.length ? meta.materials : existing.materials || [],
-      renderer: meta.renderer || existing.renderer || "",
-      sizeText: meta.sizeText || existing.sizeText || "",
-      accessType: meta.accessType || existing.accessType || "member",
-      isPublished: Boolean(existing.isPublished),
-      fileStatus: archive ? "ready" : "missing",
-      storageProvider: archive ? "google_drive" : "",
-      driveFileId: archive?.id || "",
-      archiveExt: archiveExtension(archive?.name),
-      fileSize: Math.max(0, Number(archive?.size || 0)),
-      coverImage: cover ? driveImageRef(cover, title) : {},
-      previewImages,
-      sha256: meta.sha256 || sha256FromFile || existing.sha256 || "",
-      metadataDriveFileId: metadata?.id || existing.metadataDriveFileId || "",
-      metadataFileName: limitedString(metadata?.name || existing.metadataFileName || "", 240),
-      metadataSize: Math.max(0, Number(metadata?.size || existing.metadataSize || 0)),
-    };
-    applyMetadataCompleteness(payload, Boolean(existing.isPublished));
-
-  const model = await MarketplaceModel.findByIdAndUpdate(
-    existing._id,
-    {
-      $set: payload,
-      $unset: marketplaceLegacyUnset,
-    },
-    { new: true },
-  );
-  return {
-    model: adminModel(model),
-    scannedFiles: files.length,
-    previewCount: previewImages.length,
-    changed: existing.driveSignature !== driveSignature,
-    metadataError,
-  };
+  return syncMarketplaceDriveFolder({ driveFolderId: existing.driveFolderId, force: true });
 }
 
 export async function adminRescanMarketplaceModelDriveFolder(req, res, next) {
   try {
+    await assertMarketplaceMigrationUnlocked();
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
     const existing = await MarketplaceModel.findById(req.params.id).select("-source.raw").lean();
     if (!existing) return res.status(404).json({ message: "Model not found" });
@@ -1069,203 +563,77 @@ export async function adminCleanupMarketplaceRaw(_req, res, next) {
   }
 }
 
+export async function adminSyncMarketplaceDriveFolder(req, res, next) {
+  try {
+    await assertMarketplaceMigrationUnlocked();
+    const unknownKey = rejectUnknownKeys(req.body, ["driveFolderId", "driveFolderUrl"]);
+    if (unknownKey) return res.status(400).json({ message: "Invalid Drive folder sync request" });
+    const driveFolderId = extractDriveId(req.body.driveFolderId || req.body.driveFolderUrl);
+    if (!driveFolderId) return res.status(400).json({ message: "Google Drive model folder id is required" });
+    const folderSnapshot = await getGoogleDriveFileMetadata(driveFolderId, {
+      fields: "id,name,mimeType,modifiedTime,version,parents,trashed,driveId",
+    });
+    const configuredRootId = extractDriveId(process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID);
+    if (configuredRootId && !(folderSnapshot.parents || []).includes(configuredRootId)) {
+      return res.status(400).json({
+        message: "Drive model folder must be a direct child of MARKETPLACE_DRIVE_ROOT_FOLDER_ID",
+        code: "DRIVE_FOLDER_OUTSIDE_MARKETPLACE_ROOT",
+      });
+    }
+    const result = await syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot, force: true });
+    return res.json({ ...result, model: adminModel(result.model) });
+  } catch (error) {
+    if (error?.code === 11000) return res.status(409).json({ message: "Model slug or Drive folder already exists" });
+    return next(error);
+  }
+}
+
 export async function scanMarketplaceDriveFolderBatch({
   rootFolderId,
   pageToken = "",
   limit = 20,
-  defaultAccessType = "member",
   isPublished = true,
 } = {}) {
   const page = await listGoogleDriveFolderPage(rootFolderId, { pageToken, pageSize: limit });
-    const modelFolders = page.files.filter(isDriveFolder);
-    const nextPageToken = page.nextPageToken || "";
-    const imported = [];
-    const skipped = [];
-    let createdCount = 0;
-    let updatedCount = 0;
-    let unchangedCount = 0;
-
-    for (const folder of modelFolders) {
-      const now = new Date();
-      const folderName = sanitizeString(folder.name, 200);
-      const folderSourceModelId = sourceIdFromFolderName(folderName, folder.id);
-      const files = await listGoogleDriveFolderFiles(folder.id);
-      const driveSignature = driveFolderSignature(folder, files);
-      let existing = await MarketplaceModel.findOne(driveModelLookup({
-        folderId: folder.id,
-        folderName,
-        folderSourceModelId,
-      }))
-        .select("_id slug title driveSignature fileStatus archiveExt coverImage previewImages metadataStatus metadataMissingFields metadataFileName")
-        .lean();
-      if (existing?.driveSignature && existing.driveSignature === driveSignature) {
-        const model = await MarketplaceModel.findByIdAndUpdate(
-          existing._id,
-          {
-            $set: {
-              driveFolderId: folder.id,
-              driveFolderName: folderName,
-              lastDriveScanAt: now,
-              "source.provider": "drive",
-              "source.modelId": folder.id,
-              "source.syncedAt": now,
-            },
-          },
-          { new: true },
-        );
-        unchangedCount += 1;
-        imported.push({
-          id: model._id,
-          action: "unchanged",
-          title: model.title,
-          catalogKey: model.slug,
-          fileStatus: model.fileStatus,
-          archiveExt: model.archiveExt || "",
-          coverFileName: model.coverImage?.fileName || "",
-          previewCount: model.previewImages?.length || 0,
-          metadataStatus: model.metadataStatus || "incomplete",
-          missingFields: model.metadataMissingFields || [],
-          metadataFileName: model.metadataFileName || "",
-          metadataError: "",
-        });
-        continue;
+  const folders = page.files.filter(isDriveFolder);
+  const imported = [];
+  const skipped = [];
+  let createdCount = 0;
+  let updatedCount = 0;
+  let unchangedCount = 0;
+  for (const folder of folders) {
+    try {
+      const result = await syncMarketplaceDriveFolder({ driveFolderId: folder.id, folderSnapshot: folder, force: false });
+      if (isPublished === false && result.model?.desiredPublished !== false) {
+        result.model = await MarketplaceModel.findByIdAndUpdate(result.model._id, {
+          $set: { desiredPublished: false, isPublished: false },
+        }, { new: true });
       }
-      const images = files.filter(isImageFile);
-      const archives = files.filter(isArchiveFile);
-      const metadata = pickMetadataFile(files, folderSourceModelId);
-      const checksumFile = pickChecksumFile(files);
-      let rawMetadata = null;
-      let metadataError = "";
-      if (metadata) {
-        try {
-          rawMetadata = await readDriveMetadataJson(metadata);
-        } catch (error) {
-          metadataError = error?.message || "metadata_parse_failed";
-        }
-      }
-      const meta = metadataPayload(rawMetadata || {}, {
-        sourceModelId: folderSourceModelId,
-        sourceSlug: folderName,
-        title: titleFromFolderName(folderName, folderSourceModelId),
-        accessType: defaultAccessType,
-      });
-      const sourceModelId = meta.sourceModelId || folderSourceModelId;
-      if (!sourceModelId) {
-        skipped.push({ folderId: folder.id, folderName, reason: "missing_source_model_id" });
-        continue;
-      }
-
-      let sha256FromFile = "";
-      if (checksumFile) {
-        try {
-          sha256FromFile = await readDriveChecksum(checksumFile);
-        } catch {
-          sha256FromFile = "";
-        }
-      }
-      const archive = pickArchiveFile(archives, sourceModelId, folderName);
-      const cover = pickCoverImage(images, sourceModelId);
-      const title = meta.title || folderName;
-      const previewImages = pickPreviewImages(images, cover).map((file) => driveImageRef(file, title));
-      if (!existing) {
-        existing = await MarketplaceModel.findOne(driveModelLookup({
-          folderId: folder.id,
-          folderName,
-          folderSourceModelId,
-          sourceModelId,
-          slug: meta.sourceSlug || title,
-        }))
-          .select("_id slug driveSignature")
-          .lean();
-      }
-      const action = existing?._id ? "updated" : "created";
-      const categoryFields = await resolveCategory(meta.sourceCategoryId);
-      const payload = {
-        source: {
-          provider: "drive",
-          modelId: folder.id,
-          slug: meta.sourceSlug || folderName,
-          categoryId: meta.sourceCategoryId || "",
-          syncedAt: now,
-        },
-        title,
-        slug: existing?.slug || slugify(meta.sourceSlug || title || sourceModelId),
-        ...categoryFields,
-        driveFolderId: folder.id,
-        driveFolderName: folderName,
-        driveSignature,
-        lastDriveScanAt: now,
-        lastDriveChangeAt: action === "created" || existing?.driveSignature !== driveSignature
-          ? now
-          : existing?.lastDriveChangeAt,
-        styles: meta.styles || [],
-        renderers: meta.renderers || [],
-        forms: meta.forms || [],
-        colors: meta.colors || [],
-        materials: meta.materials || [],
-        renderer: meta.renderer || "",
-        sizeText: meta.sizeText || "",
-        accessType: meta.accessType || defaultAccessType,
-        isPublished,
-        fileStatus: archive ? "ready" : "missing",
-        storageProvider: archive ? "google_drive" : "",
-        driveFileId: archive?.id || "",
-        archiveExt: archiveExtension(archive?.name),
-        fileSize: Math.max(0, Number(archive?.size || 0)),
-        coverImage: cover ? driveImageRef(cover, title) : {},
-        previewImages,
-        sha256: meta.sha256 || sha256FromFile,
-        metadataDriveFileId: metadata?.id || "",
-        metadataFileName: limitedString(metadata?.name || "", 240),
-        metadataSize: Math.max(0, Number(metadata?.size || 0)),
-      };
-      applyMetadataCompleteness(payload, isPublished);
-      const update = {
-        $set: payload,
-        $unset: {
-          "source.raw": "",
-          "source.url": "",
-          formats: "",
-          format: "",
-          version: "",
-          polygons: "",
-          fileName: "",
-          mainMaxFile: "",
-          description: "",
-          tags: "",
-          creditPrice: "",
-        },
-      };
-      const model = existing?._id
-        ? await MarketplaceModel.findByIdAndUpdate(existing._id, update, { new: true })
-        : await MarketplaceModel.findOneAndUpdate(
-          { "source.provider": "drive", "source.modelId": folder.id },
-          update,
-          { upsert: true, new: true, setDefaultsOnInsert: true },
-        );
-      if (action === "created") createdCount += 1;
+      if (result.action === "created") createdCount += 1;
+      else if (result.action === "unchanged") unchangedCount += 1;
       else updatedCount += 1;
       imported.push({
-        id: model._id,
-        action,
-        title: model.title,
-        catalogKey: model.slug,
-        fileStatus: model.fileStatus,
-        archiveExt: model.archiveExt || "",
-        coverFileName: model.coverImage?.fileName || "",
-        previewCount: model.previewImages?.length || 0,
-        metadataStatus: model.metadataStatus || "incomplete",
-        missingFields: model.metadataMissingFields || [],
-        metadataFileName: model.metadataFileName || "",
-        metadataError,
+        id: result.model?._id,
+        action: result.action,
+        title: result.model?.title,
+        catalogKey: result.model?.slug,
+        fileStatus: result.model?.fileStatus,
+        coverFileName: result.model?.coverImage?.fileName || "",
+        previewCount: result.model?.previewImages?.length || 0,
+        metadataStatus: result.model?.metadataStatus,
+        missingFields: result.model?.metadataMissingFields || [],
+        metadataFileName: result.model?.metadataFileName || "",
+        metadataError: result.metadataError || "",
       });
+    } catch (error) {
+      skipped.push({ folderId: folder.id, folderName: folder.name, reason: error?.message || "sync_failed" });
     }
-
+  }
   return {
     rootFolderId,
-    nextPageToken,
-    hasMore: Boolean(nextPageToken),
-    scannedFolders: modelFolders.length,
+    nextPageToken: page.nextPageToken || "",
+    hasMore: Boolean(page.nextPageToken),
+    scannedFolders: folders.length,
     importedCount: imported.length,
     createdCount,
     updatedCount,
@@ -1276,30 +644,223 @@ export async function scanMarketplaceDriveFolderBatch({
 }
 
 export async function adminImportDriveFolderModels(req, res, next) {
-  try {
-    const unknownKey = rejectUnknownKeys(req.body, [
-      "rootFolderId",
-      "rootFolderUrl",
-      "pageToken",
-      "limit",
-      "accessType",
-      "isPublished",
-    ]);
-    if (unknownKey) return res.status(400).json({ message: "Invalid Drive import request" });
+  return adminReconcileMarketplaceDrive(req, res, next);
+}
 
-    const rootFolderId = extractDriveId(req.body.rootFolderId || req.body.rootFolderUrl);
+export async function adminReconcileMarketplaceDrive(req, res, next) {
+  let rootFolderId = "";
+  try {
+    await assertMarketplaceMigrationUnlocked();
+    const unknownKey = rejectUnknownKeys(req.body, ["rootFolderId", "rootFolderUrl", "pageToken", "limit", "reset"]);
+    if (unknownKey) return res.status(400).json({ message: "Invalid Drive reconciliation request" });
+    rootFolderId = extractDriveId(
+      req.body.rootFolderId || req.body.rootFolderUrl || process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID,
+    );
     if (!rootFolderId) return res.status(400).json({ message: "Google Drive models folder ID is required" });
+    const state = await MarketplaceDriveSyncState.findOne({ rootFolderId }).lean();
+    const reset = normalizeBoolean(req.body.reset, false);
+    const requestedToken = req.body.pageToken === undefined
+      ? state?.reconciliationPageToken || ""
+      : limitedString(req.body.pageToken, 500);
+    const pageToken = reset ? "" : requestedToken;
+    await MarketplaceDriveSyncState.findOneAndUpdate(
+      { rootFolderId },
+      {
+        $setOnInsert: { rootFolderId },
+        $set: {
+          reconciliationStatus: "running",
+          reconciliationError: "",
+          ...(reset ? { reconciliationScanned: 0 } : {}),
+        },
+      },
+      { upsert: true },
+    );
     const result = await scanMarketplaceDriveFolderBatch({
       rootFolderId,
-      pageToken: limitedString(req.body.pageToken, 500),
+      pageToken,
       limit: Math.min(200, Math.max(1, Number(req.body.limit || 20))),
-      defaultAccessType: normalizeMarketplaceAccessType(req.body.accessType),
-      isPublished: normalizeBoolean(req.body.isPublished, true),
     });
-    res.json(result);
+    const scannedBefore = reset ? 0 : Number(state?.reconciliationScanned || 0);
+    await MarketplaceDriveSyncState.findOneAndUpdate(
+      { rootFolderId },
+      {
+        $set: {
+          reconciliationPageToken: result.nextPageToken || "",
+          reconciliationStatus: result.hasMore ? "idle" : "complete",
+          reconciliationScanned: scannedBefore + result.scannedFolders,
+          reconciliationUpdatedAt: new Date(),
+          reconciliationError: "",
+        },
+      },
+      { new: true },
+    );
+    return res.json({ ...result, checkpoint: result.nextPageToken || "", resumed: Boolean(pageToken) });
   } catch (error) {
-    if (error?.code === 11000) return res.status(409).json({ message: "Model slug or source already exists" });
-    next(error);
+    if (rootFolderId) {
+      await MarketplaceDriveSyncState.findOneAndUpdate(
+        { rootFolderId },
+        {
+          $setOnInsert: { rootFolderId },
+          $set: {
+            reconciliationStatus: "error",
+            reconciliationUpdatedAt: new Date(),
+            reconciliationError: String(error?.message || "reconciliation_failed").slice(0, 500),
+          },
+        },
+        { upsert: true },
+      ).catch(() => {});
+    }
+    return next(error);
+  }
+}
+
+export async function adminMigrateMarketplaceDriveMetadata(req, res, next) {
+  const migrationRootFolderId = extractDriveId(process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID);
+  try {
+    const unknownKey = rejectUnknownKeys(req.body, ["page", "limit", "dryRun", "backupFolderId", "reset"]);
+    if (unknownKey) return res.status(400).json({ message: "Invalid marketplace metadata migration request" });
+    if (!migrationRootFolderId) return res.status(400).json({ message: "MARKETPLACE_DRIVE_ROOT_FOLDER_ID is not configured" });
+    const migrationState = await MarketplaceDriveSyncState.findOne({ rootFolderId: migrationRootFolderId }).lean();
+    const reset = normalizeBoolean(req.body.reset, false);
+    const page = reset
+      ? 1
+      : Math.max(1, Math.floor(Number(req.body.page || migrationState?.migrationNextPage || 1)));
+    const limit = Math.min(50, Math.max(1, Math.floor(Number(req.body.limit || 20))));
+    const dryRun = req.body.dryRun !== false;
+    const query = { driveFolderId: { $nin: ["", null] } };
+    const total = await MarketplaceModel.countDocuments(query);
+    const models = await MarketplaceModel.find(query)
+      .sort({ createdAt: 1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+    const prepared = [];
+    const skipped = [];
+    if (!dryRun) {
+      await MarketplaceDriveSyncState.findOneAndUpdate(
+        { rootFolderId: migrationRootFolderId },
+        {
+          $setOnInsert: { rootFolderId: migrationRootFolderId },
+          $set: {
+            migrationStatus: "running",
+            migrationError: "",
+            ...(reset ? { migrationMigratedCount: 0, migrationNextPage: 1 } : {}),
+          },
+        },
+        { upsert: true },
+      );
+    }
+    for (const model of models) {
+      try {
+        if (!dryRun && typeof model.desiredPublished !== "boolean") {
+          await MarketplaceModel.findByIdAndUpdate(model._id, {
+            $set: { desiredPublished: Boolean(model.isPublished) },
+          });
+          model.desiredPublished = Boolean(model.isPublished);
+        }
+        const inspection = await inspectMarketplaceModelMetadata(model);
+        if (inspection.errors.length) {
+          skipped.push({ id: model._id, title: model.title, reason: "invalid_mongo_metadata", details: inspection.errors });
+          continue;
+        }
+        prepared.push({ model, inspection });
+      } catch (error) {
+        skipped.push({ id: model._id, title: model.title, reason: error?.message || "inspection_failed" });
+      }
+    }
+    const changed = prepared.filter(({ inspection }) =>
+      inspection.diff.length || !inspection.metadataFile || Number(inspection.current.document?.schemaVersion || 0) < 2,
+    );
+    let backupFile = null;
+    const migrated = [];
+    if (!dryRun && changed.length) {
+      const backupRows = changed
+        .filter(({ inspection }) => inspection.current.document)
+        .map(({ model, inspection }) => JSON.stringify({
+          modelId: String(model._id),
+          driveFolderId: model.driveFolderId,
+          metadataDriveFileId: inspection.metadataFile?.id || "",
+          metadata: inspection.current.rawDocument || inspection.current.document,
+        }));
+      if (backupRows.length) {
+        const backupFolderId = extractDriveId(
+          req.body.backupFolderId || process.env.MARKETPLACE_DRIVE_BACKUP_FOLDER_ID || process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID,
+        );
+        backupFile = await createGoogleDriveFile({
+          folderId: backupFolderId,
+          fileName: `metadata-backup-${new Date().toISOString().replace(/[:.]/g, "-")}-p${page}.jsonl.gz`,
+          content: zlib.gzipSync(Buffer.from(`${backupRows.join("\n")}\n`), { level: 9 }),
+          contentType: "application/gzip",
+        });
+      }
+      for (const item of changed) {
+        try {
+          const result = await writeMarketplaceModelMetadata(item.model, item.inspection.desired, {
+            metadataHash: item.inspection.current.hash,
+            driveVersion: String(item.inspection.metadataFile?.version || ""),
+            allowSourceModelIdChange: true,
+          });
+          migrated.push({ id: item.model._id, title: result.model?.title, status: "migrated" });
+        } catch (error) {
+          skipped.push({ id: item.model._id, title: item.model.title, reason: error?.message || "migration_failed" });
+        }
+      }
+    }
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const hasBlockingFailures = !dryRun && skipped.length > 0;
+    const migrationComplete = !hasBlockingFailures && page >= totalPages;
+    const nextPage = hasBlockingFailures ? page : page < totalPages ? page + 1 : 1;
+    if (!dryRun) {
+      await MarketplaceDriveSyncState.findOneAndUpdate(
+        { rootFolderId: migrationRootFolderId },
+        {
+          $set: {
+            migrationNextPage: nextPage,
+            migrationStatus: hasBlockingFailures ? "error" : migrationComplete ? "complete" : "running",
+            migrationUpdatedAt: new Date(),
+            migrationError: hasBlockingFailures ? `${skipped.length} model(s) require attention` : "",
+            ...(migrationComplete ? { changesPageToken: "", changesInitializedAt: null } : {}),
+          },
+          $inc: { migrationMigratedCount: migrated.length },
+        },
+      );
+    }
+    return res.json({
+      dryRun,
+      page,
+      limit,
+      total,
+      totalPages,
+      nextPage,
+      complete: migrationComplete,
+      inspected: prepared.length,
+      changed: changed.length,
+      migrated: migrated.length,
+      backupFileId: backupFile?.id || "",
+      skipped,
+      preview: changed.slice(0, 20).map(({ model, inspection }) => ({
+        id: model._id,
+        title: model.title,
+        hasMetadataFile: Boolean(inspection.metadataFile),
+        diff: inspection.diff,
+      })),
+    });
+  } catch (error) {
+    if (migrationRootFolderId && req.body?.dryRun === false) {
+      await MarketplaceDriveSyncState.findOneAndUpdate(
+        { rootFolderId: migrationRootFolderId },
+        {
+          $setOnInsert: { rootFolderId: migrationRootFolderId },
+          $set: {
+            migrationStatus: "error",
+            migrationUpdatedAt: new Date(),
+            migrationError: String(error?.message || "migration_failed").slice(0, 500),
+          },
+        },
+        { upsert: true },
+      ).catch(() => {});
+    }
+    return next(error);
   }
 }
 
@@ -1314,6 +875,7 @@ export async function adminBulkMarketplaceModels(req, res, next) {
     if (!["publish", "unpublish", "access", "rescan"].includes(action)) {
       return res.status(400).json({ message: "Invalid bulk action" });
     }
+    if (["access", "rescan"].includes(action)) await assertMarketplaceMigrationUnlocked();
     const rawIds = Array.isArray(req.body.ids) ? req.body.ids.map((id) => String(id || "").trim()) : [];
     const ids = [...new Set(rawIds.filter((id) => isSafeId(id)))];
     const maxIds = action === "rescan" ? BULK_RESCAN_LIMIT : BULK_MODEL_LIMIT;
@@ -1336,26 +898,24 @@ export async function adminBulkMarketplaceModels(req, res, next) {
       }
       try {
         if (action === "publish") {
-          if (model.metadataStatus !== "complete" || model.fileStatus !== "ready") {
-            skippedCount += 1;
-            results.push({
-              id,
-              status: "skipped",
-              reason: model.metadataStatus !== "complete" ? "metadata_incomplete" : "file_not_ready",
-              title: model.title,
-            });
-            continue;
-          }
-          await MarketplaceModel.findByIdAndUpdate(id, { $set: { isPublished: true } });
+          const blockers = model.publicationBlockers || [];
+          const online = model.metadataStatus === "complete" && model.fileStatus === "ready" && blockers.length === 0;
+          await MarketplaceModel.findByIdAndUpdate(id, {
+            $set: { desiredPublished: true, isPublished: online },
+          });
           updatedCount += 1;
-          results.push({ id, status: "updated", title: model.title });
+          results.push({ id, status: "updated", title: model.title, online, blockers });
         } else if (action === "unpublish") {
-          await MarketplaceModel.findByIdAndUpdate(id, { $set: { isPublished: false } });
+          await MarketplaceModel.findByIdAndUpdate(id, { $set: { desiredPublished: false, isPublished: false } });
           updatedCount += 1;
           results.push({ id, status: "updated", title: model.title });
         } else if (action === "access") {
           const accessType = normalizeMarketplaceAccessType(req.body.accessType);
-          await MarketplaceModel.findByIdAndUpdate(id, { $set: { accessType } });
+          const metadata = { ...metadataFromMarketplaceModel(model), accessType };
+          await writeMarketplaceModelMetadata(model, metadata, {
+            metadataHash: model.metadataHash,
+            driveVersion: model.metadataDriveVersion,
+          });
           updatedCount += 1;
           results.push({ id, status: "updated", title: model.title, accessType });
         } else if (action === "rescan") {
