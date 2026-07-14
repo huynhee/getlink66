@@ -883,7 +883,38 @@ export async function listSystemLogs(req, res, next) {
     const query = ["getlink", "download", "cookie", "payment", "security", "system"].includes(type)
       ? { type }
       : {};
-    const logs = await SystemLog.find(query).sort({ createdAt: -1 }).limit(100);
+    const records = await SystemLog.find(query)
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .populate("userId", "name email");
+    const logs = records.map((item) => {
+      const doc = item.toObject ? item.toObject() : item;
+      const user = doc.userId && typeof doc.userId === "object" && (doc.userId.email || doc.userId.name)
+        ? doc.userId
+        : null;
+      return {
+        _id: doc._id,
+        type: doc.type,
+        level: doc.level,
+        message: doc.message,
+        userId: user?._id || doc.userId || null,
+        user: user
+          ? {
+              _id: user._id,
+              name: user.name || "",
+              email: user.email || "",
+            }
+          : null,
+        productId: doc.productId || "",
+        historyId: doc.historyId || null,
+        status: doc.status,
+        ip: doc.ip || "",
+        path: doc.path || "",
+        details: doc.details || {},
+        createdAt: doc.createdAt,
+        updatedAt: doc.updatedAt,
+      };
+    });
     res.json({ logs });
   } catch (error) {
     next(error);

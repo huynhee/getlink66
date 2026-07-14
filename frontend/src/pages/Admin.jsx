@@ -2113,6 +2113,10 @@ export default function Admin({ user, language = "vi" }) {
                 <span className={`badge ${item.level === "error" ? "error" : item.level === "warn" ? "pending" : "success"}`}>
                   {item.type}
                 </span>
+                <div className="logUserIdentity" title={item.user?.email || String(item.userId || "")}>
+                  <strong>{item.user?.email || l("Không có user", "No user")}</strong>
+                  {item.user?.name && <span>{item.user.name}</span>}
+                </div>
                 <strong>{item.message}</strong>
                 <span>{item.productId || item.historyId || "system"}</span>
                 <span>{item.status ? `HTTP ${item.status}` : item.level}</span>

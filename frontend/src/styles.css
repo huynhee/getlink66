@@ -4005,7 +4005,26 @@ label {
 }
 
 .logTable .tableRow {
-  grid-template-columns: auto minmax(220px, 1fr) minmax(120px, auto) auto auto;
+  grid-template-columns: auto minmax(180px, 0.8fr) minmax(220px, 1.2fr) minmax(120px, auto) auto auto;
+}
+
+.logUserIdentity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.logUserIdentity strong,
+.logUserIdentity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logUserIdentity span {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .getlinkAuditTable .tableRow {
