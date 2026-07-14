@@ -28,9 +28,9 @@ const HOME_TEXT_FIELDS = [
   "footerTagline",
 ];
 const HOME_TEXT_DEFAULTS = {
-  heroText: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ",
-  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp.",
-  heroEyebrow: "+ api 3d66 sdk",
+  heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
+  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
+  heroEyebrow: "+ api 3d sdk",
   saleText: "Khuyến mãi gói PRO trong tháng này",
   demoTitle: "Bắt đầu tải ngay",
   demoSubmitText: "GET LINK",
@@ -46,10 +46,17 @@ const HOME_TEXT_DEFAULTS = {
   guideTitle: "Bài hướng dẫn",
   guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
   ctaTitle: "Sẵn sàng bắt đầu?",
-  ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
-  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
+  ctaUserText: "Vào trang getlink để tải model 3D và quản lý credit của bạn.",
+  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn.",
   footerTagline: "Hỗ trợ 24/7",
 };
+
+function normalizePublicBrandText(value) {
+  if (typeof value !== "string") return value;
+  return value
+    .replace(/(?:https?:\/\/)?(?:[\w-]+\.)*3d66\.com/gi, "3D")
+    .replace(/3d66/gi, "3D");
+}
 
 function normalizeBoolean(value, fallback = false) {
   if (typeof value === "boolean") return value;
@@ -184,10 +191,10 @@ const RUNTIME_NUMBER_FIELDS = {
 
 const defaultSettings = {
   key: "homepage",
-  heroText: "SIEU RE\nTAI 3D66\nTOC DO",
+  heroText: "SIEU RE\nTAI 3D\nTOC DO",
   heroSubtitle:
-    "Dich vu getlink trung gian giup ban tai model tu 3D66 voi gia re hon mua truc tiep.",
-  heroEyebrow: "+ api 3d66 sdk",
+    "Dich vu getlink trung gian giup ban tai model 3D voi gia re hon mua truc tiep.",
+  heroEyebrow: "+ api 3d sdk",
   saleText: "Khuyen mai goi PRO trong thang nay",
   demoTitle: "Bắt đầu tải ngay",
   demoSubmitText: "GET LINK",
@@ -203,8 +210,8 @@ const defaultSettings = {
   guideTitle: "Bài hướng dẫn",
   guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
   ctaTitle: "Sẵn sàng bắt đầu?",
-  ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
-  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
+  ctaUserText: "Vào trang getlink để tải model 3D và quản lý credit của bạn.",
+  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn.",
   footerTagline: "Hỗ trợ 24/7",
   referralMode: "both",
   threed66GetlinkConcurrency: Number(process.env.THREED66_GETLINK_CONCURRENCY || 1),
@@ -287,6 +294,9 @@ function isVerifiedAdminRequest(req) {
 
 function publicSettings(settings = {}, { includeRuntime = false } = {}) {
   const snapshot = settingsSnapshot(settings);
+  HOME_TEXT_FIELDS.forEach((field) => {
+    snapshot[field] = normalizePublicBrandText(snapshot[field]);
+  });
   if (!includeRuntime) {
     return Object.fromEntries(
       [
@@ -430,6 +440,18 @@ async function loadSettings() {
     settings = await SiteSetting.findOneAndUpdate(
       { key: "homepage" },
       { $set: { referralMode: defaultSettings.referralMode } },
+      { new: true },
+    );
+  }
+  const publicTextPatch = {};
+  HOME_TEXT_FIELDS.forEach((field) => {
+    const normalized = normalizePublicBrandText(settings[field]);
+    if (normalized !== settings[field]) publicTextPatch[field] = normalized;
+  });
+  if (Object.keys(publicTextPatch).length) {
+    settings = await SiteSetting.findOneAndUpdate(
+      { key: "homepage" },
+      { $set: publicTextPatch },
       { new: true },
     );
   }
@@ -592,7 +614,10 @@ export async function updateSettings(req, res, next) {
         update[field] = normalizeBoolean(req.body[field], RUNTIME_BOOLEAN_FIELDS[field].fallback);
         return;
       }
-      update[field] = sanitizeHtml(limitedString(req.body[field], 1000));
+      const sanitized = sanitizeHtml(limitedString(req.body[field], 1000));
+      update[field] = HOME_TEXT_FIELDS.includes(field)
+        ? normalizePublicBrandText(sanitized)
+        : sanitized;
     });
 
     await loadSettingsWithRetry();

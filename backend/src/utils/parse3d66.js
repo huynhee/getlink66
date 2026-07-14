@@ -42,14 +42,14 @@ export function extractModelIdInput(value = "") {
 
   if (/^https?:\/\//i.test(text) || /3d66\.com/i.test(text)) {
     throw Object.assign(
-      new Error("Chỉ nhận mã model 3D66, không nhận link. Vui lòng nhập mã như AGI896357716115729."),
+        new Error("Chỉ nhận mã model 3D, không nhận link. Vui lòng nhập mã như AGI896357716115729."),
       { status: 400 },
     );
   }
 
   if (!isModelId(text)) {
     throw Object.assign(
-      new Error("Mã model 3D66 không hợp lệ. Vui lòng nhập mã như AGI896357716115729."),
+      new Error("Mã model 3D không hợp lệ. Vui lòng nhập mã như AGI896357716115729."),
       { status: 400 },
     );
   }
@@ -164,7 +164,7 @@ export function extractProductId(url) {
 
   const hostname = parsed.hostname.toLowerCase();
   if (hostname !== "3d66.com" && !hostname.endsWith(".3d66.com")) {
-    throw Object.assign(new Error("Only 3d66.com links are supported"), { status: 400 });
+    throw Object.assign(new Error("Only valid 3D model links are supported"), { status: 400 });
   }
 
   const pathParts = parsed.pathname.split("/").filter(Boolean);

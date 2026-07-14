@@ -286,6 +286,12 @@ app.use("/api", membershipRoutes);
 app.use("/api", historyRoutes);
 app.use("/api/admin", adminRoutes);
 
+function publicErrorMessage(message) {
+  return String(message || "Internal server error")
+    .replace(/(?:https?:\/\/)?(?:[\w-]+\.)*3d66\.com/gi, "3D")
+    .replace(/3d66/gi, "3D");
+}
+
 app.use((error, _req, res, _next) => {
   const status = error.status || 500;
   if (status >= 500) {
@@ -298,7 +304,7 @@ app.use((error, _req, res, _next) => {
   res.status(status).json({
     message: status >= 500 && isProduction
       ? "Internal server error"
-      : error.message || "Internal server error",
+      : publicErrorMessage(error.message),
     ...(typeof error.code === "string" && error.code ? { code: error.code } : {}),
   });
 });

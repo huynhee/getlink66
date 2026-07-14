@@ -417,7 +417,7 @@ function readUrlRequest(req, res) {
 
   const input = String(req.body.modelId || req.body.url || "").trim();
   if (!input || input.length > 2048) {
-    res.status(400).json({ message: "3D66 model link or model ID is required" });
+    res.status(400).json({ message: "3D model link or model ID is required" });
     return null;
   }
 
@@ -787,6 +787,10 @@ function contentDispositionFrom3D66(upstreamDisposition = "", history) {
   return `attachment; filename="${fixedName}"; filename*=UTF-8''${encoded}`;
 }
 
+function isPlaceholderModelTitle(value = "") {
+  return /^(?:3D66|3D) model$/i.test(String(value || "").trim());
+}
+
 function isFallbackMetadata(metadata = {}, inputProductId = "") {
   const title = String(metadata.title || "").trim();
   const productId = String(metadata.productId || inputProductId || "").trim();
@@ -795,14 +799,14 @@ function isFallbackMetadata(metadata = {}, inputProductId = "") {
   const hasBasicMetadata = Boolean(
     productId &&
       title &&
-      title !== "3D66 model" &&
+      !isPlaceholderModelTitle(title) &&
       title !== inputProductId &&
       title !== productId,
   );
   if (hasBasicMetadata && creditCost > 0) return false;
   return Boolean(
     !title ||
-    title === "3D66 model" ||
+    isPlaceholderModelTitle(title) ||
     title === inputProductId ||
     creditCost <= 0 ||
     (!priceKnown && creditCost <= 1),
@@ -1072,7 +1076,7 @@ async function resolveProductCache(productId, url, downloadFormat = null) {
 
   if (!productLocks.has(productId)) {
     if (productLocks.size >= MAX_PRODUCT_LOCKS) {
-      const error = new Error("Too many 3D66 product tasks are running. Please try again shortly.");
+    const error = new Error("Too many model tasks are running. Please try again shortly.");
       error.status = 429;
       throw error;
     }
@@ -1177,7 +1181,7 @@ export async function previewGetlink(req, res, next) {
     const cachedTitle = String(cache?.title || "").trim();
     const hasRealCachedTitle = Boolean(
       cachedTitle &&
-      cachedTitle !== "3D66 model" &&
+      !isPlaceholderModelTitle(cachedTitle) &&
       cachedTitle !== cache?.productId &&
       cachedTitle !== productId,
     );
@@ -1206,7 +1210,7 @@ export async function previewGetlink(req, res, next) {
     ) {
       return res.status(422).json({
         message:
-          "Chưa đọc được đầy đủ thông tin model 3D66. Vui lòng thử lại hoặc bật Playwright fallback nếu model bị 3D66 render/challenge.",
+        "Chưa đọc được đầy đủ thông tin model 3D. Vui lòng thử lại sau.",
         metadataIncomplete: true,
         productId: resolvedProductId,
       });
@@ -1382,7 +1386,7 @@ export async function getLink(req, res, next) {
       ) {
         return res.status(422).json({
           message:
-            "Cannot read 3D66 model metadata yet. Please check 3D66 cookie/browser status before downloading.",
+        "Cannot read 3D model metadata yet. Please try again later.",
           metadataIncomplete: true,
         });
       }
@@ -1529,7 +1533,7 @@ export async function getLink(req, res, next) {
     const cache = await resolveProductCache(effectiveProductId, url, downloadFormat);
     if (lockToInputProductId && !requestedProductIds.includes(String(cache.productId || ""))) {
       throw Object.assign(
-        new Error("3D66 returned a different model than the requested link. Please retry this model."),
+        new Error("The source returned a different model than the requested link. Please retry this model."),
         {
           status: 502,
           details: {
@@ -1809,7 +1813,7 @@ export async function prepareRedownload(req, res, next) {
         await writeSystemLog({
           type: "download",
           level: "warn",
-          message: `Could not inspect 3D66 redownload formats: ${formatError.message}`,
+          message: `Could not inspect model redownload formats: ${formatError.message}`,
           userId: req.user?._id,
           historyId: req.params?.id,
           status: formatError.status,
@@ -1839,7 +1843,7 @@ export async function prepareRedownload(req, res, next) {
       }
       selectedFormat = findDownloadFormatOption(formatOptions, requestedFormat) || requestedFormat;
       if (!selectedFormat) {
-        return res.status(400).json({ message: "Định dạng file đã chọn không còn khả dụng trên 3D66." });
+        return res.status(400).json({ message: "Định dạng file đã chọn không còn khả dụng." });
       }
     }
 
@@ -1916,7 +1920,7 @@ async function openDownloadResponse(history, req, signal) {
 
     if (isRefreshableStatus(upstream.status)) {
       const error = new Error(
-        `3D66 download auth failed: HTTP ${upstream.status}`,
+          `Download authentication failed: HTTP ${upstream.status}`,
       );
       error.status = upstream.status;
       throw error;
@@ -1927,7 +1931,7 @@ async function openDownloadResponse(history, req, signal) {
       !looksLikeDownloadFile(upstream)
     ) {
       const error = new Error(
-        "3D66 did not return a file stream. Cookie/session may be blocked or expired.",
+        "The download source did not return a file stream. Please try again later.",
       );
       error.status = 403;
       throw error;
@@ -2134,7 +2138,7 @@ export async function downloadGetlink(req, res, next) {
       }
       return res
         .status(upstream.status || 502)
-        .json({ message: `3D66 download failed: HTTP ${upstream.status}` });
+      .json({ message: `3D download failed: HTTP ${upstream.status}` });
     }
 
     if (!looksLikeDownloadFile(upstream)) {
@@ -2151,7 +2155,7 @@ export async function downloadGetlink(req, res, next) {
         reservedDownloadCount = false;
       }
       return res.status(502).json({
-        message: "3D66 did not return a file stream. Please try again later.",
+      message: "The download source did not return a file stream. Please try again later.",
       });
     }
 
@@ -2344,7 +2348,7 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
     const contentType = detectedContentType || upstream.headers.get("content-type") || "image/jpeg";
     if (!String(contentType).toLowerCase().startsWith("image/")) {
       return res.status(502).json({
-        message: "3D66 did not return a preview image.",
+      message: "The model source did not return a preview image.",
       });
     }
 

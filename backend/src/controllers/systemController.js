@@ -1,8 +1,8 @@
 import Cookie from "../models/Cookie.js";
 import { getUsable3D66Cookies } from "../utils/3d66CookiePool.js";
 
-const PUBLIC_OFFLINE_MESSAGE = "Hệ thống tải 3D66 đang lỗi, vui lòng thử lại sau.";
-const PUBLIC_ONLINE_MESSAGE = "Hệ thống tải 3D66 đang hoạt động.";
+const PUBLIC_OFFLINE_MESSAGE = "Hệ thống tải 3D đang lỗi, vui lòng thử lại sau.";
+const PUBLIC_ONLINE_MESSAGE = "Hệ thống tải 3D đang hoạt động.";
 
 function cookieKeys(value = "") {
   return new Set(

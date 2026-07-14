@@ -6,7 +6,7 @@ const termsContent = {
   vi: {
     eyebrow: "terms of service",
     title: "Điều Khoản Sử Dụng",
-    intro: "Các điều khoản dưới đây áp dụng cho việc đăng nhập, nạp credit và sử dụng dịch vụ getlink 3D66 trên 3DiPL.",
+    intro: "Các điều khoản dưới đây áp dụng cho việc đăng nhập, nạp credit và sử dụng dịch vụ getlink 3D trên 3DiPL.",
     updated: "Cập nhật: 18/05/2026",
     asideTitle: "Quy định chính",
     home: "Về trang chủ",
@@ -21,8 +21,8 @@ const termsContent = {
       {
         title: "1. Phạm vi dịch vụ",
         body: [
-          "3DiPL cung cấp dịch vụ trung gian hỗ trợ người dùng tạo link tải model từ 3D66 bằng credit trả trước.",
-          "Dịch vụ phụ thuộc vào tình trạng tài khoản nguồn, hệ thống 3D66, cache, kết nối mạng và các giới hạn kỹ thuật tại từng thời điểm."
+          "3DiPL cung cấp dịch vụ trung gian hỗ trợ người dùng tạo link tải model 3D bằng credit trả trước.",
+          "Dịch vụ phụ thuộc vào tình trạng tài khoản nguồn, hệ thống 3D, cache, kết nối mạng và các giới hạn kỹ thuật tại từng thời điểm."
         ]
       },
       {
@@ -50,8 +50,8 @@ const termsContent = {
       {
         title: "5. Link tải và tính khả dụng",
         body: [
-          "3DiPL cố gắng xử lý yêu cầu nhanh và ổn định, nhưng không cam kết mọi link 3D66 đều có thể tải thành công ở mọi thời điểm.",
-          "Một số lỗi có thể đến từ nguồn 3D66, file bị gỡ, giới hạn tài khoản, cookie hết hạn, thay đổi phía nhà cung cấp hoặc sự cố mạng."
+          "3DiPL cố gắng xử lý yêu cầu nhanh và ổn định, nhưng không cam kết mọi link 3D đều có thể tải thành công ở mọi thời điểm.",
+          "Một số lỗi có thể đến từ nguồn 3D, file bị gỡ, giới hạn tài khoản, cookie hết hạn, thay đổi phía nhà cung cấp hoặc sự cố mạng."
         ]
       },
       {
@@ -73,7 +73,7 @@ const termsContent = {
   en: {
     eyebrow: "terms of service",
     title: "Terms of Service",
-    intro: "These terms apply to signing in, topping up credit, and using the 3D66 getlink service on 3DiPL.",
+    intro: "These terms apply to signing in, topping up credit, and using the 3D getlink service on 3DiPL.",
     updated: "Updated: 05/18/2026",
     asideTitle: "Key rules",
     home: "Back to home",
@@ -88,8 +88,8 @@ const termsContent = {
       {
         title: "1. Service scope",
         body: [
-          "3DiPL provides an intermediary service that helps users create download links for 3D66 models using prepaid credit.",
-          "The service depends on source account status, the 3D66 system, cache, network connectivity, and technical limits at each point in time."
+          "3DiPL provides an intermediary service that helps users create download links for 3D models using prepaid credit.",
+          "The service depends on source account status, the 3D system, cache, network connectivity, and technical limits at each point in time."
         ]
       },
       {
@@ -117,8 +117,8 @@ const termsContent = {
       {
         title: "5. Download links and availability",
         body: [
-          "3DiPL tries to process requests quickly and reliably, but does not guarantee that every 3D66 link can be downloaded successfully at all times.",
-          "Some errors may come from 3D66, removed files, account limits, expired cookies, provider-side changes, or network incidents."
+          "3DiPL tries to process requests quickly and reliably, but does not guarantee that every 3D link can be downloaded successfully at all times.",
+          "Some errors may come from the 3D source, removed files, account limits, expired cookies, provider-side changes, or network incidents."
         ]
       },
       {

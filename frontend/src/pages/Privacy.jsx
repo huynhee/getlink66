@@ -6,7 +6,7 @@ const privacyContent = {
   vi: {
     eyebrow: "privacy policy",
     title: "Chính Sách Bảo Mật",
-    intro: "Trang này mô tả cách 3DiPL thu thập, sử dụng, bảo vệ và lưu trữ dữ liệu khi bạn đăng nhập, nạp credit hoặc sử dụng dịch vụ getlink 3D66.",
+    intro: "Trang này mô tả cách 3DiPL thu thập, sử dụng, bảo vệ và lưu trữ dữ liệu khi bạn đăng nhập, nạp credit hoặc sử dụng dịch vụ getlink 3D.",
     updated: "Cập nhật: 18/05/2026",
     asideTitle: "Bảo vệ dữ liệu",
     asideBody: "Chỉ thu thập dữ liệu cần thiết cho đăng nhập, thanh toán, tải file và hỗ trợ vận hành.",
@@ -39,7 +39,7 @@ const privacyContent = {
         title: "4. Chia sẻ dữ liệu",
         body: [
           "3DiPL không bán dữ liệu cá nhân của người dùng.",
-          "Một số dữ liệu có thể được xử lý qua các dịch vụ cần thiết như Google OAuth, hạ tầng lưu trữ, cơ sở dữ liệu, nhà cung cấp thanh toán, Telegram thông báo vận hành hoặc dịch vụ nguồn 3D66 để hoàn tất yêu cầu tải."
+          "Một số dữ liệu có thể được xử lý qua các dịch vụ cần thiết như Google OAuth, hạ tầng lưu trữ, cơ sở dữ liệu, nhà cung cấp thanh toán, Telegram thông báo vận hành hoặc dịch vụ nguồn 3D để hoàn tất yêu cầu tải."
         ]
       },
       {
@@ -67,7 +67,7 @@ const privacyContent = {
   en: {
     eyebrow: "privacy policy",
     title: "Privacy Policy",
-    intro: "This page explains how 3DiPL collects, uses, protects, and stores data when you sign in, top up credit, or use the 3D66 getlink service.",
+    intro: "This page explains how 3DiPL collects, uses, protects, and stores data when you sign in, top up credit, or use the 3D getlink service.",
     updated: "Updated: 05/18/2026",
     asideTitle: "Data protection",
     asideBody: "We only collect data needed for sign-in, payment, file downloads, and service operations.",
@@ -100,7 +100,7 @@ const privacyContent = {
         title: "4. Data sharing",
         body: [
           "3DiPL does not sell users' personal data.",
-          "Some data may be processed through necessary services such as Google OAuth, hosting infrastructure, databases, payment providers, Telegram operational alerts, or the upstream 3D66 service to complete download requests."
+          "Some data may be processed through necessary services such as Google OAuth, hosting infrastructure, databases, payment providers, Telegram operational alerts, or the upstream 3D service to complete download requests."
         ]
       },
       {

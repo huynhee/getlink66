@@ -1507,7 +1507,7 @@ function parseModelMetadata(html, pageUrl, fields = {}) {
 
   return {
     productId: fields.llId || detailRes.ll_id || "",
-    title: title || fields.llId || "3D66 model",
+    title: title || fields.llId || "3D model",
     imageUrl: absoluteUrl(rawImage, pageUrl),
     creditCost: extractCreditCostFromHtml(html, { useDetailData: detailMatchesRequested }),
     priceKnown: hasKnownCreditCostInHtml(html, { useDetailData: detailMatchesRequested }),
@@ -1777,21 +1777,21 @@ function shouldUseBrowserPage(html = "", metadata = {}, fields = {}, requireDown
     !requireDownloadFields &&
       productId &&
       title &&
-      title !== "3D66 model" &&
+      title !== "3D model" &&
       title !== productId,
   );
   if (hasBasicMetadata) return false;
 
   const creditCost = Number(metadata.creditCost || 0);
   const priceKnown = Boolean(metadata.priceKnown || creditCost > 1);
-  return Boolean(!title || title === "3D66 model" || creditCost <= 0 || (!priceKnown && creditCost <= 1));
+  return Boolean(!title || title === "3D model" || creditCost <= 0 || (!priceKnown && creditCost <= 1));
 }
 
 function isWeakMetadata(metadata = {}) {
   const title = String(metadata.title || "").trim();
   const creditCost = Number(metadata.creditCost || 0);
   const priceKnown = Boolean(metadata.priceKnown || creditCost > 1);
-  return Boolean(!title || title === "3D66 model" || creditCost <= 0 || (!priceKnown && creditCost <= 1));
+  return Boolean(!title || title === "3D model" || creditCost <= 0 || (!priceKnown && creditCost <= 1));
 }
 
 async function fetch3D66PageWithBrowserFallback(url, cookieValue, originalError = null) {
@@ -1864,7 +1864,7 @@ function mergeBrowserMetadata(metadata = {}, browserMetadata = {}, fields = {}) 
   const browserCost = Number(browserMetadata.creditCost || 0);
   return {
     productId: browserMetadata.productId || metadata.productId || fields.llId || "",
-    title: browserMetadata.title || metadata.title || fields.llId || "3D66 model",
+    title: browserMetadata.title || metadata.title || fields.llId || "3D model",
     imageUrl: browserMetadata.imageUrl || metadata.imageUrl || "",
     creditCost: browserCost > 0 ? browserCost : metadata.creditCost || 1,
     priceKnown: Boolean(browserMetadata.priceKnown || metadata.priceKnown || browserCost > 1),
@@ -1961,7 +1961,7 @@ function mergeDownloadPopMetadata(metadata = {}, popData = {}, pageUrl = "", fie
   ]);
   return {
     productId: metadata.productId || resInfo.sof || fields.llId || "",
-    title: resInfo.res_name || metadata.title || fields.llId || "3D66 model",
+    title: resInfo.res_name || metadata.title || fields.llId || "3D model",
     imageUrl: absoluteUrl(resInfo.img, pageUrl) || metadata.imageUrl || "",
     creditCost: popCost > 0 ? popCost : metadata.creditCost || 1,
     priceKnown: Boolean(popCost > 0 || metadata.priceKnown),
@@ -2055,7 +2055,7 @@ async function previewFromDownloadPopOnly(url, cookieValue, cookies) {
   const context = applyFieldsToContext(siteContext(url, cookies), fields);
   const metadata = {
     productId: fields.llId,
-    title: "3D66 model",
+    title: "3D model",
     imageUrl: "",
     creditCost: 1,
     priceKnown: false,
@@ -2172,7 +2172,7 @@ export async function fetch3D66Preview(url, cookieValue) {
     const digest = crypto.createHash("sha256").update(url).digest("hex").slice(0, 16);
     return {
       productId: digest,
-      title: "Mock 3D66 model",
+      title: "Mock 3D model",
       imageUrl: "",
       creditCost: 1,
       priceKnown: true,
@@ -2402,7 +2402,7 @@ export async function inspect3D66DownloadChoice(url, cookieValue) {
   const metadata = mergeDownloadPopMetadata(
     {
       productId: fields.llId,
-      title: "3D66 model",
+      title: "3D model",
       imageUrl: "",
       creditCost: 1,
       priceKnown: false,
@@ -2444,7 +2444,7 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
       productId: digest,
       sourceUrl: url,
       resolvedSourceUrl: url,
-      title: "Mock 3D66 model",
+      title: "Mock 3D model",
       imageUrl: "",
       creditCost: 1,
       priceKnown: true,

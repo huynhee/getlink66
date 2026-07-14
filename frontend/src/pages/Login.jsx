@@ -8,9 +8,9 @@ import { translations } from "../i18n.js";
 
 const HOME_TEXT_DEFAULTS = {
   vi: {
-    heroEyebrow: "+ api 3d66 sdk",
-    heroText: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ",
-    heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp.",
+    heroEyebrow: "+ api 3d sdk",
+    heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
+    heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
     saleText: "",
     demoTitle: "Bắt đầu tải ngay",
     demoSubmitText: "GET LINK",
@@ -26,14 +26,14 @@ const HOME_TEXT_DEFAULTS = {
     guideTitle: "Bài hướng dẫn",
     guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
     ctaTitle: "Sẵn sàng bắt đầu?",
-    ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
-    ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
+    ctaUserText: "Vào trang getlink để tải model 3D và quản lý credit của bạn.",
+    ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn.",
     footerTagline: "Hỗ trợ 24/7",
   },
   en: {
-    heroEyebrow: "+ api 3d66 sdk",
-    heroText: "FAST 3D66\nGETLINK\nSERVICE",
-    heroSubtitle: "An intermediary getlink service that helps you download 3D66 models with a faster credit workflow.",
+    heroEyebrow: "+ api 3d sdk",
+    heroText: "FAST 3D\nGETLINK\nSERVICE",
+    heroSubtitle: "An intermediary getlink service that helps you download 3D models with a faster credit workflow.",
     saleText: "",
     demoTitle: "Start download",
     demoSubmitText: "GET LINK",
@@ -49,8 +49,8 @@ const HOME_TEXT_DEFAULTS = {
     guideTitle: "Guide articles",
     guideIntro: "Read guides for Getlink, credit top-up, and redownloading purchased files.",
     ctaTitle: "Ready to start?",
-    ctaUserText: "Open Getlink to download 3D66 models and manage your credit.",
-    ctaGuestText: "Sign in with Google to start using 3D66 Getlink and manage your credit.",
+    ctaUserText: "Open Getlink to download 3D models and manage your credit.",
+    ctaGuestText: "Sign in with Google to start using 3D Getlink and manage your credit.",
     footerTagline: "24/7 support",
   },
 };
@@ -87,19 +87,19 @@ function inputModeText(resolveMode = "search", language = "vi") {
   const isVi = language === "vi";
   if (resolveMode === "footprint") {
     return {
-      placeholder: isVi ? "Nhập link model" : "Paste the full 3D66 model link",
-      invalid: isVi ? "Vui lòng dán link model." : "Paste a 3D66 model link containing a sof ID.",
+      placeholder: isVi ? "Nhập link model" : "Paste the full 3D model link",
+      invalid: isVi ? "Vui lòng dán link model." : "Paste a 3D model link containing a valid model ID.",
     };
   }
   if (resolveMode === "direct") {
     return {
-      placeholder: isVi ? "Nhập link model" : "Paste the full 3D66 model link",
-      invalid: isVi ? "Vui lòng dán link model." : "Paste a 3D66 model link containing a sof ID.",
+      placeholder: isVi ? "Nhập link model" : "Paste the full 3D model link",
+      invalid: isVi ? "Vui lòng dán link model." : "Paste a 3D model link containing a valid model ID.",
     };
   }
   return {
-    placeholder: isVi ? "Nhập mã model" : "Enter a 3D66 model ID",
-    invalid: isVi ? "Vui lòng nhập mã model hợp lệ." : "Enter a valid 3D66 model ID.",
+    placeholder: isVi ? "Nhập mã model" : "Enter a 3D model ID",
+    invalid: isVi ? "Vui lòng nhập mã model hợp lệ." : "Enter a valid 3D model ID.",
   };
 }
 
@@ -121,11 +121,11 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const [guideLoading, setGuideLoading] = useState(true);
   const [guideError, setGuideError] = useState("");
   const [siteSettings, setSiteSettings] = useState({
-    heroEyebrow: "+ api 3d66 sdk",
-    heroText: language === "vi" ? "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ" : "FAST 3D66\nGETLINK\nSERVICE",
+    heroEyebrow: "+ api 3d sdk",
+    heroText: language === "vi" ? "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ" : "FAST 3D\nGETLINK\nSERVICE",
     heroSubtitle: language === "vi"
-      ? "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp."
-      : "An intermediary getlink service that helps you download 3D66 models with a faster credit workflow.",
+      ? "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp."
+      : "An intermediary getlink service that helps you download 3D models with a faster credit workflow.",
     saleText: "",
     demoTitle: language === "vi" ? "Bắt đầu tải ngay" : "Start download",
     demoSubmitText: "GET LINK",
@@ -150,11 +150,11 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
       : "Read guides for Getlink, credit top-up, and redownloading purchased files.",
     ctaTitle: language === "vi" ? "Sẵn sàng bắt đầu?" : "Ready to start?",
     ctaUserText: language === "vi"
-      ? "Vào trang getlink để tải model 3D66 và quản lý credit của bạn."
-      : "Open Getlink to download 3D66 models and manage your credit.",
+      ? "Vào trang getlink để tải model 3D và quản lý credit của bạn."
+      : "Open Getlink to download 3D models and manage your credit.",
     ctaGuestText: language === "vi"
-      ? "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn."
-      : "Sign in with Google to start using 3D66 Getlink and manage your credit.",
+      ? "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn."
+      : "Sign in with Google to start using 3D Getlink and manage your credit.",
     footerTagline: language === "vi" ? "Hỗ trợ 24/7" : "24/7 support",
     threed66ModelResolveMode: "search",
     ...HOME_TEXT_DEFAULTS[language]
@@ -355,7 +355,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
           <div className="signalTrack">
             {Array.from({ length: 4 }).map((_, index) => (
               <div className="signalGroup" key={index} aria-hidden={index === 1}>
-                <span>+ LINK 3D66 READY</span>
+                <span>+ LINK 3D READY</span>
                 <span>cache:on</span>
                 <span>pay:auto</span>
                 <span>coin:live</span>
@@ -368,7 +368,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
         <section className="heroSection">
           <div className="heroLeft">
             <h3 className="eyebrowSignal" style={{ marginBottom: 16 }}>
-              {siteSettings.heroEyebrow || "+ api 3d66 sdk"}
+                {siteSettings.heroEyebrow || "+ api 3d sdk"}
             </h3>
             {siteSettings.saleText && (
               <div

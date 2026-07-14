@@ -2,9 +2,9 @@ import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 
 const HOME_TEXT_DEFAULTS = {
-  heroText: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ",
-  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp.",
-  heroEyebrow: "+ api 3d66 sdk",
+  heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
+  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
+  heroEyebrow: "+ api 3d sdk",
   saleText: "Khuyến mãi gói PRO trong tháng này",
   demoTitle: "Bắt đầu tải ngay",
   demoSubmitText: "GET LINK",
@@ -20,8 +20,8 @@ const HOME_TEXT_DEFAULTS = {
   guideTitle: "Bài hướng dẫn",
   guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
   ctaTitle: "Sẵn sàng bắt đầu?",
-  ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
-  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
+  ctaUserText: "Vào trang getlink để tải model 3D và quản lý credit của bạn.",
+  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn.",
   footerTagline: "Hỗ trợ 24/7",
 };
 
@@ -30,14 +30,14 @@ const siteSettingSchema = new mongoose.Schema(
     key: { type: String, required: true, unique: true, default: "homepage" },
     heroText: {
       type: String,
-      default: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ"
+      default: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ"
     },
     heroSubtitle: {
       type: String,
       default:
-        "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp."
+        "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp."
     },
-    heroEyebrow: { type: String, default: "+ api 3d66 sdk" },
+    heroEyebrow: { type: String, default: "+ api 3d sdk" },
     saleText: {
       type: String,
       default: "Khuyến mãi gói PRO trong tháng này"
@@ -70,11 +70,11 @@ const siteSettingSchema = new mongoose.Schema(
     ctaTitle: { type: String, default: "Sẵn sàng bắt đầu?" },
     ctaUserText: {
       type: String,
-      default: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn."
+      default: "Vào trang getlink để tải model 3D và quản lý credit của bạn."
     },
     ctaGuestText: {
       type: String,
-      default: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn."
+      default: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn."
     },
     footerTagline: { type: String, default: "Hỗ trợ 24/7" },
     referralMode: {

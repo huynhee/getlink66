@@ -54,19 +54,19 @@ function inputModeText(resolveMode = "search", language = "vi") {
   const isVi = language === "vi";
   if (resolveMode === "footprint") {
     return {
-      placeholder: isVi ? "Nhập link model" : "Paste the full 3D66 model link",
-      invalid: isVi ? "Vui lòng dán link model 3D66 có mã sof." : "Paste a 3D66 model link containing a sof ID.",
+      placeholder: isVi ? "Nhập link model" : "Paste the full 3D model link",
+      invalid: isVi ? "Vui lòng dán link model 3D có mã hợp lệ." : "Paste a 3D model link containing a valid model ID.",
     };
   }
   if (resolveMode === "direct") {
     return {
-      placeholder: isVi ? "Dán link model" : "Paste the full 3D66 model link",
-      invalid: isVi ? "Vui lòng dán link model 3D66 có mã sof." : "Paste a 3D66 model link containing a sof ID.",
+      placeholder: isVi ? "Dán link model" : "Paste the full 3D model link",
+      invalid: isVi ? "Vui lòng dán link model 3D có mã hợp lệ." : "Paste a 3D model link containing a valid model ID.",
     };
   }
   return {
-    placeholder: isVi ? "Nhập mã model" : "Enter a 3D66 model ID",
-    invalid: isVi ? "Vui lòng nhập mã model hợp lệ." : "Enter a valid 3D66 model ID.",
+    placeholder: isVi ? "Nhập mã model" : "Enter a 3D model ID",
+    invalid: isVi ? "Vui lòng nhập mã model hợp lệ." : "Enter a valid 3D model ID.",
   };
 }
 
@@ -416,7 +416,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
                 <img src={preview.imageUrl} alt={preview.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : (
                 <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", opacity: 0.55 }}>
-                  3D66
+                  3D
                 </div>
               )}
             </div>

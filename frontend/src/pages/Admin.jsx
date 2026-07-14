@@ -99,9 +99,9 @@ const HOME_TEXT_FIELDS = [
 
 const defaultSiteSettings = {
   referralMode: "both",
-  heroEyebrow: "+ api 3d66 sdk",
-  heroText: "SIÊU RẺ\nTẢI 3D66\nTỐC ĐỘ",
-  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model từ 3D66 với giá rẻ hơn mua trực tiếp.",
+  heroEyebrow: "+ api 3d sdk",
+  heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
+  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
   saleText: "",
   demoTitle: "Bắt đầu tải ngay",
   demoSubmitText: "GET LINK",
@@ -117,8 +117,8 @@ const defaultSiteSettings = {
   guideTitle: "Bài hướng dẫn",
   guideIntro: "Đọc hướng dẫn sử dụng Getlink, nạp credit và tải lại file đã mua.",
   ctaTitle: "Sẵn sàng bắt đầu?",
-  ctaUserText: "Vào trang getlink để tải model 3D66 và quản lý credit của bạn.",
-  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D66 và quản lý credit của bạn.",
+  ctaUserText: "Vào trang getlink để tải model 3D và quản lý credit của bạn.",
+  ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn.",
   footerTagline: "Hỗ trợ 24/7",
   threed66GetlinkConcurrency: 1,
   threed66PreviewConcurrency: 1,

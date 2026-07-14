@@ -115,7 +115,7 @@ function mapGetlink(item) {
   return eventBase(
     `getlink:${item._id}`,
     "getlink",
-    item.title || `3D66 ${item.productId || ""}`.trim(),
+    item.title || `3D ${item.productId || ""}`.trim(),
     -Number(item.creditUsed || 0),
     "approved",
     item.createdAt,
