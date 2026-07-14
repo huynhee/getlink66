@@ -103,7 +103,6 @@ export default function Pagination({
           onChange={(event) => setJumpPage(event.target.value)}
           aria-label={isVi ? "Nhập số trang" : "Enter page number"}
         />
-        <span>{isVi ? "trang" : "page"}</span>
       </form>
     </nav>
   );
