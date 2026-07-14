@@ -466,11 +466,34 @@ function modelIdFromUrl(value = "") {
   }
 }
 
-function modelIdentitySuffix(value = "") {
-  const match = String(value || "").trim().toUpperCase().match(/^[A-Z]{3}(\d{6,})$/);
-  if (!match) return "";
-  const digits = match[1];
-  return digits.length > 8 ? digits.slice(8) : digits;
+function modelIdentityParts(value = "") {
+  const match = String(value || "").trim().toUpperCase().match(/^([A-Z]{3})(\d{6,})$/);
+  if (!match) return null;
+  return { family: match[1].slice(1), digits: match[2] };
+}
+
+function commonTrailingDigitCount(left = "", right = "") {
+  let count = 0;
+  while (
+    count < left.length &&
+    count < right.length &&
+    left[left.length - 1 - count] === right[right.length - 1 - count]
+  ) {
+    count += 1;
+  }
+  return count;
+}
+
+export function modelIdsShareAssetIdentity(left = "", right = "") {
+  const normalizedLeft = String(left || "").trim().toUpperCase();
+  const normalizedRight = String(right || "").trim().toUpperCase();
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight) return true;
+
+  const leftParts = modelIdentityParts(normalizedLeft);
+  const rightParts = modelIdentityParts(normalizedRight);
+  if (!leftParts || !rightParts || leftParts.family !== rightParts.family) return false;
+  return commonTrailingDigitCount(leftParts.digits, rightParts.digits) >= 6;
 }
 
 function footprintCardMatches(card = {}, expectedProductIds = []) {
@@ -481,11 +504,7 @@ function footprintCardMatches(card = {}, expectedProductIds = []) {
     .filter(Boolean);
   if (expectedIds.includes(cardId)) return true;
 
-  const cardSuffix = modelIdentitySuffix(cardId);
-  return Boolean(
-    cardSuffix &&
-      expectedIds.some((productId) => modelIdentitySuffix(productId) === cardSuffix),
-  );
+  return expectedIds.some((productId) => modelIdsShareAssetIdentity(productId, cardId));
 }
 
 function evaluateMetadata() {
@@ -957,13 +976,29 @@ export async function resolve3D66ModelUrlFromFootprint(
     await page
       .waitForFunction(
         (productIds) => {
-          const suffix = (value = "") => {
-            const match = String(value).trim().toUpperCase().match(/^[A-Z]{3}(\d{6,})$/);
-            if (!match) return "";
-            return match[1].length > 8 ? match[1].slice(8) : match[1];
+          const identity = (value = "") => {
+            const match = String(value).trim().toUpperCase().match(/^([A-Z]{3})(\d{6,})$/);
+            return match ? { family: match[1].slice(1), digits: match[2] } : null;
+          };
+          const sameAsset = (left = "", right = "") => {
+            const normalizedLeft = String(left).trim().toUpperCase();
+            const normalizedRight = String(right).trim().toUpperCase();
+            if (normalizedLeft === normalizedRight) return true;
+            const leftParts = identity(normalizedLeft);
+            const rightParts = identity(normalizedRight);
+            if (!leftParts || !rightParts || leftParts.family !== rightParts.family) return false;
+            let commonDigits = 0;
+            while (
+              commonDigits < leftParts.digits.length &&
+              commonDigits < rightParts.digits.length &&
+              leftParts.digits[leftParts.digits.length - 1 - commonDigits] ===
+                rightParts.digits[rightParts.digits.length - 1 - commonDigits]
+            ) {
+              commonDigits += 1;
+            }
+            return commonDigits >= 6;
           };
           const expected = productIds.map((value) => String(value).trim().toUpperCase());
-          const expectedSuffixes = expected.map(suffix).filter(Boolean);
           return Array.from(
             document.querySelectorAll('a[href*="/reshtmla/"][href*="sof="]'),
           ).some((anchor) => {
@@ -971,7 +1006,7 @@ export async function resolve3D66ModelUrlFromFootprint(
               const id = String(
                 new URL(anchor.getAttribute("href") || "", location.href).searchParams.get("sof") || "",
               ).toUpperCase();
-              return expected.includes(id) || expectedSuffixes.includes(suffix(id));
+              return expected.some((productId) => sameAsset(productId, id));
             } catch {
               return false;
             }
