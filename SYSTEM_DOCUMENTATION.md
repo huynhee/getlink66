@@ -297,7 +297,7 @@ Goi nap credit:
 - `isActive`
 - `sortOrder`
 
-Backend co default packages STARTER/BASIC/PRO/TEAM va co co che sync lai neu `SYNC_DEFAULT_TOPUP_PACKAGES` khong phai `false`.
+Backend có 5 gói Credit mặc định: Trải nghiệm, Starter, Basic, Pro Credit và Team. `TOPUP_PACKAGE_CATALOG_MIGRATION_ENABLED=true` chạy migration theo revision đúng một lần; chỉnh sửa của admin sau revision không bị ghi đè khi tải lại trang.
 
 #### `Voucher`
 
@@ -1946,7 +1946,7 @@ May audit 2026-07-10 khong co Docker CLI, vi vay image manifests phai duoc build
 - Signed late payment hop le co the kich hoat lai don Pro bi `expired`, `user_cancel` hoac `gateway_error`; `admin_cancel` van la terminal.
 - Kich hoat Pro, cap nhat order, voucher, quota add-on va payment receipt chay trong Mongo transaction. Memory DB co compensation cho test/local.
 - Daily Pro add-on chi tang `bonusLimit` trong ngay neu user dang co Pro; khong ghi de `proUntil` cua goi dai han.
-- Default Credit/Pro plan chi seed record thieu. Chi ghi de gia/quyen loi khi bat ro `SYNC_DEFAULT_TOPUP_PACKAGES=true` hoac `SYNC_DEFAULT_MEMBERSHIP_PLANS=true`.
+- Gói Credit mặc định được migrate theo `defaultRevision`; gói Pro chỉ đồng bộ giá/quyền lợi khi bật `SYNC_DEFAULT_MEMBERSHIP_PLANS=true`.
 - Model public bat buoc `isPublished=true`, `metadataStatus=complete` va `fileStatus=ready`. Admin khong the publish model thieu archive.
 - Quota download/image search rollback khi request vuot quota hoac tao session/log that bai. Image search khong tru quota khi similarity engine chua cau hinh hoac provider loi.
 - Timeline va admin transaction dung total count that, khong con cap tong o 500 record; timeline khong tra source URL/source model ID.
@@ -1956,3 +1956,52 @@ May audit 2026-07-10 khong co Docker CLI, vi vay image manifests phai duoc build
 - Voucher admin tach scope Credit/Pro/dung chung, co search/status, archive lifecycle va khoa doi code/scope sau khi co giao dich.
 - Lich su credit admin cu da duoc bo; user detail va `/history` dung duy nhat timeline hop nhat, chia nhom Thanh toan/Tai xuong/Tai khoan.
 - Bootstrap backend import auth/model sau `connectDb`, vi vay `ALLOW_MEMORY_DB=true` fallback local thuc su hoat dong khi Atlas khong truy cap duoc.
+
+## 15. Cap nhat split Atlas/VPS/Drive va retention 2026-07-15
+
+### 15.1 Ownership bat buoc
+
+- Atlas Core giu tai khoan, tai chinh, quyen loi, Getlink, SiteSetting, GuideArticle va
+  taxonomy `MarketplaceCategory`/`MarketplaceFilterOption`.
+- MongoDB VPS giu catalog Model/Scene, quota, marketplace session/download history,
+  Drive sync state, cache va log van hanh.
+- Drive giu binary asset, metadata goc, backup va history archive da verify.
+- `MarketplaceModel` khong tham chieu ObjectId category Atlas. Record chi luu
+  `categorySourceId`, `parentCategorySourceId` va facet English key.
+- `ModelPurchase` da bi loai bo. Marketplace chi co Free/Pro; Model tru 1 luot,
+  Scene tru 5 luot.
+
+### 15.2 Connection va deploy
+
+- `src/config/db.js` mo hai connection sau khi doc env; model VPS bind qua
+  `src/config/modelFactory.js`.
+- Production `MARKETPLACE_DB_TARGET=vps` bat buoc co `MONGO_MARKETPLACE_URI` va
+  backend tu choi neu hai connection tro cung database.
+- VPS Mongo can replica set/sharded transaction support. Khong deploy bang Mongo
+  standalone vi download count va daily quota grant can transaction exact-once.
+- `/health` va `/ready` tra trang thai rieng cho core va marketplace database, khong tra URI.
+
+### 15.3 Taxonomy
+
+- Seed source chi tao key con thieu qua `$setOnInsert`; restart khong ghi de nhan admin.
+- Admin Model/Scene co tab `Danh muc & bo loc`, chi sua nhan Viet/Anh, vi tri va active.
+- Key/hierarchy/facet bi khoa; metadata key unknown/inactive bi tu choi truoc khi ghi Drive.
+- Public category/filter API khong doi, backend hydrate nhan Atlas vao catalog VPS.
+
+### 15.4 History va cumulative download count
+
+- Retention job chay 02:30 Asia/Saigon, archive `.jsonl.gz` theo thang, verify SHA-256
+  bang cach doc lai Drive va chi sau do moi xoa Mongo.
+- Setting `0` giu vinh vien; admin cau hinh detail Getlink, history Getlink va history
+  marketplace trong Cài dat.
+- Manifest VPS cho phep resume deletion neu process dung sau upload/verify.
+- Download session chi tang `MarketplaceModel.downloadCount` khi backend thuc su cap
+  redirect Drive hoac mo stream lan dau; retry cung session khong tang lai.
+- Public Model/Scene tra `downloadCount`; card hover va detail hien so luot tai.
+
+### 15.5 Migration
+
+Chay lan luot `data:split:dry-run`, `data:split:execute`, review/backup, sau do moi chay
+`data:split:finalize` voi `MIGRATION_CONFIRM=split-marketplace-data`. Execute idempotent,
+co checkpoint va khong xoa Atlas. Chi finalize moi xoa collection da chuyen sau khi count
+duoc verify. Contract chi tiet nam trong `MARKETPLACE_DATA_CONTRACT.md` muc 15.

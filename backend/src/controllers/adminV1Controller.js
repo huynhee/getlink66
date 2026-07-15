@@ -5,7 +5,6 @@ import MembershipOrder from "../models/MembershipOrder.js";
 import MembershipPlan from "../models/MembershipPlan.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import ModelDownload from "../models/ModelDownload.js";
-import ModelPurchase from "../models/ModelPurchase.js";
 import DownloadSession from "../models/DownloadSession.js";
 import DailyDownloadQuota from "../models/DailyDownloadQuota.js";
 import DailyImageSearchQuota from "../models/DailyImageSearchQuota.js";
@@ -15,6 +14,7 @@ import { approvePendingTopup } from "../utils/topupApprovalService.js";
 import { approvePendingMembershipOrder, isProActive, nextVietnamReset, normalizeProUntil, vietnamDayKey } from "../utils/membershipService.js";
 import { buildUserTimeline } from "../utils/timelineService.js";
 import { isSafeId, limitedString, rejectUnknownKeys } from "../utils/validators.js";
+import { hydrateAtlasUserField } from "../utils/crossDatabaseHydration.js";
 
 const ADMIN_PAGE_SIZE = 20;
 
@@ -102,11 +102,14 @@ function topupTransaction(item) {
     kind: "credit",
     rawId: item._id,
     user: transactionUser(item.userId),
-    title: item.packageId?.name || (item.type === "manual" ? "Admin credit" : "Credit topup"),
+    title: item.packageId?.name || (item.type === "manual" ? "Admin credit adjustment" : "Credit topup"),
     amount: Number(item.amount || 0),
     originalAmount: Number(item.originalAmount || item.amount || 0),
     discountAmount: Number(item.discountAmount || 0),
     credit: Number(item.credit || 0),
+    isManualAdjustment: item.type === "manual",
+    manualBalanceBefore: item.manualBalanceBefore == null ? null : Number(item.manualBalanceBefore),
+    manualBalanceAfter: item.manualBalanceAfter == null ? null : Number(item.manualBalanceAfter),
     status: item.status,
     paymentCode: item.paymentCode || "",
     gatewayProvider: item.gatewayProvider || item.type || "",
@@ -207,8 +210,9 @@ export async function adminDashboard(req, res, next) {
       MarketplaceModel.countDocuments({ assetType: "scene", fileStatus: "ready" }),
       DownloadSession.countDocuments(rangeQuery("createdAt", range)),
       SystemLog.find().sort({ createdAt: -1 }).limit(8).lean(),
-      AuditLog.find().sort({ createdAt: -1 }).limit(8).populate("actor", "name email").lean(),
+      AuditLog.find().sort({ createdAt: -1 }).limit(8).lean(),
     ]);
+    await hydrateAtlasUserField(recentAuditLogs, "actor", "name email");
     const creditRevenue = creditRevenueRows.reduce((sum, item) => sum + Number(item.amount || 0), 0);
     const proRevenue = proRevenueRows.reduce((sum, item) => sum + Number(item.amount || 0), 0);
     const creditIssued = creditRevenueRows.reduce((sum, item) => sum + Number(item.credit || 0), 0);
@@ -252,22 +256,21 @@ export async function adminUserProfile(req, res, next) {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid user id" });
     const user = await User.findById(req.params.id).populate("proPlanId", "code name price durationDays").lean();
     if (!user) return res.status(404).json({ message: "User not found" });
-    const [getlinks, topups, proOrders, modelDownloads, sceneDownloads, purchases, auditLogs] = await Promise.all([
+    const [getlinks, topups, proOrders, modelDownloads, sceneDownloads, auditLogs] = await Promise.all([
       Getlink.countDocuments({ userId: user._id }),
       Topup.countDocuments({ userId: user._id }),
       MembershipOrder.countDocuments({ userId: user._id }),
       ModelDownload.countDocuments({ userId: user._id, assetType: { $ne: "scene" } }),
       ModelDownload.countDocuments({ userId: user._id, assetType: "scene" }),
-      ModelPurchase.countDocuments({ userId: user._id }),
       AuditLog.find({ $or: [{ target: String(user._id) }, { targetId: String(user._id) }] })
         .sort({ createdAt: -1 })
         .limit(20)
-        .populate("actor", "name email")
         .lean(),
     ]);
+    await hydrateAtlasUserField(auditLogs, "actor", "name email");
     res.json({
       user: publicUser(user),
-      stats: { getlinks, topups, proOrders, modelDownloads, sceneDownloads, purchases },
+      stats: { getlinks, topups, proOrders, modelDownloads, sceneDownloads },
       auditLogs,
     });
   } catch (error) {
@@ -303,7 +306,7 @@ export async function adminUserQuota(req, res, next) {
       DailyDownloadQuota.findOne({ dayKey, userId: user._id, tier }).lean(),
       DailyImageSearchQuota.findOne({ dayKey, userId: user._id, tier: tier === "member" ? "member" : "free" }).lean(),
     ]);
-    const baseDownloadLimit = tier === "member" ? Number(user.proDailyDownloadLimit || 100) : 10;
+    const baseDownloadLimit = tier === "member" ? Number(user.proDailyDownloadLimit || 100) : 5;
     const downloadLimit = baseDownloadLimit + Number(downloadQuota?.bonusLimit || 0);
     const imageLimit = tier === "member" ? 150 : 10;
     res.json({

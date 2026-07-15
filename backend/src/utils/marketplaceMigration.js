@@ -28,6 +28,10 @@ export async function ensureMarketplaceAssetMigration() {
     { quotaCost: { $exists: false } },
     [{ $set: { quotaCost: { $cond: ["$quotaCharged", 1, 0] } } }],
   );
+  await DownloadSession.updateMany(
+    { purgeAt: { $exists: false }, expiresAt: { $type: "date" } },
+    [{ $set: { purgeAt: { $add: ["$expiresAt", 7 * 24 * 60 * 60 * 1000] } } }],
+  );
   await ModelDownload.updateMany({ assetType: { $exists: false } }, { $set: { assetType: "model" } });
   await ModelDownload.updateMany(
     { quotaCost: { $exists: false } },

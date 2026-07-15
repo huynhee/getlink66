@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Download, Filter, HardDrive, Image as ImageIcon, ImagePlus, Loader2, Package, Search, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Download, Filter, HardDrive, Image as ImageIcon, ImagePlus, Loader2, LogIn, Package, Search, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import Pagination from "../components/Pagination.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
@@ -352,8 +352,9 @@ function parentSlugForCategory(categories = [], slug = "") {
 }
 
 function labelForFacet(filterOptions = {}, facet, value, language = "vi") {
-  if (language === "vi" && FACET_LABELS_VI[facet]?.[value]) return FACET_LABELS_VI[facet][value];
-  return filterOptions[facet]?.find((item) => item.value === value)?.label || value;
+  const option = filterOptions[facet]?.find((item) => item.value === value);
+  if (language === "vi") return option?.labelVi || FACET_LABELS_VI[facet]?.[value] || option?.label || value;
+  return option?.labelEn || option?.label || value;
 }
 
 function modelCategoryLabel(model = {}, language = "vi") {
@@ -371,25 +372,31 @@ function CategoryButton({ category, selected, isOpen, onOpen, onSelect, language
   const parentSelected = selected === category.slug;
   const active = parentSelected || childSelected;
 
-  function selectParent() {
-    if (hasChildren) {
-      onOpen(category.slug);
-    }
-    onSelect(parentSelected ? "" : category.slug);
-  }
-
   return (
     <div className={`marketCategoryGroup ${isOpen ? "open" : ""}`}>
-      <button
-        type="button"
-        className={`marketCategoryRow parent ${active ? "active" : ""}`}
-        aria-expanded={hasChildren ? isOpen : undefined}
-        onClick={selectParent}
-      >
-        <span className={`marketCategoryCheck ${parentSelected ? "checked" : ""}`} aria-hidden="true" />
-        <span>{labelForCategory(category, language)}</span>
-        {hasChildren && <ChevronRight className="marketCategoryArrow" size={15} aria-hidden="true" />}
-      </button>
+      <div className={`marketCategoryRow parent ${active ? "active" : ""}`}>
+        <label
+          className="marketCategorySelector"
+          title={textFor(language, `Chọn toàn bộ ${labelForCategory(category, language)}`, `Select all ${labelForCategory(category, language)}`)}
+        >
+          <input
+            type="checkbox"
+            checked={parentSelected}
+            onChange={() => onSelect(parentSelected ? "" : category.slug)}
+            aria-label={textFor(language, `Chọn toàn bộ ${labelForCategory(category, language)}`, `Select all ${labelForCategory(category, language)}`)}
+          />
+          <span className={`marketCategoryCheck ${parentSelected ? "checked" : ""}`} aria-hidden="true" />
+        </label>
+        <button
+          type="button"
+          className="marketCategoryToggle"
+          aria-expanded={hasChildren ? isOpen : undefined}
+          onClick={() => hasChildren ? onOpen(isOpen ? "" : category.slug) : onSelect(parentSelected ? "" : category.slug)}
+        >
+          <span>{labelForCategory(category, language)}</span>
+          {hasChildren && <ChevronRight className="marketCategoryArrow" size={15} aria-hidden="true" />}
+        </button>
+      </div>
       {hasChildren && isOpen && (
         <div className="marketSubcategoryList">
           {children.map((child) => (
@@ -485,13 +492,14 @@ function FacetSection({ id, title, options = [], values = [], onToggle, onClear,
   );
 }
 
-export function ModelCard({ model, onNavigate }) {
+export function ModelCard({ model, onNavigate, language = "vi" }) {
   const image = cover(model);
   const href = modelPath(model);
   const hoverMeta = [
     model.sizeText || formatBytes(model.fileSize),
     model.renderer,
-  ].filter(Boolean).join(" / ");
+    `${Number(model.downloadCount || 0).toLocaleString(language === "vi" ? "vi-VN" : "en-US")} ${textFor(language, "lượt tải", "downloads")}`,
+  ].filter(Boolean).join(" · ");
   return (
     <a className="marketModelCard" href={href} onClick={(event) => navigateTo(href, onNavigate, event)}>
       <div className="marketModelThumb">
@@ -560,7 +568,6 @@ function ModelPreview({ model }) {
         {images.length > 1 && (
           <div className="marketGalleryControls">
             <button className="previous" type="button" onClick={() => moveImage(-1)} aria-label="Previous image"><ChevronLeft size={22} /></button>
-            <span>{activeIndex + 1}/{images.length}</span>
             <button className="next" type="button" onClick={() => moveImage(1)} aria-label="Next image"><ChevronRight size={22} /></button>
           </div>
         )}
@@ -1193,7 +1200,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
         {error && <p className="error">{error}</p>}
         {loading && <p className="success">{language === "vi" ? "Đang tải..." : "Loading..."}</p>}
         <div className="marketGrid">
-          {models.map((model) => <ModelCard key={model._id} model={model} onNavigate={onNavigate} />)}
+            {models.map((model) => <ModelCard key={model._id} model={model} onNavigate={onNavigate} language={language} />)}
         </div>
         {!loading && !models.length && (
           <section className="panel emptyState">
@@ -1434,7 +1441,9 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
   const fileReady = model.fileStatus === "ready";
   const isDemo = Boolean(model.isDemo);
   const requiresPro = model.accessType !== "free" && !user?.isPro && user?.role !== "admin";
-  const canDownload = fileReady && !requiresPro && !isDemo;
+  const canDownload = Boolean(user) && fileReady && !requiresPro && !isDemo;
+  const loginReturnTo = `/${segment}/${encodeURIComponent(model.slug || model._id || slug)}`;
+  const loginHref = buildApiUrl(`/api/auth/google?returnTo=${encodeURIComponent(loginReturnTo)}`);
   const categoryLabel = modelCategoryLabel(model, language);
   const categoryTrail = [model.parentCategory, model.category]
     .filter((item) => item?.slug)
@@ -1475,14 +1484,29 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
             <div><Sparkles size={17} /><span>Renderer</span><strong>{model.renderer || model.renderers?.[0] || "-"}</strong></div>
             <div><HardDrive size={17} /><span>{textFor(language, "Dung lượng", "Size")}</span><strong>{model.sizeText || formatBytes(model.fileSize)}</strong></div>
             <div><ShieldCheck size={17} /><span>{textFor(language, "Quyền tải", "Access")}</span><strong>{accessLabel(model.accessType).toUpperCase()}</strong></div>
+            <div>
+              <Download size={17} />
+              <span>{textFor(language, "Lượt tải", "Downloads")}</span>
+              <strong>{Number(model.downloadCount || 0).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</strong>
+            </div>
           </div>
 
           <div className="marketDetailActions">
+            <p className="marketQuotaCost">
+              {assetType === "scene"
+                ? textFor(language, "Mỗi lần tải Scene trừ 5 lượt.", "Each Scene download costs 5 downloads.")
+                : textFor(language, "Mỗi lần tải Model trừ 1 lượt.", "Each Model download costs 1 download.")}
+            </p>
             {isDemo ? (
               <button className="primaryButton" type="button" disabled>
                 <Package size={18} />
                 {assetType === "scene" ? textFor(language, "Scene mẫu giao diện", "Interface demo scene") : textFor(language, "Model mẫu giao diện", "Interface demo model")}
               </button>
+            ) : !user ? (
+              <a className="primaryButton" href={loginHref}>
+                <LogIn size={18} />
+                {textFor(language, "Đăng nhập để tải", "Sign in to download")}
+              </a>
             ) : requiresPro ? (
               <button className="primaryButton" type="button" onClick={() => navigateTo("/topup?mode=pro", onNavigate)}>
                 <ShieldCheck size={18} />
@@ -1503,7 +1527,6 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
                 {downloading ? textFor(language, "Đang tạo phiên tải...", "Creating download...") : textFor(language, `Tải ${noun}`, `Download ${noun}`)}
               </button>
             )}
-            {assetType === "scene" && <p className="marketQuotaCost">{textFor(language, "Chi phí tải: 5 lượt", "Download cost: 5 downloads")}</p>}
           </div>
 
           {!fileReady && (
@@ -1551,13 +1574,13 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
           <>
             <div className="marketRecommendationInitialGrid">
               {recommendedModels.slice(0, 6).map((item) => (
-                <ModelCard key={item._id} model={item} onNavigate={onNavigate} />
+                <ModelCard key={item._id} model={item} onNavigate={onNavigate} language={language} />
               ))}
             </div>
             {recommendationsExpanded && expandedRecommendations.length > 0 && (
               <div className="marketRecommendationExpandedGrid">
                 {expandedRecommendations.map((item) => (
-                  <ModelCard key={item._id} model={item} onNavigate={onNavigate} />
+                  <ModelCard key={item._id} model={item} onNavigate={onNavigate} language={language} />
                 ))}
               </div>
             )}

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
+import { marketplaceModel } from "../config/modelFactory.js";
 
 const marketplaceDriveChangeSchema = new mongoose.Schema(
   {
@@ -29,4 +30,4 @@ marketplaceDriveChangeSchema.index({ status: 1, nextAttemptAt: 1, updatedAt: 1 }
 
 export default isMemoryDb()
   ? createMemoryModel("MarketplaceDriveChange")
-  : mongoose.model("MarketplaceDriveChange", marketplaceDriveChangeSchema);
+  : marketplaceModel("MarketplaceDriveChange", marketplaceDriveChangeSchema);

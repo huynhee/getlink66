@@ -40,8 +40,8 @@ function recencyScore(date, now = Date.now()) {
 
 export function marketplaceContentScore(source, candidate, now = Date.now()) {
   let score = 0;
-  if (sameRef(source.categoryId, candidate.categoryId)) score += 28;
-  if (sameRef(source.parentCategoryId, candidate.parentCategoryId)) score += 12;
+  if (sameRef(source.categorySourceId, candidate.categorySourceId)) score += 28;
+  if (sameRef(source.parentCategorySourceId, candidate.parentCategorySourceId)) score += 12;
   if (normalize(source.renderer) && normalize(source.renderer) === normalize(candidate.renderer)) score += 8;
   score += overlap(source.renderers, candidate.renderers) * 12;
   score += overlap(source.styles, candidate.styles) * 10;

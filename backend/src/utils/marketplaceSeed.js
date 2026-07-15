@@ -1,6 +1,7 @@
 import MarketplaceCategory from "../models/MarketplaceCategory.js";
 import { DEFAULT_MARKETPLACE_CATEGORIES } from "../data/marketplaceCategories.js";
 import { DEFAULT_SCENE_CATEGORIES } from "../data/marketplaceCatalogs.js";
+import { seedMarketplaceFilterOptions } from "./marketplaceTaxonomy.js";
 
 function categoryPayload(item, parent = null, assetType = "model") {
   return {
@@ -25,9 +26,19 @@ async function seedCategories(items, assetType) {
 
   for (const item of roots) {
     const query = { assetType, sourceProvider, sourceCategoryId: String(item.id) };
+    const payload = categoryPayload(item, null, assetType);
     const category = await MarketplaceCategory.findOneAndUpdate(
       query,
-      { $set: categoryPayload(item, null, assetType) },
+      {
+        $setOnInsert: payload,
+        $set: {
+          assetType: payload.assetType,
+          sourceProvider: payload.sourceProvider,
+          sourceCategoryId: payload.sourceCategoryId,
+          parentId: payload.parentId,
+          parentSourceCategoryId: payload.parentSourceCategoryId,
+        },
+      },
       { upsert: true, new: true },
     );
     bySourceId.set(String(item.id), category);
@@ -41,9 +52,19 @@ async function seedCategories(items, assetType) {
         sourceCategoryId: String(item.parentId),
       });
     const query = { assetType, sourceProvider, sourceCategoryId: String(item.id) };
+    const payload = categoryPayload(item, parent, assetType);
     const category = await MarketplaceCategory.findOneAndUpdate(
       query,
-      { $set: categoryPayload(item, parent, assetType) },
+      {
+        $setOnInsert: payload,
+        $set: {
+          assetType: payload.assetType,
+          sourceProvider: payload.sourceProvider,
+          sourceCategoryId: payload.sourceCategoryId,
+          parentId: payload.parentId,
+          parentSourceCategoryId: payload.parentSourceCategoryId,
+        },
+      },
       { upsert: true, new: true },
     );
     bySourceId.set(String(item.id), category);
@@ -53,4 +74,5 @@ async function seedCategories(items, assetType) {
 export async function initializeMarketplaceCategories() {
   await seedCategories(DEFAULT_MARKETPLACE_CATEGORIES, "model");
   await seedCategories(DEFAULT_SCENE_CATEGORIES, "scene");
+  await seedMarketplaceFilterOptions();
 }

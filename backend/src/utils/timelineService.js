@@ -3,8 +3,8 @@ import Getlink from "../models/Getlink.js";
 import Topup from "../models/Topup.js";
 import MembershipOrder from "../models/MembershipOrder.js";
 import ModelDownload from "../models/ModelDownload.js";
-import ModelPurchase from "../models/ModelPurchase.js";
 import Referral from "../models/Referral.js";
+import { hydrateAtlasUserField } from "./crossDatabaseHydration.js";
 
 const TIMELINE_TYPES = new Set(["all", "credit", "pro", "getlink", "model", "scene", "referral", "voucher"]);
 
@@ -84,10 +84,11 @@ function eventBase(id, type, title, amount, status, createdAt, metadata = {}) {
 
 function mapTopup(item) {
   const isApproved = item.status === "approved";
+  const isManualAdjustment = item.type === "manual";
   return eventBase(
     `topup:${item._id}`,
     "credit",
-    item.type === "manual" ? "Admin cộng credit" : `Nạp credit${item.packageId?.name ? ` - ${item.packageId.name}` : ""}`,
+    isManualAdjustment ? "Admin điều chỉnh credit" : `Nạp credit${item.packageId?.name ? ` - ${item.packageId.name}` : ""}`,
     isApproved ? Number(item.credit || 0) : 0,
     item.status,
     item.paidAt || item.createdAt,
@@ -95,6 +96,9 @@ function mapTopup(item) {
       topupId: item._id,
       amountMoney: moneyAmount(item.amount),
       creditAmount: Number(item.credit || 0),
+      isManualAdjustment,
+      manualBalanceBefore: item.manualBalanceBefore == null ? null : Number(item.manualBalanceBefore),
+      manualBalanceAfter: item.manualBalanceAfter == null ? null : Number(item.manualBalanceAfter),
       originalAmount: moneyAmount(item.originalAmount),
       discountAmount: moneyAmount(item.discountAmount),
       voucherCode: item.voucherCode || "",
@@ -184,8 +188,8 @@ function mapModelDownload(item) {
     "model",
     `Tải model${item.modelId?.title ? ` - ${item.modelId.title}` : ""}`,
     item.quotaCharged ? -1 : 0,
-    "downloaded",
-    item.createdAt,
+    item.status || "requested",
+    item.downloadedAt || item.createdAt,
     {
       downloadId: item._id,
       model: modelSummary(item.modelId),
@@ -203,23 +207,6 @@ function mapModelDownload(item) {
   event.title = `${assetType === "scene" ? "Tải scene" : "Tải model"}${item.modelId?.title ? ` - ${item.modelId.title}` : ""}`;
   event.amount = -quotaCost;
   return event;
-}
-
-function mapModelPurchase(item) {
-  return eventBase(
-    `model-purchase:${item._id}`,
-    "model",
-    `Mua model${item.modelId?.title ? ` - ${item.modelId.title}` : ""}`,
-    -Number(item.creditPaid || 0),
-    "approved",
-    item.createdAt,
-    {
-      purchaseId: item._id,
-      model: modelSummary(item.modelId),
-      creditPaid: Number(item.creditPaid || 0),
-      user: userSummary(item.userId),
-    },
-  );
 }
 
 function mapReferral(item, userId) {
@@ -335,24 +322,15 @@ async function fetchTimelineSources({ userId, type, sourceLimit }) {
     const downloadQuery = { userId: userObjectId };
     if (type === "model") downloadQuery.assetType = { $ne: "scene" };
     if (type === "scene") downloadQuery.assetType = "scene";
-    tasks.push(
-      ModelDownload.find(downloadQuery)
+    tasks.push((async () => {
+      const items = await ModelDownload.find(downloadQuery)
         .sort({ createdAt: -1 })
         .limit(sourceLimit)
         .populate("modelId", "assetType title slug accessType fileStatus source")
-        .populate("userId", "name email avatar credit role")
-        .lean()
-        .then((items) => items.map(mapModelDownload)),
-    );
-    if (type !== "scene") tasks.push(
-      ModelPurchase.find({ userId: userObjectId })
-        .sort({ createdAt: -1 })
-        .limit(sourceLimit)
-        .populate("modelId", "assetType title slug accessType fileStatus source")
-        .populate("userId", "name email avatar credit role")
-        .lean()
-        .then((items) => items.map(mapModelPurchase)),
-    );
+        .lean();
+      await hydrateAtlasUserField(items);
+      return items.map(mapModelDownload);
+    })());
   }
 
   if (type === "all" || type === "referral") {
@@ -414,7 +392,6 @@ async function countTimelineSources({ userId, type }) {
     if (type === "model") downloadQuery.assetType = { $ne: "scene" };
     if (type === "scene") downloadQuery.assetType = "scene";
     tasks.push(ModelDownload.countDocuments(downloadQuery));
-    if (type !== "scene") tasks.push(ModelPurchase.countDocuments({ userId: userObjectId }));
   }
   if (type === "all" || type === "referral") {
     tasks.push(Referral.countDocuments({

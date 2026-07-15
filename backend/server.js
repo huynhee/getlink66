@@ -5,9 +5,8 @@ import compression from "compression";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import passport from "passport";
-import mongoose from "mongoose";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import { connectDb } from "./src/config/db.js";
+import { closeDbConnections, connectDb, databaseHealth } from "./src/config/db.js";
 import { cookieSignatureSecret } from "./src/config/secrets.js";
 import { isMemoryDb } from "./src/config/memoryStore.js";
 import { csrfProtection } from "./src/middleware/csrf.js";
@@ -139,6 +138,8 @@ const { seedMarketplaceDemoModels, seedMarketplaceDemoScenes } = await import(".
 const { initializeMembershipPlans } = await import("./src/utils/membershipService.js");
 const { startMarketplaceDriveSyncJob, stopMarketplaceDriveSyncJob } = await import("./src/utils/marketplaceDriveSyncJob.js");
 const { startMarketplaceDiscoverySyncJob, stopMarketplaceDiscoverySyncJob } = await import("./src/utils/marketplaceDiscoverySyncJob.js");
+const { startMarketplaceQuotaGrantJob, stopMarketplaceQuotaGrantJob } = await import("./src/utils/marketplaceQuotaGrantJob.js");
+const { startHistoryRetentionJob, stopHistoryRetentionJob } = await import("./src/utils/historyRetentionJob.js");
 const { close3D66Browser } = await import("./src/utils/3d66BrowserService.js");
 const { close3D66ProxyAgents } = await import("./src/utils/3d66Service.js");
 
@@ -156,6 +157,8 @@ if (process.env.SEED_MARKETPLACE_DEMO === "true") {
 await initializeMembershipPlans();
 startMarketplaceDriveSyncJob();
 startMarketplaceDiscoverySyncJob();
+startMarketplaceQuotaGrantJob();
+startHistoryRetentionJob();
 
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "true") app.set("trust proxy", 1);
@@ -268,12 +271,18 @@ app.use(jwtAuth);
 app.use(requestGuard);
 app.use(csrfProtection);
 
-app.get("/health", (_req, res) => res.json({ ok: true }));
+app.get("/health", (_req, res) => {
+  const databases = isMemoryDb()
+    ? { core: true, marketplace: true, marketplaceUsesCore: true, memory: true }
+    : databaseHealth();
+  res.json({ ok: databases.core && databases.marketplace, databases });
+});
 app.get("/ready", (_req, res) => {
-  const ready =
-    !shuttingDown &&
-    (isMemoryDb() || mongoose.connection.readyState === 1);
-  return res.status(ready ? 200 : 503).json({ ready });
+  const databases = isMemoryDb()
+    ? { core: true, marketplace: true, marketplaceUsesCore: true, memory: true }
+    : databaseHealth();
+  const ready = !shuttingDown && databases.core && databases.marketplace;
+  return res.status(ready ? 200 : 503).json({ ready, databases });
 });
 app.get("/api/user", currentUser);
 app.use("/api/auth", authRoutes);
@@ -326,6 +335,8 @@ async function gracefulShutdown(signal) {
   shuttingDown = true;
   stopMarketplaceDriveSyncJob();
   stopMarketplaceDiscoverySyncJob();
+  stopMarketplaceQuotaGrantJob();
+  stopHistoryRetentionJob();
   logger.info({ signal }, "Graceful shutdown started");
 
   const forceTimer = setTimeout(() => {
@@ -346,7 +357,7 @@ async function gracefulShutdown(signal) {
   await Promise.allSettled([
     close3D66Browser(),
     close3D66ProxyAgents(),
-    mongoose.disconnect(),
+    closeDbConnections(),
   ]);
   clearTimeout(forceTimer);
 

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
+import { marketplaceModel } from "../config/modelFactory.js";
 
 const productCacheSchema = new mongoose.Schema(
   {
@@ -28,4 +29,4 @@ const productCacheSchema = new mongoose.Schema(
 productCacheSchema.index({ updatedAt: -1 });
 productCacheSchema.index({ isPurchased: 1, updatedAt: -1 });
 
-export default isMemoryDb() ? createMemoryModel("ProductCache") : mongoose.model("ProductCache", productCacheSchema);
+export default isMemoryDb() ? createMemoryModel("ProductCache") : marketplaceModel("ProductCache", productCacheSchema);

@@ -3,8 +3,14 @@ import DailyDownloadQuota from "../models/DailyDownloadQuota.js";
 import DownloadSession from "../models/DownloadSession.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import ModelDownload from "../models/ModelDownload.js";
-import { isProActive } from "./membershipService.js";
+import {
+  isProActive,
+  nextVietnamReset,
+  vietnamDayKey,
+} from "./membershipService.js";
 import { marketplaceDownloadCost, normalizeAssetType } from "../data/marketplaceCatalogs.js";
+import { isMemoryDb } from "../config/memoryStore.js";
+import { marketplaceDbConnection } from "../config/db.js";
 
 const SESSION_TTL_MS = 15 * 60 * 1000;
 
@@ -34,32 +40,17 @@ function safeDownloadFileName(model) {
   return `${base}.${safeArchiveExt(model.archiveExt)}`;
 }
 
-export function vietnamDayKey(date = new Date()) {
-  return new Date(date.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
-export function nextVietnamReset(date = new Date()) {
-  const [year, month, day] = vietnamDayKey(date).split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day + 1, 17, 0, 0, 0));
-}
-
-function guestKeyFromReq(req) {
-  const ua = String(req.get("user-agent") || "").slice(0, 160);
-  const ip = String(req.ip || "");
-  return sha256(`${ip}|${ua}`).slice(0, 40);
-}
+export { nextVietnamReset, vietnamDayKey };
 
 function accessTier(req) {
   if (req.user?.role === "admin") return "admin";
   if (req.user && isProActive(req.user)) return "member";
-  if (req.user) return "free";
-  return "guest";
+  return "free";
 }
 
 function tierLimit(req, tier) {
   if (tier === "admin") return Number.MAX_SAFE_INTEGER;
   if (tier === "member") return Number(req.user?.proDailyDownloadLimit || 100);
-  if (tier === "free") return 10;
   return 5;
 }
 
@@ -75,9 +66,7 @@ async function chargeQuota(req, tier, cost = 1) {
   if (tier === "admin") return { charged: false, cost: 0, remaining: Number.MAX_SAFE_INTEGER };
   const dayKey = vietnamDayKey();
   const resetAt = nextVietnamReset();
-  const identity = req.user
-    ? { userId: req.user._id, guestKey: "" }
-    : { guestKey: guestKeyFromReq(req) };
+  const identity = { userId: req.user._id, guestKey: "" };
   const query = { dayKey, tier, ...identity };
   let current = await DailyDownloadQuota.findOne(query);
   if (!current) {
@@ -133,17 +122,22 @@ async function chargeQuota(req, tier, cost = 1) {
 
 async function rollbackQuota(req, tier, cost = 1) {
   if (tier === "admin") return;
-  const identity = req.user
-    ? { userId: req.user._id, guestKey: "" }
-    : { guestKey: guestKeyFromReq(req) };
+  const quotaCost = Math.max(1, Math.floor(Number(cost || 1)));
+  const identity = { userId: req.user._id, guestKey: "" };
   await DailyDownloadQuota.findOneAndUpdate(
-    { dayKey: vietnamDayKey(), tier, ...identity, count: { $gt: 0 } },
-    { $inc: { count: -Math.max(1, Math.floor(Number(cost || 1))) } },
+    { dayKey: vietnamDayKey(), tier, ...identity, count: { $gte: quotaCost } },
+    { $inc: { count: -quotaCost } },
     { new: true },
   ).catch(() => {});
 }
 
 export async function createMarketplaceDownloadSession({ req, modelId, clientType = "web", expectedAssetType = "" }) {
+  if (!req.user) {
+    const error = new Error("Login is required to download marketplace assets.");
+    error.status = 401;
+    error.code = "AUTH_REQUIRED";
+    throw error;
+  }
   const model = await MarketplaceModel.findById(modelId);
   const assetType = normalizeAssetType(model?.assetType);
   const assetLabel = assetType === "scene" ? "Scene" : "Model";
@@ -178,16 +172,18 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
   const quota = await chargeQuota(req, tier, marketplaceDownloadCost(assetType));
   const token = makeToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  const purgeAt = new Date(expiresAt.getTime() + 7 * 24 * 60 * 60 * 1000);
   let session = null;
   try {
     session = await DownloadSession.create({
       assetType,
       modelId: model._id,
-      userId: req.user?._id,
-      guestKey: req.user ? "" : guestKeyFromReq(req),
+      userId: req.user._id,
+      guestKey: "",
       clientType: clientType === "plugin" ? "plugin" : "web",
       tokenHash: sha256(token),
       expiresAt,
+      purgeAt,
       status: "active",
       quotaCharged: quota.charged,
       quotaCost: quota.cost,
@@ -204,12 +200,13 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
       assetType,
       modelId: model._id,
       sessionId: session._id,
-      userId: req.user?._id,
-      guestKey: req.user ? "" : guestKeyFromReq(req),
+      userId: req.user._id,
+      guestKey: "",
       clientType: session.clientType,
       accessTier: tier,
       quotaCharged: quota.charged,
       quotaCost: quota.cost,
+      status: "requested",
       ip: req.ip,
       userAgent: String(req.get("user-agent") || "").slice(0, 300),
     });
@@ -218,8 +215,6 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     if (quota.charged) await rollbackQuota(req, tier, quota.cost);
     throw error;
   }
-  await MarketplaceModel.findByIdAndUpdate(model._id, { $inc: { downloadCount: 1 } }).catch(() => {});
-
   return {
     session,
     token,
@@ -228,6 +223,67 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     quotaCost: quota.cost,
     resetAt: quota.resetAt,
   };
+}
+
+async function markRedeemedWithSession(session, databaseSession = null) {
+  const now = new Date();
+  const options = { new: true, ...(databaseSession ? { session: databaseSession } : {}) };
+  const claimed = await DownloadSession.findOneAndUpdate(
+    {
+      _id: session._id,
+      status: { $in: ["active", "used"] },
+      $or: [
+        { downloadCountedAt: null },
+        { downloadCountedAt: { $exists: false } },
+      ],
+    },
+    {
+      $set: {
+        status: "used",
+        downloadedAt: now,
+        downloadCountedAt: now,
+      },
+    },
+    options,
+  );
+  if (!claimed) {
+    await DownloadSession.findByIdAndUpdate(
+      session._id,
+      { $set: { status: "used", downloadedAt: session.downloadedAt || now } },
+      databaseSession ? { session: databaseSession } : undefined,
+    );
+    return { counted: false, session };
+  }
+  await ModelDownload.findOneAndUpdate(
+    { sessionId: session._id },
+    { $set: { status: "downloaded", downloadedAt: now } },
+    options,
+  );
+  await MarketplaceModel.findByIdAndUpdate(
+    session.modelId,
+    { $inc: { downloadCount: 1 } },
+    databaseSession ? { session: databaseSession } : undefined,
+  );
+  return { counted: true, session: claimed };
+}
+
+export async function markMarketplaceDownloadRedeemed(session) {
+  if (!session?._id) {
+    const error = new Error("Download session is required");
+    error.status = 400;
+    throw error;
+  }
+  if (isMemoryDb()) return markRedeemedWithSession(session);
+  const databaseSession = await marketplaceDbConnection().startSession();
+  let result;
+  try {
+    await databaseSession.withTransaction(async () => {
+      result = await markRedeemedWithSession(session, databaseSession);
+    });
+    return result;
+  } finally {
+    await databaseSession.endSession();
+  }
 }
 
 export async function verifyDownloadSession(sessionId, token) {

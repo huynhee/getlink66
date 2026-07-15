@@ -189,6 +189,12 @@ const RUNTIME_NUMBER_FIELDS = {
   },
 };
 
+const RETENTION_NUMBER_FIELDS = {
+  getlinkDetailRetentionDaysAfterExpiry: { fallback: 1, minActive: 1 },
+  getlinkHistoryRetentionDaysAfterExpiry: { fallback: 730, minActive: 30 },
+  marketplaceDownloadHistoryRetentionDays: { fallback: 365, minActive: 30 },
+};
+
 const defaultSettings = {
   key: "homepage",
   heroText: "SIEU RE\nTAI 3D\nTOC DO",
@@ -244,6 +250,9 @@ const defaultSettings = {
   maxDownloadsPerIp: Number(process.env.MAX_DOWNLOADS_PER_IP || 4),
   getlinkRedownloadDays: Number(process.env.GETLINK_REDOWNLOAD_DAYS || 3),
   getlinkRedownloadLimit: Number(process.env.GETLINK_REDOWNLOAD_LIMIT || 5),
+  getlinkDetailRetentionDaysAfterExpiry: 1,
+  getlinkHistoryRetentionDaysAfterExpiry: 730,
+  marketplaceDownloadHistoryRetentionDays: 365,
 };
 
 Object.assign(defaultSettings, HOME_TEXT_DEFAULTS);
@@ -371,6 +380,13 @@ function clampInteger(value, { min, max, fallback }) {
   return Math.min(max, Math.max(min, number));
 }
 
+function normalizeRetentionDays(value, config) {
+  const number = Number(value);
+  if (!Number.isInteger(number)) return config.fallback;
+  if (number === 0) return 0;
+  return Math.min(3650, Math.max(config.minActive, number));
+}
+
 function normalizePaytypeValue(value) {
   const text = String(value || "").trim();
   return /^[\w-]{1,20}$/.test(text) ? text : "4";
@@ -478,6 +494,10 @@ async function loadSettings() {
   const runtimePatch = {};
   Object.entries(RUNTIME_NUMBER_FIELDS).forEach(([field, config]) => {
     const normalized = clampInteger(settings[field], config);
+    if (settings[field] !== normalized) runtimePatch[field] = normalized;
+  });
+  Object.entries(RETENTION_NUMBER_FIELDS).forEach(([field, config]) => {
+    const normalized = normalizeRetentionDays(settings[field], config);
     if (settings[field] !== normalized) runtimePatch[field] = normalized;
   });
   const normalizedPaytypeValue = normalizePaytypeValue(settings.threed66PaytypeValue);
@@ -596,6 +616,9 @@ export async function updateSettings(req, res, next) {
       "maxDownloadsPerIp",
       "getlinkRedownloadDays",
       "getlinkRedownloadLimit",
+      "getlinkDetailRetentionDaysAfterExpiry",
+      "getlinkHistoryRetentionDaysAfterExpiry",
+      "marketplaceDownloadHistoryRetentionDays",
     ];
     const unknownKey = rejectUnknownKeys(req.body, fields);
     if (unknownKey) {
@@ -611,6 +634,10 @@ export async function updateSettings(req, res, next) {
       }
       if (RUNTIME_NUMBER_FIELDS[field]) {
         update[field] = clampInteger(req.body[field], RUNTIME_NUMBER_FIELDS[field]);
+        return;
+      }
+      if (RETENTION_NUMBER_FIELDS[field]) {
+        update[field] = normalizeRetentionDays(req.body[field], RETENTION_NUMBER_FIELDS[field]);
         return;
       }
       if (field === "threed66PaytypeValue") {

@@ -9,7 +9,7 @@ import SystemLog from "../models/SystemLog.js";
 import Referral from "../models/Referral.js";
 import MembershipOrder from "../models/MembershipOrder.js";
 import { isMemoryDb } from "../config/memoryStore.js";
-import { grantManualCredit } from "../utils/manualCreditService.js";
+import { grantManualCredit, setManualCredit } from "../utils/manualCreditService.js";
 import { validate3D66Cookie } from "../utils/3d66Service.js";
 import { get3D66CookiePoolStatus } from "../utils/3d66CookiePool.js";
 import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
@@ -24,6 +24,7 @@ import {
 } from "../utils/validators.js";
 import { expirePendingSepayTopups } from "../utils/topupExpiryService.js";
 import { voucherTargetKind } from "../utils/voucherCheckoutService.js";
+import { hydrateAtlasUserField } from "../utils/crossDatabaseHydration.js";
 
 const MAX_MANUAL_CREDIT = Number(process.env.MAX_MANUAL_CREDIT || 1000000);
 const MAX_STORED_CREDIT = Number(process.env.MAX_STORED_CREDIT || 10000000);
@@ -765,6 +766,13 @@ export async function adminAddCredit(req, res, next) {
       });
     }
 
+    req.auditDetails = {
+      targetUserId: String(userId),
+      previousCredit: Number(result.user.credit || 0) - amount,
+      newCredit: Number(result.user.credit || 0),
+      delta: amount,
+    };
+
     res.json({
       user: serializeAdminUser(result.user),
       topup: result.topup,
@@ -793,12 +801,23 @@ export async function adminSetCredit(req, res, next) {
         .status(400)
         .json({ message: "Valid userId and non-negative credit are required" });
     }
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { credit: amount },
-      { new: true },
-    );
-    res.json({ user: serializeAdminUser(user) });
+    const result = await setManualCredit({ userId, targetCredit: amount });
+    if (!result) return res.status(404).json({ message: "User not found" });
+    req.auditDetails = {
+      targetUserId: String(userId),
+      previousCredit: result.before,
+      newCredit: result.after,
+      delta: result.delta,
+    };
+    res.json({
+      user: serializeAdminUser(result.user),
+      topup: result.topup,
+      adjustment: {
+        previousCredit: result.before,
+        newCredit: result.after,
+        delta: result.delta,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -858,7 +877,8 @@ export async function listSystemLogs(req, res, next) {
     const records = await SystemLog.find(query)
       .sort({ createdAt: -1 })
       .limit(100)
-      .populate("userId", "name email");
+      .lean();
+    await hydrateAtlasUserField(records, "userId", "name email");
     const logs = records.map((item) => {
       const doc = item.toObject ? item.toObject() : item;
       const user = doc.userId && typeof doc.userId === "object" && (doc.userId.email || doc.userId.name)

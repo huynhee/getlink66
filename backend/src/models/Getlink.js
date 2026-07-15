@@ -23,6 +23,7 @@ const getlinkSchema = new mongoose.Schema(
     initialDownloadAt: Date,
     redownloadCount: { type: Number, default: 0, min: 0 },
     lastRedownloadAt: Date,
+    detailsPurgedAt: { type: Date, index: true },
   },
   { timestamps: true }
 );

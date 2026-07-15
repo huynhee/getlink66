@@ -41,6 +41,8 @@ const topupSchema = new mongoose.Schema(
     gatewayTransactionId: { type: String, index: true },
     gatewayPayload: mongoose.Schema.Types.Mixed,
     idempotencyKey: { type: String, trim: true },
+    manualBalanceBefore: Number,
+    manualBalanceAfter: Number,
   },
   { timestamps: true },
 );

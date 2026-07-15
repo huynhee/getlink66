@@ -20,46 +20,78 @@ import { expirePendingSepayTopups } from "../utils/topupExpiryService.js";
 const MIN_TOPUP_AMOUNT = Number(process.env.MIN_TOPUP_AMOUNT || 1000);
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{16,128}$/;
 
-const DEFAULT_TOPUP_PACKAGES = [
+const DEFAULT_TOPUP_PACKAGE_REVISION = 2;
+
+export const DEFAULT_TOPUP_PACKAGES = [
   {
-    name: "GÓI STARTER",
-    price: 50000,
-    credit: 140,
+    code: "EXPERIENCE",
+    defaultRevision: DEFAULT_TOPUP_PACKAGE_REVISION,
+    name: "GÓI TRẢI NGHIỆM",
+    price: 10000,
+    credit: 28,
     salePercent: 0,
-    badge: "",
-    features: ["5 lượt tải model", "Lưu lịch sử tải", "Hỗ trợ cơ bản"],
+    salePrice: 0,
+    maxTopupsPerUser: 1,
+    badge: "TEST",
+    features: ["1 lượt tải model", "Lưu lịch sử tải", "Hỗ trợ cơ bản"],
     isActive: true,
     sortOrder: 10,
   },
   {
-    name: "GÓI BASIC",
-    price: 100000,
-    credit: 280,
-    salePercent: 5,
-    badge: "SALE",
-    features: ["10 lượt tải model", "Giá tốt hơn gói nhỏ", "Lưu lịch sử tải"],
+    code: "STARTER",
+    defaultRevision: DEFAULT_TOPUP_PACKAGE_REVISION,
+    name: "GÓI STARTER",
+    price: 65000,
+    credit: 140,
+    salePercent: 0,
+    salePrice: 0,
+    maxTopupsPerUser: 0,
+    badge: "",
+    features: ["5 lượt tải model", "13K/1 lượt tải", "Lưu lịch sử tải"],
     isActive: true,
     sortOrder: 20,
   },
   {
-    name: "GÓI PRO",
-    price: 200000,
-    credit: 560,
-    salePercent: 10,
-    badge: "POPULAR",
-    features: ["20 lượt tải model", "Ưu tiên cache model", "Hỗ trợ ưu tiên"],
+    code: "BASIC",
+    defaultRevision: DEFAULT_TOPUP_PACKAGE_REVISION,
+    name: "GÓI BASIC",
+    price: 130000,
+    credit: 280,
+    salePercent: 7,
+    salePrice: 120000,
+    maxTopupsPerUser: 0,
+    badge: "SALE",
+    features: ["10 lượt tải model", "12K/1 lượt tải", "Lưu lịch sử tải"],
     isActive: true,
     sortOrder: 30,
   },
   {
-    name: "GÓI TEAM",
-    price: 500000,
-    credit: 1400,
+    code: "PRO_CREDIT",
+    defaultRevision: DEFAULT_TOPUP_PACKAGE_REVISION,
+    name: "GÓI PRO",
+    price: 260000,
+    credit: 560,
     salePercent: 15,
-    badge: "BEST VALUE",
-    features: ["50 lượt tải model", "Tối ưu cho team thiết kế", "Hỗ trợ nhanh"],
+    salePrice: 220000,
+    maxTopupsPerUser: 0,
+    badge: "POPULAR",
+    features: ["20 lượt tải model", "11K/1 lượt tải", "Lưu lịch sử tải"],
     isActive: true,
     sortOrder: 40,
+  },
+  {
+    code: "TEAM",
+    defaultRevision: DEFAULT_TOPUP_PACKAGE_REVISION,
+    name: "GÓI TEAM",
+    price: 650000,
+    credit: 1400,
+    salePercent: 23,
+    salePrice: 500000,
+    maxTopupsPerUser: 0,
+    badge: "BEST VALUE",
+    features: ["50 lượt tải model", "10K/1 lượt tải", "Lưu lịch sử tải"],
+    isActive: true,
+    sortOrder: 50,
   },
 ];
 
@@ -98,11 +130,11 @@ function isSameIdempotentTopupRequest(topup, pack, voucherCode = "") {
   );
 }
 
-async function userApprovedPackageCount(userId, packageId) {
+async function userActivePackageTopupCount(userId, packageId) {
   return Topup.countDocuments({
     userId,
     packageId,
-    status: "approved",
+    status: { $in: ["pending", "approved"] },
   });
 }
 
@@ -110,11 +142,9 @@ async function ensurePackageTopupLimit(pack, userId) {
   const limit = Number(pack?.maxTopupsPerUser || 0);
   if (!Number.isFinite(limit) || limit <= 0) return;
 
-  const used = await userApprovedPackageCount(userId, pack._id);
+  const used = await userActivePackageTopupCount(userId, pack._id);
   if (used >= limit) {
-    const error = new Error(
-      `Ban da dat gioi han nap goi nay (${limit} lan).`,
-    );
+    const error = new Error(`Tài khoản đã đạt giới hạn nạp gói này (${limit} lần).`);
     error.status = 409;
     throw error;
   }
@@ -122,44 +152,60 @@ async function ensurePackageTopupLimit(pack, userId) {
 
 function defaultPackageKey(name = "") {
   const normalized = String(name).toUpperCase();
-  return ["STARTER", "BASIC", "PRO", "TEAM"].find((key) =>
-    normalized.includes(key),
+  if (normalized.includes("TRẢI NGHIỆM") || normalized.includes("TRAI NGHIEM")) {
+    return "EXPERIENCE";
+  }
+  const key = ["STARTER", "BASIC", "PRO", "TEAM"].find((item) =>
+    normalized.includes(item),
   );
+  return key === "PRO" ? "PRO_CREDIT" : key;
 }
 
 async function syncDefaultTopupPackages(packages) {
-  if (process.env.SYNC_DEFAULT_TOPUP_PACKAGES !== "true") return packages;
+  if (process.env.TOPUP_PACKAGE_CATALOG_MIGRATION_ENABLED === "false") return packages;
 
   const defaultsByKey = new Map(
-    DEFAULT_TOPUP_PACKAGES.map((pack) => [defaultPackageKey(pack.name), pack]),
+    DEFAULT_TOPUP_PACKAGES.map((pack) => [pack.code, pack]),
   );
   const updates = [];
+  const seenKeys = new Set();
 
-  for (const pack of packages) {
-    const key = defaultPackageKey(pack.name);
+  const migratePackage = (pack, key) => {
     const defaultPack = defaultsByKey.get(key);
-    if (!defaultPack) continue;
+    if (!defaultPack || seenKeys.has(key)) return;
+    seenKeys.add(key);
 
     const current = pack.toObject ? pack.toObject() : pack;
-    const shouldUpdate =
-      current.name !== defaultPack.name ||
-      Number(current.price || 0) !== defaultPack.price ||
-      Number(current.credit || 0) !== defaultPack.credit ||
-      Number(current.salePercent || 0) !== defaultPack.salePercent ||
-      String(current.badge || "") !== defaultPack.badge ||
-      JSON.stringify(current.features || []) !==
-        JSON.stringify(defaultPack.features);
-
-    if (shouldUpdate) {
+    if (Number(current.defaultRevision || 0) < DEFAULT_TOPUP_PACKAGE_REVISION) {
       updates.push(
         TopupPackage.findByIdAndUpdate(pack._id, defaultPack, { new: true }),
       );
+    }
+  };
+
+  for (const pack of packages) {
+    const code = String(pack.code || "").toUpperCase();
+    if (code) migratePackage(pack, code);
+  }
+
+  for (const pack of packages) {
+    if (pack.code) continue;
+    migratePackage(pack, defaultPackageKey(pack.name));
+  }
+
+  for (const [key, defaultPack] of defaultsByKey) {
+    if (!seenKeys.has(key)) {
+      updates.push(TopupPackage.findOneAndUpdate(
+        { code: key },
+        { $setOnInsert: defaultPack },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      ));
     }
   }
 
   if (!updates.length) return packages;
   await Promise.all(updates);
-  return TopupPackage.find({ isActive: true });
+  return TopupPackage.find();
 }
 
 export function getCredit(req, res) {
@@ -168,18 +214,8 @@ export function getCredit(req, res) {
 
 export async function getPackages(_req, res, next) {
   try {
-    let packages = await TopupPackage.find({ isActive: true });
-    if (packages.length === 0) {
-      if (TopupPackage.insertMany) {
-        await TopupPackage.insertMany(DEFAULT_TOPUP_PACKAGES);
-      } else {
-        await Promise.all(
-          DEFAULT_TOPUP_PACKAGES.map((pack) => TopupPackage.create(pack)),
-        );
-      }
-    } else {
-      await syncDefaultTopupPackages(packages);
-    }
+    let packages = await TopupPackage.find();
+    await syncDefaultTopupPackages(packages);
     packages = sortPackages(await TopupPackage.find({ isActive: true }).lean());
     res.json({ packages });
   } catch (error) {

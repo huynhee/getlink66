@@ -3,6 +3,8 @@ import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 
 const topupPackageSchema = new mongoose.Schema(
   {
+    code: { type: String, trim: true, uppercase: true, unique: true, sparse: true },
+    defaultRevision: { type: Number, default: 0, min: 0 },
     name: { type: String, required: true, default: "GÓI CREDIT" },
     price: { type: Number, required: true },
     credit: { type: Number, required: true },

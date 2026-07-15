@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
+import { marketplaceModel } from "../config/modelFactory.js";
 
 const dailyDownloadQuotaSchema = new mongoose.Schema(
   {
@@ -9,13 +10,14 @@ const dailyDownloadQuotaSchema = new mongoose.Schema(
     tier: { type: String, enum: ["guest", "free", "member"], required: true },
     count: { type: Number, default: 0, min: 0 },
     bonusLimit: { type: Number, default: 0, min: 0 },
-    resetAt: { type: Date, required: true, index: true },
+    resetAt: { type: Date, required: true },
   },
   { timestamps: true },
 );
 
 dailyDownloadQuotaSchema.index({ dayKey: 1, userId: 1, guestKey: 1, tier: 1 }, { unique: true });
+dailyDownloadQuotaSchema.index({ resetAt: 1 }, { expireAfterSeconds: 45 * 24 * 60 * 60 });
 
 export default isMemoryDb()
   ? createMemoryModel("DailyDownloadQuota")
-  : mongoose.model("DailyDownloadQuota", dailyDownloadQuotaSchema);
+  : marketplaceModel("DailyDownloadQuota", dailyDownloadQuotaSchema);

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
+import { marketplaceModel } from "../config/modelFactory.js";
 
 const auditLogSchema = new mongoose.Schema(
   {
@@ -19,4 +20,4 @@ const auditLogSchema = new mongoose.Schema(
 auditLogSchema.index({ createdAt: -1 });
 auditLogSchema.index({ action: 1, createdAt: -1 });
 
-export default isMemoryDb() ? createMemoryModel("AuditLog") : mongoose.model("AuditLog", auditLogSchema);
+export default isMemoryDb() ? createMemoryModel("AuditLog") : marketplaceModel("AuditLog", auditLogSchema);

@@ -1,13 +1,13 @@
 import crypto from "node:crypto";
 import mongoose from "mongoose";
 import { isMemoryDb } from "../config/memoryStore.js";
-import DailyDownloadQuota from "../models/DailyDownloadQuota.js";
 import MembershipPlan from "../models/MembershipPlan.js";
 import MembershipOrder from "../models/MembershipOrder.js";
 import PaymentReceipt from "../models/PaymentReceipt.js";
 import User from "../models/User.js";
 import Voucher from "../models/Voucher.js";
 import { approvedVoucherUseCount } from "./voucherCheckoutService.js";
+import { synchronizeMarketplaceQuotaGrant } from "./marketplaceQuotaGrantService.js";
 
 export const DEFAULT_MEMBERSHIP_PLANS = [
   {
@@ -61,9 +61,9 @@ export function membershipSnapshot(user, at = new Date()) {
   const active = isProActive(user, at);
   return {
     active,
-    tier: active ? "member" : user ? "free" : "guest",
+    tier: active ? "pro" : "free",
     proUntil: user?.proUntil || null,
-    dailyDownloadLimit: active ? Number(user?.proDailyDownloadLimit || 100) : 0,
+    dailyDownloadLimit: active ? Number(user?.proDailyDownloadLimit || 100) : 5,
   };
 }
 
@@ -145,47 +145,6 @@ function addMembershipTime(user, order) {
   const durationDays = Math.max(1, Number(order.durationDays || 1));
   const target = isDailyPlan(order) ? now : new Date(base.getTime() + durationDays * DAY_MS);
   return endOfVietnamDay(target);
-}
-
-async function addDailyQuotaBoost(user, order, session = null) {
-  const amount = Math.max(1, Number(order.dailyDownloadLimit || 100));
-  const dayKey = vietnamDayKey();
-  const resetAt = nextVietnamReset();
-  return DailyDownloadQuota.findOneAndUpdate(
-    {
-      dayKey,
-      userId: user._id,
-      guestKey: "",
-      tier: "member",
-    },
-    {
-      $setOnInsert: {
-        dayKey,
-        userId: user._id,
-        guestKey: "",
-        tier: "member",
-        resetAt,
-      },
-      $set: { resetAt },
-      $inc: { bonusLimit: amount },
-    },
-    { upsert: true, new: true, session },
-  );
-}
-
-async function releaseDailyQuotaBoost(user, order, session = null) {
-  if (!user?._id) return;
-  const amount = Math.max(1, Number(order.dailyDownloadLimit || 100));
-  await DailyDownloadQuota.findOneAndUpdate(
-    {
-      dayKey: vietnamDayKey(),
-      userId: user._id,
-      guestKey: "",
-      tier: "member",
-    },
-    { $inc: { bonusLimit: -amount } },
-    { new: true, session },
-  ).catch(() => {});
 }
 
 async function releaseVoucherCounter(code, session = null) {
@@ -292,13 +251,10 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
   const activatedUntil = addMembershipTime(user, current);
   const shouldBoostToday = isDailyPlan(current) && isProActive(user);
   let voucherClaimed = false;
-  let quotaBoosted = false;
   let approvedOrder = null;
   let paymentReceipt = null;
   try {
     voucherClaimed = await claimMembershipVoucher(current, session);
-    const quotaBoost = shouldBoostToday ? await addDailyQuotaBoost(user, current, session) : null;
-    quotaBoosted = Boolean(quotaBoost);
     approvedOrder = await MembershipOrder.findOneAndUpdate(
       approvableMembershipOrderQuery(current),
       {
@@ -310,7 +266,10 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
           activatedUntil: shouldBoostToday ? endOfVietnamDay(new Date()) : activatedUntil,
           isQuotaAddon: shouldBoostToday,
           quotaBoostAmount: shouldBoostToday ? Number(current.dailyDownloadLimit || 100) : 0,
-          quotaBoostDayKey: shouldBoostToday ? String(quotaBoost?.dayKey || vietnamDayKey()) : "",
+          quotaBoostDayKey: shouldBoostToday ? vietnamDayKey() : "",
+          quotaSyncStatus: shouldBoostToday ? "pending" : "not_required",
+          quotaSyncedAt: null,
+          quotaSyncError: "",
           ...approvalFields,
         },
       },
@@ -318,7 +277,6 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
     );
     if (!approvedOrder) {
       if (!session) {
-        if (quotaBoosted) await releaseDailyQuotaBoost(user, current);
         if (voucherClaimed) await releaseVoucherCounter(current.voucherCode);
       }
       return null;
@@ -367,12 +325,14 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
               isQuotaAddon: Boolean(current.isQuotaAddon),
               quotaBoostAmount: Number(current.quotaBoostAmount || 0),
               quotaBoostDayKey: current.quotaBoostDayKey || "",
+              quotaSyncStatus: current.quotaSyncStatus || "not_required",
+              quotaSyncedAt: current.quotaSyncedAt || null,
+              quotaSyncError: current.quotaSyncError || "",
             },
           },
           { new: true },
         ).catch(() => {});
       }
-      if (quotaBoosted) await releaseDailyQuotaBoost(user, current);
       if (voucherClaimed) await releaseVoucherCounter(current.voucherCode);
     }
     throw error;
@@ -381,7 +341,12 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
 
 export async function approvePendingMembershipOrder(order, approvalFields = {}) {
   if (isMemoryDb()) {
-    return approveMembershipOrderWithSession(order, approvalFields);
+    const result = await approveMembershipOrderWithSession(order, approvalFields);
+    if (result?.order?.isQuotaAddon) {
+      const synced = await synchronizeMarketplaceQuotaGrant(result.order);
+      result.order = synced.order;
+    }
+    return result;
   }
   const session = await mongoose.startSession();
   let result = null;
@@ -389,6 +354,16 @@ export async function approvePendingMembershipOrder(order, approvalFields = {}) 
     await session.withTransaction(async () => {
       result = await approveMembershipOrderWithSession(order, approvalFields, session);
     });
+    if (result?.order?.isQuotaAddon) {
+      try {
+        const synced = await synchronizeMarketplaceQuotaGrant(result.order);
+        result.order = synced.order;
+      } catch (error) {
+        // Payment approval is durable in Atlas. The retry worker will finish
+        // the VPS quota grant without charging or applying it twice.
+        result.order = error.order || result.order;
+      }
+    }
     return result;
   } finally {
     await session.endSession();

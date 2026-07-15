@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Check, Copy, Gift, CreditCard, QrCode, Sparkles, Wallet } from "lucide-react";
+import { Check, Copy, Gift, CreditCard, Sparkles, Wallet } from "lucide-react";
 import { api } from "../api.js";
 import { translations } from "../i18n.js";
 
@@ -523,10 +523,10 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           <strong>Credit</strong>
           <span>
             {language === "vi"
-              ? "Dùng làm số dư để getlink, mua lẻ model và các lượt tính tiền theo từng giao dịch."
-              : "Used as balance for getlink, per-model purchases, and pay-per-use actions."}
+              ? "Dùng riêng làm số dư Getlink. Mỗi lượt Getlink thành công sẽ trừ credit theo giá giao dịch."
+              : "Used only as Getlink balance. Each successful Getlink request deducts credit at the transaction rate."}
           </span>
-          <small>{language === "vi" ? "Không kích hoạt quyền Pro." : "Does not activate Pro access."}</small>
+          <small>{language === "vi" ? "Không mua Pro và không cộng quota tải Model/Scene." : "Does not buy Pro or add Model/Scene download quota."}</small>
         </button>
         <button
           type="button"
@@ -537,8 +537,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           <strong>Pro</strong>
           <span>
             {language === "vi"
-              ? "Dùng để mở quyền thành viên: tải model Pro, tải nhanh và quota theo ngày."
-              : "Used to unlock membership access: Pro models, fast downloads, and daily quota."}
+              ? "Dùng để mở quyền thành viên: tải Model/Scene Pro, tải nhanh và quota theo ngày."
+              : "Unlocks membership access: Pro Models/Scenes, fast downloads, and daily quota."}
           </span>
           <small>{language === "vi" ? "Không cộng thêm số dư Credit." : "Does not add Credit balance."}</small>
         </button>
@@ -626,15 +626,22 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
 
       {topupMode === "credit" && (
       <section className="panel topupUnifiedSection topupCreditSection">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <h2><QrCode size={20} /> {t.topupMoney}</h2>
-          <span className="badge success">{t.automatic}</span>
+        <div className="topupSectionHeader">
+          <div>
+            <span className="eyebrowSignal">CREDIT BALANCE</span>
+            <h2><Wallet size={20} /> {language === "vi" ? "Nạp Credit" : "Top up Credit"}</h2>
+            <p className="muted">
+              {language === "vi"
+                ? "Bạn đang nạp số dư dùng riêng cho Getlink. 28 credit tương đương 1 lượt tải Getlink model theo mức quy đổi hiện tại; không kích hoạt Pro và không cộng quota thư viện Model/Scene."
+                : "You are adding balance used only for Getlink. At the current rate, 28 credits equal one Getlink model download; this does not activate Pro or add Model/Scene library quota."}
+            </p>
+          </div>
+          <span className="badge success">{language === "vi" ? "ĐANG NẠP CREDIT" : "CREDIT TOP-UP"}</span>
         </div>
-        <p className="muted">{t.topupIntro}</p>
         <div className="packageGrid topupPackageGrid" style={{ "--topup-package-count": Math.max(packages.length, 1) }}>
           {packages.map((item) => (
             <button
-              className={`package topupPackageCard ${selectedPackageId === item._id ? "selectedPackage" : ""}`}
+              className={`membershipPlanCard panel topupPackageCard ${selectedPackageId === item._id ? "selectedPackage" : ""}`}
               key={item._id || item.price}
               onClick={() => selectPackage(item)}
               style={{ alignItems: "stretch", textAlign: "left" }}
@@ -660,7 +667,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 <span className="muted">Voucher {appliedVoucher.code} {t.voucherNotApplicable}</span>
               )}
               {hasSale(item) && (
-                <span className="saleOnly" data-sale={item.salePercent}>
+                <span className="topupPackageSale">
                   {Number(item.salePercent || 0) > 0
                     ? (language === "vi"
                       ? `Sale ${item.salePercent}% từ ${Number(item.price).toLocaleString(locale)}${CURRENCY}`
@@ -695,12 +702,12 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         <div className="topupCheckoutBox">
           {selectedPackage ? (
             <div>
-              <span>{t.selectedPackage}</span>
+              <span>{language === "vi" ? "Gói Credit đang chọn" : "Selected Credit package"}</span>
               <strong>{selectedPackage.name || t.defaultPackageName}</strong>
               <p>
                 {language === "vi"
-                  ? `Thanh toán ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} để nhận ${finalCredit(selectedPackage)} credit`
-                  : `Pay ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} to receive ${finalCredit(selectedPackage)} credit`}
+                  ? `Thanh toán ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} để nhận ${finalCredit(selectedPackage)} credit dùng cho Getlink`
+                  : `Pay ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} to receive ${finalCredit(selectedPackage)} Getlink credits`}
                 {appliedVoucher && voucherAppliesToPackage(appliedVoucher, selectedPackage)
                   ? (language === "vi" ? `, đã áp dụng voucher ${appliedVoucher.code}` : `, voucher ${appliedVoucher.code} applied`)
                   : ""}.
@@ -715,7 +722,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           )}
           <button className="primaryButton" type="button" disabled={!selectedPackage || submitting} onClick={topup}>
             <CreditCard size={18} />
-            {submitting ? t.redirectingPayment : t.topupNow}
+            {submitting ? t.redirectingPayment : (language === "vi" ? "Nạp Credit" : "Top up Credit")}
           </button>
         </div>
         {message && <p className="success" style={{ marginTop: 14 }}>{message}</p>}

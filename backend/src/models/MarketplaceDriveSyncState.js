@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
+import { marketplaceModel } from "../config/modelFactory.js";
 
 const marketplaceDriveSyncStateSchema = new mongoose.Schema(
   {
@@ -40,4 +41,4 @@ const marketplaceDriveSyncStateSchema = new mongoose.Schema(
 
 export default isMemoryDb()
   ? createMemoryModel("MarketplaceDriveSyncState")
-  : mongoose.model("MarketplaceDriveSyncState", marketplaceDriveSyncStateSchema);
+  : marketplaceModel("MarketplaceDriveSyncState", marketplaceDriveSyncStateSchema);

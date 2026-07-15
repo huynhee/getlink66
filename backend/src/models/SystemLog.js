@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
+import { marketplaceModel } from "../config/modelFactory.js";
 
 const systemLogSchema = new mongoose.Schema(
   {
@@ -32,4 +33,4 @@ systemLogSchema.index({ type: 1, createdAt: -1 });
 
 export default isMemoryDb()
   ? createMemoryModel("SystemLog")
-  : mongoose.model("SystemLog", systemLogSchema);
+  : marketplaceModel("SystemLog", systemLogSchema);

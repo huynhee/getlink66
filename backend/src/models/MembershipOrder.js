@@ -18,6 +18,14 @@ const membershipOrderSchema = new mongoose.Schema(
     isQuotaAddon: { type: Boolean, default: false, index: true },
     quotaBoostAmount: { type: Number, default: 0, min: 0 },
     quotaBoostDayKey: { type: String, default: "", index: true },
+    quotaSyncStatus: {
+      type: String,
+      enum: ["not_required", "pending", "applied", "error"],
+      default: "not_required",
+      index: true,
+    },
+    quotaSyncedAt: Date,
+    quotaSyncError: { type: String, default: "" },
     status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending", index: true },
     paymentCode: { type: String, required: true, index: true },
     checkoutUrl: String,
@@ -46,6 +54,7 @@ membershipOrderSchema.index(
   },
 );
 membershipOrderSchema.index({ userId: 1, createdAt: -1 });
+membershipOrderSchema.index({ status: 1, isQuotaAddon: 1, quotaSyncStatus: 1, paidAt: 1 });
 membershipOrderSchema.index(
   { userId: 1, idempotencyKey: 1 },
   {

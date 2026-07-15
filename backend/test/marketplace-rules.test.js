@@ -8,7 +8,11 @@ const { default: User } = await import("../src/models/User.js");
 const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
 const { default: DailyDownloadQuota } = await import("../src/models/DailyDownloadQuota.js");
 const { default: ModelDownload } = await import("../src/models/ModelDownload.js");
-const { createMarketplaceDownloadSession, vietnamDayKey } = await import("../src/utils/marketplaceDownloadService.js");
+const {
+  createMarketplaceDownloadSession,
+  nextVietnamReset,
+  vietnamDayKey,
+} = await import("../src/utils/marketplaceDownloadService.js");
 const { adminUpdateMarketplaceModel } = await import("../src/controllers/marketplaceAdminController.js");
 
 function requestFor(user) {
@@ -20,6 +24,13 @@ function requestFor(user) {
     },
   };
 }
+
+test("marketplace quota resets at the next Vietnam midnight", () => {
+  const duringDay = new Date("2026-07-13T09:17:00.000Z");
+
+  assert.equal(vietnamDayKey(duringDay), "2026-07-13");
+  assert.equal(nextVietnamReset(duringDay).toISOString(), "2026-07-13T17:00:00.000Z");
+});
 
 test("admin cannot publish a model while its archive is not ready", async () => {
   const model = await MarketplaceModel.create({
@@ -68,7 +79,7 @@ test("denied quota attempts do not consume extra marketplace downloads", async (
   });
   const req = requestFor(user);
 
-  for (let index = 0; index < 10; index += 1) {
+  for (let index = 0; index < 5; index += 1) {
     await createMarketplaceDownloadSession({ req, modelId: model._id });
   }
   await assert.rejects(
@@ -81,7 +92,7 @@ test("denied quota attempts do not consume extra marketplace downloads", async (
     userId: user._id,
     tier: "free",
   });
-  assert.equal(quota.count, 10);
+  assert.equal(quota.count, 5);
 });
 
 test("marketplace quota is restored when session logging fails", async () => {

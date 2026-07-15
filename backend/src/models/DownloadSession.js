@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
+import { marketplaceModel } from "../config/modelFactory.js";
 
 const downloadSessionSchema = new mongoose.Schema(
   {
@@ -10,10 +11,14 @@ const downloadSessionSchema = new mongoose.Schema(
     clientType: { type: String, enum: ["web", "plugin"], default: "web", index: true },
     tokenHash: { type: String, required: true },
     expiresAt: { type: Date, required: true, index: true },
+    purgeAt: { type: Date, required: true },
     status: { type: String, enum: ["active", "used", "expired", "revoked"], default: "active", index: true },
+    downloadedAt: Date,
+    downloadCountedAt: Date,
     quotaCharged: { type: Boolean, default: false },
     quotaCost: { type: Number, default: 0, min: 0 },
-    accessTier: { type: String, enum: ["guest", "free", "member", "admin"], default: "guest" },
+    // `guest` is retained only so historical sessions remain readable.
+    accessTier: { type: String, enum: ["guest", "free", "member", "admin"], default: "free" },
     storageProvider: { type: String, default: "" },
     storageKey: { type: String, default: "" },
     driveFileId: { type: String, default: "" },
@@ -25,7 +30,8 @@ const downloadSessionSchema = new mongoose.Schema(
 );
 
 downloadSessionSchema.index({ expiresAt: 1, status: 1 });
+downloadSessionSchema.index({ purgeAt: 1 }, { expireAfterSeconds: 0 });
 
 export default isMemoryDb()
   ? createMemoryModel("DownloadSession")
-  : mongoose.model("DownloadSession", downloadSessionSchema);
+  : marketplaceModel("DownloadSession", downloadSessionSchema);

@@ -149,6 +149,9 @@ const defaultSiteSettings = {
   maxDownloadsPerIp: 4,
   getlinkRedownloadDays: 3,
   getlinkRedownloadLimit: 5,
+  getlinkDetailRetentionDaysAfterExpiry: 1,
+  getlinkHistoryRetentionDaysAfterExpiry: 730,
+  marketplaceDownloadHistoryRetentionDays: 365,
 };
 
 function discountedPrice(pkg) {
@@ -817,6 +820,9 @@ export default function Admin({ user, language = "vi" }) {
           maxDownloadsPerIp: Number(siteSettings.maxDownloadsPerIp || 4),
           getlinkRedownloadDays: Number(siteSettings.getlinkRedownloadDays || 3),
           getlinkRedownloadLimit: Number(siteSettings.getlinkRedownloadLimit || 5),
+          getlinkDetailRetentionDaysAfterExpiry: Number(siteSettings.getlinkDetailRetentionDaysAfterExpiry ?? 1),
+          getlinkHistoryRetentionDaysAfterExpiry: Number(siteSettings.getlinkHistoryRetentionDaysAfterExpiry ?? 730),
+          marketplaceDownloadHistoryRetentionDays: Number(siteSettings.marketplaceDownloadHistoryRetentionDays ?? 365),
         })
       });
       setSiteSettings({ ...defaultSiteSettings, ...(data.settings || {}) });
@@ -1348,6 +1354,33 @@ export default function Admin({ user, language = "vi" }) {
       max: 100,
       fallback: 5,
     },
+    {
+      field: "getlinkDetailRetentionDaysAfterExpiry",
+      label: l("Xóa link chi tiết sau khi hết hạn (ngày)", "Purge sensitive links after expiry (days)"),
+      help: l("Xóa URL file, URL nguồn và ảnh sau khi hết hạn tải lại. Nhập 0 để giữ vĩnh viễn.", "Removes file, source and image URLs after redownload expiry. Use 0 to keep forever."),
+      type: "number",
+      min: 0,
+      max: 3650,
+      fallback: 1,
+    },
+    {
+      field: "getlinkHistoryRetentionDaysAfterExpiry",
+      label: l("Lưu lịch sử Getlink online (ngày)", "Online Getlink history retention (days)"),
+      help: l("Archive lên Drive rồi xóa khỏi Atlas. 0 là giữ vĩnh viễn; giá trị khác tối thiểu 30 ngày.", "Archives to Drive before removal from Atlas. 0 keeps forever; other values have a 30-day minimum."),
+      type: "number",
+      min: 0,
+      max: 3650,
+      fallback: 730,
+    },
+    {
+      field: "marketplaceDownloadHistoryRetentionDays",
+      label: l("Lưu lịch sử tải Model/Scene (ngày)", "Model/Scene download history retention (days)"),
+      help: l("Archive sang Drive rồi xóa khỏi MongoDB VPS; tổng lượt tải không bị giảm. 0 là giữ vĩnh viễn.", "Archives to Drive before removal from the VPS; cumulative counts stay unchanged. 0 keeps forever."),
+      type: "number",
+      min: 0,
+      max: 3650,
+      fallback: 365,
+    },
   ];
   const proxyRuntimeSettings = [
     {
@@ -1689,8 +1722,8 @@ export default function Admin({ user, language = "vi" }) {
           </div>
           <p className="muted" style={{ marginTop: 8 }}>
             {packageMode === "credit"
-              ? l("Gói Credit dùng để cộng số dư credit cho getlink/nạp lượt.", "Credit packages add balance for getlink/top-up usage.")
-              : l("Gói Pro chỉ kích hoạt quyền thành viên và quota tải model, không cộng credit.", "Pro plans only activate membership and model download quota, not credit.")}
+              ? l("Gói Credit chỉ cộng số dư dùng cho Getlink, không kích hoạt Pro và không cộng quota thư viện Model/Scene.", "Credit packages only add Getlink balance; they do not activate Pro or add Model/Scene library quota.")
+              : l("Gói Pro kích hoạt quyền thành viên và quota tải Model/Scene, không cộng credit.", "Pro plans activate membership and Model/Scene download quota, not credit.")}
           </p>
 
           {packageMode === "credit" ? (
@@ -1793,7 +1826,7 @@ export default function Admin({ user, language = "vi" }) {
                   <strong>{Number(discountedPrice(pkg)).toLocaleString(locale)}đ</strong>
                 </div>
                 {(Number(pkg.salePercent || 0) > 0 || (Number(pkg.salePrice || 0) > 0 && Number(pkg.salePrice || 0) < Number(pkg.price || 0))) && (
-                  <span className="saleOnly" data-sale={pkg.salePercent}>
+                  <span className="topupPackageSale">
                     {Number(pkg.salePercent || 0) > 0
                       ? (language === "vi"
                         ? `Sale ${pkg.salePercent}% từ ${Number(pkg.price).toLocaleString(locale)}đ`
@@ -2844,7 +2877,12 @@ export default function Admin({ user, language = "vi" }) {
                 {item.kind === "pro" ? (
                   <strong>{item.isQuotaAddon ? `+${Number(item.quotaBoostAmount || 0).toLocaleString(locale)} ${l("lượt", "downloads")}` : `${Number(item.durationDays || 0).toLocaleString(locale)} ${l("ngày", "days")}`}</strong>
                 ) : (
-                  <strong><CoinAmount value={Number(item.credit || 0).toLocaleString(locale)} prefix="+" /></strong>
+                  <strong>
+                    <CoinAmount
+                      value={Math.abs(Number(item.credit || 0)).toLocaleString(locale)}
+                      prefix={Number(item.credit || 0) > 0 ? "+" : Number(item.credit || 0) < 0 ? "-" : ""}
+                    />
+                  </strong>
                 )}
                 <div className="topupAuditPayment">
                   <code>{item.paymentCode || item.gatewayTransactionId || "-"}</code>
@@ -3011,8 +3049,7 @@ export default function Admin({ user, language = "vi" }) {
                   ["topups", l("Nạp credit", "Credit top-ups")],
                   ["proOrders", l("Đơn Pro", "Pro orders")],
                   ["modelDownloads", l("Tải model", "Model downloads")],
-                  ["sceneDownloads", l("Tải scene", "Scene downloads")],
-                  ["purchases", l("Mua model", "Model purchases")]
+                  ["sceneDownloads", l("Tải scene", "Scene downloads")]
                 ].map(([key, label]) => (
                   <div className="adminDetailCard" key={key}>
                     <span>{label}</span>

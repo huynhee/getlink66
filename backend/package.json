@@ -13,6 +13,9 @@
     "drive:check": "node scripts/google-drive-check.js",
     "seed:models": "node scripts/marketplace-demo-seed.js",
     "seed:marketplace": "node scripts/marketplace-demo-seed.js",
+    "data:split:dry-run": "node scripts/split-marketplace-databases.js",
+    "data:split:execute": "node scripts/split-marketplace-databases.js --execute",
+    "data:split:finalize": "node scripts/split-marketplace-databases.js --finalize",
     "test": "node --test"
   },
   "dependencies": {

@@ -10,13 +10,13 @@ upload tool -> Google Drive -> sync-folder / Changes API -> MongoDB index -> web
 ## 1. Nguyen tac bat bien
 
 1. Google Drive la canonical source cho metadata va asset model.
-2. MongoDB la catalog index va noi luu du lieu van hanh, khong phai ban sao file.
+2. Atlas Core va MongoDB VPS co ownership rieng; khong co populate/ObjectId join cheo database.
 3. Admin ghi metadata len Drive thanh cong va doc xac nhan xong moi cap nhat Mongo.
 4. Mot model thay doi chi sync folder cua model do.
 5. Changes API phat hien thay doi thu cong. Full reconciliation chi chay khi admin yeu cau.
 6. Web va plugin khong nhan Drive ID, Drive URL, metadata hash hay storage key.
 7. Public slug va `desiredPublished` khong bi Drive rescan ghi de.
-8. Metadata chi nhan controlled vocabulary trong source code.
+8. Metadata chi nhan controlled vocabulary dang active trong taxonomy Atlas.
 
 ## 2. Data ownership
 
@@ -36,16 +36,18 @@ Metadata Drive owns:
 - `renderer`, `styles`, `renderers`, `forms`, `colors`, `materials`.
 - SHA-256 cua archive.
 
-### MongoDB owns
+### Atlas Core owns
 
-- Public `slug`.
-- `desiredPublished`.
-- `isPublished` da tinh.
-- `publicationBlockers` va `syncStatus`.
-- User, Pro, quota, payment, download session, history va audit.
-- Catalog index nhe de list/search/filter.
-- Drive references noi bo de backend stream file.
-- Download count va cac moc thoi gian van hanh.
+- User, Credit, Pro, payment, referral, voucher va Getlink.
+- Site settings va GuideArticle.
+- `MarketplaceCategory` va `MarketplaceFilterOption` la taxonomy chuan.
+
+### MongoDB VPS owns
+
+- `MarketplaceModel`, public `slug`, `desiredPublished`, `isPublished` va sync state.
+- Quota, download session, marketplace download history va cumulative `downloadCount`.
+- Drive queue/state, product cache, system log, audit va notification.
+- Drive references noi bo de backend cap file/preview; public API khong tra cac field nay.
 
 ### Upload tool owns (phase sau)
 
@@ -144,10 +146,12 @@ Dung luong hien thi lay tu `fileSize` cua archive tren Drive. Public slug thuoc 
 
 ## 5. Controlled vocabulary
 
-Source of truth:
+Runtime source of truth la Atlas:
 
-- Categories: `backend/src/data/marketplaceCategories.js`.
-- Filters: `backend/src/data/marketplaceFilters.js`.
+- Categories: collection `MarketplaceCategory`.
+- Filters: collection `MarketplaceFilterOption`.
+- `backend/src/data/marketplaceCategories.js`, `marketplaceFilters.js` va
+  `marketplaceCatalogs.js` chi la seed/migration co kiem soat, khong ghi de nhan admin da sua.
 
 Allowed values hien tai:
 
@@ -176,7 +180,7 @@ Value la English system key. UI co the dich label sang tieng Viet.
 
 ### Search/filter index
 
-- `categoryId`, `parentCategoryId`, `categorySourceId`.
+- `categorySourceId`, `parentCategorySourceId` (English stable key, khong phai ObjectId Atlas).
 - `styles`, `renderers`, `forms`, `colors`, `materials`, `renderer`.
 - `accessType`, `metadataStatus`, `metadataMissingFields`.
 
@@ -252,11 +256,12 @@ Scene category va filter source of truth:
 
 ## 6.3 Quota chung
 
-- Guest: 5 luot/ngay.
-- Free: 10 luot/ngay.
+- Chua dang nhap: chi duoc xem catalog, khong duoc tao download session.
+- Free: tu dong ap dung sau khi dang nhap, 5 luot/ngay.
 - Pro: `proDailyDownloadLimit`, mac dinh 100 luot/ngay.
 - Admin: khong tru quota.
 - Model tru 1; Scene tru 5. Quota bonus cua goi ngay duoc cong vao cung record.
+- Chi co hai quyen public la Free va Pro. Gia tri `guest` trong session/log chi duoc giu de doc lich su cu, khong duoc tao moi.
 - Backend lay cost tu `assetType`, khong tin `quotaCost` client gui.
 - Tang quota la atomic theo dieu kien `count + cost <= limit`.
 - Loi sau khi charge phai rollback dung cost; tai lai cung download session trong TTL khong charge lai.
@@ -559,3 +564,123 @@ Both endpoints return:
 ```
 
 Recommendation delivery is deliberately incremental. Model detail returns six records. `GET /api/marketplace/models/:slug/recommendations?offset=6&limit=54` loads the remaining 54 records only after the user expands the section.
+
+## 15. Split database, retention va migration contract
+
+### 15.1 Collection ownership
+
+Atlas Core:
+
+```text
+User, Topup, TopupPackage, MembershipOrder, MembershipPlan, PaymentReceipt
+Referral, Voucher, VoucherRedemption, Getlink, Cookie, SiteSetting, GuideArticle
+MarketplaceCategory, MarketplaceFilterOption
+```
+
+MongoDB VPS:
+
+```text
+MarketplaceModel, ModelDownload, DownloadSession
+DailyDownloadQuota, DailyImageSearchQuota, MarketplaceQuotaGrant
+MarketplaceDriveChange, MarketplaceDriveSyncState
+ProductCache, SystemLog, AuditLog, Notification, NotificationReceipt
+HistoryArchiveManifest
+```
+
+Google Drive:
+
+```text
+Archive Model/Scene, cover, preview, metadata.json.gz
+Encrypted Atlas/VPS backups
+history-archive/getlink/YYYY-MM/*.jsonl.gz
+history-archive/marketplace-download/YYYY-MM/*.jsonl.gz
+```
+
+`ModelPurchase` khong con schema/API/timeline. Marketplace chi co Free va Pro.
+
+### 15.2 Cross-database rules
+
+- VPS catalog luu `categorySourceId` va `parentCategorySourceId` dang string.
+- VPS history luu `userId` Atlas nhu opaque ObjectId; backend batch-load User tu Atlas
+  va hydrate response. Khong dung Mongoose `populate()` cheo connection.
+- Category me resolve danh sach stable key cua cac con tren Atlas, sau do query VPS.
+- Metadata co category/facet key khong ton tai hoac dang tat tren Atlas bi tu choi.
+- Admin taxonomy chi sua `labelVi`, `labelEn`, `position`, `isActive`; key, facet va
+  hierarchy bi khoa. Moi thay doi ghi AuditLog.
+- API public giu URL/shape cu; frontend khong can biet response duoc hop nhat tu hai DB.
+
+### 15.3 Retention settings
+
+`SiteSetting` Atlas co ba field:
+
+| Field | Default | Moc tinh |
+| --- | ---: | --- |
+| `getlinkDetailRetentionDaysAfterExpiry` | 1 | Sau khi het quyen tai lai |
+| `getlinkHistoryRetentionDaysAfterExpiry` | 730 | Sau khi het quyen tai lai |
+| `marketplaceDownloadHistoryRetentionDays` | 365 | Tu `downloadedAt` |
+
+Gia tri `0` la giu vinh vien. History retention khac 0 nam trong 30-3650 ngay;
+detail retention khac 0 nam trong 1-3650 ngay.
+
+Job chay 02:30 `Asia/Saigon`:
+
+1. Xoa URL/anh nhay cam cua Getlink sau detail retention, giu record compact.
+2. Lay batch record qua han va chia theo `YYYY-MM`.
+3. Tao `.jsonl.gz`, SHA-256 va `HistoryArchiveManifest` tren VPS.
+4. Upload archive, doc lai verify checksum, sau do upload Drive manifest.
+5. Chi xoa exact Mongo IDs khi manifest da verified.
+6. Neu process dung sau verify, chu ky sau resume deletion tu manifest.
+7. Drive/upload/checksum loi thi Mongo record van duoc giu.
+
+`DownloadSession.purgeAt = expiresAt + 7 ngay`; TTL xoa session cu. Daily quota TTL
+xoa sau reset 45 ngay. Xoa history khong thay doi `MarketplaceModel.downloadCount`.
+
+### 15.4 Download count
+
+- Tao download session chi charge quota va tao log `requested`; khong tang counter.
+- Khi backend cap redirect Drive hop le hoac mo stream thanh cong lan dau, transaction VPS:
+  - claim `DownloadSession.downloadCountedAt`;
+  - chuyen session sang `used` va log sang `downloaded`;
+  - ghi `downloadedAt`;
+  - tang `MarketplaceModel.downloadCount` dung 1.
+- Retry/multi-connection cung session khong tang lai.
+- Redirect chi xac nhan backend da cap link hop le, khong the xac nhan client da nhan du byte.
+- Public card/detail duoc tra `fileSize` va `downloadCount`; hover cover hien dung luong,
+  renderer va so luot tai.
+
+### 15.5 Pro daily quota grant
+
+Membership order nam Atlas, quota nam VPS nen khong co transaction cheo DB. Don Pro
+Daily approved duoc danh dau `quotaSyncStatus=pending`; worker tao duy nhat mot
+`MarketplaceQuotaGrant` theo `membershipOrderId`, tang `bonusLimit`, sau do danh dau
+order `applied`. Retry khong cong lai. Don loi giu `error` va duoc worker retry.
+
+### 15.6 Migration commands
+
+```bash
+cd backend
+npm run data:split:dry-run
+npm run data:split:execute
+MIGRATION_CONFIRM=split-marketplace-data npm run data:split:finalize
+```
+
+- Dry-run chi in count, khong ghi.
+- Execute copy/upsert theo batch, luu checkpoint tren VPS, co the resume, backfill stable
+  taxonomy keys va tinh lai `downloadCount`. Atlas source chua bi xoa.
+- Review count, sample va backup truoc finalize.
+- Finalize tu choi neu con `ModelPurchase`, neu target khong du count, neu hai DB trung nhau
+  hoac thieu chuoi xac nhan.
+- Mongo VPS production phai la replica set (mot node replica set cung duoc) hoac sharded
+  cluster de transaction download counter/quota grant hoat dong.
+
+Required environment:
+
+```dotenv
+MONGO_CORE_URI=mongodb+srv://.../core
+MONGO_MARKETPLACE_URI=mongodb://.../marketplace?replicaSet=rs0
+MARKETPLACE_DB_TARGET=vps
+MONGO_MARKETPLACE_TRANSACTIONS_REQUIRED=true
+HISTORY_ARCHIVE_DRIVE_FOLDER_ID=
+HISTORY_RETENTION_JOB_ENABLED=true
+MARKETPLACE_QUOTA_GRANT_JOB_ENABLED=true
+```

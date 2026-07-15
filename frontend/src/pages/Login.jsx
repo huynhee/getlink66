@@ -238,7 +238,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
     : [
       {
         name: language === "vi" ? "GÓI STARTER" : "STARTER PACKAGE",
-        price: 50000,
+        price: 65000,
         credit: 140,
         salePercent: 0,
         badge: "",
@@ -528,7 +528,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
             </div>
           ) : featuredModels.length ? (
             <div className="homeModelGrid">
-              {featuredModels.map((model) => <ModelCard key={model._id} model={model} />)}
+              {featuredModels.map((model) => <ModelCard key={model._id} model={model} language={language} />)}
             </div>
           ) : (
             <div className="homeModelsEmpty">
@@ -557,7 +557,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
             </div>
           ) : featuredScenes.length ? (
             <div className="homeModelGrid homeSceneGrid">
-              {featuredScenes.map((scene) => <ModelCard key={scene._id} model={scene} />)}
+              {featuredScenes.map((scene) => <ModelCard key={scene._id} model={scene} language={language} />)}
             </div>
           ) : (
             <div className="homeModelsEmpty">
@@ -609,8 +609,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 <h3>{language === "vi" ? "Nạp theo nhu cầu" : "Top up by need"}</h3>
                 <p className="homeTopupPurpose">
                   {language === "vi"
-                    ? "Credit dùng làm số dư getlink/mua lẻ. Pro dùng để mở quyền tải model member theo ngày."
-                    : "Credit is balance for getlink/pay-per-use. Pro unlocks member-model downloads by day."}
+                    ? "Credit dùng riêng cho Getlink (28 credit tương đương 1 lượt). Pro mở quyền và quota tải Model/Scene trong thư viện."
+                    : "Credit is only for Getlink (28 credits equal one request). Pro unlocks Model/Scene library access and quota."}
                 </p>
               </div>
               <div className="homeTopupActions">
@@ -621,7 +621,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 >
                   <Sparkles size={18} />
                   <span>Pro</span>
-                  <small>{language === "vi" ? "Quyền tải model Pro" : "Pro model access"}</small>
+                  <small>{language === "vi" ? "Quyền tải Model/Scene Pro" : "Pro Model/Scene access"}</small>
                 </button>
                 <button
                   type="button"
@@ -630,7 +630,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 >
                   <Wallet size={18} />
                   <span>Credit</span>
-                  <small>{language === "vi" ? "Số dư getlink/mua lẻ" : "Getlink/pay-per-use balance"}</small>
+                  <small>{language === "vi" ? "Số dư chỉ dùng cho Getlink" : "Getlink-only balance"}</small>
                 </button>
               </div>
             </div>
@@ -676,7 +676,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                     </div>
                   </div>
                   {hasSale(pkg) && (
-                    <div className="credits saleOnly" data-sale={pkg.salePercent}>
+                    <div className="credits pricingSaleLine">
                       {language === "vi"
                         ? `SALE ${pkg.salePercent}% từ ${Number(pkg.price).toLocaleString("vi-VN")}đ`
                         : `SALE ${pkg.salePercent}% from ${Number(pkg.price).toLocaleString("en-US")}đ`}
@@ -686,7 +686,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                   {Number(pkg.maxTopupsPerUser || 0) > 0 && (
                     <div className="credits" style={{ color: "var(--text-muted)", fontWeight: 500 }}>
                       {language === "vi"
-                        ? `Tối đa ${pkg.maxTopupsPerUser} lần/tài khoản`
+                        ? `Mỗi tài khoản nạp tối đa ${pkg.maxTopupsPerUser} lần`
                         : `Max ${pkg.maxTopupsPerUser} times/account`}
                     </div>
                   )}

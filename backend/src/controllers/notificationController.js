@@ -1,6 +1,7 @@
 import Notification from "../models/Notification.js";
 import NotificationReceipt from "../models/NotificationReceipt.js";
 import User from "../models/User.js";
+import { hydrateAtlasUserFields } from "../utils/crossDatabaseHydration.js";
 import {
   isSafeId,
   limitedString,
@@ -123,9 +124,8 @@ export async function adminListNotifications(_req, res, next) {
     const notifications = await Notification.find()
       .sort({ createdAt: -1 })
       .limit(100)
-      .populate("createdBy", "email name")
-      .populate("userIds", "email name")
       .lean();
+    await hydrateAtlasUserFields(notifications, ["createdBy", "userIds"]);
     res.json({ notifications });
   } catch (error) {
     next(error);

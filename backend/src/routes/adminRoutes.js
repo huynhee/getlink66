@@ -82,6 +82,11 @@ import { adminOnly } from "../middleware/adminOnly.js";
 import { auditAdmin, listAuditLogs } from "../middleware/auditLog.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
+import {
+  adminListMarketplaceTaxonomy,
+  adminUpdateMarketplaceCategory,
+  adminUpdateMarketplaceFilterOption,
+} from "../controllers/marketplaceTaxonomyAdminController.js";
 
 const router = Router();
 const adminWriteLimit = createRateLimit({ keyPrefix: "admin-write", windowMs: 60_000, max: 30, keyGenerator: (req) => req.user?._id || req.ip });
@@ -142,6 +147,9 @@ router.put("/membership-plans/:id", adminWriteLimit, auditAdmin("UPDATE_MEMBERSH
 router.delete("/membership-plans/:id", adminWriteLimit, auditAdmin("DELETE_MEMBERSHIP_PLAN"), adminDeleteMembershipPlan);
 
 router.get("/marketplace/models", adminListMarketplaceModels);
+router.get("/marketplace/taxonomy", adminListMarketplaceTaxonomy);
+router.patch("/marketplace/categories/:id", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_CATEGORY_LABEL"), adminUpdateMarketplaceCategory);
+router.patch("/marketplace/filter-options/:id", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_FILTER_LABEL"), adminUpdateMarketplaceFilterOption);
 router.get("/marketplace/stats", adminMarketplaceStats);
 router.get("/marketplace/downloads", adminListMarketplaceDownloads);
 router.get("/marketplace/download-sessions", adminListMarketplaceDownloadSessions);

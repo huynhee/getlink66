@@ -119,3 +119,24 @@ test("pending payments expose planned values without reporting completed balance
   assert.equal(pro.amount, 0);
   assert.equal(pro.metadata.amountMoney, 149000);
 });
+
+test("manual credit adjustment exposes the balance change in user history", async () => {
+  const user = await User.create({ email: "timeline-manual-credit@example.test", name: "Manual credit" });
+  await Topup.create({
+    userId: user._id,
+    amount: 0,
+    credit: -6,
+    type: "manual",
+    status: "approved",
+    paidAt: new Date(),
+    manualBalanceBefore: 10,
+    manualBalanceAfter: 4,
+  });
+
+  const event = (await buildUserTimeline({ userId: user._id, type: "credit" })).events[0];
+  assert.equal(event.title, "Admin điều chỉnh credit");
+  assert.equal(event.amount, -6);
+  assert.equal(event.metadata.isManualAdjustment, true);
+  assert.equal(event.metadata.manualBalanceBefore, 10);
+  assert.equal(event.metadata.manualBalanceAfter, 4);
+});

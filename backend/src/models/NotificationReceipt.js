@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
+import { marketplaceModel } from "../config/modelFactory.js";
 
 const notificationReceiptSchema = new mongoose.Schema(
   {
@@ -26,7 +27,7 @@ notificationReceiptSchema.index({ userId: 1, readAt: -1 });
 
 const NotificationReceiptModel = isMemoryDb()
   ? createMemoryModel("NotificationReceipt")
-  : mongoose.model("NotificationReceipt", notificationReceiptSchema);
+  : marketplaceModel("NotificationReceipt", notificationReceiptSchema);
 
 export async function ensureNotificationReceiptIndexes() {
   if (isMemoryDb() || typeof NotificationReceiptModel.init !== "function") return;

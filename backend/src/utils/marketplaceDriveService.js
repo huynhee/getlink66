@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import zlib from "node:zlib";
-import MarketplaceCategory from "../models/MarketplaceCategory.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import {
   createGoogleDriveFile,
@@ -19,6 +18,7 @@ import {
   serializeMarketplaceMetadata,
 } from "./marketplaceMetadata.js";
 import { marketplaceAssetTypeFilter, normalizeAssetType } from "../data/marketplaceCatalogs.js";
+import { resolveMarketplaceCategory, validateMarketplaceTaxonomy } from "./marketplaceTaxonomy.js";
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
@@ -192,8 +192,15 @@ export async function readMarketplaceDriveMetadata(file, fallback = {}) {
   }
   const parsed = JSON.parse(body.toString("utf8"));
   const { metadata, errors } = normalizeMarketplaceMetadata(legacyMetadata(parsed, fallback));
+  const taxonomy = await validateMarketplaceTaxonomy(metadata);
   const document = stableMetadataDocument(parsed, metadata);
-  return { document, rawDocument: parsed, metadata, hash: marketplaceMetadataHash(document), errors };
+  return {
+    document,
+    rawDocument: parsed,
+    metadata,
+    hash: marketplaceMetadataHash(document),
+    errors: [...errors, ...taxonomy.errors],
+  };
 }
 
 async function readChecksum(file) {
@@ -204,23 +211,21 @@ async function readChecksum(file) {
 
 async function categoryFields(sourceCategoryId, assetType = "model") {
   const value = clean(sourceCategoryId, 80);
-  if (!value) return { categoryId: null, parentCategoryId: null, categorySourceId: "" };
-  const category = await MarketplaceCategory.findOne({
-    assetType: marketplaceAssetTypeFilter(assetType),
-    $or: [{ sourceCategoryId: value }, { slug: value.toLowerCase() }],
-  });
-  if (!category) return { categoryId: null, parentCategoryId: null, categorySourceId: value };
-  const hasChildren = await MarketplaceCategory.exists({ parentId: category._id });
-  if (hasChildren) return { categoryId: null, parentCategoryId: category._id, categorySourceId: value };
-  return { categoryId: category._id, parentCategoryId: category.parentId || null, categorySourceId: category.sourceCategoryId };
+  if (!value) return { categorySourceId: "", parentCategorySourceId: "" };
+  const resolved = await resolveMarketplaceCategory(value, assetType, { requireLeaf: true });
+  if (!resolved) return { categorySourceId: "", parentCategorySourceId: "" };
+  return {
+    categorySourceId: String(resolved.category.sourceCategoryId || ""),
+    parentCategorySourceId: String(resolved.parent?.sourceCategoryId || ""),
+  };
 }
 
-function publicationBlockers({ metadataFile, metadataErrors, categoryId, archive, cover }) {
+function publicationBlockers({ metadataFile, metadataErrors, categorySourceId, archive, cover }) {
   const blockers = [];
   if (!metadataFile) blockers.push("metadata_file");
   if (!archive) blockers.push("archive");
   if (!cover) blockers.push("cover");
-  if (!categoryId) blockers.push("category");
+  if (!categorySourceId) blockers.push("category");
   for (const error of metadataErrors || []) {
     const key = error.field === "sourceCategoryId" ? "category" : error.field;
     if (!blockers.includes(key)) blockers.push(key);
@@ -338,7 +343,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
   const blockers = publicationBlockers({
     metadataFile,
     metadataErrors: metadataResult.errors,
-    categoryId: categories.categoryId,
+    categorySourceId: categories.categorySourceId,
     archive,
     cover,
   });
@@ -473,8 +478,16 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
     error.details = errors;
     throw error;
   }
+  const taxonomy = await validateMarketplaceTaxonomy(document);
+  if (taxonomy.errors.length) {
+    const error = new Error("Marketplace taxonomy is invalid.");
+    error.status = 400;
+    error.code = "METADATA_INVALID";
+    error.details = taxonomy.errors;
+    throw error;
+  }
   const category = await categoryFields(document.sourceCategoryId, model.assetType);
-  if (!category.categoryId) {
+  if (!category.categorySourceId) {
     const error = new Error("Marketplace category must be an existing leaf category.");
     error.status = 400;
     error.code = "METADATA_INVALID";

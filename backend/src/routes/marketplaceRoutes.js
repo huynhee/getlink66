@@ -12,6 +12,7 @@ import {
   streamMarketplacePreview,
 } from "../controllers/marketplaceController.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
+import { requireAuth } from "../middleware/requireAuth.js";
 
 const router = Router();
 const downloadSessionLimit = createRateLimit({
@@ -42,14 +43,14 @@ router.get("/marketplace/scenes/:id/cover", sceneCatalog, streamMarketplaceCover
 router.get("/marketplace/scenes/:id/preview/:index", sceneCatalog, streamMarketplacePreview);
 router.get("/marketplace/scenes/:slug/recommendations", sceneCatalog, listMarketplaceModelRecommendations);
 router.get("/marketplace/scenes/:slug", sceneCatalog, getMarketplaceModel);
-router.post("/marketplace/scenes/:id/download-session", sceneCatalog, downloadSessionLimit, createDownloadSession);
-router.post("/plugin/scenes/:id/download-session", sceneCatalog, downloadSessionLimit, createDownloadSession);
+router.post("/marketplace/scenes/:id/download-session", requireAuth, sceneCatalog, downloadSessionLimit, createDownloadSession);
+router.post("/plugin/scenes/:id/download-session", requireAuth, sceneCatalog, downloadSessionLimit, createDownloadSession);
 router.get("/marketplace/models/:id/cover", streamMarketplaceCover);
 router.get("/marketplace/models/:id/preview/:index", streamMarketplacePreview);
 router.get("/marketplace/models/:slug/recommendations", listMarketplaceModelRecommendations);
 router.get("/marketplace/models/:slug", getMarketplaceModel);
-router.post("/marketplace/models/:id/download-session", downloadSessionLimit, createDownloadSession);
-router.post("/plugin/models/:id/download-session", downloadSessionLimit, createDownloadSession);
+router.post("/marketplace/models/:id/download-session", requireAuth, downloadSessionLimit, createDownloadSession);
+router.post("/plugin/models/:id/download-session", requireAuth, downloadSessionLimit, createDownloadSession);
 router.get("/download/session/:id/file", downloadSessionFile);
 
 export default router;

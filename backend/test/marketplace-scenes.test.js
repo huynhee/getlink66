@@ -14,6 +14,7 @@ const { marketplaceMetadataDocument } = await import("../src/utils/marketplaceMe
 const { listMarketplaceModels } = await import("../src/controllers/marketplaceController.js");
 const { buildUserTimeline } = await import("../src/utils/timelineService.js");
 const { initializeMarketplaceCategories } = await import("../src/utils/marketplaceSeed.js");
+const { clearMarketplaceTaxonomyCache } = await import("../src/utils/marketplaceTaxonomy.js");
 
 function requestFor(user, suffix = "default") {
   return {
@@ -89,33 +90,28 @@ test("scene metadata v3 accepts only the scene vocabulary and requires checksum"
   assert.ok(invalid.errors.some((error) => error.field === "sha256"));
 });
 
-test("guest quota is five and one free scene consumes all five downloads", async () => {
+test("an unauthenticated visitor cannot create a Scene download session", async () => {
   const scene = await createAsset("scene");
-  const req = requestFor(null, "guest-five");
-  const result = await createMarketplaceDownloadSession({ req, modelId: scene._id, expectedAssetType: "scene" });
-  assert.equal(result.quotaCost, 5);
-  assert.equal(result.remaining, 0);
+  await assert.rejects(
+    createMarketplaceDownloadSession({ req: requestFor(null, "anonymous"), modelId: scene._id, expectedAssetType: "scene" }),
+    (error) => error?.status === 401 && error?.code === "AUTH_REQUIRED",
+  );
+  const quota = await DailyDownloadQuota.findOne({ dayKey: vietnamDayKey(), tier: "guest" });
+  assert.equal(quota, null);
+});
 
+test("a Free account can download one Scene and the second Scene is rejected", async () => {
+  const user = await User.create({ email: "one-scene@example.test", name: "One scene" });
+  const scene = await createAsset("scene");
+  const req = requestFor(user, "free-one-scene");
+  const result = await createMarketplaceDownloadSession({ req, modelId: scene._id, expectedAssetType: "scene" });
+  assert.equal(result.remaining, 0);
   await assert.rejects(
     createMarketplaceDownloadSession({ req, modelId: scene._id, expectedAssetType: "scene" }),
     (error) => error?.status === 429 && error?.details?.required === 5 && error?.details?.remaining === 0,
   );
-  const quota = await DailyDownloadQuota.findOne({ dayKey: vietnamDayKey(), tier: "guest" });
-  assert.equal(quota.count, 5);
-});
-
-test("a free account can download two scenes and the third scene is rejected", async () => {
-  const user = await User.create({ email: "two-scenes@example.test", name: "Two scenes" });
-  const scene = await createAsset("scene");
-  const req = requestFor(user, "free-two-scenes");
-  await createMarketplaceDownloadSession({ req, modelId: scene._id, expectedAssetType: "scene" });
-  await createMarketplaceDownloadSession({ req, modelId: scene._id, expectedAssetType: "scene" });
-  await assert.rejects(
-    createMarketplaceDownloadSession({ req, modelId: scene._id, expectedAssetType: "scene" }),
-    (error) => error?.status === 429 && error?.details?.required === 5,
-  );
   const quota = await DailyDownloadQuota.findOne({ dayKey: vietnamDayKey(), userId: user._id, tier: "free" });
-  assert.equal(quota.count, 10);
+  assert.equal(quota.count, 5);
 });
 
 test("concurrent Scene requests cannot exceed the account quota", async () => {
@@ -125,10 +121,10 @@ test("concurrent Scene requests cannot exceed the account quota", async () => {
   const results = await Promise.allSettled(Array.from({ length: 3 }, () => (
     createMarketplaceDownloadSession({ req, modelId: scene._id, expectedAssetType: "scene" })
   )));
-  assert.equal(results.filter((result) => result.status === "fulfilled").length, 2);
-  assert.equal(results.filter((result) => result.status === "rejected" && result.reason?.status === 429).length, 1);
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter((result) => result.status === "rejected" && result.reason?.status === 429).length, 2);
   const quota = await DailyDownloadQuota.findOne({ dayKey: vietnamDayKey(), userId: user._id, tier: "free" });
-  assert.equal(quota.count, 10);
+  assert.equal(quota.count, 5);
 });
 
 test("a Pro account with 100 downloads can create twenty Scene sessions", async () => {
@@ -177,7 +173,12 @@ test("daily Pro add-on quota is shared with Scene downloads", async () => {
 });
 
 test("model and scene downloads share one quota record", async () => {
-  const user = await User.create({ email: "mixed-assets@example.test", name: "Mixed assets" });
+  const user = await User.create({
+    email: "mixed-assets@example.test",
+    name: "Mixed assets",
+    proUntil: new Date(Date.now() + 86_400_000),
+    proDailyDownloadLimit: 100,
+  });
   const model = await createAsset("model");
   const scene = await createAsset("scene");
   const req = requestFor(user, "mixed-assets");
@@ -185,7 +186,7 @@ test("model and scene downloads share one quota record", async () => {
     await createMarketplaceDownloadSession({ req, modelId: model._id, expectedAssetType: "model" });
   }
   await createMarketplaceDownloadSession({ req, modelId: scene._id, expectedAssetType: "scene" });
-  const quota = await DailyDownloadQuota.findOne({ dayKey: vietnamDayKey(), userId: user._id, tier: "free" });
+  const quota = await DailyDownloadQuota.findOne({ dayKey: vietnamDayKey(), userId: user._id, tier: "member" });
   assert.equal(quota.count, 8);
 });
 
@@ -194,15 +195,13 @@ test("a Scene is rejected without changing quota when only four downloads remain
   const model = await createAsset("model");
   const scene = await createAsset("scene");
   const req = requestFor(user, "four-remaining");
-  for (let index = 0; index < 6; index += 1) {
-    await createMarketplaceDownloadSession({ req, modelId: model._id, expectedAssetType: "model" });
-  }
+  await createMarketplaceDownloadSession({ req, modelId: model._id, expectedAssetType: "model" });
   await assert.rejects(
     createMarketplaceDownloadSession({ req, modelId: scene._id, expectedAssetType: "scene" }),
     (error) => error?.status === 429 && error?.details?.required === 5 && error?.details?.remaining === 4,
   );
   const quota = await DailyDownloadQuota.findOne({ dayKey: vietnamDayKey(), userId: user._id, tier: "free" });
-  assert.equal(quota.count, 6);
+  assert.equal(quota.count, 1);
 });
 
 test("a failed scene session restores all five charged downloads", async () => {
@@ -294,6 +293,17 @@ test("Scene parent category includes all children while a child category stays e
   assert.ok(parentPayload.scenes.some((scene) => String(scene._id) === String(bedroomScene._id)));
   assert.ok(childPayload.scenes.some((scene) => String(scene._id) === String(livingScene._id)));
   assert.equal(childPayload.scenes.some((scene) => String(scene._id) === String(bedroomScene._id)), false);
+
+  await MarketplaceCategory.findByIdAndUpdate(bedroom._id, { $set: { isActive: false } });
+  clearMarketplaceTaxonomyCache();
+  let activeParentPayload;
+  await listMarketplaceModels(
+    { query: { category: "house-space" }, marketplaceAssetType: "scene" },
+    { json(value) { activeParentPayload = value; return value; } },
+    (error) => { throw error; },
+  );
+  assert.ok(activeParentPayload.scenes.some((scene) => String(scene._id) === String(livingScene._id)));
+  assert.equal(activeParentPayload.scenes.some((scene) => String(scene._id) === String(bedroomScene._id)), false);
 });
 
 test("user history reports Scene and the exact five-download cost", async () => {

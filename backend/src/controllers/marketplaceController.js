@@ -1,12 +1,11 @@
 import crypto from "node:crypto";
-import MarketplaceCategory from "../models/MarketplaceCategory.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
-import DownloadSession from "../models/DownloadSession.js";
 import DailyImageSearchQuota from "../models/DailyImageSearchQuota.js";
-import { marketplaceAssetTypeFilter, marketplaceDownloadCost, marketplaceFiltersFor, normalizeAssetType } from "../data/marketplaceCatalogs.js";
+import { marketplaceAssetTypeFilter, marketplaceDownloadCost, normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { isSafeId } from "../utils/validators.js";
 import {
   createMarketplaceDownloadSession,
+  markMarketplaceDownloadRedeemed,
   nextVietnamReset,
   vietnamDayKey,
   verifyDownloadSession,
@@ -27,6 +26,11 @@ import {
   semanticTextSearch,
   sortByDiscoveryMatches,
 } from "../utils/marketplaceDiscovery.js";
+import {
+  hydrateMarketplaceCategoryRefs,
+  marketplaceCategorySnapshot,
+  marketplaceFilterSnapshot,
+} from "../utils/marketplaceTaxonomy.js";
 
 const PAGE_SIZE = 60;
 const IMAGE_SEARCH_FREE_LIMIT = 10;
@@ -99,10 +103,6 @@ function publicCategoryRef(category) {
   };
 }
 
-function refId(value) {
-  return value?._id || value;
-}
-
 function imageContentType(fileName = "", fallback = "") {
   const value = String(fallback || "").toLowerCase();
   if (value.startsWith("image/")) return value;
@@ -145,11 +145,13 @@ function publicModel(model, options = {}) {
     assetType: normalizeAssetType(model.assetType),
     title: model.title || "",
     slug: model.slug || "",
-    categoryId: refId(model.categoryId),
-    parentCategoryId: refId(model.parentCategoryId),
-    category: publicCategoryRef(model.categoryId),
-    parentCategory: publicCategoryRef(model.parentCategoryId),
+    // Stable taxonomy keys are safe across Atlas and the marketplace VPS.
+    categoryId: model.categorySourceId || "",
+    parentCategoryId: model.parentCategorySourceId || "",
+    category: publicCategoryRef(model.category),
+    parentCategory: publicCategoryRef(model.parentCategory),
     categorySourceId: model.categorySourceId || "",
+    parentCategorySourceId: model.parentCategorySourceId || "",
     coverImage: publicCoverImage(model),
     previewImages: includePreviews ? publicPreviewImages(model) : [],
     styles: model.styles || [],
@@ -172,10 +174,10 @@ function publicModel(model, options = {}) {
 
 function recommendationSignals(model) {
   const signals = [];
-  const categoryId = refId(model.categoryId);
-  const parentCategoryId = refId(model.parentCategoryId);
-  if (categoryId) signals.push({ categoryId });
-  if (parentCategoryId) signals.push({ parentCategoryId });
+  if (model.categorySourceId) signals.push({ categorySourceId: model.categorySourceId });
+  if (model.parentCategorySourceId) {
+    signals.push({ parentCategorySourceId: model.parentCategorySourceId });
+  }
   if (model.renderer) signals.push({ renderer: model.renderer });
   if (model.styles?.length) signals.push({ styles: { $in: model.styles } });
   if (model.renderers?.length) signals.push({ renderers: { $in: model.renderers } });
@@ -203,8 +205,6 @@ async function recommendedModelsFor(model, options = {}) {
   const candidates = await MarketplaceModel.find(query)
     .sort({ downloadCount: -1, createdAt: -1 })
     .limit(720)
-    .populate("categoryId", "title titleEn slug sourceCategoryId")
-    .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
     .lean();
 
   const semanticQuery = discoveryIdentityQuery(semantic.matches);
@@ -218,8 +218,6 @@ async function recommendedModelsFor(model, options = {}) {
       ...semanticQuery,
     })
       .limit(180)
-      .populate("categoryId", "title titleEn slug sourceCategoryId")
-      .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
       .lean();
     const seen = new Set(candidates.map((candidate) => String(candidate._id)));
     semanticCandidates.forEach((candidate) => {
@@ -227,6 +225,7 @@ async function recommendedModelsFor(model, options = {}) {
     });
   }
 
+  await hydrateMarketplaceCategoryRefs(candidates);
   const ranked = rankMarketplaceRecommendations(model, candidates, {
     semanticMatches: semantic.matches,
     limit: Math.max(desiredCount, 60),
@@ -241,33 +240,66 @@ async function recommendedModelsFor(model, options = {}) {
 export async function listMarketplaceCategories(req, res, next) {
   try {
     const assetType = requestAssetType(req);
-    const categories = await MarketplaceCategory.find({ assetType: marketplaceAssetTypeFilter(assetType), isActive: true })
-      .sort({ position: 1 })
-      .lean();
+    const categories = await marketplaceCategorySnapshot(assetType);
     res.json({ categories: buildCategoryTree(categories), flat: categories.sort(categorySort) });
   } catch (error) {
     next(error);
   }
 }
 
-export function listMarketplaceFilters(req, res) {
-  const assetType = requestAssetType(req);
-  res.json({ assetType, filters: marketplaceFiltersFor(assetType) });
+export async function listMarketplaceFilters(req, res, next) {
+  try {
+    const assetType = requestAssetType(req);
+    const filters = await marketplaceFilterSnapshot(assetType);
+    res.json({ assetType, filters });
+  } catch (error) {
+    next(error);
+  }
 }
 
 async function categoryFilter(categoryValue, assetType = "model") {
   const value = String(categoryValue || "").trim();
   if (!value) return {};
-  const category = await MarketplaceCategory.findOne({
-    assetType: marketplaceAssetTypeFilter(assetType),
-    $or: [
-      { slug: value.toLowerCase() },
-      { sourceCategoryId: value },
-      ...(isSafeId(value) ? [{ _id: value }] : []),
-    ],
-  });
+  const categories = await marketplaceCategorySnapshot(assetType);
+  const category = categories.find((item) => (
+    String(item.slug || "").toLowerCase() === value.toLowerCase()
+    || String(item.sourceCategoryId || "") === value
+    || (isSafeId(value) && String(item._id) === value)
+  ));
   if (!category) return { _id: { $exists: false } };
-  return { $or: [{ categoryId: category._id }, { parentCategoryId: category._id }] };
+  const sourceCategoryId = String(category.sourceCategoryId || "");
+  const byId = new Map(categories.map((item) => [String(item._id), item]));
+  const descendants = [];
+  const pending = [sourceCategoryId];
+  const visited = new Set([sourceCategoryId]);
+  while (pending.length) {
+    const parentSourceId = pending.shift();
+    const children = categories.filter((item) => {
+      const resolvedParentSourceId = String(
+        item.parentSourceCategoryId || byId.get(String(item.parentId || ""))?.sourceCategoryId || "",
+      );
+      return resolvedParentSourceId === parentSourceId;
+    });
+    children.forEach((child) => {
+      const childSourceId = String(child.sourceCategoryId || "");
+      if (!childSourceId || visited.has(childSourceId)) return;
+      visited.add(childSourceId);
+      descendants.push(child);
+      pending.push(childSourceId);
+    });
+  }
+  const descendantSourceIds = descendants.map((item) => String(item.sourceCategoryId || "")).filter(Boolean);
+  const descendantObjectIds = descendants.map((item) => item._id).filter(Boolean);
+  return descendants.length
+    ? {
+        $or: [
+          { categorySourceId: { $in: descendantSourceIds } },
+          // Read-only compatibility until the split-database migration has
+          // backfilled and removed legacy category ObjectIds.
+          { categoryId: { $in: descendantObjectIds } },
+        ],
+      }
+    : { $or: [{ categorySourceId: sourceCategoryId }, { categoryId: category._id }] };
 }
 
 function accessTypeFilter(accessType) {
@@ -364,12 +396,11 @@ export async function listMarketplaceModels(req, res, next) {
       .sort({ createdAt: -1 })
       .skip(semanticQuery ? 0 : (safePage - 1) * limit)
       .limit(semanticQuery ? Math.min(1_000, total) : limit)
-      .populate("categoryId", "title titleEn slug sourceCategoryId")
-      .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
       .lean();
     if (semanticQuery) {
       models = sortByDiscoveryMatches(models, semanticSearch.matches).slice((safePage - 1) * limit, safePage * limit);
     }
+    await hydrateMarketplaceCategoryRefs(models);
     const assets = models.map((model) => publicModel(model, { includePreviews: false }));
     res.json({
       assetType,
@@ -512,10 +543,9 @@ export async function searchMarketplaceByImage(req, res, next) {
     const models = matchedIds.length
       ? await MarketplaceModel.find(query)
           .limit(limit)
-          .populate("categoryId", "title titleEn slug sourceCategoryId")
-          .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
           .lean()
       : [];
+    await hydrateMarketplaceCategoryRefs(models);
     const ranks = new Map(searchResult.matches.map((match, index) => [match.modelId, { index, score: match.score }]));
     function modelRank(model) {
       const candidates = [String(model?.source?.assetId || ""), String(model?.source?.modelId || ""), String(model?.slug || ""), String(model?._id || "")];
@@ -558,11 +588,9 @@ export async function getMarketplaceModel(req, res, next) {
     const assetFilter = marketplaceAssetTypeFilter(assetType);
     const lookup = [{ assetType: assetFilter, slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready" }];
     if (isSafeId(slugOrId)) lookup.push({ assetType: assetFilter, _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready" });
-    const model = await MarketplaceModel.findOne({ $or: lookup })
-      .populate("categoryId", "title titleEn slug sourceCategoryId")
-      .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
-      .lean();
+    const model = await MarketplaceModel.findOne({ $or: lookup }).lean();
     if (!model) return res.status(404).json({ message: `${assetLabel(assetType)} not found` });
+    await hydrateMarketplaceCategoryRefs(model);
     const recommendations = await recommendedModelsFor(model, { limit: 6 });
     res.json({
       asset: publicModel(model),
@@ -708,7 +736,6 @@ export async function downloadSessionFile(req, res, next) {
       return res.status(400).json({ message: "Invalid session id" });
     }
     const session = await verifyDownloadSession(req.params.id, req.query.t);
-    await DownloadSession.findByIdAndUpdate(session._id, { status: "used" });
     res.setHeader("cache-control", "no-store");
     res.setHeader("referrer-policy", "no-referrer");
 
@@ -718,9 +745,13 @@ export async function downloadSessionFile(req, res, next) {
       }
       throw error;
     });
-    if (redirectUrl) return res.redirect(302, redirectUrl);
+    if (redirectUrl) {
+      await markMarketplaceDownloadRedeemed(session);
+      return res.redirect(302, redirectUrl);
+    }
 
     const file = await openStorageStream(session);
+    await markMarketplaceDownloadRedeemed(session);
     res.setHeader("content-type", "application/octet-stream");
     res.setHeader(
       "content-disposition",

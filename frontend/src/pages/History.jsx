@@ -135,6 +135,15 @@ function metadataLines(event, language) {
       : (language === "vi" ? "Giá trị đơn" : "Order value");
   const locale = language === "vi" ? "vi-VN" : "en-US";
   if (event.type === "credit") {
+    if (m.isManualAdjustment) {
+      const delta = Number(m.creditAmount || 0);
+      return [
+        m.manualBalanceBefore != null && m.manualBalanceAfter != null
+          ? `${language === "vi" ? "Số dư" : "Balance"}: ${Number(m.manualBalanceBefore).toLocaleString(locale)} → ${Number(m.manualBalanceAfter).toLocaleString(locale)}`
+          : "",
+        `${language === "vi" ? "Thay đổi" : "Change"}: ${delta > 0 ? "+" : ""}${delta.toLocaleString(locale)}`,
+      ].filter(Boolean);
+    }
     return [
       m.amountMoney ? `${paymentLabel}: ${formatMoney(m.amountMoney)}` : "",
       m.creditAmount ? `${language === "vi" ? "Credit theo đơn" : "Order credit"}: +${Number(m.creditAmount).toLocaleString(locale)}` : "",

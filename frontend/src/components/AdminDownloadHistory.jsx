@@ -167,7 +167,6 @@ export default function AdminDownloadHistory({
             </select>
             <select value={accessTier} onChange={(event) => { setAccessTier(event.target.value); setDownloadPage(1); }}>
               <option value="all">{l("Mọi loại tài khoản", "All account tiers")}</option>
-              <option value="guest">Guest</option>
               <option value="free">Free</option>
               <option value="member">Pro</option>
               <option value="admin">Admin</option>
@@ -190,7 +189,7 @@ export default function AdminDownloadHistory({
                   <div className="marketAdminLogItem" key={item._id}>
                     <div>
                       <strong>{item.modelId?.title || (item.assetType === "scene" ? "Scene" : "Model")}</strong>
-                      <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || "guest"} · {item.clientType} · {item.accessTier}</span>
+                      <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || l("Dữ liệu cũ", "Legacy record")} · {item.clientType} · {item.accessTier === "member" ? "Pro" : item.accessTier === "admin" ? "Admin" : "Free"}</span>
                     </div>
                     <span className={`badge ${item.quotaCharged ? "success" : ""}`}>
                       {item.quotaCharged
@@ -218,7 +217,7 @@ export default function AdminDownloadHistory({
                   <div className="marketAdminLogItem" key={item._id}>
                     <div>
                       <strong>{item.modelId?.title || l("Phiên tải", "Download session")}</strong>
-                      <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || "guest"} · {item.clientType} · {item.accessTier}</span>
+                      <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || l("Dữ liệu cũ", "Legacy record")} · {item.clientType} · {item.accessTier === "member" ? "Pro" : item.accessTier === "admin" ? "Admin" : "Free"}</span>
                     </div>
                     <span className={`badge ${statusClass(item.status)}`}>{item.assetType === "scene" ? "Scene" : "Model"} · {item.status}</span>
                     <time>{new Date(item.createdAt).toLocaleString(locale)}</time>

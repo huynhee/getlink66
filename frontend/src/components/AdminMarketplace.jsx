@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import Pagination from "./Pagination.jsx";
+import AdminMarketplaceTaxonomy from "./AdminMarketplaceTaxonomy.jsx";
 import { text } from "../i18n.js";
 
 const emptyDriveImportForm = {
@@ -169,8 +170,8 @@ function valuesToCsv(values = []) {
 }
 
 function optionLabel(option, language = "vi") {
-  if (language === "en") return option.label || option.value;
-  return facetLabelsVi[option.value] || option.label || option.value;
+  if (language === "en") return option.labelEn || option.label || option.value;
+  return option.labelVi || facetLabelsVi[option.value] || option.label || option.value;
 }
 
 function categoryValue(category = {}) {
@@ -867,6 +868,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
           ["import", l("Import / đồng bộ", "Import / sync"), UploadCloud],
           ["search", isScene ? l("Tìm kiếm scene", "Search scenes") : l("Tìm kiếm model", "Search models"), Search],
           ["edit", isScene ? l("Chỉnh sửa scene", "Edit scene") : l("Chỉnh sửa model", "Edit model"), Pencil],
+          ["taxonomy", l("Danh mục & bộ lọc", "Categories & filters"), ListChecks],
         ].map(([key, label, Icon]) => (
           <button
             type="button"
@@ -1241,6 +1243,14 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
             </>
           )}
         </div>
+      )}
+
+      {activeTab === "taxonomy" && (
+        <AdminMarketplaceTaxonomy
+          assetType={assetType}
+          language={language}
+          onChanged={() => loadTaxonomy().catch((err) => setError(err.message))}
+        />
       )}
 
       {metadataConflict && (

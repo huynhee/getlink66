@@ -1,6 +1,5 @@
 import "dotenv/config";
-import mongoose from "mongoose";
-import { connectDb } from "../src/config/db.js";
+import { closeDbConnections, connectDb } from "../src/config/db.js";
 
 await connectDb();
 const { initializeMarketplaceCategories } = await import("../src/utils/marketplaceSeed.js");
@@ -12,5 +11,5 @@ try {
   const scenes = await seedMarketplaceDemoScenes();
   console.log(`Marketplace demo seed complete: ${models.created} models, ${scenes.created} scenes.`);
 } finally {
-  await mongoose.disconnect().catch(() => {});
+  await closeDbConnections().catch(() => {});
 }

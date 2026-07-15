@@ -387,6 +387,48 @@ export async function createGoogleDriveFile({ folderId, fileName, content, conte
   return googleDriveJson(response, "file create");
 }
 
+export async function createGoogleDriveFolder({ parentFolderId, name } = {}) {
+  assertGoogleDriveWriteEnabled();
+  const parentId = String(parentFolderId || "").trim();
+  const folderName = String(name || "").trim();
+  if (!parentId || !folderName) {
+    const error = new Error("Google Drive parent folder and name are required.");
+    error.status = 400;
+    throw error;
+  }
+  const url = new URL("https://www.googleapis.com/drive/v3/files");
+  url.searchParams.set("supportsAllDrives", "true");
+  url.searchParams.set("fields", "id,name,mimeType,parents,driveId");
+  const response = await fetchGoogleDrive(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: folderName,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [parentId],
+    }),
+  });
+  return googleDriveJson(response, "folder create");
+}
+
+export async function ensureGoogleDriveFolderPath(rootFolderId, segments = []) {
+  let parentId = String(rootFolderId || "").trim();
+  if (!parentId) throw new Error("HISTORY_ARCHIVE_DRIVE_FOLDER_ID is required.");
+  for (const rawSegment of segments) {
+    const name = String(rawSegment || "").trim();
+    if (!name) continue;
+    const files = await listGoogleDriveFolderFiles(parentId, {
+      fields: "id,name,mimeType,parents,trashed",
+      pageSize: 1000,
+    });
+    const existing = files.find((file) =>
+      file.mimeType === "application/vnd.google-apps.folder" && file.name === name && !file.trashed,
+    );
+    parentId = existing?.id || (await createGoogleDriveFolder({ parentFolderId: parentId, name })).id;
+  }
+  return parentId;
+}
+
 export async function getGoogleDriveStartPageToken(options = {}) {
   const url = new URL("https://www.googleapis.com/drive/v3/changes/startPageToken");
   url.searchParams.set("supportsAllDrives", "true");

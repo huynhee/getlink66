@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
+import { marketplaceModel } from "../config/modelFactory.js";
 
 const notificationSchema = new mongoose.Schema(
   {
@@ -34,4 +35,4 @@ notificationSchema.index({ createdAt: -1 });
 
 export default isMemoryDb()
   ? createMemoryModel("Notification")
-  : mongoose.model("Notification", notificationSchema);
+  : marketplaceModel("Notification", notificationSchema);

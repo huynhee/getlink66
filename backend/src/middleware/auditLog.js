@@ -1,5 +1,6 @@
 import AuditLog from "../models/AuditLog.js";
 import { auditEvent } from "../utils/logger.js";
+import { hydrateAtlasUserField } from "../utils/crossDatabaseHydration.js";
 
 const SENSITIVE_KEYS = new Set([
   "password",
@@ -58,7 +59,10 @@ export function auditAdmin(action) {
           action,
           target: req.params?.id || req.body?.userId || "",
           targetId: req.params?.id || "",
-          details: sanitizeBody(req.body),
+          details: sanitizeBody({
+            ...req.body,
+            ...(req.auditDetails && typeof req.auditDetails === "object" ? req.auditDetails : {}),
+          }),
           ip: req.ip || "",
           userAgent: String(req.get("user-agent") || "").slice(0, 256),
           statusCode
@@ -113,7 +117,8 @@ export async function listAuditLogs(req, res, next) {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .populate("actor", "email name");
+      .lean();
+    await hydrateAtlasUserField(logs, "actor", "email name");
 
     res.json({ logs, pagination: { page, pageSize: limit, total, totalPages } });
   } catch (error) {

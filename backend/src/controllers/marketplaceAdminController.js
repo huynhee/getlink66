@@ -16,6 +16,7 @@ import {
 import { metadataFromMarketplaceModel } from "../utils/marketplaceMetadata.js";
 import { isSafeId, limitedString, rejectUnknownKeys, sanitizeString } from "../utils/validators.js";
 import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
+import { hydrateAtlasUserField } from "../utils/crossDatabaseHydration.js";
 
 const ADMIN_MODEL_PAGE_SIZE = 20;
 
@@ -119,7 +120,7 @@ function normalizeMarketplaceAccessType(value) {
 }
 
 const REQUIRED_MARKETPLACE_METADATA = [
-  { key: "category", label: "Category", isPresent: (model) => Boolean(model.categoryId) },
+  { key: "category", label: "Category", isPresent: (model) => Boolean(model.categorySourceId) },
   { key: "style", label: "Style", isPresent: (model) => Array.isArray(model.styles) && model.styles.length > 0 },
   {
     key: "render",
@@ -561,7 +562,7 @@ export async function adminCleanupMarketplaceRaw(_req, res, next) {
       },
     );
     const metadataDocs = await MarketplaceModel.find(modelOnlyQuery)
-      .select("_id categoryId styles renderers renderer forms colors materials fileStatus isPublished metadataStatus metadataMissingFields")
+      .select("_id categorySourceId styles renderers renderer forms colors materials fileStatus isPublished metadataStatus metadataMissingFields")
       .lean();
     let normalizedMetadata = 0;
     let unpublishedIncomplete = 0;
@@ -1004,8 +1005,8 @@ export async function adminListMarketplaceDownloads(req, res, next) {
       .skip((safePage - 1) * pageSize)
       .limit(pageSize)
       .populate("modelId", "assetType title slug accessType fileStatus source")
-      .populate("userId", "name email avatar credit role")
       .lean();
+    await hydrateAtlasUserField(downloads);
     res.json({
       downloads,
       pagination: { page: safePage, pageSize, total, totalPages },
@@ -1035,8 +1036,8 @@ export async function adminListMarketplaceDownloadSessions(req, res, next) {
       .limit(pageSize)
       .select("-tokenHash")
       .populate("modelId", "assetType title slug accessType fileStatus source")
-      .populate("userId", "name email avatar credit role")
       .lean();
+    await hydrateAtlasUserField(sessions);
     res.json({
       sessions,
       pagination: { page: safePage, pageSize, total, totalPages },

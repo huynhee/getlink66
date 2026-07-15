@@ -70,6 +70,13 @@ function isDevLoginEnabled(req) {
   );
 }
 
+export function resolveDevLoginPro(query = {}) {
+  if (Object.prototype.hasOwnProperty.call(query, "pro")) {
+    return String(query.pro).toLowerCase() === "true";
+  }
+  return process.env.DEV_LOGIN_PRO === "true";
+}
+
 function vietnamDayKey(date = new Date()) {
   return new Date(date.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
@@ -87,7 +94,7 @@ async function downloadQuotaSnapshot(user) {
   const quota = tier === "admin"
     ? null
     : await DailyDownloadQuota.findOne({ dayKey, userId: user._id, tier }).lean();
-  const baseLimit = isPro ? Number(user.proDailyDownloadLimit || 100) : 10;
+  const baseLimit = isPro ? Number(user.proDailyDownloadLimit || 100) : 5;
   const limit = tier === "admin" ? null : baseLimit + Number(quota?.bonusLimit || 0);
   const used = tier === "admin" ? 0 : Number(quota?.count || 0);
   return {
@@ -203,7 +210,7 @@ export async function devLogin(req, res, next) {
     const email = SAFE_DEV_EMAIL.test(emailCandidate) ? emailCandidate : "dev@local.test";
     const roleCandidate = String(req.query.role || process.env.DEV_LOGIN_ROLE || "user").toLowerCase();
     const role = roleCandidate === "admin" && process.env.ALLOW_DEV_ADMIN_LOGIN === "true" ? "admin" : "user";
-    const proEnabled = req.query.pro === "true" || process.env.DEV_LOGIN_PRO === "true";
+    const proEnabled = resolveDevLoginPro(req.query);
 
     const update = {
       $set: {
@@ -220,6 +227,12 @@ export async function devLogin(req, res, next) {
     if (proEnabled) {
       update.$set.proUntil = endOfVietnamDay(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
       update.$set.proDailyDownloadLimit = 100;
+    } else if (Object.prototype.hasOwnProperty.call(req.query, "pro")) {
+      update.$unset = {
+        proUntil: 1,
+        proPlanId: 1,
+        proActivatedAt: 1,
+      };
     }
 
     const user = await User.findOneAndUpdate({ email }, update, {
