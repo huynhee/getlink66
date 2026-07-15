@@ -1,6 +1,6 @@
-# Marketplace model data contract V2
+# Marketplace Model & Scene data contract V3
 
-Tai lieu nay la source of truth cho marketplace model. Moi thay doi cua upload tool,
+Tai lieu nay la source of truth cho marketplace Model va Scene. Moi thay doi cua upload tool,
 backend, admin, web va plugin 3ds Max phai tuan theo contract nay.
 
 ```text
@@ -59,6 +59,10 @@ Metadata Drive owns:
 - Chi goi public catalog va download-session API.
 - Preview qua backend proxy.
 - Plugin verify checksum, giai nen va merge `.max` sau khi tai.
+- Web xac minh Turnstile truoc khi tao download session. Backend goi Siteverify;
+  token het han sau 5 phut, chi dung mot lan va khong ap dung cho route plugin.
+- O che do `drive_redirect`, JSON model/session van chi tra URL noi bo. Endpoint file
+  tra HTTP 302 den Drive `webContentLink`; archive chua public se fallback ve proxy.
 
 ## 3. Folder va file naming
 
@@ -192,6 +196,78 @@ Value la English system key. UI co the dich label sang tieng Viet.
 
 Mongo khong luu binary, raw JSON, public Drive URL, external source URL,
 description, tags, format/version/polygon hoac model credit price.
+
+## 6.1 Catalog chung va phan biet tai nguyen
+
+- Collection van la `MarketplaceModel` de giu tuong thich references cu.
+- `assetType=model|scene` phan biet hai catalog; record cu khong co field nay duoc migrate thanh `model`.
+- Identity duy nhat: `{ assetType, source.provider, source.assetId }`.
+- Public slug duy nhat trong tung catalog: `{ assetType, slug }`.
+- API Model luon loc Model; API Scene luon loc Scene. Search va recommendation khong tron hai namespace.
+- Download session, download log, Drive change va Drive sync state deu luu `assetType`.
+- `quotaCost`: Model = 1, Scene = 5. `quotaCharged` duoc giu de tuong thich lich su cu.
+
+## 6.2 Scene metadata V3
+
+```json
+{
+  "schemaVersion": 3,
+  "assetType": "scene",
+  "revision": 1,
+  "updatedAt": "2026-07-14T00:00:00.000Z",
+  "sourceAssetId": "scene-000001",
+  "title": "Modern Living Room",
+  "sourceCategoryId": "living-room",
+  "accessType": "member",
+  "renderer": "Corona",
+  "renderers": ["corona"],
+  "styles": ["modern"],
+  "sha256": "64_lowercase_hex_chars"
+}
+```
+
+Scene bat buoc ID, title, leaf category, Free/Pro, renderer, style va SHA-256.
+Scene khong dung `forms`, `colors` hoac `materials`. Model tiep tuc dung schema V2;
+backend khong migration hang loat metadata Model sang V3.
+
+Scene Drive root:
+
+```text
+/3dipl/scenes/{sourceAssetId}-{slug}/
+  metadata.json.gz
+  scene.zip | scene.rar | scene.7z
+  preview-1.jpg
+  preview-2.jpg
+  preview-3.png
+```
+
+`preview-1` la cover va bat buoc. Archive, metadata va cover thieu se khoa tai va
+offline Scene. Preview tu so 2 tro di la optional.
+
+Scene category va filter source of truth:
+
+- Categories/Style/Render: `backend/src/data/marketplaceCatalogs.js`.
+- Category co con bat buoc gan leaf category.
+- System key dung English; UI co nhan Viet/Anh.
+
+## 6.3 Quota chung
+
+- Guest: 5 luot/ngay.
+- Free: 10 luot/ngay.
+- Pro: `proDailyDownloadLimit`, mac dinh 100 luot/ngay.
+- Admin: khong tru quota.
+- Model tru 1; Scene tru 5. Quota bonus cua goi ngay duoc cong vao cung record.
+- Backend lay cost tu `assetType`, khong tin `quotaCost` client gui.
+- Tang quota la atomic theo dieu kien `count + cost <= limit`.
+- Loi sau khi charge phai rollback dung cost; tai lai cung download session trong TTL khong charge lai.
+- Image search quota Free 10/Pro 150 dung chung giua Model va Scene.
+
+## 6.4 API Scene
+
+Public catalog nam tai `/api/marketplace/scenes`; plugin session nam tai
+`POST /api/plugin/scenes/:id/download-session`. Admin Scene nam tai
+`/api/admin/marketplace/scenes`. Response public chi tra internal image/download URL,
+khong tra Drive ID, metadata hash, storage key hoac Drive URL.
 
 ## 7. Publication state machine
 
@@ -409,6 +485,13 @@ MARKETPLACE_DRIVE_CHANGES_BATCH_SIZE=100
 MARKETPLACE_DRIVE_QUEUE_BATCH_SIZE=20
 MARKETPLACE_DRIVE_QUEUE_MAX_ATTEMPTS=8
 MARKETPLACE_DRIVE_QUEUE_RETRY_BASE_SECONDS=30
+MARKETPLACE_DOWNLOAD_DELIVERY=drive_redirect
+MARKETPLACE_DOWNLOAD_REDIRECT_FALLBACK_PROXY=true
+TURNSTILE_ENABLED=true
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
+TURNSTILE_EXPECTED_HOSTNAME=3dipl.org
+TURNSTILE_EXPECTED_ACTION=marketplace_download
 ```
 
 Production dung refresh token. Access token tinh chi phu hop test ngan han. Tao refresh

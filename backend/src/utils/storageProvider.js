@@ -280,6 +280,49 @@ export async function getGoogleDriveFileMetadata(fileId, options = {}) {
   return JSON.parse(text || "{}");
 }
 
+export function marketplaceDownloadDeliveryMode() {
+  const mode = String(process.env.MARKETPLACE_DOWNLOAD_DELIVERY || "proxy").trim().toLowerCase();
+  return mode === "drive_redirect" ? "drive_redirect" : "proxy";
+}
+
+export async function getStorageBrowserDownloadLink(session) {
+  if (marketplaceDownloadDeliveryMode() !== "drive_redirect") return "";
+  if (String(session?.storageProvider || "").trim() !== "google_drive") return "";
+
+  const metadata = await getGoogleDriveFileMetadata(session.driveFileId, {
+    fields: "id,name,trashed,webContentLink,capabilities(canDownload),permissions(type,role)",
+  });
+  if (metadata.trashed) {
+    const error = new Error("Stored file is no longer available.");
+    error.status = 404;
+    throw error;
+  }
+  if (metadata.capabilities?.canDownload === false) {
+    const error = new Error("Google Drive has disabled downloads for this file.");
+    error.status = 409;
+    throw error;
+  }
+
+  const hasPublicReader = (metadata.permissions || []).some((permission) => (
+    permission?.type === "anyone" && ["reader", "commenter", "writer", "owner"].includes(permission?.role)
+  ));
+  if (!hasPublicReader) {
+    const error = new Error("Google Drive archive is not shared with anyone who has the link.");
+    error.status = 409;
+    error.code = "DRIVE_PUBLIC_DOWNLOAD_REQUIRED";
+    throw error;
+  }
+
+  const downloadUrl = String(metadata.webContentLink || "").trim();
+  if (!downloadUrl) {
+    const error = new Error("Google Drive did not return a browser download link.");
+    error.status = 409;
+    error.code = "DRIVE_BROWSER_DOWNLOAD_UNAVAILABLE";
+    throw error;
+  }
+  return downloadUrl;
+}
+
 export function openDemoMarketplaceImageStream() {
   const target = fileURLToPath(new URL("../../../frontend/public/3dipl-d.jpg", import.meta.url));
   return {

@@ -38,6 +38,7 @@ const FILTER_GROUPS = [
     items: [
       ["getlink", "Getlink", "Getlink"],
       ["model", "Model", "Model"],
+      ["scene", "Scene", "Scene"],
     ],
   },
   { vi: "Tài khoản", en: "Account", items: [["referral", "Giới thiệu", "Referral"]] },
@@ -49,6 +50,7 @@ const TYPE_ICON = {
   pro: ShieldCheck,
   getlink: FileDown,
   model: Box,
+  scene: Box,
   referral: Users,
   voucher: TicketPercent,
 };
@@ -90,14 +92,16 @@ function statusClass(status = "") {
   return "error";
 }
 
-function eventAmount(event) {
+function eventAmount(event, language = "vi") {
   const amount = Number(event.amount || 0);
   if (!amount) return null;
   if (event.type === "credit" || event.type === "referral") {
     return <CoinAmount value={Math.abs(amount)} prefix={amount > 0 ? "+" : "-"} />;
   }
-  if (event.type === "model") {
-    return amount < 0 ? `${Math.abs(amount)} lượt` : "Miễn lượt";
+  if (["model", "scene"].includes(event.type)) {
+    return amount < 0
+      ? `${Math.abs(amount)} ${language === "vi" ? "lượt" : "downloads"}`
+      : (language === "vi" ? "Miễn lượt" : "No quota charge");
   }
   return amount < 0 ? formatMoney(Math.abs(amount)) : formatMoney(amount);
 }
@@ -154,16 +158,27 @@ function metadataLines(event, language) {
       m.canRedownload ? `${compactRemainingLabel(m.redownloadExpiresAt, language)} - ${redownloadUsageLabel(m, language)}` : "",
     ].filter(Boolean);
   }
-  if (event.type === "model") {
+  if (["model", "scene"].includes(event.type)) {
     return [
       m.model?.title || "",
       m.clientType ? `${language === "vi" ? "Thiết bị" : "Client"}: ${m.clientType}` : "",
-      m.quotaCharged ? (language === "vi" ? "Có tính lượt" : "Quota charged") : (language === "vi" ? "Miễn lượt" : "No quota charge"),
+      m.quotaCharged
+        ? `${language === "vi" ? "Đã trừ" : "Charged"}: ${Number(m.quotaCost || (event.type === "scene" ? 5 : 1))} ${language === "vi" ? "lượt" : "downloads"}`
+        : (language === "vi" ? "Miễn lượt" : "No quota charge"),
     ].filter(Boolean);
   }
   if (event.type === "referral") {
     const other = m.otherUser?.name || m.otherUser?.email || "";
-    return [other ? `User: ${other}` : "", m.referralCode ? `${language === "vi" ? "Mã" : "Code"}: ${m.referralCode}` : ""].filter(Boolean);
+    return [
+      other ? `User: ${other}` : "",
+      m.rewardType === "pro" && m.proDays
+        ? `${language === "vi" ? "Phần thưởng" : "Reward"}: ${m.proDays} ${language === "vi" ? "ngày Pro" : "Pro day"}`
+        : "",
+      m.rewardType === "pro" && m.proUntil
+        ? `${language === "vi" ? "Hạn Pro sau thưởng" : "Pro expiry after reward"}: ${formatDate(m.proUntil, language)}`
+        : "",
+      m.referralCode ? `${language === "vi" ? "Mã" : "Code"}: ${m.referralCode}` : "",
+    ].filter(Boolean);
   }
   if (event.type === "voucher") {
     return [
@@ -331,7 +346,7 @@ export default function History({ language = "vi" }) {
       <div className="timelineHistoryList">
         {events.map((event) => {
           const Icon = TYPE_ICON[event.type] || CalendarClock;
-          const amount = eventAmount(event);
+          const amount = eventAmount(event, language);
           const lines = metadataLines(event, language);
           const metadata = event.metadata || {};
           return (
@@ -341,7 +356,9 @@ export default function History({ language = "vi" }) {
               </div>
               <div className="timelineEventMain">
                 <div className="timelineEventTitle">
-                  <strong>{event.title}</strong>
+                  {["model", "scene"].includes(event.type) && metadata.model?.slug ? (
+                    <a href={`/${event.type === "scene" ? "scenes" : "models"}/${metadata.model.slug}`}><strong>{event.title}</strong></a>
+                  ) : <strong>{event.title}</strong>}
                   <span className={`badge ${statusClass(event.status)}`}>{statusLabel(event.status, language)}</span>
                 </div>
                 {lines.length > 0 && (

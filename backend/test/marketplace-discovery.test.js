@@ -4,6 +4,7 @@ import {
   marketplaceContentScore,
   rankMarketplaceRecommendations,
   reciprocalRankFusion,
+  syncMarketplaceDiscoveryAsset,
 } from "../src/utils/marketplaceDiscovery.js";
 
 const source = {
@@ -75,4 +76,39 @@ test("reciprocal rank fusion rewards results shared by rankings", () => {
   ]);
   assert.ok(scores.get("b") > scores.get("c"));
   assert.ok(scores.get("a") > scores.get("d"));
+});
+
+test("discovery indexing keeps Scene in its own namespace", async () => {
+  const previousUrl = process.env.MARKETPLACE_DISCOVERY_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.MARKETPLACE_DISCOVERY_URL = "https://discovery.example.test";
+  let request;
+  globalThis.fetch = async (input, options) => {
+    request = { input: String(input), body: JSON.parse(options.body) };
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    await syncMarketplaceDiscoveryAsset({
+      _id: "scene-database-id",
+      assetType: "scene",
+      source: { assetId: "scene-000001" },
+      title: "Modern Living Room",
+      slug: "modern-living-room",
+      categorySourceId: "living-room",
+      renderer: "Corona",
+      styles: ["modern"],
+      renderers: ["corona"],
+      isPublished: true,
+      metadataStatus: "complete",
+      fileStatus: "ready",
+    });
+    assert.equal(request.input, "https://discovery.example.test/assets/upsert");
+    assert.equal(request.body.assetType, "scene");
+    assert.equal(request.body.assetId, "scene-000001");
+    assert.equal(request.body.forms, undefined);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousUrl === undefined) delete process.env.MARKETPLACE_DISCOVERY_URL;
+    else process.env.MARKETPLACE_DISCOVERY_URL = previousUrl;
+  }
 });

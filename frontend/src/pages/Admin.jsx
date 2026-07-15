@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Archive, Ban, BarChart3, Check, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Gauge, Gift, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Archive, Ban, BarChart3, Box, Check, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Gauge, Gift, Globe2, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
+import AdminDownloadHistory from "../components/AdminDownloadHistory.jsx";
 import AdminMarketplace from "../components/AdminMarketplace.jsx";
 import CoinAmount from "../components/CoinAmount.jsx";
 import Pagination from "../components/Pagination.jsx";
@@ -58,13 +59,13 @@ const emptyNotification = {
 const referralModeOptions = [
   {
     value: "both",
-    vi: "Cả hai cùng nhận credit",
-    en: "Both users receive credit",
+    vi: "Cả hai cùng nhận 1 ngày Pro",
+    en: "Both users receive 1 Pro day",
   },
   {
     value: "referrer_only",
-    vi: "Chỉ người giới thiệu nhận",
-    en: "Only referrer receives credit",
+    vi: "Chỉ người giới thiệu nhận 1 ngày Pro",
+    en: "Only referrer receives 1 Pro day",
   },
   {
     value: "off",
@@ -108,8 +109,8 @@ const defaultSiteSettings = {
   systemStatusLabel: "Trạng thái hệ thống",
   pricePerDownloadLabel: "Giá tải chỉ từ",
   pricePerDownloadValue: "10K",
-  referralTitleBoth: "Giới thiệu bạn bè, cả hai +1 lượt tải.",
-  referralTitleReferrerOnly: "Giới thiệu bạn bè để +1 lượt tải.",
+  referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí.",
+  referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro miễn phí.",
   pricingEyebrow: "Bảng giá",
   pricingTitle: "Chọn gói phù hợp",
   pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
@@ -163,17 +164,6 @@ function formatNumber(value, locale = "vi-VN") {
   return Number(value || 0).toLocaleString(locale);
 }
 
-function visible3D66Url(value = "") {
-  if (!value) return "";
-  try {
-    const url = new URL(value);
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return String(value).split("#")[0];
-  }
-}
-
 function toDatetimeLocal(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -221,6 +211,7 @@ function timelineTypeLabel(type, l) {
     pro: "Pro",
     getlink: "Getlink",
     model: "Model",
+    scene: "Scene",
     referral: l("Giới thiệu", "Referral"),
     voucher: "Voucher",
   };
@@ -249,7 +240,7 @@ function adminTimelineAmount(event, locale, l) {
   const amount = Number(event?.amount || 0);
   if (!amount) return "-";
   if (event.type === "pro") return formatMoney(Math.abs(amount));
-  if (event.type === "model") return `${Math.abs(amount).toLocaleString(locale)} ${l("lượt", "download")}`;
+  if (["model", "scene"].includes(event.type)) return `${Math.abs(amount).toLocaleString(locale)} ${l("lượt", "downloads")}`;
   return `${amount > 0 ? "+" : "-"}${Math.abs(amount).toLocaleString(locale)} credit`;
 }
 
@@ -258,7 +249,9 @@ export default function Admin({ user, language = "vi" }) {
   const l = (vi, en) => text(language, vi, en);
   const locale = language === "vi" ? "vi-VN" : "en-US";
   const [activeSection, setActiveSection] = useState("overview");
-  const [dataSection, setDataSection] = useState("users");
+  const [generalSection, setGeneralSection] = useState("users");
+  const [websiteSection, setWebsiteSection] = useState("packages");
+  const [marketplaceAssetType, setMarketplaceAssetType] = useState("model");
   const [threed66SettingsTab, setThreed66SettingsTab] = useState("tasks");
   const [revenuePeriod, setRevenuePeriod] = useState("day");
   const [overview, setOverview] = useState(null);
@@ -1085,21 +1078,24 @@ export default function Admin({ user, language = "vi" }) {
       tone: "magenta",
     },
     {
-      label: l("Tải model", "Model downloads"),
+      label: l("Tải model & scene", "Model & scene downloads"),
       value: formatNumber(adminKpis.marketplaceDownloads, locale),
-      detail: l(`${formatNumber(adminKpis.sessions, locale)} phiên tải`, `${formatNumber(adminKpis.sessions, locale)} download sessions`),
+      detail: l(
+        `${formatNumber(adminKpis.modelDownloads, locale)} model · ${formatNumber(adminKpis.sceneDownloads, locale)} scene`,
+        `${formatNumber(adminKpis.modelDownloads, locale)} models · ${formatNumber(adminKpis.sceneDownloads, locale)} scenes`,
+      ),
       icon: Package,
       tone: "cyan",
     },
     {
-      label: l("Model thiếu file", "Models missing files"),
-      value: formatNumber(adminKpis.missingModels, locale),
+      label: l("Tài nguyên thiếu file", "Assets missing files"),
+      value: formatNumber(Number(adminKpis.missingModels || 0) + Number(adminKpis.missingScenes || 0), locale),
       detail: l(
-        `${formatNumber(adminKpis.incompleteModels, locale)} thiếu metadata · ${formatNumber(adminKpis.readyModels, locale)} sẵn sàng`,
-        `${formatNumber(adminKpis.incompleteModels, locale)} incomplete · ${formatNumber(adminKpis.readyModels, locale)} ready`,
+        `${formatNumber(adminKpis.missingModels, locale)} model · ${formatNumber(adminKpis.missingScenes, locale)} scene`,
+        `${formatNumber(adminKpis.missingModels, locale)} models · ${formatNumber(adminKpis.missingScenes, locale)} scenes`,
       ),
       icon: AlertTriangle,
-      tone: Number(adminKpis.missingModels || 0) > 0 ? "danger" : "green",
+      tone: Number(adminKpis.missingModels || 0) + Number(adminKpis.missingScenes || 0) > 0 ? "danger" : "green",
     },
   ];
   const systemHealthItems = [
@@ -1128,40 +1124,49 @@ export default function Admin({ user, language = "vi" }) {
       icon: Zap,
     },
   ];
-  const normalizedGetlinkSearch = getlinkSearch.trim().toLowerCase();
-  const filteredGetlinkRecords = normalizedGetlinkSearch
-    ? getlinkRecords.filter((item) =>
-        [
-          item.user?.email,
-          item.user?.name,
-          item.userId,
-          item.productId,
-          item.title,
-        ].some((value) =>
-          String(value || "").toLowerCase().includes(normalizedGetlinkSearch)
-        )
-      )
-    : getlinkRecords;
   const sections = [
     { key: "overview", label: t.adminOverview, icon: BarChart3 },
-    { key: "data", label: "Data", icon: Database },
+    { key: "general", label: l("Chung", "General"), icon: Database },
+    { key: "getlink", label: "Getlink", icon: FileDown },
     { key: "marketplace", label: "Model", icon: Package },
-    { key: "packages", label: t.adminPackages, icon: CreditCard, count: packages.length + membershipPlans.length },
+    { key: "website", label: "Website", icon: Globe2 },
+  ];
+  const generalSections = [
+    { key: "users", label: t.adminUsers, icon: Users, count: userPagination.total },
+    { key: "downloads", label: l("Lịch sử tải", "Download history"), icon: FileDown },
+    { key: "topups", label: l("Lịch sử nạp", "Top-up history"), icon: CreditCard, count: topupPagination.total },
+    { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
+    { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
+    { key: "cookie", label: "Cookie", icon: Cookie, count: cookieRecords.length },
+    { key: "audit", label: "Audit", icon: HistoryIcon, count: auditPagination.total },
+    { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert },
+  ];
+  const websiteSections = [
+    { key: "packages", label: l("Gói nạp", "Top-up packages"), icon: CreditCard, count: packages.length + membershipPlans.length },
     { key: "vouchers", label: t.adminVouchers, icon: Gift, count: vouchers.length },
     { key: "notifications", label: t.notifications, icon: Megaphone, count: notifications.length },
     { key: "homeText", label: l("Text trang chủ", "Homepage text"), icon: Type },
     { key: "articles", label: t.adminArticles || l("Bài viết", "Articles"), icon: FileText, count: articles.length },
-    { key: "threed66", label: l("Cài đặt 3D66", "3D66 settings"), icon: Activity },
-    { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert }
   ];
-  const dataSections = [
-    { key: "users", label: t.adminUsers, icon: Users, count: userPagination.total },
-    { key: "getlinks", label: l("Lịch sử getlink", "Getlink history"), icon: FileDown, count: getlinkPagination.total },
-    { key: "topups", label: l("Lịch sử nạp", "Top-up history"), icon: CreditCard, count: topupPagination.total },
-    { key: "referrals", label: l("Giới thiệu", "Referrals"), icon: UserPlus, count: referrals.length },
-    { key: "logs", label: l("Log lỗi", "Error logs"), icon: AlertTriangle, count: systemLogs.length },
-    { key: "audit", label: "Audit", icon: HistoryIcon, count: auditPagination.total },
-  ];
+  const subNavigation = activeSection === "general"
+    ? {
+        title: l("Quản lý chung", "General management"),
+        description: l("Tài khoản, giao dịch, giới thiệu và nhật ký vận hành toàn hệ thống.", "Accounts, transactions, referrals, and system-wide operations."),
+        icon: Database,
+        items: generalSections,
+        activeKey: generalSection,
+        onChange: setGeneralSection,
+      }
+    : activeSection === "website"
+        ? {
+            title: l("Nội dung Website", "Website content"),
+            description: l("Quản lý sản phẩm thanh toán và toàn bộ nội dung hiển thị trên website.", "Manage payment products and all content displayed on the website."),
+            icon: Globe2,
+            items: websiteSections,
+            activeKey: websiteSection,
+            onChange: setWebsiteSection,
+          }
+        : null;
   const homeTextGroups = [
     {
       title: l("Hero đầu trang", "Hero section"),
@@ -1431,7 +1436,6 @@ export default function Admin({ user, language = "vi" }) {
     { key: "downloads", label: l("Tải file", "Downloads"), icon: FileDown },
     { key: "proxy", label: l("Proxy", "Proxy"), icon: Zap },
     { key: "playwright", label: l("Playwright", "Playwright"), icon: Gauge },
-    { key: "cookie", label: l("Cookie", "Cookie"), icon: Cookie },
     { key: "status", label: l("Trạng thái", "Status"), icon: Cookie },
   ];
   const normalizedVoucherSearch = voucherSearch.trim().toLowerCase();
@@ -1470,23 +1474,23 @@ export default function Admin({ user, language = "vi" }) {
         </nav>
       </section>
 
-      {activeSection === "data" && (
-        <section className="panel adminDataPanel">
+      {subNavigation && (
+        <section className="panel adminDataPanel adminGroupPanel">
           <div>
-            <h2><Database size={20} /> Data</h2>
-            <p className="muted">
-              {l("Tra cứu dữ liệu vận hành, người dùng và giao dịch của hệ thống.", "Inspect system operations, users, and transaction data.")}
-            </p>
+            <h2>
+              <subNavigation.icon size={20} /> {subNavigation.title}
+            </h2>
+            <p className="muted">{subNavigation.description}</p>
           </div>
-          <nav className="adminSectionNav adminDataNav" aria-label="Admin data sections">
-            {dataSections.map((section) => {
+          <nav className="adminSectionNav adminDataNav" aria-label="Admin subsections">
+            {subNavigation.items.map((section) => {
               const Icon = section.icon;
               return (
                 <button
                   key={section.key}
                   type="button"
-                  className={dataSection === section.key ? "active" : ""}
-                  onClick={() => setDataSection(section.key)}
+                  className={subNavigation.activeKey === section.key ? "active" : ""}
+                  onClick={() => subNavigation.onChange(section.key)}
                 >
                   <Icon size={16} />
                   {section.label}
@@ -1659,10 +1663,20 @@ export default function Admin({ user, language = "vi" }) {
       )}
 
       {activeSection === "marketplace" && (
-        <AdminMarketplace language={language} />
+        <>
+          <div className="adminSubTabs adminMarketplaceTypeTabs" role="tablist" aria-label={l("Loại tài nguyên", "Asset type")}>
+            <button type="button" className={marketplaceAssetType === "model" ? "active" : ""} onClick={() => setMarketplaceAssetType("model")}>
+              <Package size={15} /> Models
+            </button>
+            <button type="button" className={marketplaceAssetType === "scene" ? "active" : ""} onClick={() => setMarketplaceAssetType("scene")}>
+              <Box size={15} /> Scenes
+            </button>
+          </div>
+          <AdminMarketplace key={marketplaceAssetType} language={language} assetType={marketplaceAssetType} />
+        </>
       )}
 
-      {activeSection === "packages" && (
+      {activeSection === "website" && websiteSection === "packages" && (
         <section className="panel">
           <h2><Package size={20} /> {l("Quản lý gói nạp", "Manage top-up packages")}</h2>
           <div className="adminSubTabs" role="tablist" aria-label={l("Loại gói nạp", "Top-up package type")}>
@@ -1894,11 +1908,11 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "articles" && (
+      {activeSection === "website" && websiteSection === "articles" && (
         <AdminArticles articles={articles} onChanged={loadData} language={language} />
       )}
 
-      {activeSection === "vouchers" && (
+      {activeSection === "website" && websiteSection === "vouchers" && (
         <section className="panel adminVoucherPanel">
           <div className="adminVoucherHeading">
             <div>
@@ -2146,7 +2160,7 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "notifications" && (
+      {activeSection === "website" && websiteSection === "notifications" && (
         <section className="panel">
           <h2><Megaphone size={20} /> {editingNotificationId ? l("Sửa thông báo", "Edit notification") : l("Gửi thông báo", "Send notification")}</h2>
           <form className="notificationEditor" onSubmit={saveNotification} style={{ display: "grid", gap: 10, marginTop: 14 }}>
@@ -2266,7 +2280,7 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "homeText" && (
+      {activeSection === "website" && websiteSection === "homeText" && (
         <section className="panel">
           <h2><Type size={20} /> {l("Sửa text trang chủ", "Edit homepage text")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
@@ -2309,11 +2323,11 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "data" && dataSection === "referrals" && (
+      {activeSection === "general" && generalSection === "referrals" && (
         <section className="panel">
           <h2><UserPlus size={20} /> {l("Ai đã mời ai", "Who invited whom")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
-            {l("Danh sách người dùng đăng ký qua link giới thiệu và credit đã thưởng cho hai bên.", "Users who signed up through referral links and the credit rewarded to both sides.")}
+            {l("Danh sách người dùng đăng ký qua link giới thiệu và số ngày Pro đã thưởng cho hai bên.", "Users who signed up through referral links and the Pro days rewarded to both sides.")}
           </p>
           <div className="segmentedControl" style={{ marginTop: 16 }}>
             {referralModeOptions.map((option) => (
@@ -2329,9 +2343,9 @@ export default function Admin({ user, language = "vi" }) {
           </div>
           <p className="muted" style={{ marginTop: 10 }}>
             {siteSettings.referralMode === "both"
-              ? l("Người mời và người được mời đều nhận credit.", "Both referrer and invited user receive credit.")
+              ? l("Người mời và người được mời đều nhận thêm 1 ngày Pro.", "Both referrer and invited user receive 1 Pro day.")
               : siteSettings.referralMode === "referrer_only"
-                ? l("Chỉ người giới thiệu nhận credit; trang chủ đổi nội dung lời mời.", "Only the referrer receives credit; homepage invite text changes.")
+                ? l("Chỉ người giới thiệu nhận thêm 1 ngày Pro; trang chủ đổi nội dung lời mời.", "Only the referrer receives 1 Pro day; homepage invite text changes.")
                 : l("Ẩn thanh giới thiệu trên trang chủ và không thưởng referral mới.", "Referral invite is hidden and new referral rewards are disabled.")}
           </p>
           {referralMsg && (
@@ -2352,9 +2366,13 @@ export default function Admin({ user, language = "vi" }) {
                 </div>
                 <code>{item.referralCode}</code>
                 <span>
-                  <CoinAmount value={item.referrerRewardCredit ?? item.rewardCredit ?? 28} prefix="+" />
-                  {" / "}
-                  <CoinAmount value={Number(item.referredRewardCredit ?? item.rewardCredit ?? 28) > 0 ? item.referredRewardCredit ?? item.rewardCredit ?? 28 : 0} prefix="+" />
+                  {item.rewardType === "pro"
+                    ? `+${Number(item.referrerRewardProDays || 0)} Pro / +${Number(item.referredRewardProDays || 0)} Pro`
+                    : <>
+                        <CoinAmount value={item.referrerRewardCredit ?? item.rewardCredit ?? 28} prefix="+" />
+                        {" / "}
+                        <CoinAmount value={Number(item.referredRewardCredit ?? item.rewardCredit ?? 28) > 0 ? item.referredRewardCredit ?? item.rewardCredit ?? 28 : 0} prefix="+" />
+                      </>}
                 </span>
                 <time>{new Date(item.rewardedAt || item.createdAt).toLocaleString(locale)}</time>
               </div>
@@ -2368,9 +2386,9 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "threed66" && (
+      {activeSection === "getlink" && (
         <section className="panel">
-          <h2><Activity size={20} /> {l("Cài đặt vận hành 3D66", "3D66 runtime settings")}</h2>
+          <h2><Activity size={20} /> {l("Cài đặt Getlink", "Getlink settings")}</h2>
           <div className="segmentedControl threed66SettingsTabs" style={{ marginTop: 14 }}>
             {threed66SettingsTabs.map((tab) => {
               const Icon = tab.icon;
@@ -2544,82 +2562,9 @@ export default function Admin({ user, language = "vi" }) {
               </p>
             )}
             <button className="smallButton" type="submit" style={{ alignSelf: "flex-start" }}>
-              <Save size={14} /> {l("Lưu thông số 3D66", "Save 3D66 settings")}
+              <Save size={14} /> {l("Lưu cài đặt Getlink", "Save Getlink settings")}
             </button>
           </form>
-          )}
-          {threed66SettingsTab === "cookie" && (
-            <div className="stack" style={{ marginTop: 14 }}>
-              <div className="runtimeSettingGroup">
-                <h3>{l("Cookie 3D66", "3D66 cookies")}</h3>
-                <form className="inputRow" onSubmit={saveCookie}>
-                  <input value={cookie} onChange={(event) => setCookie(event.target.value)} placeholder={l("Dán cookie 3D66 VIP vào đây...", "Paste 3D66 VIP cookie here...")} />
-                  <button disabled={!cookie || loading}>
-                    {loading ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />}
-                    {l("Lưu", "Save")}
-                  </button>
-                  <button type="button" className="smallButton" onClick={test3D66Cookie} disabled={loading}>
-                    <Check size={14} />
-                    {l("Kiểm tra", "Check")}
-                  </button>
-                </form>
-                {message && <p className="success">{message}</p>}
-              </div>
-              {cookiePool && (
-                <div className="cookiePoolGrid">
-                  <div className="cookiePoolCard">
-                    <span>Active</span>
-                    <strong>{cookiePool.stats?.active || 0}</strong>
-                  </div>
-                  <div className="cookiePoolCard warning">
-                    <span>Warning</span>
-                    <strong>{cookiePool.stats?.warning || 0}</strong>
-                  </div>
-                  <div className="cookiePoolCard error">
-                    <span>{l("Cooldown / lỗi", "Cooldown / errors")}</span>
-                    <strong>{(cookiePool.stats?.cooldown || 0) + (cookiePool.stats?.invalid || 0)}</strong>
-                  </div>
-                </div>
-              )}
-              <div className="table" style={{ marginTop: 16 }}>
-                {cookieRecords.map((item, index) => (
-                  <div className="tableRow" key={item._id}>
-                    <span>{item.status === "cooldown" ? l("Tạm nghỉ", "Cooldown") : index === 0 ? l("Ưu tiên", "Primary") : l("Dự phòng", "Backup")}</span>
-                    <code>{item.preview || "cookie"}</code>
-                    <span>{item.keyCount || 0} keys</span>
-                    <span className={item.hasRequiredKeys ? "success" : "error"}>
-                      {item.hasRequiredKeys ? l("Đủ key", "Keys OK") : `${l("Thiếu", "Missing")}: ${(item.missingKeys || []).join(", ")}`}
-                    </span>
-                    <span className={item.status === "cooldown" ? "error" : item.status === "warning" ? "muted" : "success"}>
-                      {item.status || "active"} · {l("lỗi", "errors")} {item.failureCount || 0} · {l("dùng", "uses")} {item.useCount || 0}
-                    </span>
-                    <span>
-                      {item.lastTestAt
-                        ? `${item.lastTestOk ? "OK" : l("Lỗi", "Error")} - ${new Date(item.lastTestAt).toLocaleString(locale)}`
-                        : l("Chưa test", "Not tested")}
-                    </span>
-                    {item.cooldownUntil && (
-                      <span className="muted">
-                        {l("nghỉ tới", "cooldown until")} {new Date(item.cooldownUntil).toLocaleString(locale)}
-                      </span>
-                    )}
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button type="button" className="smallButton" onClick={() => testSaved3D66Cookie(item._id)} disabled={loading}>
-                        <Check size={14} /> Test
-                      </button>
-                      <button type="button" className="smallButton" onClick={() => delete3D66Cookie(item._id)} style={{ color: "var(--error)" }}>
-                        <X size={14} /> {l("Xóa", "Delete")}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {!cookieRecords.length && (
-                  <p className="muted" style={{ textAlign: "center", padding: 16 }}>
-                    {l("Chưa lưu cookie 3D66 nào.", "No 3D66 cookies saved yet.")}
-                  </p>
-                )}
-              </div>
-            </div>
           )}
           {threed66SettingsTab === "status" && cookiePool && (
             <div className="cookiePoolGrid">
@@ -2648,7 +2593,83 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "data" && dataSection === "logs" && (
+      {activeSection === "general" && generalSection === "cookie" && (
+        <section className="panel">
+          <h2><Cookie size={20} /> {l("Quản lý Cookie", "Cookie management")}</h2>
+          <div className="stack" style={{ marginTop: 14 }}>
+            <div className="runtimeSettingGroup">
+              <h3>{l("Cookie tài khoản nguồn", "Source account cookies")}</h3>
+              <form className="inputRow" onSubmit={saveCookie}>
+                <input value={cookie} onChange={(event) => setCookie(event.target.value)} placeholder={l("Dán cookie 3D66 VIP vào đây...", "Paste 3D66 VIP cookie here...")} />
+                <button disabled={!cookie || loading}>
+                  {loading ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />}
+                  {l("Lưu", "Save")}
+                </button>
+                <button type="button" className="smallButton" onClick={test3D66Cookie} disabled={loading}>
+                  <Check size={14} /> {l("Kiểm tra", "Check")}
+                </button>
+              </form>
+              {message && <p className="success">{message}</p>}
+            </div>
+            {cookiePool && (
+              <div className="cookiePoolGrid">
+                <div className="cookiePoolCard">
+                  <span>Active</span>
+                  <strong>{cookiePool.stats?.active || 0}</strong>
+                </div>
+                <div className="cookiePoolCard warning">
+                  <span>Warning</span>
+                  <strong>{cookiePool.stats?.warning || 0}</strong>
+                </div>
+                <div className="cookiePoolCard error">
+                  <span>{l("Cooldown / lỗi", "Cooldown / errors")}</span>
+                  <strong>{(cookiePool.stats?.cooldown || 0) + (cookiePool.stats?.invalid || 0)}</strong>
+                </div>
+              </div>
+            )}
+            <div className="table" style={{ marginTop: 16 }}>
+              {cookieRecords.map((item, index) => (
+                <div className="tableRow" key={item._id}>
+                  <span>{item.status === "cooldown" ? l("Tạm nghỉ", "Cooldown") : index === 0 ? l("Ưu tiên", "Primary") : l("Dự phòng", "Backup")}</span>
+                  <code>{item.preview || "cookie"}</code>
+                  <span>{item.keyCount || 0} keys</span>
+                  <span className={item.hasRequiredKeys ? "success" : "error"}>
+                    {item.hasRequiredKeys ? l("Đủ key", "Keys OK") : `${l("Thiếu", "Missing")}: ${(item.missingKeys || []).join(", ")}`}
+                  </span>
+                  <span className={item.status === "cooldown" ? "error" : item.status === "warning" ? "muted" : "success"}>
+                    {item.status || "active"} · {l("lỗi", "errors")} {item.failureCount || 0} · {l("dùng", "uses")} {item.useCount || 0}
+                  </span>
+                  <span>
+                    {item.lastTestAt
+                      ? `${item.lastTestOk ? "OK" : l("Lỗi", "Error")} - ${new Date(item.lastTestAt).toLocaleString(locale)}`
+                      : l("Chưa test", "Not tested")}
+                  </span>
+                  {item.cooldownUntil && (
+                    <span className="muted">
+                      {l("nghỉ tới", "cooldown until")} {new Date(item.cooldownUntil).toLocaleString(locale)}
+                    </span>
+                  )}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button type="button" className="smallButton" onClick={() => testSaved3D66Cookie(item._id)} disabled={loading}>
+                      <Check size={14} /> Test
+                    </button>
+                    <button type="button" className="smallButton" onClick={() => delete3D66Cookie(item._id)} style={{ color: "var(--error)" }}>
+                      <X size={14} /> {l("Xóa", "Delete")}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!cookieRecords.length && (
+                <p className="muted" style={{ textAlign: "center", padding: 16 }}>
+                  {l("Chưa lưu cookie nào.", "No cookies saved yet.")}
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {activeSection === "general" && generalSection === "logs" && (
         <section className="panel">
           <h2><AlertTriangle size={20} /> {l("Log lỗi getlink / tải file", "Getlink / download error logs")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
@@ -2679,7 +2700,7 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "data" && dataSection === "audit" && (
+      {activeSection === "general" && generalSection === "audit" && (
         <section className="panel">
           <h2><HistoryIcon size={20} /> {l("Nhật ký thao tác admin", "Admin audit log")}</h2>
           <div className="adminTableToolbar" style={{ marginTop: 14 }}>
@@ -2724,79 +2745,21 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "data" && dataSection === "getlinks" && (
-        <section className="panel">
-          <h2><FileDown size={20} /> {l("Lịch sử getlink đã trừ credit", "Charged getlink history")}</h2>
-          <p className="muted" style={{ marginTop: 8 }}>
-            {l("Hiển thị các lần user tạo link tải và số credit đã trừ. Tải lại miễn phí không tạo thêm dòng mới ở bảng này.", "Shows user getlink requests and deducted credits. Free redownloads do not create new rows here.")}
-          </p>
-          <div className="adminTableToolbar">
-            <label className="adminSearchField">
-              <Search size={15} />
-              <input
-                value={getlinkSearch}
-                onChange={(event) => {
-                  setGetlinkSearch(event.target.value);
-                  setGetlinkPage(1);
-                }}
-                placeholder={l("Tìm email, ID model hoặc tên model", "Search email, model ID, or model title")}
-              />
-            </label>
-            <span className="muted">
-              {getlinkPagination.total} {l("dòng", "rows")}
-            </span>
-          </div>
-          <div className="table getlinkAuditTable" style={{ marginTop: 16 }}>
-            {filteredGetlinkRecords.map((item) => (
-              <div className="tableRow" key={item._id}>
-                <div className="getlinkAuditUser">
-                  <strong>{item.user?.email || l("Không rõ user", "Unknown user")}</strong>
-                  <span>{item.user?.name || item.userId || ""}</span>
-                </div>
-                <div className="getlinkAuditModel">
-                  <strong>{item.productId || "3D66"}</strong>
-                  <span>{item.title || l("Không có tên model", "No model title")}</span>
-                  <div className="getlinkAuditLinks">
-                    {item.sourceUrl && (
-                      <a href={item.sourceUrl} target="_blank" rel="noreferrer">
-                        {l("Link user gửi", "User link")}
-                      </a>
-                    )}
-                    {item.resolvedSourceUrl && (
-                      <a href={visible3D66Url(item.resolvedSourceUrl)} target="_blank" rel="noreferrer">
-                        {l("Link clear", "Cleared link")}
-                      </a>
-                    )}
-                  </div>
-                </div>
-                <span className={`badge ${Number(item.modelPrice || 0) !== Number(item.creditDeducted || 0) ? "error" : ""}`}>
-                  {l("Giá", "Price")}: <CoinAmount value={Number(item.modelPrice || 0).toLocaleString(locale)} />{!item.priceKnown ? ` (${l("chưa chắc", "unconfirmed")})` : ""}
-                </span>
-                <strong>{l("Đã trừ", "Deducted")}: <CoinAmount value={Number(item.creditDeducted || 0).toLocaleString(locale)} /></strong>
-                <span className="muted">
-                  {l("Tải lại", "Redownloads")}: {Number(item.redownloadCount || 0).toLocaleString(locale)}
-                </span>
-                <time>{new Date(item.createdAt).toLocaleString(locale)}</time>
-              </div>
-            ))}
-            {!filteredGetlinkRecords.length && (
-              <p className="muted" style={{ textAlign: "center", padding: 16 }}>
-                {l("Không có lịch sử getlink phù hợp.", "No matching getlink history.")}
-              </p>
-            )}
-          </div>
-          <Pagination
-            page={getlinkPagination.page}
-            totalPages={getlinkPagination.totalPages}
-            total={getlinkPagination.total}
-            onPageChange={setGetlinkPage}
-            language={language}
-            itemLabel={l("lượt getlink", "getlinks")}
-          />
-        </section>
+      {activeSection === "general" && generalSection === "downloads" && (
+        <AdminDownloadHistory
+          language={language}
+          getlinkRecords={getlinkRecords}
+          getlinkSearch={getlinkSearch}
+          onGetlinkSearchChange={(value) => {
+            setGetlinkSearch(value);
+            setGetlinkPage(1);
+          }}
+          getlinkPagination={getlinkPagination}
+          onGetlinkPageChange={setGetlinkPage}
+        />
       )}
 
-      {activeSection === "data" && dataSection === "topups" && (
+      {activeSection === "general" && generalSection === "topups" && (
         <section className="panel">
           <h2><CreditCard size={20} /> {l("Giao dịch Credit / Pro", "Credit / Pro transactions")}</h2>
           <div className="adminSubTabs" role="tablist" aria-label={l("Loại giao dịch", "Transaction type")}>
@@ -2917,7 +2880,7 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "data" && dataSection === "users" && (
+      {activeSection === "general" && generalSection === "users" && (
         <section className="panel">
           <h2><Users size={20} /> {l("Quản lý người dùng", "Manage users")}</h2>
           <div className="adminTableToolbar">
@@ -3048,6 +3011,7 @@ export default function Admin({ user, language = "vi" }) {
                   ["topups", l("Nạp credit", "Credit top-ups")],
                   ["proOrders", l("Đơn Pro", "Pro orders")],
                   ["modelDownloads", l("Tải model", "Model downloads")],
+                  ["sceneDownloads", l("Tải scene", "Scene downloads")],
                   ["purchases", l("Mua model", "Model purchases")]
                 ].map(([key, label]) => (
                   <div className="adminDetailCard" key={key}>
@@ -3061,7 +3025,7 @@ export default function Admin({ user, language = "vi" }) {
                 {[
                   [l("Tổng quan", "Overview"), [["all", l("Tất cả", "All")]]],
                   [l("Thanh toán", "Payments"), [["credit", "Credit"], ["pro", "Pro"], ["voucher", "Voucher"]]],
-                  [l("Hoạt động", "Activity"), [["getlink", "Getlink"], ["model", "Model"], ["referral", l("Giới thiệu", "Referral")]]],
+                  [l("Hoạt động", "Activity"), [["getlink", "Getlink"], ["model", "Model"], ["scene", "Scene"], ["referral", l("Giới thiệu", "Referral")]]],
                 ].map(([groupLabel, filters]) => (
                   <div key={groupLabel}>
                     <span>{groupLabel}</span>
@@ -3178,7 +3142,7 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "security" && (
+      {activeSection === "general" && generalSection === "security" && (
         <section className="panel">
           <h2><ShieldAlert size={20} /> {l("Cài đặt bảo mật (2FA)", "Security settings (2FA)")}</h2>
 

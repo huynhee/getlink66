@@ -134,23 +134,28 @@ const { ensurePaymentReceiptIndexes } = await import("./src/models/PaymentReceip
 const { ensureNotificationReceiptIndexes } = await import("./src/models/NotificationReceipt.js");
 const { awardReferralSignup, ensureReferralCode } = await import("./src/utils/referralService.js");
 const { initializeMarketplaceCategories } = await import("./src/utils/marketplaceSeed.js");
-const { seedMarketplaceDemoModels } = await import("./src/utils/marketplaceDemoSeed.js");
+const { ensureMarketplaceAssetMigration } = await import("./src/utils/marketplaceMigration.js");
+const { seedMarketplaceDemoModels, seedMarketplaceDemoScenes } = await import("./src/utils/marketplaceDemoSeed.js");
 const { initializeMembershipPlans } = await import("./src/utils/membershipService.js");
 const { startMarketplaceDriveSyncJob, stopMarketplaceDriveSyncJob } = await import("./src/utils/marketplaceDriveSyncJob.js");
+const { startMarketplaceDiscoverySyncJob, stopMarketplaceDiscoverySyncJob } = await import("./src/utils/marketplaceDiscoverySyncJob.js");
 const { close3D66Browser } = await import("./src/utils/3d66BrowserService.js");
 const { close3D66ProxyAgents } = await import("./src/utils/3d66Service.js");
 
 await ensureTopupIndexes();
 await ensurePaymentReceiptIndexes();
 await ensureNotificationReceiptIndexes();
+await ensureMarketplaceAssetMigration();
 await initializeSettings();
 await initializeMarketplaceCategories();
 if (process.env.SEED_MARKETPLACE_DEMO === "true") {
   const demoSeed = await seedMarketplaceDemoModels();
-  logger.info({ count: demoSeed.created }, "Marketplace demo models initialized");
+  const sceneDemoSeed = await seedMarketplaceDemoScenes();
+  logger.info({ models: demoSeed.created, scenes: sceneDemoSeed.created }, "Marketplace demo assets initialized");
 }
 await initializeMembershipPlans();
 startMarketplaceDriveSyncJob();
+startMarketplaceDiscoverySyncJob();
 
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "true") app.set("trust proxy", 1);
@@ -306,6 +311,9 @@ app.use((error, _req, res, _next) => {
       ? "Internal server error"
       : publicErrorMessage(error.message),
     ...(typeof error.code === "string" && error.code ? { code: error.code } : {}),
+    ...(status < 500 && error.publicDetails && typeof error.publicDetails === "object"
+      ? { details: error.publicDetails }
+      : {}),
   });
 });
 
@@ -317,6 +325,7 @@ async function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   stopMarketplaceDriveSyncJob();
+  stopMarketplaceDiscoverySyncJob();
   logger.info({ signal }, "Graceful shutdown started");
 
   const forceTimer = setTimeout(() => {

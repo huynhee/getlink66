@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
-  Clock3,
   Database,
   Eye,
   EyeOff,
@@ -77,6 +76,15 @@ const facetLabelsVi = {
   classic: "Cổ điển",
   modern: "Hiện đại",
   ethnic: "Truyền thống",
+  industrial: "Công nghiệp",
+  neoclassic: "Tân cổ điển",
+  luxury: "Sang trọng",
+  indochine: "Đông Dương",
+  japanese: "Nhật Bản",
+  "wabi-sabi": "Wabi-sabi",
+  french: "Phong cách Pháp",
+  "modern-classic": "Cổ điển hiện đại",
+  other: "Khác",
   vray: "Vray",
   corona: "Corona",
   standard: "Standard",
@@ -326,6 +334,7 @@ function FacetPicker({ field, value, options = [], onChange, language = "vi" }) 
 }
 
 function ModelSummary({ model, selected, selectedForBulk, onBulkToggle, onEdit, language = "vi" }) {
+  const isScene = model.assetType === "scene";
   const state = publicState(model);
   const missing = model.metadataMissingFields || [];
   const localizedState = {
@@ -337,7 +346,7 @@ function ModelSummary({ model, selected, selectedForBulk, onBulkToggle, onEdit, 
   return (
     <article className={`marketAdminItem ${state.key} ${selected ? "selected" : ""}`}>
       <div className="marketAdminModelHead">
-        <label className="marketAdminBulkCheck" title={text(language, "Chọn model", "Select model")}>
+        <label className="marketAdminBulkCheck" title={isScene ? text(language, "Chọn scene", "Select scene") : text(language, "Chọn model", "Select model")}>
           <input
             type="checkbox"
             checked={selectedForBulk}
@@ -370,19 +379,25 @@ function ModelSummary({ model, selected, selectedForBulk, onBulkToggle, onEdit, 
         <ModelFact label={text(language, "Ảnh cover", "Cover image")} value={model.coverImage?.driveFileId ? text(language, "Đã gắn", "Attached") : text(language, "Thiếu", "Missing")} detail={model.coverImage?.fileName} />
         <ModelFact label="Preview" value={`${model.previewImages?.length || 0} ${text(language, "ảnh", "images")}`} detail={model.metadataFileName || "metadata"} />
         <ModelFact label={text(language, "Lần quét Drive", "Last Drive scan")} value={formatDate(model.lastDriveScanAt)} detail={model.driveFolderName || model.source?.slug} />
+        <ModelFact label={text(language, "Search index", "Search index")} value={model.discoveryStatus || "pending"} detail={model.discoveryError || formatDate(model.discoveryIndexedAt)} />
       </div>
 
       <div className="marketAdminModelActions">
         <button type="button" className="primaryButton" onClick={() => onEdit(model)}>
-          <Pencil size={16} /> {text(language, "Chỉnh sửa model", "Edit model")}
+          <Pencil size={16} /> {isScene ? text(language, "Chỉnh sửa scene", "Edit scene") : text(language, "Chỉnh sửa model", "Edit model")}
         </button>
       </div>
     </article>
   );
 }
 
-export default function AdminMarketplace({ language = "vi" }) {
+export default function AdminMarketplace({ language = "vi", assetType = "model" }) {
   const l = (vi, en) => text(language, vi, en);
+  const isScene = assetType === "scene";
+  const adminAssetBase = isScene ? "/api/admin/marketplace/scenes" : "/api/admin/marketplace/models";
+  const adminOpsBase = isScene ? adminAssetBase : "/api/admin/marketplace";
+  const publicAssetBase = isScene ? "/api/marketplace/scenes" : "/api/marketplace";
+  const assetName = isScene ? "scene" : "model";
   const [activeTab, setActiveTab] = useState("import");
   const [models, setModels] = useState([]);
   const [stats, setStats] = useState(null);
@@ -393,8 +408,6 @@ export default function AdminMarketplace({ language = "vi" }) {
   const [metadataStatus, setMetadataStatus] = useState("all");
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
-  const [downloads, setDownloads] = useState([]);
-  const [sessions, setSessions] = useState([]);
   const [categoryTree, setCategoryTree] = useState([]);
   const [filterOptions, setFilterOptions] = useState({});
   const [driveImportForm, setDriveImportForm] = useState(emptyDriveImportForm);
@@ -479,31 +492,27 @@ export default function AdminMarketplace({ language = "vi" }) {
   const loadModels = useCallback(async (nextPage = 1) => {
     const query = new URLSearchParams({ page: String(nextPage), fileStatus, accessType, published, metadataStatus });
     if (search.trim()) query.set("search", search.trim());
-    const [modelRes, statsRes, downloadRes, sessionRes, syncRes] = await Promise.all([
-      api(`/api/admin/marketplace/models?${query.toString()}`),
-      api("/api/admin/marketplace/stats"),
-      api("/api/admin/marketplace/downloads?limit=8"),
-      api("/api/admin/marketplace/download-sessions?limit=8"),
-      api("/api/admin/marketplace/sync-state").catch(() => ({ config: null, state: null })),
+    const [modelRes, statsRes, syncRes] = await Promise.all([
+      api(`${adminAssetBase}?${query.toString()}`),
+      api(isScene ? `${adminAssetBase}/stats` : "/api/admin/marketplace/stats"),
+      api(isScene ? `${adminAssetBase}/sync-state` : "/api/admin/marketplace/sync-state").catch(() => ({ config: null, state: null })),
     ]);
     setModels(modelRes.models || []);
     setPagination(modelRes.pagination || { page: 1, totalPages: 1, total: 0 });
     setStats(statsRes.stats || null);
-    setDownloads(downloadRes.downloads || []);
-    setSessions(sessionRes.sessions || []);
     setSyncInfo(syncRes || null);
     setSyncRootFolderId((current) => current || syncRes?.config?.rootFolderId || "");
     setSelectedModelIds((current) => current.filter((id) => (modelRes.models || []).some((model) => model._id === id)));
-  }, [accessType, fileStatus, metadataStatus, published, search]);
+  }, [accessType, adminAssetBase, fileStatus, isScene, metadataStatus, published, search]);
 
-  async function loadTaxonomy() {
+  const loadTaxonomy = useCallback(async () => {
     const [categoryRes, filterRes] = await Promise.all([
-      api("/api/marketplace/categories"),
-      api("/api/marketplace/filters"),
+      api(isScene ? `${publicAssetBase}/categories` : "/api/marketplace/categories"),
+      api(isScene ? `${publicAssetBase}/filters` : "/api/marketplace/filters"),
     ]);
     setCategoryTree(categoryRes.categories || []);
     setFilterOptions(filterRes.filters || {});
-  }
+  }, [isScene, publicAssetBase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -514,14 +523,14 @@ export default function AdminMarketplace({ language = "vi" }) {
 
   useEffect(() => {
     loadTaxonomy().catch((err) => setError(err.message));
-  }, []);
+  }, [loadTaxonomy]);
 
   async function importDriveFolder(event) {
     event.preventDefault();
     setMessage("");
     setError("");
     try {
-      const data = await api("/api/admin/marketplace/drive/reconcile", {
+      const data = await api(`${adminOpsBase}/drive/reconcile`, {
         method: "POST",
         body: JSON.stringify({
           rootFolderId: driveImportForm.rootFolderId,
@@ -549,7 +558,7 @@ export default function AdminMarketplace({ language = "vi" }) {
     setError("");
     setSyncRunning(true);
     try {
-      const data = await api("/api/admin/marketplace/sync-run", {
+      const data = await api(isScene ? `${adminAssetBase}/sync-run` : "/api/admin/marketplace/sync-run", {
         method: "POST",
         body: JSON.stringify({ rootFolderId: syncRootFolderId || driveImportForm.rootFolderId }),
       });
@@ -572,7 +581,7 @@ export default function AdminMarketplace({ language = "vi" }) {
     setError("");
     setFolderSyncRunning(true);
     try {
-      const data = await api("/api/admin/marketplace/drive/sync-folder", {
+      const data = await api(`${adminOpsBase}/drive/sync-folder`, {
         method: "POST",
         body: JSON.stringify({ driveFolderId: syncFolderId.trim() }),
       });
@@ -592,7 +601,7 @@ export default function AdminMarketplace({ language = "vi" }) {
     setError("");
     setMigrationRunning(true);
     try {
-      const data = await api("/api/admin/marketplace/drive/migrate-metadata", {
+      const data = await api(`${adminOpsBase}/drive/migrate-metadata`, {
         method: "POST",
         body: JSON.stringify({ limit: 20, dryRun }),
       });
@@ -612,7 +621,7 @@ export default function AdminMarketplace({ language = "vi" }) {
     setMessage("");
     setError("");
     try {
-      const data = await api(`/api/admin/marketplace/models/${model._id}/rescan-drive`, {
+      const data = await api(`${adminAssetBase}/${model._id}/rescan-drive`, {
         method: "POST",
         body: JSON.stringify({}),
       });
@@ -646,10 +655,12 @@ export default function AdminMarketplace({ language = "vi" }) {
         metadataHash: model.metadataHash || "",
         driveVersion: model.metadataDriveVersion || "",
       };
-      const data = await api(`/api/admin/marketplace/models/${model._id}/metadata`, {
+      const data = await api(`${adminAssetBase}/${model._id}/metadata`, {
         method: "PUT",
         body: JSON.stringify({
           metadata: {
+            assetType,
+            sourceAssetId: form.sourceModelId,
             sourceModelId: form.sourceModelId,
             title: form.title,
             sourceCategoryId: form.sourceCategoryId,
@@ -736,7 +747,7 @@ export default function AdminMarketplace({ language = "vi" }) {
     setMessage("");
     setError("");
     try {
-      const data = await api(`/api/admin/marketplace/models/${model._id}/state`, {
+      const data = await api(`${adminAssetBase}/${model._id}/state`, {
         method: "PATCH",
         body: JSON.stringify(patch),
       });
@@ -789,7 +800,7 @@ export default function AdminMarketplace({ language = "vi" }) {
     setError("");
     setBulkRunning(true);
     try {
-      const data = await api("/api/admin/marketplace/models/bulk", {
+      const data = await api(`${adminAssetBase}/bulk`, {
         method: "POST",
         body: JSON.stringify({
           ids: selectedModelIds,
@@ -833,20 +844,16 @@ export default function AdminMarketplace({ language = "vi" }) {
     <section className="panel adminMarketplace">
       <div className="marketAdminHeader">
         <div>
-          <h2><Database size={20} /> {l("Quản lý model", "Model management")}</h2>
-          <p className="muted">{l(
-            "Google Drive lưu file nén, ảnh preview và metadata gốc. Mongo chỉ lưu dữ liệu nhẹ để tìm kiếm, publish và ghi lịch sử.",
-            "Google Drive stores archives, previews, and source metadata. Mongo stores the lightweight search, publishing, and history index.",
-          )}</p>
+          <h2><Database size={20} /> {isScene ? l("Quản lý scene", "Scene management") : l("Quản lý model", "Model management")}</h2>
         </div>
-        <button type="button" className="smallButton" onClick={cleanupRawMetadata}>
+        {!isScene && <button type="button" className="smallButton" onClick={cleanupRawMetadata}>
           <RefreshCw size={15} /> {l("Dọn dữ liệu Mongo", "Clean Mongo data")}
-        </button>
+        </button>}
       </div>
 
       {stats && (
         <div className="marketAdminKpis">
-          <KpiCard icon={Package} label={l("Tổng model", "Total models")} value={stats.models} />
+          <KpiCard icon={Package} label={isScene ? l("Tổng scene", "Total scenes") : l("Tổng model", "Total models")} value={stats.models} />
           <KpiCard icon={ListChecks} label={l("Đủ metadata", "Metadata ready")} value={stats.completeMetadata} tone="success" />
           <KpiCard icon={AlertTriangle} label={l("Thiếu metadata", "Incomplete metadata")} value={stats.incompleteMetadata} tone="warning" />
           <KpiCard icon={CheckCircle2} label={l("File sẵn sàng", "Files ready")} value={stats.ready} tone="success" />
@@ -855,12 +862,11 @@ export default function AdminMarketplace({ language = "vi" }) {
         </div>
       )}
 
-      <div className="marketAdminTabs" role="tablist" aria-label={l("Khu quản lý model", "Model management sections")}>
+      <div className="marketAdminTabs" role="tablist" aria-label={isScene ? l("Khu quản lý scene", "Scene management sections") : l("Khu quản lý model", "Model management sections")}>
         {[
           ["import", l("Import / đồng bộ", "Import / sync"), UploadCloud],
-          ["search", l("Tìm kiếm model", "Search models"), Search],
-          ["edit", l("Chỉnh sửa model", "Edit model"), Pencil],
-          ["logs", l("Nhật ký tải", "Download logs"), Clock3],
+          ["search", isScene ? l("Tìm kiếm scene", "Search scenes") : l("Tìm kiếm model", "Search models"), Search],
+          ["edit", isScene ? l("Chỉnh sửa scene", "Edit scene") : l("Chỉnh sửa model", "Edit model"), Pencil],
         ].map(([key, label, Icon]) => (
           <button
             type="button"
@@ -883,7 +889,7 @@ export default function AdminMarketplace({ language = "vi" }) {
             </div>
             <div className="marketAdminFieldGrid">
               <label>
-                <span>{l("Thư mục models trên Drive", "Models folder on Drive")}</span>
+                <span>{isScene ? l("Thư mục scenes trên Drive", "Scenes folder on Drive") : l("Thư mục models trên Drive", "Models folder on Drive")}</span>
                 <input
                   value={driveImportForm.rootFolderId}
                   onChange={(event) => updateDriveImport("rootFolderId", event.target.value)}
@@ -945,7 +951,7 @@ export default function AdminMarketplace({ language = "vi" }) {
                 <input
                   value={syncRootFolderId}
                   onChange={(event) => setSyncRootFolderId(event.target.value)}
-                  placeholder="MARKETPLACE_DRIVE_ROOT_FOLDER_ID"
+                  placeholder={isScene ? "SCENES_DRIVE_ROOT_FOLDER_ID" : "MARKETPLACE_DRIVE_ROOT_FOLDER_ID"}
                 />
               </label>
               <ModelFact label={l("Chu kỳ poll", "Poll interval")} value={syncInfo?.config?.pollSeconds || "-"} detail={l("giây", "seconds")} />
@@ -979,13 +985,13 @@ export default function AdminMarketplace({ language = "vi" }) {
             )}
             <div className="marketAdminFieldGrid">
               <label>
-                <span>{l("Đồng bộ đúng một folder model", "Sync one model folder")}</span>
-                <input value={syncFolderId} onChange={(event) => setSyncFolderId(event.target.value)} placeholder="Drive model folder URL / ID" />
+                <span>{isScene ? l("Đồng bộ đúng một folder scene", "Sync one scene folder") : l("Đồng bộ đúng một folder model", "Sync one model folder")}</span>
+                <input value={syncFolderId} onChange={(event) => setSyncFolderId(event.target.value)} placeholder={`Drive ${assetName} folder URL / ID`} />
               </label>
             </div>
             <div className="marketAdminSyncActions">
               <button type="button" className="smallButton" onClick={syncOneDriveFolder} disabled={folderSyncRunning || !syncFolderId.trim()}>
-                <RefreshCw size={17} /> {folderSyncRunning ? l("Đang đồng bộ...", "Syncing...") : l("Sync một model", "Sync one model")}
+                <RefreshCw size={17} /> {folderSyncRunning ? l("Đang đồng bộ...", "Syncing...") : isScene ? l("Sync một scene", "Sync one scene") : l("Sync một model", "Sync one model")}
               </button>
               <button type="button" className="primaryButton" onClick={runDriveSyncNow} disabled={syncRunning || !(syncRootFolderId || driveImportForm.rootFolderId)}>
                 <RefreshCw size={17} /> {syncRunning ? l("Đang đọc changes...", "Reading changes...") : l("Đọc Changes API ngay", "Read Changes API now")}
@@ -994,7 +1000,7 @@ export default function AdminMarketplace({ language = "vi" }) {
           </section>
 
           <details className="marketAdminForm marketAdminManualImport">
-            <summary><Database size={16} /> Migration metadata V2</summary>
+            <summary><Database size={16} /> {isScene ? "Migration metadata V3" : "Migration metadata V2"}</summary>
             <div className="marketAdminSyncActions">
               <button type="button" className="smallButton" disabled={migrationRunning} onClick={() => runMetadataMigration(true)}>
                 {l("Kiểm tra batch đầu", "Check first batch")}
@@ -1022,7 +1028,7 @@ export default function AdminMarketplace({ language = "vi" }) {
           <div className="adminTableToolbar marketAdminToolbar">
             <label className="adminSearchField">
               <Search size={15} />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={l("Tìm model theo tên hoặc slug...", "Search by model name or slug...")} />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={isScene ? l("Tìm scene theo tên hoặc slug...", "Search by scene name or slug...") : l("Tìm model theo tên hoặc slug...", "Search by model name or slug...")} />
             </label>
             <select value={metadataStatus} onChange={(event) => setMetadataStatus(event.target.value)}>
               <option value="all">{l("Tất cả metadata", "All metadata")}</option>
@@ -1057,7 +1063,7 @@ export default function AdminMarketplace({ language = "vi" }) {
               <input type="checkbox" checked={allPageSelected} onChange={toggleSelectPage} />
               {l("Chọn trang này", "Select this page")}
             </label>
-            <span>{selectedModelIds.length} {l("model đã chọn", "models selected")}</span>
+            <span>{selectedModelIds.length} {isScene ? l("scene đã chọn", "scenes selected") : l("model đã chọn", "models selected")}</span>
             <select value={bulkAction} onChange={(event) => setBulkAction(event.target.value)}>
               <option value="publish">{l("Xuất bản", "Publish")}</option>
               <option value="unpublish">{l("Chuyển nháp", "Move to draft")}</option>
@@ -1087,7 +1093,7 @@ export default function AdminMarketplace({ language = "vi" }) {
                 language={language}
               />
             ))}
-            {!models.length && <p className="muted">{l("Chưa có model phù hợp.", "No matching models.")}</p>}
+            {!models.length && <p className="muted">{isScene ? l("Chưa có scene phù hợp.", "No matching scenes.") : l("Chưa có model phù hợp.", "No matching models.")}</p>}
           </div>
 
           <Pagination
@@ -1096,7 +1102,7 @@ export default function AdminMarketplace({ language = "vi" }) {
             total={pagination.total}
             onPageChange={goToPage}
             language={language}
-            itemLabel="model"
+            itemLabel={assetName}
           />
         </>
       )}
@@ -1106,8 +1112,8 @@ export default function AdminMarketplace({ language = "vi" }) {
           {!currentSelectedModel ? (
             <section className="marketAdminEmpty">
               <Package size={36} />
-              <h3>{l("Chưa chọn model", "No model selected")}</h3>
-              <p>{l("Vào tab Tìm kiếm model, chọn đúng model rồi bấm Chỉnh sửa model.", "Open Search models, choose a model, then select Edit model.")}</p>
+              <h3>{isScene ? l("Chưa chọn scene", "No scene selected") : l("Chưa chọn model", "No model selected")}</h3>
+              <p>{isScene ? l("Vào tab Tìm kiếm scene, chọn đúng scene rồi bấm Chỉnh sửa scene.", "Open Search scenes, choose a scene, then select Edit scene.") : l("Vào tab Tìm kiếm model, chọn đúng model rồi bấm Chỉnh sửa model.", "Open Search models, choose a model, then select Edit model.")}</p>
               <button type="button" className="primaryButton" onClick={() => setActiveTab("search")}>
                 <Search size={16} /> {l("Đi tới tìm kiếm", "Go to search")}
               </button>
@@ -1144,6 +1150,7 @@ export default function AdminMarketplace({ language = "vi" }) {
                 <ModelFact label={l("Ảnh cover", "Cover image")} value={currentSelectedModel.coverImage?.driveFileId ? l("Đã gắn", "Attached") : l("Thiếu", "Missing")} detail={currentSelectedModel.coverImage?.fileName} />
                 <ModelFact label="Drive metadata" value={`Revision ${currentSelectedModel.metadataRevision || 0}`} detail={currentSelectedModel.metadataFileName || l("Thiếu metadata", "Missing metadata")} />
                 <ModelFact label={l("Đồng bộ", "Sync")} value={currentSelectedModel.syncStatus || "missing"} detail={currentSelectedModel.syncError || formatDate(currentSelectedModel.lastDriveScanAt)} />
+                <ModelFact label="Search index" value={currentSelectedModel.discoveryStatus || "pending"} detail={currentSelectedModel.discoveryError || formatDate(currentSelectedModel.discoveryIndexedAt)} />
               </div>
 
               <section className="marketAdminEditSection">
@@ -1153,11 +1160,11 @@ export default function AdminMarketplace({ language = "vi" }) {
                 />
                 <div className="marketAdminFieldGrid">
                   <label>
-                    <span>{l("Mã model", "Model ID")}</span>
+                    <span>{isScene ? l("Mã scene", "Scene ID") : l("Mã model", "Model ID")}</span>
                     <input value={selectedMetadataForm.sourceModelId} disabled />
                   </label>
                   <label>
-                    <span>{l("Tên model", "Model name")}</span>
+                    <span>{isScene ? l("Tên scene", "Scene name") : l("Tên model", "Model name")}</span>
                     <input value={selectedMetadataForm.title} onChange={(event) => updateMetadata(currentSelectedModel, "title", event.target.value)} />
                   </label>
                   <label>
@@ -1184,7 +1191,7 @@ export default function AdminMarketplace({ language = "vi" }) {
                   </label>
                 </div>
                 <div className="marketAdminFacetGrid">
-                  {Object.entries(facetOptionMap).map(([field, filterKey]) => (
+                  {Object.entries(facetOptionMap).filter(([field]) => !isScene || ["styles", "renderers"].includes(field)).map(([field, filterKey]) => (
                     <FacetPicker
                       key={field}
                       field={field}
@@ -1233,43 +1240,6 @@ export default function AdminMarketplace({ language = "vi" }) {
 
             </>
           )}
-        </div>
-      )}
-
-      {activeTab === "logs" && (
-        <div className="marketAdminAuditGrid">
-          <section className="panel">
-            <h3>{l("Nhật ký tải model", "Model download logs")}</h3>
-            <div className="marketAdminLogList">
-              {downloads.map((item) => (
-                <div className="marketAdminLogItem" key={item._id}>
-                  <div>
-                    <strong>{item.modelId?.title || "Model"}</strong>
-                    <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || "guest"} - {item.clientType} - {item.accessTier}</span>
-                  </div>
-                  <span className={`badge ${item.quotaCharged ? "success" : ""}`}>{item.quotaCharged ? l("Tính lượt", "Quota charged") : l("Miễn lượt", "No quota charge")}</span>
-                  <span>{formatDate(item.createdAt)}</span>
-                </div>
-              ))}
-              {!downloads.length && <p className="muted">{l("Chưa có log tải.", "No download logs yet.")}</p>}
-            </div>
-          </section>
-          <section className="panel">
-            <h3>{l("Phiên tải gần đây", "Recent download sessions")}</h3>
-            <div className="marketAdminLogList">
-              {sessions.map((item) => (
-                <div className="marketAdminLogItem" key={item._id}>
-                  <div>
-                    <strong>{item.modelId?.title || l("Phiên tải", "Download session")}</strong>
-                    <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || "guest"} - {item.clientType} - {item.accessTier}</span>
-                  </div>
-                  <span className={`badge ${statusClass(item.status)}`}>{item.status}</span>
-                  <span>{formatDate(item.createdAt)}</span>
-                </div>
-              ))}
-              {!sessions.length && <p className="muted">{l("Chưa có phiên tải.", "No download sessions yet.")}</p>}
-            </div>
-          </section>
         </div>
       )}
 

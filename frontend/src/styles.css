@@ -1584,6 +1584,32 @@ button:disabled {
   gap: 14px;
 }
 
+.marketSidebarHeading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.marketSidebarHeading h2 {
+  flex: 1 1 auto;
+}
+
+.marketSidebarBody {
+  display: grid;
+  gap: 14px;
+}
+
+.marketMobileFilterToggle {
+  display: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border-light);
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
 .marketSidebar h2 {
   justify-content: space-between;
   margin: 0;
@@ -3383,6 +3409,18 @@ button:disabled {
     max-height: none;
   }
 
+  .marketMobileFilterToggle {
+    display: grid;
+  }
+
+  .marketSidebarBody {
+    display: none;
+  }
+
+  .marketSidebar.mobileOpen .marketSidebarBody {
+    display: grid;
+  }
+
 .membershipHero,
   .topupModeSplit,
   .topupUnifiedHero,
@@ -3398,6 +3436,8 @@ button:disabled {
   }
 
   .marketSearchField {
+    flex: 0 0 auto;
+    width: 100%;
     max-width: none;
   }
 
@@ -8157,6 +8197,23 @@ label {
   background: rgba(0,255,157,0.08);
 }
 
+.adminMarketplaceTypeTabs {
+  justify-content: center;
+  margin: 0 0 12px;
+}
+
+.adminMarketplaceTypeTabs button {
+  min-width: 132px;
+  justify-content: center;
+}
+
+.marketQuotaCost {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .adminUserIdentity,
 .creditHistoryTable .tableRow > div {
   display: grid;
@@ -10774,4 +10831,44 @@ html[data-theme="dark"] .inviteSectionTag {
   .adminKpiCard {
     min-height: 116px;
   }
+}
+
+.marketDownloadVerifyGate {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 14px;
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.marketDownloadVerifyHeading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--neon-green);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.marketDownloadTurnstile {
+  width: 100%;
+  min-height: 70px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.marketDownloadTurnstile iframe {
+  max-width: 100%;
+}
+
+.marketDownloadVerifyGate > .error {
+  margin: 0;
+  text-align: center;
 }

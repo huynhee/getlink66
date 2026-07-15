@@ -11,7 +11,7 @@ function values(value) {
 }
 
 function identityValues(model) {
-  return values([model?._id, model?.source?.modelId, model?.slug]);
+  return values([model?._id, model?.source?.assetId, model?.source?.modelId, model?.slug]);
 }
 
 function overlap(left, right) {
@@ -128,6 +128,58 @@ function providerConfig() {
   };
 }
 
+export function marketplaceDiscoveryConfigured() {
+  return Boolean(providerConfig().baseUrl);
+}
+
+async function providerMutation(path, payload) {
+  const config = providerConfig();
+  if (!config.baseUrl) return { configured: false };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const response = await fetch(`${config.baseUrl}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Discovery provider returned HTTP ${response.status}`);
+    return { configured: true };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function syncMarketplaceDiscoveryAsset(model) {
+  const assetType = model?.assetType === "scene" ? "scene" : "model";
+  const assetId = String(model?.source?.assetId || model?._id || "");
+  const isPublic = Boolean(model?.isPublished && model?.metadataStatus === "complete" && model?.fileStatus === "ready");
+  if (!isPublic) {
+    return providerMutation(String(process.env.MARKETPLACE_DISCOVERY_DELETE_PATH || "/assets/delete"), {
+      assetType,
+      assetId,
+    });
+  }
+  const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || process.env.APP_URL || "").trim().replace(/\/+$/, "");
+  const segment = assetType === "scene" ? "scenes" : "models";
+  return providerMutation(String(process.env.MARKETPLACE_DISCOVERY_UPSERT_PATH || "/assets/upsert"), {
+    assetType,
+    assetId,
+    databaseId: String(model?._id || ""),
+    title: model?.title || "",
+    slug: model?.slug || "",
+    category: model?.categorySourceId || "",
+    renderer: model?.renderer || "",
+    styles: model?.styles || [],
+    renderers: model?.renderers || [],
+    coverUrl: publicBaseUrl && model?._id ? `${publicBaseUrl}/api/marketplace/${segment}/${model._id}/cover` : "",
+  });
+}
+
 async function providerRequest(path, payload) {
   const config = providerConfig();
   if (!config.baseUrl) return { matches: [], provider: "local_hybrid" };
@@ -158,7 +210,8 @@ async function providerRequest(path, payload) {
 
 export function semanticRecommendations(model, limit = 180) {
   return providerRequest("/recommendations", {
-    modelId: String(model?.source?.modelId || model?._id || ""),
+    assetType: model?.assetType || "model",
+    modelId: String(model?.source?.assetId || model?.source?.modelId || model?._id || ""),
     limit,
     metadata: {
       title: model?.title || "",
@@ -173,8 +226,8 @@ export function semanticRecommendations(model, limit = 180) {
   });
 }
 
-export function semanticTextSearch(query, limit = 1_000) {
-  return providerRequest("/search", { query: String(query || "").trim(), limit });
+export function semanticTextSearch(query, limit = 1_000, assetType = "model") {
+  return providerRequest("/search", { query: String(query || "").trim(), limit, assetType });
 }
 
 export function discoveryIdentityQuery(matches = []) {
@@ -184,6 +237,7 @@ export function discoveryIdentityQuery(matches = []) {
   return {
     $or: [
       { "source.modelId": { $in: ids } },
+      { "source.assetId": { $in: ids } },
       { slug: { $in: ids } },
       ...(databaseIds.length ? [{ _id: { $in: databaseIds } }] : []),
     ],

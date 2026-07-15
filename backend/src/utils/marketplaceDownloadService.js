@@ -4,6 +4,7 @@ import DownloadSession from "../models/DownloadSession.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import ModelDownload from "../models/ModelDownload.js";
 import { isProActive } from "./membershipService.js";
+import { marketplaceDownloadCost, normalizeAssetType } from "../data/marketplaceCatalogs.js";
 
 const SESSION_TTL_MS = 15 * 60 * 1000;
 
@@ -21,14 +22,15 @@ function safeArchiveExt(value = "") {
 }
 
 function safeDownloadFileName(model) {
-  const base = String(model.slug || model.title || "model")
+  const fallbackName = normalizeAssetType(model.assetType) === "scene" ? "scene" : "model";
+  const base = String(model.slug || model.title || fallbackName)
     .trim()
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 120) || "model";
+    .slice(0, 120) || fallbackName;
   return `${base}.${safeArchiveExt(model.archiveExt)}`;
 }
 
@@ -58,7 +60,7 @@ function tierLimit(req, tier) {
   if (tier === "admin") return Number.MAX_SAFE_INTEGER;
   if (tier === "member") return Number(req.user?.proDailyDownloadLimit || 100);
   if (tier === "free") return 10;
-  return 3;
+  return 5;
 }
 
 function canAccessModel(model, tier) {
@@ -68,103 +70,127 @@ function canAccessModel(model, tier) {
   return false;
 }
 
-async function chargeQuota(req, tier) {
-  if (tier === "admin") return { charged: false, remaining: Number.MAX_SAFE_INTEGER };
+async function chargeQuota(req, tier, cost = 1) {
+  const quotaCost = Math.max(1, Math.floor(Number(cost || 1)));
+  if (tier === "admin") return { charged: false, cost: 0, remaining: Number.MAX_SAFE_INTEGER };
   const dayKey = vietnamDayKey();
   const resetAt = nextVietnamReset();
   const identity = req.user
     ? { userId: req.user._id, guestKey: "" }
     : { guestKey: guestKeyFromReq(req) };
   const query = { dayKey, tier, ...identity };
-  const current = await DailyDownloadQuota.findOne(query);
+  let current = await DailyDownloadQuota.findOne(query);
+  if (!current) {
+    try {
+      current = await DailyDownloadQuota.findOneAndUpdate(
+        query,
+        { $setOnInsert: { ...query, count: 0, resetAt } },
+        { upsert: true, new: true },
+      );
+    } catch (error) {
+      if (Number(error?.code) !== 11000) throw error;
+      current = await DailyDownloadQuota.findOne(query);
+    }
+  }
   const limit = tierLimit(req, tier) + Number(current?.bonusLimit || 0);
-  if (current && Number(current.count || 0) >= limit) {
+  const remainingBefore = Math.max(0, limit - Number(current?.count || 0));
+  if (remainingBefore < quotaCost) {
     const error = new Error(`Daily download quota exceeded for ${tier}.`);
     error.status = 429;
-    error.details = { limit, resetAt };
+    error.details = { limit, required: quotaCost, remaining: remainingBefore, resetAt };
+    error.publicDetails = error.details;
+    error.code = "DOWNLOAD_QUOTA_EXCEEDED";
     throw error;
   }
   const quota = await DailyDownloadQuota.findOneAndUpdate(
-    query,
-    {
-      $setOnInsert: { ...query, resetAt },
-      $inc: { count: 1 },
-    },
-    { upsert: true, new: true },
+    { ...query, count: { $lte: limit - quotaCost } },
+    { $inc: { count: quotaCost } },
+    { new: true },
   );
 
-  if (!quota || Number(quota.count || 0) > limit) {
-    if (quota?._id && Number(quota.count || 0) > limit) {
-      await DailyDownloadQuota.findByIdAndUpdate(quota._id, { $inc: { count: -1 } }).catch(() => {});
-    }
+  if (!quota) {
+    const latest = await DailyDownloadQuota.findOne(query);
     const error = new Error(`Daily download quota exceeded for ${tier}.`);
     error.status = 429;
-    error.details = { limit, resetAt };
+    error.details = {
+      limit,
+      required: quotaCost,
+      remaining: Math.max(0, limit - Number(latest?.count || 0)),
+      resetAt,
+    };
+    error.publicDetails = error.details;
+    error.code = "DOWNLOAD_QUOTA_EXCEEDED";
     throw error;
   }
 
   return {
     charged: true,
+    cost: quotaCost,
     remaining: Math.max(0, limit - Number(quota.count || 0)),
     resetAt,
   };
 }
 
-async function rollbackQuota(req, tier) {
+async function rollbackQuota(req, tier, cost = 1) {
   if (tier === "admin") return;
   const identity = req.user
     ? { userId: req.user._id, guestKey: "" }
     : { guestKey: guestKeyFromReq(req) };
   await DailyDownloadQuota.findOneAndUpdate(
     { dayKey: vietnamDayKey(), tier, ...identity, count: { $gt: 0 } },
-    { $inc: { count: -1 } },
+    { $inc: { count: -Math.max(1, Math.floor(Number(cost || 1))) } },
     { new: true },
   ).catch(() => {});
 }
 
-export async function createMarketplaceDownloadSession({ req, modelId, clientType = "web" }) {
+export async function createMarketplaceDownloadSession({ req, modelId, clientType = "web", expectedAssetType = "" }) {
   const model = await MarketplaceModel.findById(modelId);
-  if (!model || !model.isPublished) {
-    const error = new Error("Model not found");
+  const assetType = normalizeAssetType(model?.assetType);
+  const assetLabel = assetType === "scene" ? "Scene" : "Model";
+  if (!model || !model.isPublished || (expectedAssetType && assetType !== normalizeAssetType(expectedAssetType))) {
+    const error = new Error("Marketplace asset not found");
     error.status = 404;
     throw error;
   }
   if (model.metadataStatus !== "complete") {
-    const error = new Error("Model metadata is not complete yet.");
+    const error = new Error(`${assetLabel} metadata is not complete yet.`);
     error.status = 409;
     throw error;
   }
   if (model.fileStatus !== "ready") {
-    const error = new Error("Model file is not ready yet.");
+    const error = new Error(`${assetLabel} file is not ready yet.`);
     error.status = 409;
     throw error;
   }
   if (model.source?.provider === "demo") {
-    const error = new Error("Model mẫu chỉ dùng để kiểm tra giao diện, không có file tải.");
+    const error = new Error(`${assetLabel} mẫu chỉ dùng để kiểm tra giao diện, không có file tải.`);
     error.status = 409;
     throw error;
   }
 
   const tier = accessTier(req);
   if (!canAccessModel(model, tier)) {
-    const error = new Error("Your account cannot download this model.");
+    const error = new Error(`Your account cannot download this ${assetType}.`);
     error.status = 403;
     throw error;
   }
 
-  const quota = await chargeQuota(req, tier);
+  const quota = await chargeQuota(req, tier, marketplaceDownloadCost(assetType));
   const token = makeToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   let session = null;
   try {
     session = await DownloadSession.create({
+      assetType,
       modelId: model._id,
       userId: req.user?._id,
       guestKey: req.user ? "" : guestKeyFromReq(req),
       clientType: clientType === "plugin" ? "plugin" : "web",
       tokenHash: sha256(token),
       expiresAt,
+      status: "active",
       quotaCharged: quota.charged,
+      quotaCost: quota.cost,
       accessTier: tier,
       storageProvider: model.storageProvider,
       storageKey: model.storageKey,
@@ -175,6 +201,7 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     });
 
     await ModelDownload.create({
+      assetType,
       modelId: model._id,
       sessionId: session._id,
       userId: req.user?._id,
@@ -182,12 +209,13 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
       clientType: session.clientType,
       accessTier: tier,
       quotaCharged: quota.charged,
+      quotaCost: quota.cost,
       ip: req.ip,
       userAgent: String(req.get("user-agent") || "").slice(0, 300),
     });
   } catch (error) {
     if (session?._id) await DownloadSession.findByIdAndDelete(session._id).catch(() => {});
-    if (quota.charged) await rollbackQuota(req, tier);
+    if (quota.charged) await rollbackQuota(req, tier, quota.cost);
     throw error;
   }
   await MarketplaceModel.findByIdAndUpdate(model._id, { $inc: { downloadCount: 1 } }).catch(() => {});
@@ -197,6 +225,7 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     token,
     downloadUrl: `/api/download/session/${session._id}/file?t=${encodeURIComponent(token)}`,
     remaining: quota.remaining,
+    quotaCost: quota.cost,
     resetAt: quota.resetAt,
   };
 }

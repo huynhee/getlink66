@@ -1,9 +1,11 @@
 import MarketplaceCategory from "../models/MarketplaceCategory.js";
 import { DEFAULT_MARKETPLACE_CATEGORIES } from "../data/marketplaceCategories.js";
+import { DEFAULT_SCENE_CATEGORIES } from "../data/marketplaceCatalogs.js";
 
-function categoryPayload(item, parent = null) {
+function categoryPayload(item, parent = null, assetType = "model") {
   return {
-    sourceProvider: "3dsky",
+    assetType,
+    sourceProvider: assetType === "scene" ? "internal" : "3dsky",
     sourceCategoryId: String(item.id),
     title: item.title || "",
     titleEn: item.titleEn || "",
@@ -15,16 +17,17 @@ function categoryPayload(item, parent = null) {
   };
 }
 
-export async function initializeMarketplaceCategories() {
+async function seedCategories(items, assetType) {
   const bySourceId = new Map();
-  const roots = DEFAULT_MARKETPLACE_CATEGORIES.filter((item) => !item.parentId);
-  const children = DEFAULT_MARKETPLACE_CATEGORIES.filter((item) => item.parentId);
+  const roots = items.filter((item) => !item.parentId);
+  const children = items.filter((item) => item.parentId);
+  const sourceProvider = assetType === "scene" ? "internal" : "3dsky";
 
   for (const item of roots) {
-    const query = { sourceProvider: "3dsky", sourceCategoryId: String(item.id) };
+    const query = { assetType, sourceProvider, sourceCategoryId: String(item.id) };
     const category = await MarketplaceCategory.findOneAndUpdate(
       query,
-      { $set: categoryPayload(item) },
+      { $set: categoryPayload(item, null, assetType) },
       { upsert: true, new: true },
     );
     bySourceId.set(String(item.id), category);
@@ -33,15 +36,21 @@ export async function initializeMarketplaceCategories() {
   for (const item of children) {
     const parent = bySourceId.get(String(item.parentId)) ||
       await MarketplaceCategory.findOne({
-        sourceProvider: "3dsky",
+        assetType,
+        sourceProvider,
         sourceCategoryId: String(item.parentId),
       });
-    const query = { sourceProvider: "3dsky", sourceCategoryId: String(item.id) };
+    const query = { assetType, sourceProvider, sourceCategoryId: String(item.id) };
     const category = await MarketplaceCategory.findOneAndUpdate(
       query,
-      { $set: categoryPayload(item, parent) },
+      { $set: categoryPayload(item, parent, assetType) },
       { upsert: true, new: true },
     );
     bySourceId.set(String(item.id), category);
   }
+}
+
+export async function initializeMarketplaceCategories() {
+  await seedCategories(DEFAULT_MARKETPLACE_CATEGORIES, "model");
+  await seedCategories(DEFAULT_SCENE_CATEGORIES, "scene");
 }

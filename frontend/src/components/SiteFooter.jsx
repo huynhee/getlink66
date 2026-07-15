@@ -44,6 +44,7 @@ export default function SiteFooter({ language = "vi", tagline = "", className = 
       <nav>
         <h3>{copy.product}</h3>
         <a href="/models">{copy.models}</a>
+        <a href="/scenes">{language === "vi" ? "Thư viện scene" : "Scene library"}</a>
         <a href="/getlink">Getlink</a>
         <a href="/topup">{copy.topup}</a>
         <a href="/guide">{copy.guide}</a>

@@ -17,8 +17,8 @@ const HOME_TEXT_DEFAULTS = {
     systemStatusLabel: "Trạng thái hệ thống",
     pricePerDownloadLabel: "Giá tải chỉ từ",
     pricePerDownloadValue: "10K",
-    referralTitleBoth: "Giới thiệu bạn bè, cả hai +1 lượt tải.",
-    referralTitleReferrerOnly: "Giới thiệu bạn bè để +1 lượt tải.",
+    referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí.",
+    referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro miễn phí.",
     pricingEyebrow: "Bảng giá",
     pricingTitle: "Chọn gói phù hợp",
     pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
@@ -40,8 +40,8 @@ const HOME_TEXT_DEFAULTS = {
     systemStatusLabel: "System status",
     pricePerDownloadLabel: "Download price from",
     pricePerDownloadValue: "10K",
-    referralTitleBoth: "Invite friends, both get rewards +1 download.",
-    referralTitleReferrerOnly: "Invite friends to get +1 download.",
+    referralTitleBoth: "Invite friends and both receive 1 free Pro day.",
+    referralTitleReferrerOnly: "Invite friends to receive 1 free Pro day.",
     pricingEyebrow: "Pricing",
     pricingTitle: "Choose the right package",
     pricingNote: "Automatic credit top-up after selecting a package.",
@@ -112,6 +112,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const [membershipPlans, setMembershipPlans] = useState([]);
   const [featuredModels, setFeaturedModels] = useState([]);
   const [featuredModelsLoading, setFeaturedModelsLoading] = useState(true);
+  const [featuredScenes, setFeaturedScenes] = useState([]);
+  const [featuredScenesLoading, setFeaturedScenesLoading] = useState(true);
   const [homeTopupMode, setHomeTopupMode] = useState("credit");
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
   const [referral, setReferral] = useState(null);
@@ -133,11 +135,11 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
     pricePerDownloadLabel: language === "vi" ? "Giá tải chỉ từ" : "Download price from",
     pricePerDownloadValue: "10K",
     referralTitleBoth: language === "vi"
-      ? "Giới thiệu bạn bè, cả hai +1 lượt tải."
-      : "Invite friends, both get rewards +1 download.",
+      ? "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí."
+      : "Invite friends and both receive 1 free Pro day.",
     referralTitleReferrerOnly: language === "vi"
-      ? "Giới thiệu bạn bè để +1 lượt tải."
-      : "Invite friends to get +1 download.",
+      ? "Mời bạn bè để nhận 1 ngày Pro miễn phí."
+      : "Invite friends to receive 1 free Pro day.",
     pricingEyebrow: language === "vi" ? "Bảng giá" : "Pricing",
     pricingTitle: language === "vi" ? "Chọn gói phù hợp" : "Choose the right package",
     pricingNote: language === "vi"
@@ -165,8 +167,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const demoCursorX = Math.min(demoCursorText.length * 8.4, 520);
   if (referral?.mode === "referrer_only") {
     t.referralTitle = language === "vi"
-      ? "Giới thiệu bạn bè để +1 lượt tải."
-      : "Invite friends to get +1 download.";
+      ? "Mời bạn bè để nhận 1 ngày Pro miễn phí."
+      : "Invite friends to receive 1 free Pro day.";
   }
 
   React.useEffect(() => {
@@ -191,6 +193,11 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
         .then((data) => setFeaturedModels((data.models || []).slice(0, 12)))
         .catch(() => setFeaturedModels([]))
         .finally(() => setFeaturedModelsLoading(false));
+      setFeaturedScenesLoading(true);
+      api("/api/marketplace/scenes?limit=6&page=1")
+        .then((data) => setFeaturedScenes((data.scenes || data.assets || []).slice(0, 6)))
+        .catch(() => setFeaturedScenes([]))
+        .finally(() => setFeaturedScenesLoading(false));
       api("/api/topup/packages")
         .then((data) => setPackages(data.packages || []))
         .catch(console.error);
@@ -333,12 +340,12 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   function referralTitle() {
     if ((referral?.mode || siteSettings.referralMode) === "referrer_only") {
       return language === "vi"
-        ? "Giới thiệu bạn bè để +1 lượt tải."
-        : "Invite friends to get +1 download.";
+        ? "Mời bạn bè để nhận 1 ngày Pro miễn phí."
+        : "Invite friends to receive 1 free Pro day.";
     }
     return t.referralTitle || (language === "vi"
-      ? "Giới thiệu bạn bè, cả hai đều có quà"
-      : "Invite friends, both get rewards");
+      ? "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí"
+      : "Invite friends and both receive 1 free Pro day");
   }
 
   function homepageReferralTitle() {
@@ -527,6 +534,35 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
             <div className="homeModelsEmpty">
               <span>{language === "vi" ? "Model đang được cập nhật." : "Models are being updated."}</span>
               <a href="/models">{language === "vi" ? "Mở thư viện" : "Open library"}</a>
+            </div>
+          )}
+        </section>
+      )}
+
+      {!adminMode && (
+        <section className="homeModelsSection homeScenesSection" aria-labelledby="home-scenes-title">
+          <div className="homeModelsHeader">
+            <div>
+              <span className="eyebrowSignal">{language === "vi" ? "Không gian hoàn chỉnh" : "Complete spaces"}</span>
+              <h2 id="home-scenes-title">{language === "vi" ? "Scene mới đề xuất" : "Recommended new scenes"}</h2>
+              <p>{language === "vi" ? "Scene nội ngoại thất Free và Pro, dùng chung gói thành viên và quota tải." : "Free and Pro interior and exterior scenes using the same membership and download quota."}</p>
+            </div>
+            <a className="smallButton" href="/scenes">
+              {language === "vi" ? "Xem thư viện scene" : "View scene library"} <ChevronRight size={16} />
+            </a>
+          </div>
+          {featuredScenesLoading ? (
+            <div className="homeModelGrid homeSceneGrid" aria-label={language === "vi" ? "Đang tải scene" : "Loading scenes"}>
+              {Array.from({ length: 6 }).map((_, index) => <span className="homeModelSkeleton" key={index} />)}
+            </div>
+          ) : featuredScenes.length ? (
+            <div className="homeModelGrid homeSceneGrid">
+              {featuredScenes.map((scene) => <ModelCard key={scene._id} model={scene} />)}
+            </div>
+          ) : (
+            <div className="homeModelsEmpty">
+              <span>{language === "vi" ? "Scene đang được cập nhật." : "Scenes are being updated."}</span>
+              <a href="/scenes">{language === "vi" ? "Mở thư viện" : "Open library"}</a>
             </div>
           )}
         </section>

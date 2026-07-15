@@ -13,6 +13,7 @@ import {
 } from "./marketplaceDriveService.js";
 import logger from "./logger.js";
 import { writeSystemLog } from "./systemLog.js";
+import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
 
 let syncRunning = false;
 let syncTimer = null;
@@ -23,8 +24,21 @@ function syncEnabled() {
   return String(process.env.MARKETPLACE_DRIVE_CHANGES_ENABLED || "false").toLowerCase() === "true";
 }
 
-function rootFolderId() {
-  return String(process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID || "").trim();
+function rootFolderId(assetType = "model") {
+  const key = normalizeAssetType(assetType) === "scene"
+    ? "SCENES_DRIVE_ROOT_FOLDER_ID"
+    : "MARKETPLACE_DRIVE_ROOT_FOLDER_ID";
+  return String(process.env[key] || "").trim();
+}
+
+function configuredRoots() {
+  return ["model", "scene"]
+    .map((assetType) => ({ assetType, rootFolderId: rootFolderId(assetType) }))
+    .filter((item) => item.rootFolderId);
+}
+
+function assetTypeForRoot(rootId) {
+  return configuredRoots().find((item) => item.rootFolderId === String(rootId || "").trim())?.assetType || "model";
 }
 
 function changeBatchSize() {
@@ -53,6 +67,7 @@ export function marketplaceDriveSyncConfig() {
   return {
     enabled: syncEnabled(),
     rootFolderId: rootFolderId(),
+    roots: configuredRoots(),
     mode: "changes",
     pollSeconds: Math.round(pollIntervalMs() / 1000),
     changesBatchSize: changeBatchSize(),
@@ -63,14 +78,15 @@ export function marketplaceDriveSyncConfig() {
   };
 }
 
-export async function getMarketplaceDriveSyncState() {
-  const rootId = rootFolderId();
+export async function getMarketplaceDriveSyncState(assetType = "model") {
+  const rootId = rootFolderId(assetType);
   if (!rootId) return null;
   return MarketplaceDriveSyncState.findOne({ rootFolderId: rootId }).lean();
 }
 
-async function findModelByDriveItem(fileId) {
+async function findModelByDriveItem(fileId, assetType = "model") {
   return MarketplaceModel.findOne({
+    assetType: normalizeAssetType(assetType),
     $or: [
       { driveFolderId: fileId },
       { driveFileId: fileId },
@@ -81,16 +97,16 @@ async function findModelByDriveItem(fileId) {
   }).lean();
 }
 
-async function resolveChangedFolder(change, rootId) {
+async function resolveChangedFolder(change, rootId, assetType = "model") {
   const file = change.file || {};
   if (file.mimeType === "application/vnd.google-apps.folder" && (file.parents || []).includes(rootId)) {
     return file.id || change.fileId;
   }
-  const known = await findModelByDriveItem(change.fileId);
+  const known = await findModelByDriveItem(change.fileId, assetType);
   if (known?.driveFolderId) return known.driveFolderId;
   const parents = Array.isArray(file.parents) ? file.parents : [];
   if (parents.length) {
-    const parentModel = await MarketplaceModel.findOne({ driveFolderId: { $in: parents } }).select("driveFolderId").lean();
+    const parentModel = await MarketplaceModel.findOne({ assetType: normalizeAssetType(assetType), driveFolderId: { $in: parents } }).select("driveFolderId").lean();
     if (parentModel?.driveFolderId) return parentModel.driveFolderId;
   }
   for (const parentId of parents.slice(0, 2)) {
@@ -104,12 +120,12 @@ async function resolveChangedFolder(change, rootId) {
   return "";
 }
 
-async function enqueueFolderChange({ rootId, folderId, change }) {
+async function enqueueFolderChange({ rootId, folderId, change, assetType = "model" }) {
   if (!folderId) return false;
   const reason = change.removed || change.file?.trashed ? "removed" : "changed";
   const changedFileId = String(change.fileId || change.file?.id || "").trim();
   const update = {
-    $setOnInsert: { rootFolderId: rootId, driveFolderId: folderId },
+    $setOnInsert: { rootFolderId: rootId, driveFolderId: folderId, assetType: normalizeAssetType(assetType) },
     $set: {
       status: "pending",
       attempts: 0,
@@ -130,13 +146,13 @@ async function enqueueFolderChange({ rootId, folderId, change }) {
   return true;
 }
 
-async function initializeChangesToken(state, rootMeta) {
+async function initializeChangesToken(state, rootMeta, assetType = "model") {
   if (state?.changesPageToken) return state;
   const token = await getGoogleDriveStartPageToken({ driveId: rootMeta.driveId || "" });
   return MarketplaceDriveSyncState.findOneAndUpdate(
     { rootFolderId: rootMeta.id },
     {
-      $setOnInsert: { rootFolderId: rootMeta.id },
+      $setOnInsert: { rootFolderId: rootMeta.id, assetType: normalizeAssetType(assetType) },
       $set: {
         changesPageToken: token,
         changesInitializedAt: new Date(),
@@ -157,8 +173,9 @@ export async function pollMarketplaceDriveChanges({ rootId = "" } = {}) {
   const rootMeta = await getGoogleDriveFileMetadata(normalizedRootId, {
     fields: "id,name,mimeType,driveId,trashed,parents",
   });
+  const assetType = assetTypeForRoot(normalizedRootId);
   let state = await MarketplaceDriveSyncState.findOne({ rootFolderId: normalizedRootId });
-  state = await initializeChangesToken(state, rootMeta);
+  state = await initializeChangesToken(state, rootMeta, assetType);
   const response = await listGoogleDriveChanges(state.changesPageToken, {
     pageSize: changeBatchSize(),
     driveId: rootMeta.driveId || "",
@@ -166,8 +183,8 @@ export async function pollMarketplaceDriveChanges({ rootId = "" } = {}) {
   let queued = 0;
   for (const change of response.changes || []) {
     if (change.changeType && change.changeType !== "file") continue;
-    const folderId = await resolveChangedFolder(change, normalizedRootId);
-    if (await enqueueFolderChange({ rootId: normalizedRootId, folderId, change })) queued += 1;
+    const folderId = await resolveChangedFolder(change, normalizedRootId, assetType);
+    if (await enqueueFolderChange({ rootId: normalizedRootId, folderId, change, assetType })) queued += 1;
   }
   const nextToken = response.nextPageToken || response.newStartPageToken || state.changesPageToken;
   state = await MarketplaceDriveSyncState.findOneAndUpdate(
@@ -208,6 +225,7 @@ async function claimQueueItem(rootId) {
 
 export async function processMarketplaceDriveChangeQueue({ rootId = "", limit = queueBatchSize() } = {}) {
   const normalizedRootId = String(rootId || rootFolderId()).trim();
+  const assetType = assetTypeForRoot(normalizedRootId);
   let processed = 0;
   let failed = 0;
   const results = [];
@@ -215,7 +233,7 @@ export async function processMarketplaceDriveChangeQueue({ rootId = "", limit = 
     const item = await claimQueueItem(normalizedRootId);
     if (!item) break;
     try {
-      const result = await syncMarketplaceDriveFolder({ driveFolderId: item.driveFolderId, force: true });
+      const result = await syncMarketplaceDriveFolder({ driveFolderId: item.driveFolderId, force: true, assetType: item.assetType || assetType });
       const removed = await MarketplaceDriveChange.deleteOne({
         _id: item._id,
         status: "processing",
@@ -229,7 +247,7 @@ export async function processMarketplaceDriveChangeQueue({ rootId = "", limit = 
       });
     } catch (error) {
       if (error?.status === 404) {
-        const model = await MarketplaceModel.findOne({ driveFolderId: item.driveFolderId }).lean();
+        const model = await MarketplaceModel.findOne({ assetType: item.assetType || assetType, driveFolderId: item.driveFolderId }).lean();
         if (model) await markMarketplaceDriveModelMissing(model, error.message);
         await MarketplaceDriveChange.deleteOne({ _id: item._id });
         processed += 1;
@@ -255,7 +273,7 @@ export async function processMarketplaceDriveChangeQueue({ rootId = "", limit = 
   return { processed, failed, results };
 }
 
-async function claimSyncState(rootId) {
+async function claimSyncState(rootId, assetType = "model") {
   const staleBefore = new Date(Date.now() - SYNC_LOCK_TIMEOUT_MS);
   let state = await MarketplaceDriveSyncState.findOneAndUpdate(
     {
@@ -267,7 +285,7 @@ async function claimSyncState(rootId) {
     },
     {
       $set: { status: "running", lastStartedAt: new Date(), lastError: "" },
-      $setOnInsert: { rootFolderId: rootId },
+      $setOnInsert: { rootFolderId: rootId, assetType: normalizeAssetType(assetType) },
     },
     { new: true },
   );
@@ -275,6 +293,7 @@ async function claimSyncState(rootId) {
   try {
     state = await MarketplaceDriveSyncState.create({
       rootFolderId: rootId,
+      assetType: normalizeAssetType(assetType),
       status: "running",
       lastStartedAt: new Date(),
     });
@@ -289,6 +308,7 @@ async function claimSyncState(rootId) {
 
 export async function runMarketplaceDriveSyncOnce({ trigger = "interval", rootFolderId: requestedRootId = "" } = {}) {
   const rootId = String(requestedRootId || rootFolderId()).trim();
+  const assetType = assetTypeForRoot(rootId);
   if (!rootId) {
     const error = new Error("MARKETPLACE_DRIVE_ROOT_FOLDER_ID is not configured");
     error.status = 400;
@@ -308,7 +328,7 @@ export async function runMarketplaceDriveSyncOnce({ trigger = "interval", rootFo
   }
   syncRunning = true;
   try {
-    await claimSyncState(rootId);
+    await claimSyncState(rootId, assetType);
     const poll = await pollMarketplaceDriveChanges({ rootId });
     const queue = await processMarketplaceDriveChangeQueue({ rootId });
     const state = await MarketplaceDriveSyncState.findOneAndUpdate(
@@ -316,7 +336,7 @@ export async function runMarketplaceDriveSyncOnce({ trigger = "interval", rootFo
       { $set: { status: "idle", lastFinishedAt: new Date(), lastError: "" } },
       { new: true },
     );
-    logger.info({ trigger, rootFolderId: rootId, ...poll, processed: queue.processed, failed: queue.failed }, "Marketplace Drive changes sync finished");
+    logger.info({ trigger, assetType, rootFolderId: rootId, ...poll, processed: queue.processed, failed: queue.failed }, "Marketplace Drive changes sync finished");
     return {
       result: {
         scannedFolders: queue.processed,
@@ -334,7 +354,7 @@ export async function runMarketplaceDriveSyncOnce({ trigger = "interval", rootFo
     await MarketplaceDriveSyncState.findOneAndUpdate(
       { rootFolderId: rootId },
       {
-        $setOnInsert: { rootFolderId: rootId },
+        $setOnInsert: { rootFolderId: rootId, assetType },
         $set: {
           status: "error",
           lastFinishedAt: new Date(),
@@ -361,26 +381,32 @@ export function startMarketplaceDriveSyncJob() {
     logger.info("Marketplace Drive Changes job is disabled");
     return;
   }
-  if (!rootFolderId()) {
+  if (!configuredRoots().length) {
     logger.warn("Marketplace Drive Changes enabled but root folder id is empty");
     return;
   }
   if (syncTimer) return;
   const interval = pollIntervalMs();
   syncTimer = setInterval(() => {
-    runMarketplaceDriveSyncOnce({ trigger: "interval" }).catch((error) => {
-      logger.error({ err: error }, "Marketplace Drive changes interval failed");
-    });
+    runConfiguredRootSyncs("interval");
   }, interval);
   syncTimer.unref?.();
   initialSyncTimer = setTimeout(() => {
     initialSyncTimer = null;
-    runMarketplaceDriveSyncOnce({ trigger: "startup" }).catch((error) => {
-      logger.error({ err: error }, "Marketplace Drive changes startup failed");
-    });
+    runConfiguredRootSyncs("startup");
   }, 5000);
   initialSyncTimer.unref?.();
   logger.info({ pollSeconds: Math.round(interval / 1000) }, "Marketplace Drive Changes job started");
+}
+
+async function runConfiguredRootSyncs(trigger) {
+  for (const root of configuredRoots()) {
+    try {
+      await runMarketplaceDriveSyncOnce({ trigger, rootFolderId: root.rootFolderId });
+    } catch (error) {
+      logger.error({ err: error, assetType: root.assetType }, "Marketplace Drive changes sync failed");
+    }
+  }
 }
 
 export function stopMarketplaceDriveSyncJob() {

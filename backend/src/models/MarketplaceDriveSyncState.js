@@ -3,6 +3,7 @@ import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 
 const marketplaceDriveSyncStateSchema = new mongoose.Schema(
   {
+    assetType: { type: String, enum: ["model", "scene"], default: "model", index: true },
     rootFolderId: { type: String, required: true, unique: true },
     pageToken: { type: String, default: "" },
     changesPageToken: { type: String, default: "" },

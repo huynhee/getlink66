@@ -15,15 +15,17 @@ const previewImageSchema = new mongoose.Schema(
 
 const marketplaceModelSchema = new mongoose.Schema(
   {
+    assetType: { type: String, enum: ["model", "scene"], default: "model", index: true },
     source: {
       provider: { type: String, default: "drive", index: true },
       modelId: { type: String, required: true, trim: true },
+      assetId: { type: String, default: "", trim: true },
       slug: { type: String, default: "", trim: true },
       categoryId: { type: String, default: "", trim: true },
       syncedAt: Date,
     },
     title: { type: String, required: true, trim: true, index: true },
-    slug: { type: String, required: true, trim: true, lowercase: true, unique: true },
+    slug: { type: String, required: true, trim: true, lowercase: true },
     categoryId: { type: mongoose.Schema.Types.ObjectId, ref: "MarketplaceCategory", index: true },
     parentCategoryId: { type: mongoose.Schema.Types.ObjectId, ref: "MarketplaceCategory", index: true },
     categorySourceId: { type: String, default: "", trim: true, index: true },
@@ -90,16 +92,26 @@ const marketplaceModelSchema = new mongoose.Schema(
     desiredPublished: { type: Boolean, default: false, index: true },
     publicationBlockers: { type: [String], default: [] },
     downloadCount: { type: Number, default: 0, min: 0 },
+    discoveryStatus: {
+      type: String,
+      enum: ["pending", "indexed", "error"],
+      default: "pending",
+      index: true,
+    },
+    discoveryIndexedAt: Date,
+    discoveryError: { type: String, default: "" },
+    discoveryRevision: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true },
 );
 
+marketplaceModelSchema.index({ assetType: 1, slug: 1 }, { unique: true });
 marketplaceModelSchema.index(
-  { "source.provider": 1, "source.modelId": 1 },
-  { unique: true },
+  { assetType: 1, "source.provider": 1, "source.assetId": 1 },
+  { unique: true, partialFilterExpression: { "source.assetId": { $type: "string", $gt: "" } } },
 );
 marketplaceModelSchema.index({ title: "text", slug: "text" }, { name: "marketplace_model_text" });
-marketplaceModelSchema.index({ isPublished: 1, fileStatus: 1, accessType: 1 });
+marketplaceModelSchema.index({ assetType: 1, isPublished: 1, fileStatus: 1, accessType: 1 });
 marketplaceModelSchema.index({ createdAt: -1 });
 
 export default isMemoryDb()

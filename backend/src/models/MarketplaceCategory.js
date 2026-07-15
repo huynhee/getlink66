@@ -3,6 +3,7 @@ import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 
 const marketplaceCategorySchema = new mongoose.Schema(
   {
+    assetType: { type: String, enum: ["model", "scene"], default: "model", index: true },
     sourceProvider: { type: String, default: "3dsky", index: true },
     sourceCategoryId: { type: String, required: true, trim: true },
     title: { type: String, default: "" },
@@ -17,9 +18,10 @@ const marketplaceCategorySchema = new mongoose.Schema(
 );
 
 marketplaceCategorySchema.index(
-  { sourceProvider: 1, sourceCategoryId: 1 },
+  { assetType: 1, sourceProvider: 1, sourceCategoryId: 1 },
   { unique: true },
 );
+marketplaceCategorySchema.index({ assetType: 1, slug: 1 }, { unique: true });
 
 export default isMemoryDb()
   ? createMemoryModel("MarketplaceCategory")

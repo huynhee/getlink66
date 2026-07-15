@@ -12,6 +12,33 @@ const EMPTY_FILTERS = {
   material: [],
 };
 
+let turnstileScriptPromise = null;
+
+function loadTurnstileScript() {
+  if (window.turnstile) return Promise.resolve(window.turnstile);
+  if (turnstileScriptPromise) return turnstileScriptPromise;
+
+  turnstileScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (!window.turnstile) {
+        reject(new Error("Turnstile did not initialize."));
+        return;
+      }
+      resolve(window.turnstile);
+    };
+    script.onerror = () => {
+      turnstileScriptPromise = null;
+      reject(new Error("Cannot load Turnstile."));
+    };
+    document.head.appendChild(script);
+  });
+  return turnstileScriptPromise;
+}
+
 const FILTER_TITLES_EN = {
   style: "Style",
   render: "Render",
@@ -33,6 +60,15 @@ const FACET_LABELS_VI = {
     classic: "Cổ điển",
     modern: "Hiện đại",
     ethnic: "Truyền thống",
+    industrial: "Công nghiệp",
+    neoclassic: "Tân cổ điển",
+    luxury: "Sang trọng",
+    indochine: "Đông Dương",
+    japanese: "Nhật Bản",
+    "wabi-sabi": "Wabi-sabi",
+    french: "Phong cách Pháp",
+    "modern-classic": "Cổ điển hiện đại",
+    other: "Khác",
   },
   render: {
     vray: "Vray",
@@ -235,19 +271,29 @@ function formatBytes(value) {
   return `${size} B`;
 }
 
-function modelPath(model = {}) {
-  const slugOrId = model.slug || model._id || "";
-  return `/models/${encodeURIComponent(slugOrId)}`;
+function catalogSegment(assetType = "model") {
+  return assetType === "scene" ? "scenes" : "models";
 }
 
-function detailSlugFromPath(path = "") {
-  const match = String(path).match(/^\/models\/([^/?#]+)/);
+function catalogNoun(assetType = "model", language = "vi", plural = false) {
+  if (assetType === "scene") return plural && language === "en" ? "scenes" : "scene";
+  if (language === "vi") return "model";
+  return plural ? "models" : "model";
+}
+
+function modelPath(model = {}) {
+  const slugOrId = model.slug || model._id || "";
+  return `/${catalogSegment(model.assetType)}/${encodeURIComponent(slugOrId)}`;
+}
+
+function detailSlugFromPath(path = "", assetType = "model") {
+  const match = String(path).match(new RegExp(`^/${catalogSegment(assetType)}/([^/?#]+)`));
   return match ? decodeURIComponent(match[1]) : "";
 }
 
-function categoryFromPath(path = "") {
+function categoryFromPath(path = "", assetType = "model") {
   try {
-    return new URL(String(path || "/models"), window.location.origin).searchParams.get("category") || "";
+    return new URL(String(path || `/${catalogSegment(assetType)}`), window.location.origin).searchParams.get("category") || "";
   } catch {
     return "";
   }
@@ -283,7 +329,7 @@ function statusBadgeClass(fileStatus) {
 function labelForCategory(category, language = "vi") {
   const englishLabel = category?.titleEn || category?.title || "";
   if (language !== "vi") return englishLabel;
-  return CATEGORY_LABELS_VI[englishLabel] || englishLabel;
+  return category?.title || CATEGORY_LABELS_VI[englishLabel] || englishLabel;
 }
 
 function findCategoryBySlug(categories = [], slug = "") {
@@ -610,6 +656,7 @@ function imageSearchErrorMessage(message, language) {
 
 function ImageSearchDialog({
   open,
+  assetType = "model",
   language,
   file,
   preview,
@@ -702,7 +749,9 @@ function ImageSearchDialog({
         <header className="marketImageSearchDialogHeader">
           <h2 id="market-image-search-title">
             <ImagePlus size={20} />
-            {language === "vi" ? "Tìm model bằng ảnh" : "Search models by image"}
+            {assetType === "scene"
+              ? textFor(language, "Tìm scene bằng ảnh", "Search scenes by image")
+              : textFor(language, "Tìm model bằng ảnh", "Search models by image")}
           </h2>
           <button
             type="button"
@@ -768,7 +817,7 @@ function ImageSearchDialog({
             {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
             {searching
               ? (language === "vi" ? "Đang tìm..." : "Searching...")
-              : (language === "vi" ? "Tìm model" : "Search models")}
+              : textFor(language, `Tìm ${catalogNoun(assetType, "vi")}`, `Search ${catalogNoun(assetType, "en", true)}`)}
           </button>
         </footer>
       </section>
@@ -776,13 +825,15 @@ function ImageSearchDialog({
   );
 }
 
-function ModelListPage({ user, language, path, onNavigate }) {
+function ModelListPage({ user, language, path, onNavigate, assetType = "model" }) {
+  const segment = catalogSegment(assetType);
+  const noun = catalogNoun(assetType, language);
   const [categories, setCategories] = useState([]);
   const [filterOptions, setFilterOptions] = useState({});
   const [models, setModels] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState(() => categoryFromPath(path));
+  const [category, setCategory] = useState(() => categoryFromPath(path, assetType));
   const [openCategory, setOpenCategory] = useState("");
   const [activeFilters, setActiveFilters] = useState(EMPTY_FILTERS);
   const [accessType, setAccessType] = useState("");
@@ -795,16 +846,17 @@ function ModelListPage({ user, language, path, onNavigate }) {
   const [imageSearchDialogError, setImageSearchDialogError] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
-  async function loadCategories() {
-    const data = await api("/api/marketplace/categories");
+  const loadCategories = useCallback(async () => {
+    const data = await api(assetType === "scene" ? "/api/marketplace/scenes/categories" : "/api/marketplace/categories");
     setCategories(data.categories || []);
-  }
+  }, [assetType]);
 
-  async function loadFilterOptions() {
-    const data = await api("/api/marketplace/filters");
+  const loadFilterOptions = useCallback(async () => {
+    const data = await api(assetType === "scene" ? "/api/marketplace/scenes/filters" : "/api/marketplace/filters");
     setFilterOptions(data.filters || {});
-  }
+  }, [assetType]);
 
   function toggleFacetValue(facet, value) {
     setActiveFilters((current) => ({
@@ -823,9 +875,9 @@ function ModelListPage({ user, language, path, onNavigate }) {
   const selectCategory = useCallback((nextCategory) => {
     const normalized = String(nextCategory || "");
     setCategory(normalized);
-    const nextPath = normalized ? `/models?category=${encodeURIComponent(normalized)}` : "/models";
+    const nextPath = normalized ? `/${segment}?category=${encodeURIComponent(normalized)}` : `/${segment}`;
     if (path !== nextPath) onNavigate?.(nextPath);
-  }, [onNavigate, path]);
+  }, [onNavigate, path, segment]);
 
   function clearAllFilters() {
     selectCategory("");
@@ -849,15 +901,15 @@ function ModelListPage({ user, language, path, onNavigate }) {
       setImageSearchPreview("");
     }
     try {
-      const data = await api(`/api/marketplace/models?${query.toString()}`);
-      setModels(data.models || []);
+      const data = await api(`/api/marketplace/${segment}?${query.toString()}`);
+      setModels(data.assets || data.scenes || data.models || []);
       setPagination(data.pagination || { page: 1, totalPages: 1, total: 0 });
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [accessType, activeFilters, category, search]);
+  }, [accessType, activeFilters, category, search, segment]);
 
   async function searchByImage(file) {
     if (!user) {
@@ -870,7 +922,7 @@ function ModelListPage({ user, language, path, onNavigate }) {
     try {
       const payload = await fileToSearchImageData(file);
       setImageSearchPreview(payload.imageData);
-      const data = await api("/api/marketplace/image-search", {
+      const data = await api(assetType === "scene" ? "/api/marketplace/scenes/image-search" : "/api/marketplace/image-search", {
         method: "POST",
         body: JSON.stringify({
           imageData: payload.imageData,
@@ -881,7 +933,7 @@ function ModelListPage({ user, language, path, onNavigate }) {
           limit: 60,
         }),
       });
-      setModels(data.models || []);
+      setModels(data.assets || data.scenes || data.models || []);
       setPagination(data.pagination || { page: 1, totalPages: 1, total: 0 });
       setImageSearchMeta(data.imageSearch || null);
       return true;
@@ -928,12 +980,12 @@ function ModelListPage({ user, language, path, onNavigate }) {
   useEffect(() => {
     loadCategories().catch(() => { });
     loadFilterOptions().catch(() => { });
-  }, []);
+  }, [loadCategories, loadFilterOptions]);
 
   useEffect(() => {
-    const nextCategory = categoryFromPath(path);
+    const nextCategory = categoryFromPath(path, assetType);
     setCategory((current) => current === nextCategory ? current : nextCategory);
-  }, [path]);
+  }, [path, assetType]);
 
   useEffect(() => {
     if (!category || openCategory) return;
@@ -992,12 +1044,24 @@ function ModelListPage({ user, language, path, onNavigate }) {
   return (
     <>
       <div className="marketLayout">
-      <aside className="marketSidebar panel">
-        <h2>
-          <Filter size={20} />
-          {textFor(language, "Bộ lọc", "Filters")}
-          <span className={`marketFilterCount ${totalFilterCount ? "active" : ""}`}>{totalFilterCount}</span>
-        </h2>
+      <aside className={`marketSidebar panel ${mobileFiltersOpen ? "mobileOpen" : ""}`}>
+        <div className="marketSidebarHeading">
+          <h2>
+            <Filter size={20} />
+            {textFor(language, "Bộ lọc", "Filters")}
+            <span className={`marketFilterCount ${totalFilterCount ? "active" : ""}`}>{totalFilterCount}</span>
+          </h2>
+          <button
+            type="button"
+            className="marketMobileFilterToggle"
+            onClick={() => setMobileFiltersOpen((current) => !current)}
+            aria-expanded={mobileFiltersOpen}
+            aria-label={textFor(language, mobileFiltersOpen ? "Thu gọn bộ lọc" : "Mở bộ lọc", mobileFiltersOpen ? "Collapse filters" : "Open filters")}
+          >
+            {mobileFiltersOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </button>
+        </div>
+        <div className="marketSidebarBody">
         <div className="marketSidebarActions">
           <button
             type="button"
@@ -1059,6 +1123,7 @@ function ModelListPage({ user, language, path, onNavigate }) {
             ))}
           </div>
         </div>
+        </div>
       </aside>
 
       <section className="marketContent">
@@ -1069,7 +1134,7 @@ function ModelListPage({ user, language, path, onNavigate }) {
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder={language === "vi" ? "Tìm kiếm model..." : "Search model..."}
+                placeholder={textFor(language, `Tìm kiếm ${noun}...`, `Search ${noun}...`)}
               />
               <button
                 type="button"
@@ -1099,7 +1164,7 @@ function ModelListPage({ user, language, path, onNavigate }) {
             </div>
           </div>
           <div className="marketResultBar">
-            <span>{pagination.total || 0} {textFor(language, "model", "models found")}</span>
+            <span>{pagination.total || 0} {textFor(language, noun, `${noun} found`)}</span>
             {filterChips.length > 0 && (
               <div className="marketFilterChips">
                 {filterChips.map((chip) => (
@@ -1132,7 +1197,7 @@ function ModelListPage({ user, language, path, onNavigate }) {
         </div>
         {!loading && !models.length && (
           <section className="panel emptyState">
-            <p>{language === "vi" ? "Chưa có model phù hợp." : "No matching models yet."}</p>
+            <p>{textFor(language, `Chưa có ${noun} phù hợp.`, `No matching ${noun} yet.`)}</p>
           </section>
         )}
         <Pagination
@@ -1142,12 +1207,13 @@ function ModelListPage({ user, language, path, onNavigate }) {
           onPageChange={goToPage}
           loading={loading}
           language={language}
-          itemLabel="model"
+          itemLabel={noun}
         />
         </section>
       </div>
       <ImageSearchDialog
         open={imageSearchOpen}
+        assetType={assetType}
         language={language}
         file={imageSearchFile}
         preview={imageSearchDraftPreview}
@@ -1163,7 +1229,67 @@ function ModelListPage({ user, language, path, onNavigate }) {
   );
 }
 
-function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
+function TurnstileDownloadGate({ siteKey, action, modelId, language, onVerified, onExpired }) {
+  const containerRef = useRef(null);
+  const widgetRef = useRef(null);
+  const callbacksRef = useRef({ onVerified, onExpired });
+  const [widgetError, setWidgetError] = useState("");
+
+  callbacksRef.current = { onVerified, onExpired };
+
+  useEffect(() => {
+    if (!siteKey || !containerRef.current) return undefined;
+    let active = true;
+    setWidgetError("");
+
+    loadTurnstileScript()
+      .then((turnstile) => {
+        if (!active || !containerRef.current) return;
+        widgetRef.current = turnstile.render(containerRef.current, {
+          sitekey: siteKey,
+          action: action || "marketplace_download",
+          cData: String(modelId || "").slice(0, 255),
+          theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
+          size: "flexible",
+          callback: (token) => callbacksRef.current.onVerified?.(token),
+          "expired-callback": () => callbacksRef.current.onExpired?.(),
+          "error-callback": () => setWidgetError(
+            language === "vi" ? "Không thể xác minh. Vui lòng thử lại." : "Verification failed. Please try again.",
+          ),
+        });
+      })
+      .catch(() => {
+        if (active) {
+          setWidgetError(
+            language === "vi" ? "Không tải được bộ xác minh. Vui lòng thử lại." : "Could not load verification. Please try again.",
+          );
+        }
+      });
+
+    return () => {
+      active = false;
+      if (widgetRef.current !== null && window.turnstile) {
+        window.turnstile.remove(widgetRef.current);
+      }
+      widgetRef.current = null;
+    };
+  }, [siteKey, action, modelId, language]);
+
+  return (
+    <section className="marketDownloadVerifyGate" aria-live="polite">
+      <div className="marketDownloadVerifyHeading">
+        <ShieldCheck size={18} />
+        <span>{language === "vi" ? "Đang xác minh để hiện nút tải" : "Verifying to show the download button"}</span>
+      </div>
+      <div className="marketDownloadTurnstile" ref={containerRef} />
+      {widgetError && <p className="error">{widgetError}</p>}
+    </section>
+  );
+}
+
+function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, assetType = "model" }) {
+  const segment = catalogSegment(assetType);
+  const noun = catalogNoun(assetType, language);
   const [model, setModel] = useState(null);
   const [recommendedModels, setRecommendedModels] = useState([]);
   const [expandedRecommendations, setExpandedRecommendations] = useState([]);
@@ -1176,6 +1302,8 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
   const [downloading, setDownloading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [downloadProtection, setDownloadProtection] = useState({ enabled: false, siteKey: "", action: "" });
+  const [turnstileToken, setTurnstileToken] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -1186,13 +1314,16 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
     setRecommendationInfo({ total: 0, hasMore: false });
     setRecommendationsExpanded(false);
     setRecommendationsError("");
+    setDownloadProtection({ enabled: false, siteKey: "", action: "" });
+    setTurnstileToken("");
     Promise.all([
-      api(`/api/marketplace/models/${encodeURIComponent(slug)}`),
-      api("/api/marketplace/filters").catch(() => ({ filters: EMPTY_FILTERS })),
+      api(`/api/marketplace/${segment}/${encodeURIComponent(slug)}`),
+      api(assetType === "scene" ? "/api/marketplace/scenes/filters" : "/api/marketplace/filters").catch(() => ({ filters: EMPTY_FILTERS })),
     ])
       .then(([data, filterData]) => {
         if (!active) return;
-        setModel(data.model || null);
+        setModel(data.asset || data.scene || data.model || null);
+        setDownloadProtection(data.downloadProtection || { enabled: false, siteKey: "", action: "" });
         setRecommendedModels(data.recommendedModels || []);
         setRecommendationInfo(data.recommendations || { total: data.recommendedModels?.length || 0, hasMore: false });
         setFilterOptions(filterData.filters || EMPTY_FILTERS);
@@ -1206,7 +1337,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
     return () => {
       active = false;
     };
-  }, [slug]);
+  }, [slug, assetType, segment]);
 
   async function toggleMoreRecommendations() {
     if (recommendationsExpanded) {
@@ -1221,9 +1352,9 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
     setRecommendationsError("");
     try {
       const data = await api(
-        `/api/marketplace/models/${encodeURIComponent(model?.slug || model?._id || slug)}/recommendations?offset=6&limit=54`,
+        `/api/marketplace/${segment}/${encodeURIComponent(model?.slug || model?._id || slug)}/recommendations?offset=6&limit=54`,
       );
-      setExpandedRecommendations(data.models || []);
+      setExpandedRecommendations(data.assets || data.scenes || data.models || []);
       setRecommendationInfo((current) => ({
         ...current,
         total: data.pagination?.total ?? current.total,
@@ -1239,14 +1370,18 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
 
   async function downloadModel() {
     if (!model) return;
+    if (downloadProtection.enabled && !turnstileToken) {
+      return;
+    }
     setDownloading(true);
     setMessage("");
     setError("");
     try {
-      const data = await api(`/api/marketplace/models/${model._id}/download-session`, {
+      const data = await api(`/api/marketplace/${segment}/${model._id}/download-session`, {
         method: "POST",
-        body: JSON.stringify({}),
+        body: JSON.stringify({ turnstileToken }),
       });
+      setTurnstileToken("");
       setMessage(
         language === "vi"
           ? `Đã tạo phiên tải. Còn ${data.remaining ?? "-"} lượt hôm nay.`
@@ -1259,7 +1394,18 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
         .catch(() => { });
       window.open(buildApiUrl(data.downloadUrl), "_blank", "noopener,noreferrer");
     } catch (err) {
-      setError(err.message);
+      const quota = err.data?.details;
+      if (err.code === "DOWNLOAD_QUOTA_EXCEEDED" && quota) {
+        const resetAt = quota.resetAt ? new Date(quota.resetAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US") : "-";
+        setError(language === "vi"
+          ? `Không đủ lượt tải: cần ${quota.required}, còn ${quota.remaining}. Hạn mức đặt lại lúc ${resetAt}.`
+          : `Not enough downloads: ${quota.required} required, ${quota.remaining} remaining. Quota resets at ${resetAt}.`);
+      } else {
+        setError(err.message);
+      }
+      if (downloadProtection.enabled || String(err.code || "").startsWith("TURNSTILE_")) {
+        setTurnstileToken("");
+      }
     } finally {
       setDownloading(false);
     }
@@ -1268,7 +1414,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
   if (loading) {
     return (
       <section className="panel emptyState">
-        <p>{language === "vi" ? "Đang tải model..." : "Loading model..."}</p>
+        <p>{textFor(language, `Đang tải ${noun}...`, `Loading ${noun}...`)}</p>
       </section>
     );
   }
@@ -1276,11 +1422,11 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
   if (!model) {
     return (
       <section className="panel emptyState">
-        <button type="button" className="smallButton" onClick={() => navigateTo("/models", onNavigate)}>
+        <button type="button" className="smallButton" onClick={() => navigateTo(`/${segment}`, onNavigate)}>
           <ArrowLeft size={16} />
-          {textFor(language, "Model", "Models")}
+          {assetType === "scene" ? textFor(language, "Scene", "Scenes") : textFor(language, "Model", "Models")}
         </button>
-        <p className="error">{error || (language === "vi" ? "Không tìm thấy model." : "Model not found.")}</p>
+        <p className="error">{error || textFor(language, `Không tìm thấy ${noun}.`, `${assetType === "scene" ? "Scene" : "Model"} not found.`)}</p>
       </section>
     );
   }
@@ -1297,20 +1443,20 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
   return (
     <div className="marketDetailPage">
       <div className="marketDetailTopbar">
-        <button type="button" className="marketBackButton" onClick={() => navigateTo("/models", onNavigate)}>
+        <button type="button" className="marketBackButton" onClick={() => navigateTo(`/${segment}`, onNavigate)}>
           <ArrowLeft size={16} />
-          {textFor(language, "Tất cả model", "All models")}
+          {assetType === "scene" ? textFor(language, "Tất cả scene", "All scenes") : textFor(language, "Tất cả model", "All models")}
         </button>
         <nav className="marketDetailBreadcrumb" aria-label={textFor(language, "Danh mục model", "Model category")}>
           {categoryTrail.length ? categoryTrail.map((item, index) => {
-            const href = `/models?category=${encodeURIComponent(item.slug)}`;
+            const href = `/${segment}?category=${encodeURIComponent(item.slug)}`;
             return (
               <React.Fragment key={item.slug}>
                 {index > 0 && <span aria-hidden="true">/</span>}
                 <a href={href} onClick={(event) => navigateTo(href, onNavigate, event)}>{labelForCategory(item, language)}</a>
               </React.Fragment>
             );
-          }) : <span>{categoryLabel || textFor(language, "Thư viện model", "Model library")}</span>}
+          }) : <span>{categoryLabel || (assetType === "scene" ? textFor(language, "Thư viện scene", "Scene library") : textFor(language, "Thư viện model", "Model library"))}</span>}
         </nav>
       </div>
 
@@ -1335,24 +1481,34 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
             {isDemo ? (
               <button className="primaryButton" type="button" disabled>
                 <Package size={18} />
-                {textFor(language, "Model mẫu giao diện", "Interface demo model")}
+                {assetType === "scene" ? textFor(language, "Scene mẫu giao diện", "Interface demo scene") : textFor(language, "Model mẫu giao diện", "Interface demo model")}
               </button>
             ) : requiresPro ? (
               <button className="primaryButton" type="button" onClick={() => navigateTo("/topup?mode=pro", onNavigate)}>
                 <ShieldCheck size={18} />
                 {textFor(language, "Nâng cấp Pro để tải", "Upgrade to Pro")}
               </button>
+            ) : downloadProtection.enabled && !turnstileToken ? (
+              <TurnstileDownloadGate
+                siteKey={downloadProtection.siteKey}
+                action={downloadProtection.action}
+                modelId={model._id}
+                language={language}
+                onVerified={setTurnstileToken}
+                onExpired={() => setTurnstileToken("")}
+              />
             ) : (
               <button className="primaryButton" type="button" disabled={downloading || !canDownload} onClick={downloadModel}>
                 <Download size={18} />
-                {downloading ? textFor(language, "Đang tạo phiên tải...", "Creating download...") : textFor(language, "Tải model", "Download model")}
+                {downloading ? textFor(language, "Đang tạo phiên tải...", "Creating download...") : textFor(language, `Tải ${noun}`, `Download ${noun}`)}
               </button>
             )}
+            {assetType === "scene" && <p className="marketQuotaCost">{textFor(language, "Chi phí tải: 5 lượt", "Download cost: 5 downloads")}</p>}
           </div>
 
           {!fileReady && (
             <p className="error">
-              {language === "vi" ? "Model này chưa gắn file sẵn sàng tải." : "This model does not have a ready file yet."}
+              {textFor(language, `${assetType === "scene" ? "Scene" : "Model"} này chưa có file sẵn sàng tải.`, `This ${noun} does not have a ready file yet.`)}
             </p>
           )}
           {message && <p className="success">{message}</p>}
@@ -1371,15 +1527,15 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
             <ModelMetaRow label={textFor(language, "Phong cách", "Style")}>
               <DetailFacetList facet="style" values={model.styles} filterOptions={filterOptions} language={language} />
             </ModelMetaRow>
-            <ModelMetaRow label={textFor(language, "Hình dạng", "Form")}>
+            {assetType !== "scene" && <ModelMetaRow label={textFor(language, "Hình dạng", "Form")}>
               <DetailFacetList facet="form" values={model.forms} filterOptions={filterOptions} language={language} />
-            </ModelMetaRow>
-            <ModelMetaRow label={textFor(language, "Màu sắc", "Color")}>
+            </ModelMetaRow>}
+            {assetType !== "scene" && <ModelMetaRow label={textFor(language, "Màu sắc", "Color")}>
               <DetailFacetList facet="color" values={model.colors} filterOptions={filterOptions} language={language} />
-            </ModelMetaRow>
-            <ModelMetaRow label={textFor(language, "Vật liệu", "Material")}>
+            </ModelMetaRow>}
+            {assetType !== "scene" && <ModelMetaRow label={textFor(language, "Vật liệu", "Material")}>
               <DetailFacetList facet="material" values={model.materials} filterOptions={filterOptions} language={language} />
-            </ModelMetaRow>
+            </ModelMetaRow>}
           </div>
         </aside>
       </section>
@@ -1387,8 +1543,8 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
       <section className="marketRecommendations">
         <div className="marketSectionHeader">
           <div>
-            <h2>{language === "vi" ? "Model đề xuất" : "Recommended models"}</h2>
-            <p>{language === "vi" ? "Các model có mức độ liên quan cao nhất." : "The most relevant related models."}</p>
+            <h2>{assetType === "scene" ? textFor(language, "Scene đề xuất", "Recommended scenes") : textFor(language, "Model đề xuất", "Recommended models")}</h2>
+            <p>{textFor(language, `Các ${noun} có mức độ liên quan cao nhất.`, `The most relevant related ${catalogNoun(assetType, "en", true)}.`)}</p>
           </div>
         </div>
         {recommendedModels.length > 0 ? (
@@ -1425,7 +1581,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
           </>
         ) : (
           <section className="panel emptyState">
-            <p>{language === "vi" ? "Chưa có model đề xuất." : "No recommendations yet."}</p>
+            <p>{textFor(language, `Chưa có ${noun} đề xuất.`, "No recommendations yet.")}</p>
           </section>
         )}
       </section>
@@ -1434,10 +1590,10 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange }) {
   );
 }
 
-export default function Models({ user, language = "vi", path = "/models", onNavigate, onUserChange }) {
-  const slug = detailSlugFromPath(path);
+export default function Models({ user, language = "vi", path = "/models", onNavigate, onUserChange, assetType = "model" }) {
+  const slug = detailSlugFromPath(path, assetType);
   if (slug) {
-    return <ModelDetailPage slug={slug} user={user} language={language} onNavigate={onNavigate} onUserChange={onUserChange} />;
+    return <ModelDetailPage slug={slug} user={user} language={language} onNavigate={onNavigate} onUserChange={onUserChange} assetType={assetType} />;
   }
-  return <ModelListPage user={user} language={language} path={path} onNavigate={onNavigate} />;
+  return <ModelListPage user={user} language={language} path={path} onNavigate={onNavigate} assetType={assetType} />;
 }

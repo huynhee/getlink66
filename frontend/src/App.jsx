@@ -7,6 +7,7 @@ import Login from "./pages/Login.jsx";
 import Home from "./pages/Home.jsx";
 import Topup from "./pages/Topup.jsx";
 import Models from "./pages/Models.jsx";
+import Scenes from "./pages/Scenes.jsx";
 import Membership from "./pages/Membership.jsx";
 import History from "./pages/History.jsx";
 import Invite from "./pages/Invite.jsx";
@@ -164,6 +165,7 @@ function BannedOverlay({ user, onClose, language = "vi" }) {
 function pageFromPath(pathname) {
   const cleanPath = String(pathname || "/").split(/[?#]/)[0] || "/";
   if (cleanPath === "/models" || cleanPath.startsWith("/models/")) return "models";
+  if (cleanPath === "/scenes" || cleanPath.startsWith("/scenes/")) return "scenes";
   if (cleanPath === "/membership") return "membership";
   if (cleanPath === "/topup") return "topup";
   if (cleanPath === "/history") return "history";
@@ -222,6 +224,7 @@ function App() {
       getlink: "/getlink",
       topup: "/topup",
       models: "/models",
+      scenes: "/scenes",
       membership: "/membership",
       history: "/history",
       invite: "/invite",
@@ -313,8 +316,9 @@ function App() {
       <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
       <FacebookGroupBanner language={language} />
       <main className="shell">
-        {!user && !["guide", "privacy", "terms", "models"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />}
+        {!user && !["guide", "privacy", "terms", "models", "scenes"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />}
         {page === "models" && <Models user={user} language={language} path={path} onNavigate={navigate} onUserChange={setUser} />}
+        {page === "scenes" && <Scenes user={user} language={language} path={path} onNavigate={navigate} onUserChange={setUser} />}
         {page === "guide" && <Guide language={language} />}
         {page === "privacy" && <Privacy language={language} />}
         {page === "terms" && <Terms language={language} />}

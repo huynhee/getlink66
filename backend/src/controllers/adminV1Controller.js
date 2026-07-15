@@ -176,9 +176,14 @@ export async function adminDashboard(req, res, next) {
       activePro,
       getlinks,
       marketplaceDownloads,
+      modelDownloads,
+      sceneDownloads,
       missingModels,
+      missingScenes,
       incompleteModels,
+      incompleteScenes,
       readyModels,
+      readyScenes,
       sessions,
       recentSystemLogs,
       recentAuditLogs,
@@ -192,9 +197,14 @@ export async function adminDashboard(req, res, next) {
       User.countDocuments({ proUntil: { $gt: new Date() } }),
       Getlink.countDocuments(rangeQuery("createdAt", range)),
       ModelDownload.countDocuments(rangeQuery("createdAt", range)),
-      MarketplaceModel.countDocuments({ fileStatus: { $ne: "ready" } }),
-      MarketplaceModel.countDocuments({ metadataStatus: "incomplete" }),
-      MarketplaceModel.countDocuments({ fileStatus: "ready" }),
+      ModelDownload.countDocuments({ assetType: { $ne: "scene" }, ...rangeQuery("createdAt", range) }),
+      ModelDownload.countDocuments({ assetType: "scene", ...rangeQuery("createdAt", range) }),
+      MarketplaceModel.countDocuments({ assetType: "model", fileStatus: { $ne: "ready" } }),
+      MarketplaceModel.countDocuments({ assetType: "scene", fileStatus: { $ne: "ready" } }),
+      MarketplaceModel.countDocuments({ assetType: "model", metadataStatus: "incomplete" }),
+      MarketplaceModel.countDocuments({ assetType: "scene", metadataStatus: "incomplete" }),
+      MarketplaceModel.countDocuments({ assetType: "model", fileStatus: "ready" }),
+      MarketplaceModel.countDocuments({ assetType: "scene", fileStatus: "ready" }),
       DownloadSession.countDocuments(rangeQuery("createdAt", range)),
       SystemLog.find().sort({ createdAt: -1 }).limit(8).lean(),
       AuditLog.find().sort({ createdAt: -1 }).limit(8).populate("actor", "name email").lean(),
@@ -218,9 +228,14 @@ export async function adminDashboard(req, res, next) {
           creditIssued,
           getlinks,
           marketplaceDownloads,
+          modelDownloads,
+          sceneDownloads,
           missingModels,
+          missingScenes,
           incompleteModels,
+          incompleteScenes,
           readyModels,
+          readyScenes,
           sessions,
         },
         recentSystemLogs,
@@ -237,11 +252,12 @@ export async function adminUserProfile(req, res, next) {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid user id" });
     const user = await User.findById(req.params.id).populate("proPlanId", "code name price durationDays").lean();
     if (!user) return res.status(404).json({ message: "User not found" });
-    const [getlinks, topups, proOrders, modelDownloads, purchases, auditLogs] = await Promise.all([
+    const [getlinks, topups, proOrders, modelDownloads, sceneDownloads, purchases, auditLogs] = await Promise.all([
       Getlink.countDocuments({ userId: user._id }),
       Topup.countDocuments({ userId: user._id }),
       MembershipOrder.countDocuments({ userId: user._id }),
-      ModelDownload.countDocuments({ userId: user._id }),
+      ModelDownload.countDocuments({ userId: user._id, assetType: { $ne: "scene" } }),
+      ModelDownload.countDocuments({ userId: user._id, assetType: "scene" }),
       ModelPurchase.countDocuments({ userId: user._id }),
       AuditLog.find({ $or: [{ target: String(user._id) }, { targetId: String(user._id) }] })
         .sort({ createdAt: -1 })
@@ -251,7 +267,7 @@ export async function adminUserProfile(req, res, next) {
     ]);
     res.json({
       user: publicUser(user),
-      stats: { getlinks, topups, proOrders, modelDownloads, purchases },
+      stats: { getlinks, topups, proOrders, modelDownloads, sceneDownloads, purchases },
       auditLogs,
     });
   } catch (error) {

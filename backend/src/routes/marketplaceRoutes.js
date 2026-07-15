@@ -25,10 +25,25 @@ const imageSearchLimit = createRateLimit({
   max: 20,
 });
 
+function sceneCatalog(req, _res, next) {
+  req.marketplaceAssetType = "scene";
+  next();
+}
+
 router.get("/marketplace/categories", listMarketplaceCategories);
 router.get("/marketplace/filters", listMarketplaceFilters);
 router.get("/marketplace/models", listMarketplaceModels);
 router.post("/marketplace/image-search", imageSearchLimit, searchMarketplaceByImage);
+router.get("/marketplace/scenes/categories", sceneCatalog, listMarketplaceCategories);
+router.get("/marketplace/scenes/filters", sceneCatalog, listMarketplaceFilters);
+router.get("/marketplace/scenes", sceneCatalog, listMarketplaceModels);
+router.post("/marketplace/scenes/image-search", sceneCatalog, imageSearchLimit, searchMarketplaceByImage);
+router.get("/marketplace/scenes/:id/cover", sceneCatalog, streamMarketplaceCover);
+router.get("/marketplace/scenes/:id/preview/:index", sceneCatalog, streamMarketplacePreview);
+router.get("/marketplace/scenes/:slug/recommendations", sceneCatalog, listMarketplaceModelRecommendations);
+router.get("/marketplace/scenes/:slug", sceneCatalog, getMarketplaceModel);
+router.post("/marketplace/scenes/:id/download-session", sceneCatalog, downloadSessionLimit, createDownloadSession);
+router.post("/plugin/scenes/:id/download-session", sceneCatalog, downloadSessionLimit, createDownloadSession);
 router.get("/marketplace/models/:id/cover", streamMarketplaceCover);
 router.get("/marketplace/models/:id/preview/:index", streamMarketplacePreview);
 router.get("/marketplace/models/:slug/recommendations", listMarketplaceModelRecommendations);

@@ -3,7 +3,7 @@ import MarketplaceCategory from "../models/MarketplaceCategory.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import DownloadSession from "../models/DownloadSession.js";
 import DailyImageSearchQuota from "../models/DailyImageSearchQuota.js";
-import { MARKETPLACE_FILTERS } from "../data/marketplaceFilters.js";
+import { marketplaceAssetTypeFilter, marketplaceDownloadCost, marketplaceFiltersFor, normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { isSafeId } from "../utils/validators.js";
 import {
   createMarketplaceDownloadSession,
@@ -12,7 +12,13 @@ import {
   verifyDownloadSession,
 } from "../utils/marketplaceDownloadService.js";
 import { isProActive } from "../utils/membershipService.js";
-import { openDemoMarketplaceImageStream, openGoogleDriveFileStream, openStorageStream } from "../utils/storageProvider.js";
+import {
+  getStorageBrowserDownloadLink,
+  openDemoMarketplaceImageStream,
+  openGoogleDriveFileStream,
+  openStorageStream,
+} from "../utils/storageProvider.js";
+import { marketplaceTurnstileConfig, verifyMarketplaceTurnstile } from "../utils/turnstile.js";
 import { searchMarketplaceImage } from "../utils/marketplaceImageSearchProvider.js";
 import {
   discoveryIdentityQuery,
@@ -27,6 +33,18 @@ const IMAGE_SEARCH_FREE_LIMIT = 10;
 const IMAGE_SEARCH_PRO_LIMIT = 150;
 const MAX_IMAGE_SEARCH_BYTES = 512 * 1024;
 
+function requestAssetType(req) {
+  return normalizeAssetType(req?.marketplaceAssetType || "model");
+}
+
+function assetRouteSegment(assetType) {
+  return normalizeAssetType(assetType) === "scene" ? "scenes" : "models";
+}
+
+function assetLabel(assetType) {
+  return normalizeAssetType(assetType) === "scene" ? "Scene" : "Model";
+}
+
 function imageVersion(model) {
   const updatedAt = model?.updatedAt ? new Date(model.updatedAt).getTime() : 0;
   return updatedAt && Number.isFinite(updatedAt) ? updatedAt.toString(36) : "";
@@ -38,11 +56,11 @@ function versionedImageUrl(path, model) {
 }
 
 function previewUrl(model, index) {
-  return versionedImageUrl(`/api/marketplace/models/${model._id}/preview/${index}`, model);
+  return versionedImageUrl(`/api/marketplace/${assetRouteSegment(model.assetType)}/${model._id}/preview/${index}`, model);
 }
 
 function coverUrl(model) {
-  return versionedImageUrl(`/api/marketplace/models/${model._id}/cover`, model);
+  return versionedImageUrl(`/api/marketplace/${assetRouteSegment(model.assetType)}/${model._id}/cover`, model);
 }
 
 function publicImageRef(model, image, url) {
@@ -124,6 +142,7 @@ function publicModel(model, options = {}) {
   const includePreviews = options.includePreviews !== false;
   return {
     _id: model._id,
+    assetType: normalizeAssetType(model.assetType),
     title: model.title || "",
     slug: model.slug || "",
     categoryId: refId(model.categoryId),
@@ -144,6 +163,7 @@ function publicModel(model, options = {}) {
     isPublished: Boolean(model.isPublished),
     fileSize: Number(model.fileSize || 0),
     downloadCount: Number(model.downloadCount || 0),
+    quotaCost: marketplaceDownloadCost(model.assetType),
     isDemo: model.source?.provider === "demo",
     createdAt: model.createdAt,
     updatedAt: model.updatedAt,
@@ -173,6 +193,7 @@ async function recommendedModelsFor(model, options = {}) {
   const semantic = await semanticRecommendations(model, 180);
   const signals = recommendationSignals(model);
   const query = {
+    assetType: marketplaceAssetTypeFilter(model.assetType),
     _id: { $ne: model._id },
     isPublished: true,
     metadataStatus: "complete",
@@ -189,6 +210,7 @@ async function recommendedModelsFor(model, options = {}) {
   const semanticQuery = discoveryIdentityQuery(semantic.matches);
   if (semanticQuery) {
     const semanticCandidates = await MarketplaceModel.find({
+      assetType: marketplaceAssetTypeFilter(model.assetType),
       isPublished: true,
       metadataStatus: "complete",
       fileStatus: "ready",
@@ -216,9 +238,10 @@ async function recommendedModelsFor(model, options = {}) {
   };
 }
 
-export async function listMarketplaceCategories(_req, res, next) {
+export async function listMarketplaceCategories(req, res, next) {
   try {
-    const categories = await MarketplaceCategory.find({ isActive: true })
+    const assetType = requestAssetType(req);
+    const categories = await MarketplaceCategory.find({ assetType: marketplaceAssetTypeFilter(assetType), isActive: true })
       .sort({ position: 1 })
       .lean();
     res.json({ categories: buildCategoryTree(categories), flat: categories.sort(categorySort) });
@@ -227,14 +250,16 @@ export async function listMarketplaceCategories(_req, res, next) {
   }
 }
 
-export function listMarketplaceFilters(_req, res) {
-  res.json({ filters: MARKETPLACE_FILTERS });
+export function listMarketplaceFilters(req, res) {
+  const assetType = requestAssetType(req);
+  res.json({ assetType, filters: marketplaceFiltersFor(assetType) });
 }
 
-async function categoryFilter(categoryValue) {
+async function categoryFilter(categoryValue, assetType = "model") {
   const value = String(categoryValue || "").trim();
   if (!value) return {};
   const category = await MarketplaceCategory.findOne({
+    assetType: marketplaceAssetTypeFilter(assetType),
     $or: [
       { slug: value.toLowerCase() },
       { sourceCategoryId: value },
@@ -293,9 +318,10 @@ function addLegacyFacetFilter(query, field, legacyField, values) {
   });
 }
 
-function applyMarketplaceFacetFilters(query, source = {}) {
+function applyMarketplaceFacetFilters(query, source = {}, assetType = "model") {
   addFacetFilter(query, "styles", parseFacetValues(source.style || source.styles));
   addLegacyFacetFilter(query, "renderers", "renderer", parseFacetValues(source.render || source.renderers));
+  if (normalizeAssetType(assetType) === "scene") return;
   addFacetFilter(query, "forms", parseFacetValues(source.form || source.forms));
   addFacetFilter(query, "colors", parseFacetValues(source.color || source.colors));
   addFacetFilter(query, "materials", parseFacetValues(source.material || source.materials));
@@ -303,19 +329,20 @@ function applyMarketplaceFacetFilters(query, source = {}) {
 
 export async function listMarketplaceModels(req, res, next) {
   try {
+    const assetType = requestAssetType(req);
     const requestedPage = Number(req.query.page || 1);
     const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const limit = Math.min(60, Math.max(1, Number(req.query.limit || PAGE_SIZE)));
     const search = String(req.query.q || req.query.search || "").trim().slice(0, 120);
     const accessType = String(req.query.accessType || "").trim();
     const fileStatus = String(req.query.fileStatus || "").trim();
-    const query = { isPublished: true, metadataStatus: "complete", fileStatus: "ready" };
+    const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready" };
     Object.assign(query, accessTypeFilter(accessType));
-    applyMarketplaceFacetFilters(query, req.query);
+    applyMarketplaceFacetFilters(query, req.query, assetType);
     if (["missing", "pending_upload", "ready", "failed"].includes(fileStatus)) query.fileStatus = fileStatus;
-    const categoryQuery = await categoryFilter(req.query.category);
+    const categoryQuery = await categoryFilter(req.query.category, assetType);
     addNestedFilter(query, categoryQuery);
-    const semanticSearch = search ? await semanticTextSearch(search, 1_000) : { matches: [], provider: "catalog" };
+    const semanticSearch = search ? await semanticTextSearch(search, 1_000, assetType) : { matches: [], provider: "catalog" };
     const semanticQuery = discoveryIdentityQuery(semanticSearch.matches);
     if (semanticQuery) {
       addNestedFilter(query, semanticQuery);
@@ -343,8 +370,11 @@ export async function listMarketplaceModels(req, res, next) {
     if (semanticQuery) {
       models = sortByDiscoveryMatches(models, semanticSearch.matches).slice((safePage - 1) * limit, safePage * limit);
     }
+    const assets = models.map((model) => publicModel(model, { includePreviews: false }));
     res.json({
-      models: models.map((model) => publicModel(model, { includePreviews: false })),
+      assetType,
+      assets,
+      ...(assetType === "scene" ? { scenes: assets } : { models: assets }),
       pagination: { page: safePage, pageSize: limit, total, totalPages },
       search: { engine: semanticQuery ? semanticSearch.provider : "catalog" },
     });
@@ -450,6 +480,7 @@ async function chargeImageSearchQuota(req, tier, imageHash) {
 
 export async function searchMarketplaceByImage(req, res, next) {
   try {
+    const assetType = requestAssetType(req);
     const tier = imageSearchTier(req);
     const image = parseImageSearchPayload(req.body);
     const requestedLimit = Number(req.body.limit || PAGE_SIZE);
@@ -459,16 +490,18 @@ export async function searchMarketplaceByImage(req, res, next) {
       imageData: image.imageData,
       imageHash: image.imageHash,
       limit,
+      assetType,
     });
     const matchedIds = searchResult.matches.map((match) => match.modelId);
-    const query = { isPublished: true, metadataStatus: "complete", fileStatus: "ready" };
+    const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready" };
 
     Object.assign(query, accessTypeFilter(req.body.accessType));
-    applyMarketplaceFacetFilters(query, req.body);
-    addNestedFilter(query, await categoryFilter(req.body.category));
+    applyMarketplaceFacetFilters(query, req.body, assetType);
+    addNestedFilter(query, await categoryFilter(req.body.category, assetType));
     if (matchedIds.length) {
       const identityFilters = [
         { "source.modelId": { $in: matchedIds } },
+        { "source.assetId": { $in: matchedIds } },
         { slug: { $in: matchedIds } },
       ];
       const databaseIds = matchedIds.filter((id) => isSafeId(id));
@@ -485,7 +518,7 @@ export async function searchMarketplaceByImage(req, res, next) {
       : [];
     const ranks = new Map(searchResult.matches.map((match, index) => [match.modelId, { index, score: match.score }]));
     function modelRank(model) {
-      const candidates = [String(model?.source?.modelId || ""), String(model?.slug || ""), String(model?._id || "")];
+      const candidates = [String(model?.source?.assetId || ""), String(model?.source?.modelId || ""), String(model?.slug || ""), String(model?._id || "")];
       for (const candidate of candidates) {
         if (ranks.has(candidate)) return ranks.get(candidate);
       }
@@ -494,11 +527,14 @@ export async function searchMarketplaceByImage(req, res, next) {
     models.sort((left, right) => modelRank(left).index - modelRank(right).index);
     const quota = await chargeImageSearchQuota(req, tier, image.imageHash);
 
-    res.json({
-      models: models.map((model) => ({
+    const assets = models.map((model) => ({
         ...publicModel(model, { includePreviews: false }),
         imageSearchScore: modelRank(model).score,
-      })),
+      }));
+    res.json({
+      assetType,
+      assets,
+      ...(assetType === "scene" ? { scenes: assets } : { models: assets }),
       pagination: { page: 1, pageSize: limit, total: models.length, totalPages: 1 },
       imageSearch: {
         tier: tier === "member" ? "pro" : tier,
@@ -517,17 +553,21 @@ export async function searchMarketplaceByImage(req, res, next) {
 
 export async function getMarketplaceModel(req, res, next) {
   try {
+    const assetType = requestAssetType(req);
     const slugOrId = String(req.params.slug || "").trim();
-    const lookup = [{ slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready" }];
-    if (isSafeId(slugOrId)) lookup.push({ _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready" });
+    const assetFilter = marketplaceAssetTypeFilter(assetType);
+    const lookup = [{ assetType: assetFilter, slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready" }];
+    if (isSafeId(slugOrId)) lookup.push({ assetType: assetFilter, _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready" });
     const model = await MarketplaceModel.findOne({ $or: lookup })
       .populate("categoryId", "title titleEn slug sourceCategoryId")
       .populate("parentCategoryId", "title titleEn slug sourceCategoryId")
       .lean();
-    if (!model) return res.status(404).json({ message: "Model not found" });
+    if (!model) return res.status(404).json({ message: `${assetLabel(assetType)} not found` });
     const recommendations = await recommendedModelsFor(model, { limit: 6 });
     res.json({
-      model: publicModel(model),
+      asset: publicModel(model),
+      ...(assetType === "scene" ? { scene: publicModel(model) } : { model: publicModel(model) }),
+      downloadProtection: marketplaceTurnstileConfig(),
       recommendedModels: recommendations.models,
       recommendations: {
         total: recommendations.total,
@@ -542,16 +582,19 @@ export async function getMarketplaceModel(req, res, next) {
 
 export async function listMarketplaceModelRecommendations(req, res, next) {
   try {
+    const assetType = requestAssetType(req);
     const slugOrId = String(req.params.slug || "").trim();
-    const lookup = [{ slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready" }];
-    if (isSafeId(slugOrId)) lookup.push({ _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready" });
+    const assetFilter = marketplaceAssetTypeFilter(assetType);
+    const lookup = [{ assetType: assetFilter, slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready" }];
+    if (isSafeId(slugOrId)) lookup.push({ assetType: assetFilter, _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready" });
     const model = await MarketplaceModel.findOne({ $or: lookup }).lean();
-    if (!model) return res.status(404).json({ message: "Model not found" });
+    if (!model) return res.status(404).json({ message: `${assetLabel(assetType)} not found` });
     const offset = Math.min(59, Math.max(0, Number(req.query.offset || 6)));
     const limit = Math.min(54, Math.max(1, Number(req.query.limit || 54)));
     const recommendations = await recommendedModelsFor(model, { offset, limit });
     res.json({
-      models: recommendations.models,
+      assets: recommendations.models,
+      ...(assetType === "scene" ? { scenes: recommendations.models } : { models: recommendations.models }),
       pagination: {
         offset,
         limit,
@@ -583,10 +626,11 @@ function streamImageRef(res, next, image, defaultFileName) {
 
 export async function streamMarketplaceCover(req, res, next) {
   try {
+    const assetType = requestAssetType(req);
     if (!isSafeId(req.params.id)) {
-      return res.status(400).json({ message: "Invalid model id" });
+      return res.status(400).json({ message: `Invalid ${assetLabel(assetType).toLowerCase()} id` });
     }
-    const model = await MarketplaceModel.findOne({ _id: req.params.id, isPublished: true, metadataStatus: "complete", fileStatus: "ready" })
+    const model = await MarketplaceModel.findOne({ _id: req.params.id, assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready" })
       .select("title coverImage previewImages")
       .lean();
     if (!model) return res.status(404).json({ message: "Model not found" });
@@ -601,14 +645,15 @@ export async function streamMarketplaceCover(req, res, next) {
 
 export async function streamMarketplacePreview(req, res, next) {
   try {
+    const assetType = requestAssetType(req);
     if (!isSafeId(req.params.id)) {
-      return res.status(400).json({ message: "Invalid model id" });
+      return res.status(400).json({ message: `Invalid ${assetLabel(assetType).toLowerCase()} id` });
     }
     const index = Number(req.params.index || 0);
     if (!Number.isInteger(index) || index < 0 || index > 50) {
       return res.status(400).json({ message: "Invalid preview index" });
     }
-    const model = await MarketplaceModel.findOne({ _id: req.params.id, isPublished: true, metadataStatus: "complete", fileStatus: "ready" })
+    const model = await MarketplaceModel.findOne({ _id: req.params.id, assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready" })
       .select("title previewImages")
       .lean();
     if (!model) return res.status(404).json({ message: "Model not found" });
@@ -622,14 +667,22 @@ export async function streamMarketplacePreview(req, res, next) {
 
 export async function createDownloadSession(req, res, next) {
   try {
+    const assetType = requestAssetType(req);
     if (!isSafeId(req.params.id)) {
-      return res.status(400).json({ message: "Invalid model id" });
+      return res.status(400).json({ message: `Invalid ${assetLabel(assetType).toLowerCase()} id` });
     }
-    const clientType = req.originalUrl.includes("/api/plugin/") ? "plugin" : "web";
+    const clientType = String(req.originalUrl || "").includes("/api/plugin/") ? "plugin" : "web";
+    if (clientType === "web") {
+      await verifyMarketplaceTurnstile({
+        token: req.body?.turnstileToken || req.body?.["cf-turnstile-response"],
+        remoteIp: req.get?.("cf-connecting-ip") || req.ip || "",
+      });
+    }
     const result = await createMarketplaceDownloadSession({
       req,
       modelId: req.params.id,
       clientType,
+        expectedAssetType: assetType,
     });
     res.json({
       session: {
@@ -641,6 +694,7 @@ export async function createDownloadSession(req, res, next) {
       },
       downloadUrl: result.downloadUrl,
       remaining: result.remaining,
+      quotaCost: result.quotaCost,
       resetAt: result.resetAt,
     });
   } catch (error) {
@@ -654,9 +708,19 @@ export async function downloadSessionFile(req, res, next) {
       return res.status(400).json({ message: "Invalid session id" });
     }
     const session = await verifyDownloadSession(req.params.id, req.query.t);
-    const file = await openStorageStream(session);
     await DownloadSession.findByIdAndUpdate(session._id, { status: "used" });
     res.setHeader("cache-control", "no-store");
+    res.setHeader("referrer-policy", "no-referrer");
+
+    const redirectUrl = await getStorageBrowserDownloadLink(session).catch((error) => {
+      if (String(process.env.MARKETPLACE_DOWNLOAD_REDIRECT_FALLBACK_PROXY || "true").toLowerCase() === "true") {
+        return "";
+      }
+      throw error;
+    });
+    if (redirectUrl) return res.redirect(302, redirectUrl);
+
+    const file = await openStorageStream(session);
     res.setHeader("content-type", "application/octet-stream");
     res.setHeader(
       "content-disposition",

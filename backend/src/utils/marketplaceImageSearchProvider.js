@@ -50,7 +50,7 @@ export function normalizeImageSearchMatches(payload, limit = 60) {
   return normalized;
 }
 
-export async function searchMarketplaceImage({ imageData, imageHash, limit = 60 } = {}) {
+export async function searchMarketplaceImage({ imageData, imageHash, limit = 60, assetType = "model" } = {}) {
   const config = providerConfig();
   if (!config.url) {
     throw providerError("Image similarity engine is not configured.", 503);
@@ -66,7 +66,7 @@ export async function searchMarketplaceImage({ imageData, imageHash, limit = 60 
         "content-type": "application/json",
         ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
       },
-      body: JSON.stringify({ imageData, imageHash, limit }),
+      body: JSON.stringify({ imageData, imageHash, limit, assetType }),
       signal: controller.signal,
     });
     const text = await response.text();

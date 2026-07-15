@@ -15,8 +15,25 @@ import {
 } from "../utils/marketplaceDriveService.js";
 import { metadataFromMarketplaceModel } from "../utils/marketplaceMetadata.js";
 import { isSafeId, limitedString, rejectUnknownKeys, sanitizeString } from "../utils/validators.js";
+import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
 
 const ADMIN_MODEL_PAGE_SIZE = 20;
+
+function adminAssetType(req) {
+  return normalizeAssetType(req?.marketplaceAssetType || req?.query?.assetType || "model");
+}
+
+function driveRootEnv(assetType) {
+  return normalizeAssetType(assetType) === "scene" ? "SCENES_DRIVE_ROOT_FOLDER_ID" : "MARKETPLACE_DRIVE_ROOT_FOLDER_ID";
+}
+
+function driveBackupEnv(assetType) {
+  return normalizeAssetType(assetType) === "scene" ? "SCENES_DRIVE_BACKUP_FOLDER_ID" : "MARKETPLACE_DRIVE_BACKUP_FOLDER_ID";
+}
+
+function assetNoun(assetType) {
+  return normalizeAssetType(assetType) === "scene" ? "Scene" : "Model";
+}
 
 function slugify(value = "") {
   return String(value || "")
@@ -154,8 +171,8 @@ function adminModel(model) {
   return doc;
 }
 
-async function assertMarketplaceMigrationUnlocked() {
-  const rootFolderId = extractDriveId(process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID);
+async function assertMarketplaceMigrationUnlocked(assetType = "model") {
+  const rootFolderId = extractDriveId(process.env[driveRootEnv(assetType)]);
   if (!rootFolderId) return;
   const state = await MarketplaceDriveSyncState.findOne({ rootFolderId }).select("migrationStatus").lean();
   if (!["running", "error"].includes(state?.migrationStatus)) return;
@@ -167,6 +184,7 @@ async function assertMarketplaceMigrationUnlocked() {
 
 export async function adminListMarketplaceModels(req, res, next) {
   try {
+    const assetType = adminAssetType(req);
     const requestedPage = Number(req.query.page || 1);
     const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const search = String(req.query.search || "").trim().slice(0, 120);
@@ -174,7 +192,7 @@ export async function adminListMarketplaceModels(req, res, next) {
     const accessType = String(req.query.accessType || "all");
     const published = String(req.query.published || "all");
     const metadataStatus = String(req.query.metadataStatus || "all");
-    const query = {};
+    const query = { assetType };
     if (["missing", "pending_upload", "ready", "failed"].includes(fileStatus)) query.fileStatus = fileStatus;
     if (accessType === "free") query.accessType = "free";
     if (accessType === "member") query.accessType = "member";
@@ -195,6 +213,7 @@ export async function adminListMarketplaceModels(req, res, next) {
       .select("-source.raw")
       .lean();
     res.json({
+      assetType,
       models,
       pagination: { page: safePage, pageSize: ADMIN_MODEL_PAGE_SIZE, total, totalPages },
     });
@@ -212,6 +231,7 @@ export async function adminImport3dskyModel(_req, res) {
 
 export async function adminUpdateMarketplaceModel(req, res, next) {
   try {
+    const assetType = adminAssetType(req);
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
     const allowed = ["slug", "isPublished", "desiredPublished"];
     const unknownKey = rejectUnknownKeys(req.body, allowed);
@@ -223,7 +243,7 @@ export async function adminUpdateMarketplaceModel(req, res, next) {
       payload.slug = nextSlug;
     }
     const currentModel = await MarketplaceModel.findById(req.params.id).lean();
-    if (!currentModel) return res.status(404).json({ message: "Model not found" });
+    if (!currentModel || normalizeAssetType(currentModel.assetType) !== assetType) return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
     const requestedPublish = req.body.desiredPublished === undefined
       ? req.body.isPublished === undefined ? Boolean(currentModel.desiredPublished ?? currentModel.isPublished) : Boolean(req.body.isPublished)
       : Boolean(req.body.desiredPublished);
@@ -232,6 +252,8 @@ export async function adminUpdateMarketplaceModel(req, res, next) {
       currentModel.metadataStatus === "complete" &&
       currentModel.fileStatus === "ready" &&
       !(currentModel.publicationBlockers || []).length;
+    payload.discoveryStatus = "pending";
+    payload.discoveryError = "";
     const model = await MarketplaceModel.findByIdAndUpdate(
       req.params.id,
       { $set: payload, $unset: { description: "", tags: "", creditPrice: "" } },
@@ -267,14 +289,15 @@ async function assertDriveFilesBelongToModel(model, fileIds = []) {
 
 export async function adminUpdateMarketplaceMetadata(req, res, next) {
   try {
-    await assertMarketplaceMigrationUnlocked();
+    const assetType = adminAssetType(req);
+    await assertMarketplaceMigrationUnlocked(assetType);
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
     const unknownKey = rejectUnknownKeys(req.body, ["metadata", "expectedMetadataHash", "expectedDriveVersion"]);
     if (unknownKey || !req.body.metadata || typeof req.body.metadata !== "object") {
       return res.status(400).json({ message: "Invalid marketplace metadata request" });
     }
     const model = await MarketplaceModel.findById(req.params.id).lean();
-    if (!model) return res.status(404).json({ message: "Model not found" });
+    if (!model || normalizeAssetType(model.assetType) !== assetType) return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
     const result = await writeMarketplaceModelMetadata(model, req.body.metadata, {
       metadataHash: limitedString(req.body.expectedMetadataHash, 80),
       driveVersion: limitedString(req.body.expectedDriveVersion, 80),
@@ -307,7 +330,8 @@ export async function adminUpdateMarketplaceState(req, res, next) {
 
 export async function adminAttachMarketplaceFile(req, res, next) {
   try {
-    await assertMarketplaceMigrationUnlocked();
+    const assetType = adminAssetType(req);
+    await assertMarketplaceMigrationUnlocked(assetType);
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
     const unknownKey = rejectUnknownKeys(req.body, [
       "storageProvider",
@@ -329,12 +353,12 @@ export async function adminAttachMarketplaceFile(req, res, next) {
       ? req.body.fileStatus
       : "ready";
     const existing = await MarketplaceModel.findById(req.params.id).lean();
-    if (!existing) return res.status(404).json({ message: "Model not found" });
+    if (!existing || normalizeAssetType(existing.assetType) !== assetType) return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
     if (storageProvider === "google_drive" && existing.driveFolderId) {
       const driveFileId = extractDriveId(req.body.driveFileId);
       if (!driveFileId) return res.status(400).json({ message: "Google Drive file id is required" });
       await assertDriveFilesBelongToModel(existing, [driveFileId]);
-      const result = await syncMarketplaceDriveFolder({ driveFolderId: existing.driveFolderId, force: true });
+      const result = await syncMarketplaceDriveFolder({ driveFolderId: existing.driveFolderId, force: true, assetType });
       return res.json({ model: adminModel(result.model), compatibilityMode: true });
     }
     const model = await MarketplaceModel.findByIdAndUpdate(
@@ -364,7 +388,8 @@ export async function adminAttachMarketplaceFile(req, res, next) {
 
 export async function adminAttachMarketplaceAssets(req, res, next) {
   try {
-    await assertMarketplaceMigrationUnlocked();
+    const assetType = adminAssetType(req);
+    await assertMarketplaceMigrationUnlocked(assetType);
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
     const unknownKey = rejectUnknownKeys(req.body, [
       "previewImages",
@@ -415,7 +440,7 @@ export async function adminAttachMarketplaceAssets(req, res, next) {
       return res.status(400).json({ message: "No marketplace assets provided" });
     }
     const existing = await MarketplaceModel.findById(req.params.id).lean();
-    if (!existing) return res.status(404).json({ message: "Model not found" });
+    if (!existing || normalizeAssetType(existing.assetType) !== assetType) return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
     if (existing.driveFolderId) {
       const driveFileIds = [
         payload.coverImage?.driveFileId,
@@ -424,7 +449,7 @@ export async function adminAttachMarketplaceAssets(req, res, next) {
       ].filter(Boolean);
       if (!driveFileIds.length) return res.status(400).json({ message: "At least one Google Drive file id is required" });
       await assertDriveFilesBelongToModel(existing, driveFileIds);
-      const result = await syncMarketplaceDriveFolder({ driveFolderId: existing.driveFolderId, force: true });
+      const result = await syncMarketplaceDriveFolder({ driveFolderId: existing.driveFolderId, force: true, assetType });
       return res.json({ model: adminModel(result.model), compatibilityMode: true });
     }
     const model = await MarketplaceModel.findByIdAndUpdate(req.params.id, { $set: payload }, { new: true });
@@ -441,15 +466,16 @@ export async function rescanMarketplaceModelDrive(existing) {
     error.status = 400;
     throw error;
   }
-  return syncMarketplaceDriveFolder({ driveFolderId: existing.driveFolderId, force: true });
+  return syncMarketplaceDriveFolder({ driveFolderId: existing.driveFolderId, force: true, assetType: existing.assetType });
 }
 
 export async function adminRescanMarketplaceModelDriveFolder(req, res, next) {
   try {
-    await assertMarketplaceMigrationUnlocked();
+    const assetType = adminAssetType(req);
+    await assertMarketplaceMigrationUnlocked(assetType);
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
     const existing = await MarketplaceModel.findById(req.params.id).select("-source.raw").lean();
-    if (!existing) return res.status(404).json({ message: "Model not found" });
+    if (!existing || normalizeAssetType(existing.assetType) !== assetType) return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
     if (!existing.driveFolderId) {
       return res.status(400).json({ message: "Model does not have a Drive folder id" });
     }
@@ -461,22 +487,25 @@ export async function adminRescanMarketplaceModelDriveFolder(req, res, next) {
   }
 }
 
-export async function adminMarketplaceStats(_req, res, next) {
+export async function adminMarketplaceStats(req, res, next) {
   try {
+    const assetType = adminAssetType(req);
+    const assetQuery = { assetType };
     const [models, ready, missing, sessions, downloads] = await Promise.all([
-      MarketplaceModel.countDocuments({}),
-      MarketplaceModel.countDocuments({ fileStatus: "ready" }),
-      MarketplaceModel.countDocuments({ fileStatus: { $ne: "ready" } }),
-      DownloadSession.countDocuments({}),
-      ModelDownload.countDocuments({}),
+      MarketplaceModel.countDocuments(assetQuery),
+      MarketplaceModel.countDocuments({ ...assetQuery, fileStatus: "ready" }),
+      MarketplaceModel.countDocuments({ ...assetQuery, fileStatus: { $ne: "ready" } }),
+      DownloadSession.countDocuments(assetQuery),
+      ModelDownload.countDocuments(assetQuery),
     ]);
     const [completeMetadata, incompleteMetadata, published] = await Promise.all([
-      MarketplaceModel.countDocuments({ metadataStatus: "complete" }),
-      MarketplaceModel.countDocuments({ metadataStatus: "incomplete" }),
-      MarketplaceModel.countDocuments({ isPublished: true }),
+      MarketplaceModel.countDocuments({ ...assetQuery, metadataStatus: "complete" }),
+      MarketplaceModel.countDocuments({ ...assetQuery, metadataStatus: "incomplete" }),
+      MarketplaceModel.countDocuments({ ...assetQuery, isPublished: true }),
     ]);
     res.json({
       stats: {
+        assetType,
         models,
         ready,
         missing,
@@ -495,7 +524,8 @@ export async function adminMarketplaceStats(_req, res, next) {
 
 export async function adminCleanupMarketplaceRaw(_req, res, next) {
   try {
-    const docs = await MarketplaceModel.find({})
+    const modelOnlyQuery = { assetType: { $ne: "scene" } };
+    const docs = await MarketplaceModel.find(modelOnlyQuery)
       .select("_id source archiveExt")
       .lean();
     let normalizedSources = 0;
@@ -513,7 +543,7 @@ export async function adminCleanupMarketplaceRaw(_req, res, next) {
       }
     }
     const result = await MarketplaceModel.updateMany(
-      {},
+      modelOnlyQuery,
       {
         $unset: {
           "source.raw": "",
@@ -530,7 +560,7 @@ export async function adminCleanupMarketplaceRaw(_req, res, next) {
         },
       },
     );
-    const metadataDocs = await MarketplaceModel.find({})
+    const metadataDocs = await MarketplaceModel.find(modelOnlyQuery)
       .select("_id categoryId styles renderers renderer forms colors materials fileStatus isPublished metadataStatus metadataMissingFields")
       .lean();
     let normalizedMetadata = 0;
@@ -565,7 +595,8 @@ export async function adminCleanupMarketplaceRaw(_req, res, next) {
 
 export async function adminSyncMarketplaceDriveFolder(req, res, next) {
   try {
-    await assertMarketplaceMigrationUnlocked();
+    const assetType = adminAssetType(req);
+    await assertMarketplaceMigrationUnlocked(assetType);
     const unknownKey = rejectUnknownKeys(req.body, ["driveFolderId", "driveFolderUrl"]);
     if (unknownKey) return res.status(400).json({ message: "Invalid Drive folder sync request" });
     const driveFolderId = extractDriveId(req.body.driveFolderId || req.body.driveFolderUrl);
@@ -573,14 +604,15 @@ export async function adminSyncMarketplaceDriveFolder(req, res, next) {
     const folderSnapshot = await getGoogleDriveFileMetadata(driveFolderId, {
       fields: "id,name,mimeType,modifiedTime,version,parents,trashed,driveId",
     });
-    const configuredRootId = extractDriveId(process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID);
+    const rootEnv = driveRootEnv(assetType);
+    const configuredRootId = extractDriveId(process.env[rootEnv]);
     if (configuredRootId && !(folderSnapshot.parents || []).includes(configuredRootId)) {
       return res.status(400).json({
-        message: "Drive model folder must be a direct child of MARKETPLACE_DRIVE_ROOT_FOLDER_ID",
+        message: `Drive ${assetType} folder must be a direct child of ${rootEnv}`,
         code: "DRIVE_FOLDER_OUTSIDE_MARKETPLACE_ROOT",
       });
     }
-    const result = await syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot, force: true });
+    const result = await syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot, force: true, assetType });
     return res.json({ ...result, model: adminModel(result.model) });
   } catch (error) {
     if (error?.code === 11000) return res.status(409).json({ message: "Model slug or Drive folder already exists" });
@@ -590,6 +622,7 @@ export async function adminSyncMarketplaceDriveFolder(req, res, next) {
 
 export async function scanMarketplaceDriveFolderBatch({
   rootFolderId,
+  assetType = "model",
   pageToken = "",
   limit = 20,
   isPublished = true,
@@ -603,7 +636,7 @@ export async function scanMarketplaceDriveFolderBatch({
   let unchangedCount = 0;
   for (const folder of folders) {
     try {
-      const result = await syncMarketplaceDriveFolder({ driveFolderId: folder.id, folderSnapshot: folder, force: false });
+      const result = await syncMarketplaceDriveFolder({ driveFolderId: folder.id, folderSnapshot: folder, force: false, assetType });
       if (isPublished === false && result.model?.desiredPublished !== false) {
         result.model = await MarketplaceModel.findByIdAndUpdate(result.model._id, {
           $set: { desiredPublished: false, isPublished: false },
@@ -650,11 +683,12 @@ export async function adminImportDriveFolderModels(req, res, next) {
 export async function adminReconcileMarketplaceDrive(req, res, next) {
   let rootFolderId = "";
   try {
-    await assertMarketplaceMigrationUnlocked();
+    const assetType = adminAssetType(req);
+    await assertMarketplaceMigrationUnlocked(assetType);
     const unknownKey = rejectUnknownKeys(req.body, ["rootFolderId", "rootFolderUrl", "pageToken", "limit", "reset"]);
     if (unknownKey) return res.status(400).json({ message: "Invalid Drive reconciliation request" });
     rootFolderId = extractDriveId(
-      req.body.rootFolderId || req.body.rootFolderUrl || process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID,
+      req.body.rootFolderId || req.body.rootFolderUrl || process.env[driveRootEnv(assetType)],
     );
     if (!rootFolderId) return res.status(400).json({ message: "Google Drive models folder ID is required" });
     const state = await MarketplaceDriveSyncState.findOne({ rootFolderId }).lean();
@@ -666,7 +700,7 @@ export async function adminReconcileMarketplaceDrive(req, res, next) {
     await MarketplaceDriveSyncState.findOneAndUpdate(
       { rootFolderId },
       {
-        $setOnInsert: { rootFolderId },
+        $setOnInsert: { rootFolderId, assetType },
         $set: {
           reconciliationStatus: "running",
           reconciliationError: "",
@@ -677,6 +711,7 @@ export async function adminReconcileMarketplaceDrive(req, res, next) {
     );
     const result = await scanMarketplaceDriveFolderBatch({
       rootFolderId,
+      assetType,
       pageToken,
       limit: Math.min(200, Math.max(1, Number(req.body.limit || 20))),
     });
@@ -700,7 +735,7 @@ export async function adminReconcileMarketplaceDrive(req, res, next) {
       await MarketplaceDriveSyncState.findOneAndUpdate(
         { rootFolderId },
         {
-          $setOnInsert: { rootFolderId },
+          $setOnInsert: { rootFolderId, assetType: adminAssetType(req) },
           $set: {
             reconciliationStatus: "error",
             reconciliationUpdatedAt: new Date(),
@@ -715,11 +750,12 @@ export async function adminReconcileMarketplaceDrive(req, res, next) {
 }
 
 export async function adminMigrateMarketplaceDriveMetadata(req, res, next) {
-  const migrationRootFolderId = extractDriveId(process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID);
+  const assetType = adminAssetType(req);
+  const migrationRootFolderId = extractDriveId(process.env[driveRootEnv(assetType)]);
   try {
     const unknownKey = rejectUnknownKeys(req.body, ["page", "limit", "dryRun", "backupFolderId", "reset"]);
     if (unknownKey) return res.status(400).json({ message: "Invalid marketplace metadata migration request" });
-    if (!migrationRootFolderId) return res.status(400).json({ message: "MARKETPLACE_DRIVE_ROOT_FOLDER_ID is not configured" });
+    if (!migrationRootFolderId) return res.status(400).json({ message: `${driveRootEnv(assetType)} is not configured` });
     const migrationState = await MarketplaceDriveSyncState.findOne({ rootFolderId: migrationRootFolderId }).lean();
     const reset = normalizeBoolean(req.body.reset, false);
     const page = reset
@@ -727,7 +763,7 @@ export async function adminMigrateMarketplaceDriveMetadata(req, res, next) {
       : Math.max(1, Math.floor(Number(req.body.page || migrationState?.migrationNextPage || 1)));
     const limit = Math.min(50, Math.max(1, Math.floor(Number(req.body.limit || 20))));
     const dryRun = req.body.dryRun !== false;
-    const query = { driveFolderId: { $nin: ["", null] } };
+    const query = { assetType, driveFolderId: { $nin: ["", null] } };
     const total = await MarketplaceModel.countDocuments(query);
     const models = await MarketplaceModel.find(query)
       .sort({ createdAt: 1 })
@@ -740,7 +776,7 @@ export async function adminMigrateMarketplaceDriveMetadata(req, res, next) {
       await MarketplaceDriveSyncState.findOneAndUpdate(
         { rootFolderId: migrationRootFolderId },
         {
-          $setOnInsert: { rootFolderId: migrationRootFolderId },
+          $setOnInsert: { rootFolderId: migrationRootFolderId, assetType },
           $set: {
             migrationStatus: "running",
             migrationError: "",
@@ -752,7 +788,7 @@ export async function adminMigrateMarketplaceDriveMetadata(req, res, next) {
     }
     for (const model of models) {
       try {
-        if (!dryRun && typeof model.desiredPublished !== "boolean") {
+          if (!dryRun && typeof model.desiredPublished !== "boolean") {
           await MarketplaceModel.findByIdAndUpdate(model._id, {
             $set: { desiredPublished: Boolean(model.isPublished) },
           });
@@ -784,7 +820,7 @@ export async function adminMigrateMarketplaceDriveMetadata(req, res, next) {
         }));
       if (backupRows.length) {
         const backupFolderId = extractDriveId(
-          req.body.backupFolderId || process.env.MARKETPLACE_DRIVE_BACKUP_FOLDER_ID || process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID,
+          req.body.backupFolderId || process.env[driveBackupEnv(assetType)] || process.env[driveRootEnv(assetType)],
         );
         backupFile = await createGoogleDriveFile({
           folderId: backupFolderId,
@@ -850,7 +886,7 @@ export async function adminMigrateMarketplaceDriveMetadata(req, res, next) {
       await MarketplaceDriveSyncState.findOneAndUpdate(
         { rootFolderId: migrationRootFolderId },
         {
-          $setOnInsert: { rootFolderId: migrationRootFolderId },
+          $setOnInsert: { rootFolderId: migrationRootFolderId, assetType },
           $set: {
             migrationStatus: "error",
             migrationUpdatedAt: new Date(),
@@ -869,13 +905,14 @@ const BULK_RESCAN_LIMIT = 10;
 
 export async function adminBulkMarketplaceModels(req, res, next) {
   try {
+    const assetType = adminAssetType(req);
     const unknownKey = rejectUnknownKeys(req.body, ["ids", "action", "accessType"]);
     if (unknownKey) return res.status(400).json({ message: "Invalid bulk request" });
     const action = String(req.body.action || "").trim().toLowerCase();
     if (!["publish", "unpublish", "access", "rescan"].includes(action)) {
       return res.status(400).json({ message: "Invalid bulk action" });
     }
-    if (["access", "rescan"].includes(action)) await assertMarketplaceMigrationUnlocked();
+    if (["access", "rescan"].includes(action)) await assertMarketplaceMigrationUnlocked(assetType);
     const rawIds = Array.isArray(req.body.ids) ? req.body.ids.map((id) => String(id || "").trim()) : [];
     const ids = [...new Set(rawIds.filter((id) => isSafeId(id)))];
     const maxIds = action === "rescan" ? BULK_RESCAN_LIMIT : BULK_MODEL_LIMIT;
@@ -891,22 +928,22 @@ export async function adminBulkMarketplaceModels(req, res, next) {
 
     for (const id of ids) {
       const model = await MarketplaceModel.findById(id).select("-source.raw").lean();
-      if (!model) {
+      if (!model || normalizeAssetType(model.assetType) !== assetType) {
         skippedCount += 1;
         results.push({ id, status: "skipped", reason: "not_found" });
         continue;
       }
       try {
-        if (action === "publish") {
+          if (action === "publish") {
           const blockers = model.publicationBlockers || [];
           const online = model.metadataStatus === "complete" && model.fileStatus === "ready" && blockers.length === 0;
-          await MarketplaceModel.findByIdAndUpdate(id, {
-            $set: { desiredPublished: true, isPublished: online },
+            await MarketplaceModel.findByIdAndUpdate(id, {
+              $set: { desiredPublished: true, isPublished: online, discoveryStatus: "pending", discoveryError: "" },
           });
           updatedCount += 1;
           results.push({ id, status: "updated", title: model.title, online, blockers });
         } else if (action === "unpublish") {
-          await MarketplaceModel.findByIdAndUpdate(id, { $set: { desiredPublished: false, isPublished: false } });
+            await MarketplaceModel.findByIdAndUpdate(id, { $set: { desiredPublished: false, isPublished: false, discoveryStatus: "pending", discoveryError: "" } });
           updatedCount += 1;
           results.push({ id, status: "updated", title: model.title });
         } else if (action === "access") {
@@ -950,11 +987,13 @@ export async function adminBulkMarketplaceModels(req, res, next) {
 
 export async function adminListMarketplaceDownloads(req, res, next) {
   try {
+    const requestedAssetType = String(req.query.assetType || req.marketplaceAssetType || "all").trim().toLowerCase();
     const page = Math.max(1, Number(req.query.page || 1));
     const pageSize = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
     const clientType = String(req.query.clientType || "all");
     const accessTier = String(req.query.accessTier || "all");
     const query = {};
+    if (["model", "scene"].includes(requestedAssetType)) query.assetType = requestedAssetType;
     if (["web", "plugin"].includes(clientType)) query.clientType = clientType;
     if (["guest", "free", "member", "admin"].includes(accessTier)) query.accessTier = accessTier;
     const total = await ModelDownload.countDocuments(query);
@@ -964,7 +1003,7 @@ export async function adminListMarketplaceDownloads(req, res, next) {
       .sort({ createdAt: -1 })
       .skip((safePage - 1) * pageSize)
       .limit(pageSize)
-      .populate("modelId", "title slug accessType fileStatus source")
+      .populate("modelId", "assetType title slug accessType fileStatus source")
       .populate("userId", "name email avatar credit role")
       .lean();
     res.json({
@@ -978,11 +1017,13 @@ export async function adminListMarketplaceDownloads(req, res, next) {
 
 export async function adminListMarketplaceDownloadSessions(req, res, next) {
   try {
+    const requestedAssetType = String(req.query.assetType || req.marketplaceAssetType || "all").trim().toLowerCase();
     const page = Math.max(1, Number(req.query.page || 1));
     const pageSize = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
     const status = String(req.query.status || "all");
     const clientType = String(req.query.clientType || "all");
     const query = {};
+    if (["model", "scene"].includes(requestedAssetType)) query.assetType = requestedAssetType;
     if (["active", "used", "expired", "revoked"].includes(status)) query.status = status;
     if (["web", "plugin"].includes(clientType)) query.clientType = clientType;
     const total = await DownloadSession.countDocuments(query);
@@ -993,7 +1034,7 @@ export async function adminListMarketplaceDownloadSessions(req, res, next) {
       .skip((safePage - 1) * pageSize)
       .limit(pageSize)
       .select("-tokenHash")
-      .populate("modelId", "title slug accessType fileStatus source")
+      .populate("modelId", "assetType title slug accessType fileStatus source")
       .populate("userId", "name email avatar credit role")
       .lean();
     res.json({

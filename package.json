@@ -14,6 +14,7 @@
     "drive:auth": "npm run drive:auth --prefix backend",
     "drive:check": "npm run drive:check --prefix backend",
     "seed:models": "npm run seed:models --prefix backend",
+    "seed:marketplace": "npm run seed:marketplace --prefix backend",
     "lint": "eslint backend/server.js backend/src backend/test frontend/src",
     "test": "npm test --prefix backend",
     "build": "npm run build --prefix frontend",

@@ -267,6 +267,44 @@ test("missing archive blocks publication and restoring it honors desiredPublishe
   }
 });
 
+test("Scene requires preview-1 as its cover and ignores a standalone cover file", async () => {
+  const fixture = createDriveFixture();
+  const restoreFetch = fixture.install();
+  try {
+    await MarketplaceCategory.create({
+      assetType: "scene",
+      sourceProvider: "internal",
+      sourceCategoryId: "scene-living-room",
+      title: "Phòng khách",
+      titleEn: "Living Room",
+      slug: "scene-living-room",
+      isActive: true,
+    });
+    fixture.files.find((file) => file.name === "model.zip").name = "scene.zip";
+    fixture.files = fixture.files.filter((file) => file.name !== "preview-1.jpg");
+    fixture.setMetadata({
+      assetType: "scene",
+      sourceAssetId: `scene-${fixture.sourceModelId}`,
+      sourceCategoryId: "scene-living-room",
+      renderer: "Corona",
+      renderers: ["corona"],
+      styles: ["modern"],
+      sha256: "b".repeat(64),
+    });
+
+    const missingCover = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id, assetType: "scene" });
+    assert.equal(missingCover.model.isPublished, false);
+    assert.ok(missingCover.model.publicationBlockers.includes("cover"));
+
+    fixture.files.find((file) => file.name === "cover.jpg").name = "preview-1.jpg";
+    const ready = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id, assetType: "scene" });
+    assert.equal(ready.model.isPublished, true);
+    assert.equal(ready.model.coverImage.fileName, "preview-1.jpg");
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("Drive write failure leaves Mongo unchanged and stale versions return conflict", async () => {
   const fixture = createDriveFixture();
   const restoreFetch = fixture.install();

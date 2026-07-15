@@ -139,6 +139,7 @@ export default function Navbar({
 
   const tabs = [
     ["models", language === "vi" ? "Model" : "Models"],
+    ["scenes", "Scenes"],
     ["getlink", t.getlink],
     ["topup", language === "vi" ? "Gói nạp" : "Top-up"],
     ["invite", language === "vi" ? "Mời bạn" : "Invite friends"],

@@ -24,16 +24,23 @@ export async function referralHistory(req, res, next) {
     const history = referrals
       .map((item) => {
         const isReferrer = String(item.referrerId?._id || item.referrerId) === String(req.user._id);
+        const rewardType = item.rewardType || "credit";
         const credit = isReferrer
           ? Number(item.referrerRewardCredit ?? item.rewardCredit ?? 0)
           : Number(item.referredRewardCredit ?? item.rewardCredit ?? 0);
-        if (credit <= 0) return null;
+        const proDays = isReferrer
+          ? Number(item.referrerRewardProDays || 0)
+          : Number(item.referredRewardProDays || 0);
+        if (rewardType === "pro" ? proDays <= 0 : credit <= 0) return null;
         const otherUser = isReferrer ? item.referredUserId : item.referrerId;
         return {
           _id: item._id,
           role: isReferrer ? "referrer" : "referred",
           referralCode: item.referralCode,
-          credit,
+          rewardType,
+          credit: rewardType === "credit" ? credit : 0,
+          proDays: rewardType === "pro" ? proDays : 0,
+          proUntil: isReferrer ? item.referrerProUntil : item.referredProUntil,
           otherUser: otherUser
             ? {
                 _id: otherUser._id,

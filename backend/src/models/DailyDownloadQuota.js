@@ -14,7 +14,7 @@ const dailyDownloadQuotaSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-dailyDownloadQuotaSchema.index({ dayKey: 1, userId: 1, guestKey: 1, tier: 1 });
+dailyDownloadQuotaSchema.index({ dayKey: 1, userId: 1, guestKey: 1, tier: 1 }, { unique: true });
 
 export default isMemoryDb()
   ? createMemoryModel("DailyDownloadQuota")

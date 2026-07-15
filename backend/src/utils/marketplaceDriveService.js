@@ -18,6 +18,7 @@ import {
   normalizeMarketplaceMetadata,
   serializeMarketplaceMetadata,
 } from "./marketplaceMetadata.js";
+import { marketplaceAssetTypeFilter, normalizeAssetType } from "../data/marketplaceCatalogs.js";
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
@@ -77,14 +78,18 @@ function pickChecksum(files = []) {
   return files.filter((file) => /(?:model\.sha256|sha256\.txt|\.sha256)$/i.test(String(file?.name || ""))).sort(naturalName)[0];
 }
 
-function pickArchive(files = []) {
+function pickArchive(files = [], assetType = "model") {
   return files.filter(isArchive).sort((a, b) => {
-    const score = (file) => /^model\.(zip|rar|7z)$/i.test(String(file?.name || "")) ? 0 : 1;
+    const preferred = normalizeAssetType(assetType) === "scene" ? "scene" : "model";
+    const score = (file) => new RegExp(`^${preferred}\\.(zip|rar|7z)$`, "i").test(String(file?.name || "")) ? 0 : 1;
     return score(a) - score(b) || Number(b?.size || 0) - Number(a?.size || 0) || naturalName(a, b);
   })[0];
 }
 
-function pickCover(images = []) {
+function pickCover(images = [], assetType = "model") {
+  if (normalizeAssetType(assetType) === "scene") {
+    return images.find((file) => /^preview[-_ ]?0*1$/.test(baseName(file?.name)));
+  }
   return images.sort((a, b) => {
     const score = (file) => {
       const base = baseName(file?.name);
@@ -97,15 +102,17 @@ function pickCover(images = []) {
   })[0];
 }
 
-function pickPreviews(images = [], cover = null) {
-  return images.filter((file) => file.id !== cover?.id).sort((a, b) => {
+function pickPreviews(images = [], cover = null, assetType = "model") {
+  const sorted = images.sort((a, b) => {
     const score = (file) => {
       const match = baseName(file?.name).match(/^preview[-_ ]?(\d+)/);
       if (match) return Number(match[1]);
       return baseName(file?.name).includes("preview") ? 100 : 1000;
     };
     return score(a) - score(b) || naturalName(a, b);
-  }).slice(0, 20);
+  });
+  const previews = sorted.filter((file) => file.id !== cover?.id);
+  return (normalizeAssetType(assetType) === "scene" ? [cover, ...previews] : previews).filter(Boolean).slice(0, 20);
 }
 
 function imageRef(file, alt = "") {
@@ -146,7 +153,9 @@ function driveSignature(folder, files) {
 function legacyMetadata(raw = {}, fallback = {}) {
   const source = raw?.model || raw?.data || raw || {};
   return {
-    sourceModelId: source.sourceModelId || source.modelId || source.id || source.source?.modelId || fallback.sourceModelId,
+    assetType: source.assetType || fallback.assetType || "model",
+    sourceAssetId: source.sourceAssetId || source.sourceModelId || source.modelId || source.id || source.source?.assetId || source.source?.modelId || fallback.sourceAssetId || fallback.sourceModelId,
+    sourceModelId: source.sourceModelId || source.sourceAssetId || source.modelId || source.id || source.source?.modelId || fallback.sourceModelId || fallback.sourceAssetId,
     title: source.title || source.name || source.modelName || fallback.title,
     sourceCategoryId: source.sourceCategoryId || source.categoryId || source.category?.slug || source.source?.categoryId || fallback.sourceCategoryId,
     accessType: source.accessType || source.access || source.tier || fallback.accessType,
@@ -193,10 +202,11 @@ async function readChecksum(file) {
   return String(buffer.toString("utf8").match(/[a-f0-9]{64}/i)?.[0] || "").toLowerCase();
 }
 
-async function categoryFields(sourceCategoryId) {
+async function categoryFields(sourceCategoryId, assetType = "model") {
   const value = clean(sourceCategoryId, 80);
   if (!value) return { categoryId: null, parentCategoryId: null, categorySourceId: "" };
   const category = await MarketplaceCategory.findOne({
+    assetType: marketplaceAssetTypeFilter(assetType),
     $or: [{ sourceCategoryId: value }, { slug: value.toLowerCase() }],
   });
   if (!category) return { categoryId: null, parentCategoryId: null, categorySourceId: value };
@@ -218,16 +228,18 @@ function publicationBlockers({ metadataFile, metadataErrors, categoryId, archive
   return blockers;
 }
 
-async function uniqueSlug(preferred, folderId, existingId = "") {
-  const base = slugify(preferred) || `model-${String(folderId).slice(-8).toLowerCase()}`;
-  const found = await MarketplaceModel.findOne({ slug: base }).select("_id").lean();
+async function uniqueSlug(preferred, folderId, existingId = "", assetType = "model") {
+  const normalizedType = normalizeAssetType(assetType);
+  const base = slugify(preferred) || `${normalizedType}-${String(folderId).slice(-8).toLowerCase()}`;
+  const found = await MarketplaceModel.findOne({ assetType: marketplaceAssetTypeFilter(normalizedType), slug: base }).select("_id").lean();
   if (!found || String(found._id) === String(existingId)) return base;
   return `${base}-${String(folderId).slice(-8).toLowerCase()}`;
 }
 
-async function findModelForFolder(folder, metadata = {}) {
+async function findModelForFolder(folder, metadata = {}, assetType = "model") {
+  const normalizedType = normalizeAssetType(assetType);
   const folderName = clean(folder.name, 200);
-  const sourceModelId = metadata.sourceModelId || sourceIdFromName(folderName);
+  const sourceModelId = metadata.sourceAssetId || metadata.sourceModelId || sourceIdFromName(folderName);
   const candidates = [
     { driveFolderId: folder.id },
     { "source.provider": "drive", "source.modelId": folder.id },
@@ -235,13 +247,15 @@ async function findModelForFolder(folder, metadata = {}) {
   ];
   if (sourceModelId) {
     candidates.push({ metadataSourceModelId: sourceModelId });
+    candidates.push({ "source.assetId": sourceModelId });
     candidates.push({ "source.provider": "catalog", "source.modelId": sourceModelId });
     candidates.push({ "source.provider": "3dsky", "source.modelId": sourceModelId });
   }
-  return MarketplaceModel.findOne({ $or: candidates }).lean();
+  return MarketplaceModel.findOne({ assetType: marketplaceAssetTypeFilter(normalizedType), $or: candidates }).lean();
 }
 
-export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot = null, force = true } = {}) {
+export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot = null, force = true, assetType = "model" } = {}) {
+  const normalizedType = normalizeAssetType(assetType);
   const folderId = clean(driveFolderId || folderSnapshot?.id, 160);
   if (!folderId) {
     const error = new Error("Google Drive model folder id is required.");
@@ -258,7 +272,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
   }
   const files = await listGoogleDriveFolderFiles(folderId);
   const signature = driveSignature(folder, files);
-  let existing = await findModelForFolder(folder);
+  let existing = await findModelForFolder(folder, {}, normalizedType);
   if (!force && existing?.driveSignature === signature) {
     const model = await MarketplaceModel.findByIdAndUpdate(existing._id, {
       $set: { lastDriveScanAt: new Date(), "source.syncedAt": new Date() },
@@ -267,10 +281,10 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
   }
 
   const metadataFile = pickMetadata(files);
-  const archive = pickArchive(files);
+  const archive = pickArchive(files, normalizedType);
   const images = files.filter(isImage);
-  const cover = pickCover(images);
-  const previews = pickPreviews(images, cover);
+  const cover = pickCover(images, normalizedType);
+  const previews = pickPreviews(images, cover, normalizedType);
   const checksumFile = pickChecksum(files);
   const folderName = clean(folder.name, 200);
   const fallbackSourceId = sourceIdFromName(folderName, existing?.metadataSourceModelId || existing?.slug || folderId);
@@ -279,6 +293,8 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
   if (metadataFile) {
     try {
       metadataResult = await readMarketplaceDriveMetadata(metadataFile, {
+        assetType: normalizedType,
+        sourceAssetId: fallbackSourceId,
         sourceModelId: fallbackSourceId,
         title: existing?.title || titleFromName(folderName, fallbackSourceId),
         sourceCategoryId: existing?.categorySourceId || existing?.source?.categoryId,
@@ -297,6 +313,8 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     }
   }
   const metadata = metadataResult.metadata || {
+    assetType: normalizedType,
+    sourceAssetId: fallbackSourceId,
     sourceModelId: fallbackSourceId,
     title: existing?.title || titleFromName(folderName, fallbackSourceId),
     sourceCategoryId: existing?.categorySourceId || "",
@@ -309,14 +327,14 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     materials: existing?.materials || [],
     sha256: existing?.sha256 || "",
   };
-  existing = existing || await findModelForFolder(folder, metadata);
+  existing = existing || await findModelForFolder(folder, metadata, normalizedType);
   if (existing?.driveFolderId && existing.driveFolderId !== folderId) {
-    const error = new Error(`Source model ${metadata.sourceModelId || fallbackSourceId} is already attached to another Drive folder.`);
+    const error = new Error(`Source ${normalizedType} ${metadata.sourceAssetId || metadata.sourceModelId || fallbackSourceId} is already attached to another Drive folder.`);
     error.status = 409;
     error.code = "MARKETPLACE_SOURCE_MODEL_CONFLICT";
     throw error;
   }
-  const categories = await categoryFields(metadata.sourceCategoryId);
+  const categories = await categoryFields(metadata.sourceCategoryId, normalizedType);
   const blockers = publicationBlockers({
     metadataFile,
     metadataErrors: metadataResult.errors,
@@ -330,14 +348,16 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
   const now = new Date();
   const sha256 = metadata.sha256 || await readChecksum(checksumFile).catch(() => "") || existing?.sha256 || "";
   const payload = {
+    assetType: normalizedType,
     source: {
       provider: "drive",
       modelId: folderId,
+      assetId: metadata.sourceAssetId || metadata.sourceModelId || fallbackSourceId,
       slug: folderName,
       categoryId: metadata.sourceCategoryId || "",
       syncedAt: now,
     },
-    title: metadata.title || existing?.title || titleFromName(folderName, metadata.sourceModelId),
+    title: metadata.title || existing?.title || titleFromName(folderName, metadata.sourceAssetId || metadata.sourceModelId),
     ...categories,
     driveFolderId: folderId,
     driveFolderName: folderName,
@@ -364,7 +384,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     coverImage: imageRef(cover, metadata.title),
     previewImages: previews.map((file) => imageRef(file, metadata.title)),
     sha256,
-    metadataSourceModelId: metadata.sourceModelId || fallbackSourceId,
+    metadataSourceModelId: metadata.sourceAssetId || metadata.sourceModelId || fallbackSourceId,
     metadataDriveFileId: metadataFile?.id || "",
     metadataFileName: clean(metadataFile?.name, 240),
     metadataSize: Math.max(0, Number(metadataFile?.size || 0)),
@@ -374,9 +394,11 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     metadataModifiedTime: metadataFile?.modifiedTime ? new Date(metadataFile.modifiedTime) : null,
     syncStatus: syncError ? "error" : blockers.some((item) => ["archive", "cover", "metadata_file"].includes(item)) ? "missing" : "synced",
     syncError,
+    discoveryStatus: "pending",
+    discoveryError: "",
   };
-  if (!existing?.slug) payload.slug = await uniqueSlug(metadata.title || metadata.sourceModelId, folderId);
-  const query = existing?._id ? { _id: existing._id } : { "source.provider": "drive", "source.modelId": folderId };
+  if (!existing?.slug) payload.slug = await uniqueSlug(metadata.title || metadata.sourceAssetId || metadata.sourceModelId, folderId, existing?._id, normalizedType);
+  const query = existing?._id ? { _id: existing._id } : { assetType: normalizedType, "source.provider": "drive", "source.modelId": folderId };
   const model = await MarketplaceModel.findOneAndUpdate(query, {
     $set: payload,
     $unset: {
@@ -404,6 +426,8 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
   const metadataFile = pickMetadata(files);
   let current = { document: null, metadata: null, hash: "", errors: [] };
   if (metadataFile) current = await readMarketplaceDriveMetadata(metadataFile, {
+    assetType: model.assetType || "model",
+    sourceAssetId: model.source?.assetId || model.metadataSourceModelId || model.driveFolderName || model.slug,
     sourceModelId: model.metadataSourceModelId || model.driveFolderName || model.slug,
     title: model.title,
     sourceCategoryId: model.categorySourceId,
@@ -435,10 +459,10 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
     error.diff = marketplaceMetadataDiff(rawMetadata, current.metadata || {});
     throw error;
   }
-  const sourceModelId = expected.allowSourceModelIdChange
-    ? rawMetadata.sourceModelId
-    : current.metadata?.sourceModelId || model.metadataSourceModelId || sourceIdFromName(model.driveFolderName, model.slug);
-  const { document, errors } = marketplaceMetadataDocument({ ...rawMetadata, sourceModelId }, {
+  const sourceAssetId = expected.allowSourceModelIdChange
+    ? rawMetadata.sourceAssetId || rawMetadata.sourceModelId
+    : current.metadata?.sourceAssetId || current.metadata?.sourceModelId || model.source?.assetId || model.metadataSourceModelId || sourceIdFromName(model.driveFolderName, model.slug);
+  const { document, errors } = marketplaceMetadataDocument({ ...rawMetadata, assetType: model.assetType || "model", sourceAssetId, sourceModelId: sourceAssetId }, {
     revision: Math.max(0, Number(current.document?.revision || model.metadataRevision || 0)) + 1,
     updatedAt: new Date(),
   });
@@ -449,7 +473,7 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
     error.details = errors;
     throw error;
   }
-  const category = await categoryFields(document.sourceCategoryId);
+  const category = await categoryFields(document.sourceCategoryId, model.assetType);
   if (!category.categoryId) {
     const error = new Error("Marketplace category must be an existing leaf category.");
     error.status = 400;
@@ -479,7 +503,7 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
     error.status = 502;
     throw error;
   }
-  const synced = await syncMarketplaceDriveFolder({ driveFolderId: model.driveFolderId, force: true });
+  const synced = await syncMarketplaceDriveFolder({ driveFolderId: model.driveFolderId, force: true, assetType: model.assetType });
   return { ...synced, metadata: document, metadataHash: confirmed.hash, driveVersion: String(written.version || "") };
 }
 

@@ -37,8 +37,8 @@ const HOME_TEXT_DEFAULTS = {
   systemStatusLabel: "Trạng thái hệ thống",
   pricePerDownloadLabel: "Giá tải chỉ từ",
   pricePerDownloadValue: "10K",
-  referralTitleBoth: "Giới thiệu bạn bè, cả hai +1 lượt tải.",
-  referralTitleReferrerOnly: "Giới thiệu bạn bè để +1 lượt tải.",
+  referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí.",
+  referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro miễn phí.",
   pricingEyebrow: "Bảng giá",
   pricingTitle: "Chọn gói phù hợp",
   pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
@@ -201,8 +201,8 @@ const defaultSettings = {
   systemStatusLabel: "Trạng thái hệ thống",
   pricePerDownloadLabel: "Giá tải chỉ từ",
   pricePerDownloadValue: "10K",
-  referralTitleBoth: "Giới thiệu bạn bè, cả hai +1 lượt tải.",
-  referralTitleReferrerOnly: "Giới thiệu bạn bè để +1 lượt tải.",
+  referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí.",
+  referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro miễn phí.",
   pricingEyebrow: "Bảng giá",
   pricingTitle: "Chọn gói phù hợp",
   pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
@@ -440,6 +440,26 @@ async function loadSettings() {
     settings = await SiteSetting.findOneAndUpdate(
       { key: "homepage" },
       { $set: { referralMode: defaultSettings.referralMode } },
+      { new: true },
+    );
+  }
+  const legacyReferralTitlePatch = {};
+  if (
+    settings.referralTitleBoth === "Giới thiệu bạn bè, cả hai +1 lượt tải." ||
+    settings.referralTitleBoth === "Invite friends, both get rewards +1 download."
+  ) {
+    legacyReferralTitlePatch.referralTitleBoth = defaultSettings.referralTitleBoth;
+  }
+  if (
+    settings.referralTitleReferrerOnly === "Giới thiệu bạn bè để +1 lượt tải." ||
+    settings.referralTitleReferrerOnly === "Invite friends to get +1 download."
+  ) {
+    legacyReferralTitlePatch.referralTitleReferrerOnly = defaultSettings.referralTitleReferrerOnly;
+  }
+  if (Object.keys(legacyReferralTitlePatch).length) {
+    settings = await SiteSetting.findOneAndUpdate(
+      { key: "homepage" },
+      { $set: legacyReferralTitlePatch },
       { new: true },
     );
   }

@@ -86,6 +86,11 @@ import { createRateLimit } from "../middleware/rateLimit.js";
 const router = Router();
 const adminWriteLimit = createRateLimit({ keyPrefix: "admin-write", windowMs: 60_000, max: 30, keyGenerator: (req) => req.user?._id || req.ip });
 
+function sceneAdmin(req, _res, next) {
+  req.marketplaceAssetType = "scene";
+  next();
+}
+
 router.use(requireAuth, adminOnly);
 router.get("/dashboard", adminDashboard);
 router.get("/overview", getOverview);
@@ -156,6 +161,21 @@ router.post("/marketplace/drive/reconcile", adminWriteLimit, auditAdmin("RECONCI
 router.post("/marketplace/drive/migrate-metadata", adminWriteLimit, auditAdmin("MIGRATE_MARKETPLACE_DRIVE_METADATA"), adminMigrateMarketplaceDriveMetadata);
 router.post("/marketplace/models/:id/attach-file", adminWriteLimit, auditAdmin("ATTACH_MARKETPLACE_FILE"), adminAttachMarketplaceFile);
 router.post("/marketplace/models/:id/attach-assets", adminWriteLimit, auditAdmin("ATTACH_MARKETPLACE_ASSETS"), adminAttachMarketplaceAssets);
+
+router.get("/marketplace/scenes", sceneAdmin, adminListMarketplaceModels);
+router.get("/marketplace/scenes/stats", sceneAdmin, adminMarketplaceStats);
+router.post("/marketplace/scenes/bulk", sceneAdmin, adminWriteLimit, auditAdmin("BULK_MARKETPLACE_SCENES"), adminBulkMarketplaceModels);
+router.get("/marketplace/scenes/sync-state", sceneAdmin, adminMarketplaceDriveSyncState);
+router.post("/marketplace/scenes/sync-run", sceneAdmin, adminWriteLimit, auditAdmin("RUN_SCENES_DRIVE_SYNC"), adminRunMarketplaceDriveSync);
+router.post("/marketplace/scenes/drive/sync-folder", sceneAdmin, adminWriteLimit, auditAdmin("SYNC_SCENE_DRIVE_FOLDER"), adminSyncMarketplaceDriveFolder);
+router.post("/marketplace/scenes/drive/reconcile", sceneAdmin, adminWriteLimit, auditAdmin("RECONCILE_SCENES_DRIVE"), adminReconcileMarketplaceDrive);
+router.post("/marketplace/scenes/drive/migrate-metadata", sceneAdmin, adminWriteLimit, auditAdmin("MIGRATE_SCENE_DRIVE_METADATA"), adminMigrateMarketplaceDriveMetadata);
+router.put("/marketplace/scenes/:id", sceneAdmin, adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_SCENE"), adminUpdateMarketplaceModel);
+router.put("/marketplace/scenes/:id/metadata", sceneAdmin, adminWriteLimit, auditAdmin("UPDATE_SCENE_DRIVE_METADATA"), adminUpdateMarketplaceMetadata);
+router.patch("/marketplace/scenes/:id/state", sceneAdmin, adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_SCENE_STATE"), adminUpdateMarketplaceState);
+router.post("/marketplace/scenes/:id/rescan-drive", sceneAdmin, adminWriteLimit, auditAdmin("RESCAN_SCENE_DRIVE"), adminRescanMarketplaceModelDriveFolder);
+router.post("/marketplace/scenes/:id/attach-file", sceneAdmin, adminWriteLimit, auditAdmin("ATTACH_SCENE_FILE"), adminAttachMarketplaceFile);
+router.post("/marketplace/scenes/:id/attach-assets", sceneAdmin, adminWriteLimit, auditAdmin("ATTACH_SCENE_ASSETS"), adminAttachMarketplaceAssets);
 
 router.get("/articles", listAdminArticles);
 router.post("/articles", adminWriteLimit, auditAdmin("CREATE_ARTICLE"), createAdminArticle);

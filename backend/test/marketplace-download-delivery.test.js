@@ -1,0 +1,70 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  getStorageBrowserDownloadLink,
+  marketplaceDownloadDeliveryMode,
+} from "../src/utils/storageProvider.js";
+
+test("marketplace downloads remain proxied unless Drive redirect is enabled", async () => {
+  const originalMode = process.env.MARKETPLACE_DOWNLOAD_DELIVERY;
+  try {
+    process.env.MARKETPLACE_DOWNLOAD_DELIVERY = "proxy";
+    assert.equal(marketplaceDownloadDeliveryMode(), "proxy");
+    assert.equal(await getStorageBrowserDownloadLink({ storageProvider: "google_drive", driveFileId: "file-1" }), "");
+  } finally {
+    if (originalMode === undefined) delete process.env.MARKETPLACE_DOWNLOAD_DELIVERY;
+    else process.env.MARKETPLACE_DOWNLOAD_DELIVERY = originalMode;
+  }
+});
+
+test("Drive redirect resolves the browser content link without streaming file bytes", async () => {
+  const original = {
+    mode: process.env.MARKETPLACE_DOWNLOAD_DELIVERY,
+    accessToken: process.env.GOOGLE_DRIVE_ACCESS_TOKEN,
+    bearerToken: process.env.GOOGLE_DRIVE_BEARER_TOKEN,
+    clientId: process.env.GOOGLE_DRIVE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_DRIVE_CLIENT_SECRET,
+    refreshToken: process.env.GOOGLE_DRIVE_REFRESH_TOKEN,
+    fetch: global.fetch,
+  };
+  try {
+    process.env.MARKETPLACE_DOWNLOAD_DELIVERY = "drive_redirect";
+    process.env.GOOGLE_DRIVE_ACCESS_TOKEN = "test-access-token";
+    delete process.env.GOOGLE_DRIVE_BEARER_TOKEN;
+    delete process.env.GOOGLE_DRIVE_CLIENT_ID;
+    delete process.env.GOOGLE_DRIVE_CLIENT_SECRET;
+    delete process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+    global.fetch = async (url, options) => {
+      assert.match(String(url), /\/drive\/v3\/files\/drive-file-1/);
+      assert.equal(options.headers.authorization, "Bearer test-access-token");
+      return new Response(JSON.stringify({
+        id: "drive-file-1",
+        name: "model.zip",
+        trashed: false,
+        capabilities: { canDownload: true },
+        permissions: [{ type: "anyone", role: "reader" }],
+        webContentLink: "https://drive.google.com/uc?id=drive-file-1&export=download",
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+
+    const link = await getStorageBrowserDownloadLink({
+      storageProvider: "google_drive",
+      driveFileId: "drive-file-1",
+    });
+    assert.equal(link, "https://drive.google.com/uc?id=drive-file-1&export=download");
+  } finally {
+    const envMap = {
+      MARKETPLACE_DOWNLOAD_DELIVERY: original.mode,
+      GOOGLE_DRIVE_ACCESS_TOKEN: original.accessToken,
+      GOOGLE_DRIVE_BEARER_TOKEN: original.bearerToken,
+      GOOGLE_DRIVE_CLIENT_ID: original.clientId,
+      GOOGLE_DRIVE_CLIENT_SECRET: original.clientSecret,
+      GOOGLE_DRIVE_REFRESH_TOKEN: original.refreshToken,
+    };
+    for (const [key, value] of Object.entries(envMap)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    global.fetch = original.fetch;
+  }
+});

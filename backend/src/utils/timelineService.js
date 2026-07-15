@@ -6,7 +6,7 @@ import ModelDownload from "../models/ModelDownload.js";
 import ModelPurchase from "../models/ModelPurchase.js";
 import Referral from "../models/Referral.js";
 
-const TIMELINE_TYPES = new Set(["all", "credit", "pro", "getlink", "model", "referral", "voucher"]);
+const TIMELINE_TYPES = new Set(["all", "credit", "pro", "getlink", "model", "scene", "referral", "voucher"]);
 
 function safeLimit(value, fallback = 20, max = 100) {
   const number = Number(value || fallback);
@@ -168,6 +168,7 @@ function modelSummary(model) {
   if (!model) return null;
   return {
     _id: model._id,
+    assetType: model.assetType || "model",
     title: model.title || "",
     slug: model.slug || "",
     accessType: model.accessType || "",
@@ -176,7 +177,9 @@ function modelSummary(model) {
 }
 
 function mapModelDownload(item) {
-  return eventBase(
+  const assetType = item.assetType || item.modelId?.assetType || "model";
+  const quotaCost = item.quotaCharged ? Number(item.quotaCost || 1) : 0;
+  const event = eventBase(
     `model-download:${item._id}`,
     "model",
     `Tải model${item.modelId?.title ? ` - ${item.modelId.title}` : ""}`,
@@ -189,10 +192,17 @@ function mapModelDownload(item) {
       clientType: item.clientType || "web",
       accessTier: item.accessTier || "",
       quotaCharged: Boolean(item.quotaCharged),
+      quotaCost,
+      assetType,
       guestKey: item.guestKey || "",
       user: userSummary(item.userId),
     },
   );
+  event.id = `${assetType}-download:${item._id}`;
+  event.type = assetType;
+  event.title = `${assetType === "scene" ? "Tải scene" : "Tải model"}${item.modelId?.title ? ` - ${item.modelId.title}` : ""}`;
+  event.amount = -quotaCost;
+  return event;
 }
 
 function mapModelPurchase(item) {
@@ -214,21 +224,31 @@ function mapModelPurchase(item) {
 
 function mapReferral(item, userId) {
   const isReferrer = String(item.referrerId?._id || item.referrerId) === String(userId);
+  const rewardType = item.rewardType || "credit";
   const credit = isReferrer
     ? Number(item.referrerRewardCredit ?? item.rewardCredit ?? 0)
     : Number(item.referredRewardCredit ?? item.rewardCredit ?? 0);
+  const proDays = isReferrer
+    ? Number(item.referrerRewardProDays || 0)
+    : Number(item.referredRewardProDays || 0);
+  const proUntil = isReferrer ? item.referrerProUntil : item.referredProUntil;
   const otherUser = isReferrer ? item.referredUserId : item.referrerId;
   return eventBase(
     `referral:${item._id}:${isReferrer ? "referrer" : "referred"}`,
     "referral",
-    isReferrer ? "Mời bạn bè" : "Được mời",
-    item.status === "rewarded" ? credit : 0,
+    rewardType === "pro"
+      ? (isReferrer ? "Thưởng Pro khi mời bạn" : "Pro chào mừng từ lời mời")
+      : (isReferrer ? "Mời bạn bè" : "Được mời"),
+    item.status === "rewarded" && rewardType === "credit" ? credit : 0,
     item.status,
     item.rewardedAt || item.createdAt,
     {
       referralId: item._id,
       role: isReferrer ? "referrer" : "referred",
       referralCode: item.referralCode || "",
+      rewardType,
+      proDays: rewardType === "pro" ? proDays : 0,
+      proUntil: rewardType === "pro" ? proUntil : null,
       otherUser: userSummary(otherUser),
     },
   );
@@ -311,21 +331,24 @@ async function fetchTimelineSources({ userId, type, sourceLimit }) {
     );
   }
 
-  if (type === "all" || type === "model") {
+  if (type === "all" || type === "model" || type === "scene") {
+    const downloadQuery = { userId: userObjectId };
+    if (type === "model") downloadQuery.assetType = { $ne: "scene" };
+    if (type === "scene") downloadQuery.assetType = "scene";
     tasks.push(
-      ModelDownload.find({ userId: userObjectId })
+      ModelDownload.find(downloadQuery)
         .sort({ createdAt: -1 })
         .limit(sourceLimit)
-        .populate("modelId", "title slug accessType fileStatus source")
+        .populate("modelId", "assetType title slug accessType fileStatus source")
         .populate("userId", "name email avatar credit role")
         .lean()
         .then((items) => items.map(mapModelDownload)),
     );
-    tasks.push(
+    if (type !== "scene") tasks.push(
       ModelPurchase.find({ userId: userObjectId })
         .sort({ createdAt: -1 })
         .limit(sourceLimit)
-        .populate("modelId", "title slug accessType fileStatus source")
+        .populate("modelId", "assetType title slug accessType fileStatus source")
         .populate("userId", "name email avatar credit role")
         .lean()
         .then((items) => items.map(mapModelPurchase)),
@@ -386,9 +409,12 @@ async function countTimelineSources({ userId, type }) {
   if (type === "all" || type === "credit") tasks.push(Topup.countDocuments({ userId: userObjectId }));
   if (type === "all" || type === "getlink") tasks.push(Getlink.countDocuments({ userId: userObjectId }));
   if (type === "all" || type === "pro") tasks.push(MembershipOrder.countDocuments({ userId: userObjectId }));
-  if (type === "all" || type === "model") {
-    tasks.push(ModelDownload.countDocuments({ userId: userObjectId }));
-    tasks.push(ModelPurchase.countDocuments({ userId: userObjectId }));
+  if (type === "all" || type === "model" || type === "scene") {
+    const downloadQuery = { userId: userObjectId };
+    if (type === "model") downloadQuery.assetType = { $ne: "scene" };
+    if (type === "scene") downloadQuery.assetType = "scene";
+    tasks.push(ModelDownload.countDocuments(downloadQuery));
+    if (type !== "scene") tasks.push(ModelPurchase.countDocuments({ userId: userObjectId }));
   }
   if (type === "all" || type === "referral") {
     tasks.push(Referral.countDocuments({
