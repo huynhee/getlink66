@@ -496,6 +496,14 @@ export function modelIdsShareAssetIdentity(left = "", right = "") {
   return commonTrailingDigitCount(leftParts.digits, rightParts.digits) >= 6;
 }
 
+export function resolvedFootprintUrlMatches(value = "", selectedProductId = "") {
+  const resolvedProductId = modelIdFromUrl(value);
+  return Boolean(
+    resolvedProductId &&
+    modelIdsShareAssetIdentity(resolvedProductId, selectedProductId)
+  );
+}
+
 function footprintCardMatches(card = {}, expectedProductIds = []) {
   const cardId = String(card.productId || "").trim().toUpperCase();
   if (!cardId) return false;
@@ -1047,9 +1055,15 @@ export async function resolve3D66ModelUrlFromFootprint(
     }
 
     assertSafe3D66Url(selected.href);
-    const popupPromise = page
-      .waitForEvent("popup", { timeout: Math.min(timeoutMs(), 10000) })
-      .catch(() => null);
+    const openedPagePromise = Promise.any([
+      context.waitForEvent("page", { timeout: Math.min(timeoutMs(), 6000) }),
+      page
+        .waitForURL(
+          (candidate) => candidate.pathname.includes("/reshtmla/") && candidate.searchParams.has("sof"),
+          { timeout: Math.min(timeoutMs(), 6000) },
+        )
+        .then(() => page),
+    ]).catch(() => null);
     await page.evaluate((href) => {
       const anchor = Array.from(
         document.querySelectorAll('a[href*="/reshtmla/"][href*="sof="]'),
@@ -1063,36 +1077,38 @@ export async function resolve3D66ModelUrlFromFootprint(
       anchor?.click();
     }, selected.href);
 
-    const popup = await popupPromise;
-    if (popup) {
-      await popup.waitForLoadState("commit", { timeout: timeoutMs() }).catch(() => {});
-      await popup
-        .waitForURL(
-          (candidate) => {
-            try {
-              return Boolean(
-                candidate.searchParams.get("sign") &&
-                candidate.pathname.includes("/reshtmla/"),
-              );
-            } catch {
-              return false;
-            }
-          },
-          { timeout: Math.min(timeoutMs(), 15000) },
-        )
-        .catch(() => {});
-      await popup.waitForTimeout(Math.max(500, postCommitWaitMs())).catch(() => {});
+    let openedPage = await openedPagePromise;
+    if (!openedPage) {
+      openedPage = await context.newPage();
+      await goto3D66Page(openedPage, selected.href);
     }
-    const resolvedUrl =
-      popup && popup.url() && popup.url() !== "about:blank" ? popup.url() : selected.href;
+
+    await openedPage.waitForLoadState("commit", { timeout: timeoutMs() }).catch(() => {});
+    if (!openedPage.url() || openedPage.url() === "about:blank") {
+      await goto3D66Page(openedPage, selected.href);
+    }
+    await openedPage
+      .waitForURL(
+        (candidate) =>
+          candidate.pathname.includes("/reshtmla/") &&
+          candidate.searchParams.has("sof") &&
+          candidate.searchParams.has("sign"),
+        { timeout: Math.min(timeoutMs(), 4000) },
+      )
+      .catch(() => {});
+    await openedPage.waitForTimeout(Math.max(500, postCommitWaitMs())).catch(() => {});
+
+    const resolvedUrl = openedPage.url();
     assertSafe3D66Url(resolvedUrl);
-    if (!new URL(resolvedUrl).searchParams.get("sign")) {
+    const resolvedProductId = modelIdFromUrl(resolvedUrl);
+    if (!resolvedFootprintUrlMatches(resolvedUrl, selected.productId)) {
       throw browserHttpError(
-        "3D66 did not generate a signed model URL after opening the footprint item.",
+        "3D66 opened a different model than the selected footprint item.",
         502,
         {
-          productId: selected.productId,
-          stage: "footprint-signed-url",
+          selectedProductId: selected.productId,
+          resolvedProductId,
+          stage: "footprint-opened-model",
         },
       );
     }
@@ -1100,7 +1116,7 @@ export async function resolve3D66ModelUrlFromFootprint(
     const browserCookies = await context.cookies();
     return {
       url: resolvedUrl,
-      productId: modelIdFromUrl(resolvedUrl) || selected.productId,
+      productId: resolvedProductId,
       cookieValue: serializeCookies(browserCookies) || cookieValue,
       usedFootprint: true,
     };
