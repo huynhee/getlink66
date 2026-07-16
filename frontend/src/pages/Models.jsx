@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Download, Filter, HardDrive, Image as ImageIcon, ImagePlus, Loader2, LogIn, Package, Search, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import Pagination from "../components/Pagination.jsx";
@@ -370,11 +371,10 @@ function CategoryButton({ category, selected, isOpen, onOpen, onSelect, language
   const hasChildren = children.length > 0;
   const childSelected = children.some((child) => selected === child.slug);
   const parentSelected = selected === category.slug;
-  const active = parentSelected || childSelected;
 
   return (
-    <div className={`marketCategoryGroup ${isOpen ? "open" : ""}`}>
-      <div className={`marketCategoryRow parent ${active ? "active" : ""}`}>
+    <div className={`marketCategoryGroup ${isOpen ? "open" : ""} ${childSelected ? "hasChildSelected" : ""}`}>
+      <div className={`marketCategoryRow parent ${parentSelected ? "active" : ""}`}>
         <label
           className="marketCategorySelector"
           title={textFor(language, `Chọn toàn bộ ${labelForCategory(category, language)}`, `Select all ${labelForCategory(category, language)}`)}
@@ -495,11 +495,9 @@ function FacetSection({ id, title, options = [], values = [], onToggle, onClear,
 export function ModelCard({ model, onNavigate, language = "vi" }) {
   const image = cover(model);
   const href = modelPath(model);
-  const hoverMeta = [
-    model.sizeText || formatBytes(model.fileSize),
-    model.renderer,
-    `${Number(model.downloadCount || 0).toLocaleString(language === "vi" ? "vi-VN" : "en-US")} ${textFor(language, "lượt tải", "downloads")}`,
-  ].filter(Boolean).join(" · ");
+  const sizeLabel = model.sizeText || formatBytes(model.fileSize);
+  const rendererLabel = model.renderer || model.renderers?.[0] || "-";
+  const downloadCount = Number(model.downloadCount || 0).toLocaleString(language === "vi" ? "vi-VN" : "en-US");
   return (
     <a className="marketModelCard" href={href} onClick={(event) => navigateTo(href, onNavigate, event)}>
       <div className="marketModelThumb">
@@ -509,14 +507,24 @@ export function ModelCard({ model, onNavigate, language = "vi" }) {
           <Package size={32} />
         )}
         <span className={`badge ${accessBadgeClass(model.accessType)}`}>{accessLabel(model.accessType)}</span>
-        {hoverMeta && <span className="marketModelHoverMeta">{hoverMeta}</span>}
+        <span className="marketModelHoverMeta">
+          <span className="marketModelHoverSize">{sizeLabel}</span>
+          <span className="marketModelHoverRenderer">{rendererLabel}</span>
+          <span
+            className="marketModelHoverDownloads"
+            aria-label={`${downloadCount} ${textFor(language, "lượt tải", "downloads")}`}
+          >
+            <Download size={13} aria-hidden="true" />
+            <span>{downloadCount}</span>
+          </span>
+        </span>
       </div>
       <strong>{model.title}</strong>
     </a>
   );
 }
 
-function ModelPreview({ model }) {
+function ModelPreview({ model, assetType = "model", language = "vi" }) {
   const images = useMemo(() => {
     const previews = (model.previewImages || [])
       .map((image) => ({ ...image, url: previewImageSrc(image) }))
@@ -527,52 +535,179 @@ function ModelPreview({ model }) {
     return candidates.filter((image, index) => candidates.findIndex((item) => item.url === image.url) === index);
   }, [model]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const activeImage = images[activeIndex]?.url || "";
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [naturalRatios, setNaturalRatios] = useState({});
+  const openerRef = useRef(null);
+  const lightboxRef = useRef(null);
+  const activeImage = images[activeIndex] || null;
+  const activeImageUrl = activeImage?.url || "";
+  const metadataRatio = Number(activeImage?.width || 0) > 0 && Number(activeImage?.height || 0) > 0
+    ? Number(activeImage.width) / Number(activeImage.height)
+    : 0;
+  const sceneRatio = metadataRatio || naturalRatios[activeImageUrl] || (16 / 9);
 
   useEffect(() => {
     setActiveIndex(0);
+    setLightboxOpen(false);
   }, [model._id]);
+
+  useEffect(() => {
+    if (!lightboxOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const opener = openerRef.current;
+    document.body.style.overflow = "hidden";
+    window.requestAnimationFrame(() => lightboxRef.current?.focus());
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        setLightboxOpen(false);
+        return;
+      }
+      if (images.length <= 1) return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        setActiveIndex((current) => (current - 1 + images.length) % images.length);
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        setActiveIndex((current) => (current + 1) % images.length);
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+      window.requestAnimationFrame(() => opener?.focus());
+    };
+  }, [images.length, lightboxOpen]);
 
   function moveImage(direction) {
     if (images.length <= 1) return;
     setActiveIndex((current) => (current + direction + images.length) % images.length);
   }
 
-  return (
-    <div className={`marketDetailMedia ${images.length > 1 ? "hasPreviews" : "single"}`}>
-      {images.length > 1 && (
-        <div className="marketPreviewStrip">
-          {images.slice(0, 8).map((image, index) => {
-            const src = image.url;
-            if (!src) return null;
-            return (
-              <button
-                type="button"
-                key={`${src}-${index}`}
-                className={index === activeIndex ? "active" : ""}
-                onClick={() => setActiveIndex(index)}
-                aria-label={`Preview ${index + 1}`}
-              >
-                <img src={src} alt={image.alt || model.title} loading="lazy" referrerPolicy="no-referrer" />
-              </button>
-            );
-          })}
-        </div>
-      )}
-      <div className={`marketDetailImage ${activeImage ? "" : "empty"}`}>
-        {activeImage ? (
-          <img src={activeImage} alt={model.title} referrerPolicy="no-referrer" />
-        ) : (
-          <Package size={48} />
-        )}
+  function recordNaturalRatio(event) {
+    if (assetType !== "scene" || !activeImageUrl) return;
+    const width = Number(event.currentTarget.naturalWidth || 0);
+    const height = Number(event.currentTarget.naturalHeight || 0);
+    if (!width || !height) return;
+    setNaturalRatios((current) => (
+      current[activeImageUrl] ? current : { ...current, [activeImageUrl]: width / height }
+    ));
+  }
+
+  const lightbox = lightboxOpen && activeImageUrl && typeof document !== "undefined"
+    ? createPortal(
+      <div
+        className="marketLightbox"
+        role="dialog"
+        aria-modal="true"
+        aria-label={textFor(language, "Xem ảnh đầy đủ", "Full image viewer")}
+        tabIndex={-1}
+        ref={lightboxRef}
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setLightboxOpen(false);
+        }}
+      >
+        <button
+          type="button"
+          className="marketLightboxClose"
+          onClick={() => setLightboxOpen(false)}
+          aria-label={textFor(language, "Đóng ảnh", "Close image")}
+          title={textFor(language, "Đóng ảnh", "Close image")}
+        >
+          <X size={22} />
+        </button>
+        <img
+          src={activeImageUrl}
+          alt={activeImage.alt || model.title}
+          referrerPolicy="no-referrer"
+          onLoad={recordNaturalRatio}
+        />
         {images.length > 1 && (
-          <div className="marketGalleryControls">
-            <button className="previous" type="button" onClick={() => moveImage(-1)} aria-label="Previous image"><ChevronLeft size={22} /></button>
-            <button className="next" type="button" onClick={() => moveImage(1)} aria-label="Next image"><ChevronRight size={22} /></button>
+          <>
+            <button
+              type="button"
+              className="marketLightboxNav previous"
+              onClick={() => moveImage(-1)}
+              aria-label={textFor(language, "Ảnh trước", "Previous image")}
+            >
+              <ChevronLeft size={28} />
+            </button>
+            <button
+              type="button"
+              className="marketLightboxNav next"
+              onClick={() => moveImage(1)}
+              aria-label={textFor(language, "Ảnh tiếp theo", "Next image")}
+            >
+              <ChevronRight size={28} />
+            </button>
+          </>
+        )}
+      </div>,
+      document.body,
+    )
+    : null;
+
+  return (
+    <>
+      <div
+        className={`marketDetailMedia asset-${assetType} ${images.length > 1 ? "hasPreviews" : "single"}`}
+        style={assetType === "scene" ? {
+          "--market-preview-ratio": String(sceneRatio),
+          "--market-preview-max-width": `${Math.round(760 * sceneRatio)}px`,
+          "--market-preview-mobile-max-width": `${Math.round(70 * sceneRatio * 100) / 100}vh`,
+        } : undefined}
+      >
+        {images.length > 1 && (
+          <div className="marketPreviewStrip">
+            {images.slice(0, 8).map((image, index) => {
+              const src = image.url;
+              if (!src) return null;
+              return (
+                <button
+                  type="button"
+                  key={`${src}-${index}`}
+                  className={index === activeIndex ? "active" : ""}
+                  onClick={() => setActiveIndex(index)}
+                  aria-label={`${textFor(language, "Ảnh xem trước", "Preview")} ${index + 1}`}
+                >
+                  <img src={src} alt={image.alt || model.title} loading="lazy" referrerPolicy="no-referrer" />
+                </button>
+              );
+            })}
           </div>
         )}
+        <div className={`marketDetailImage ${activeImageUrl ? "" : "empty"}`}>
+          {activeImageUrl ? (
+            <button
+              ref={openerRef}
+              type="button"
+              className="marketDetailImageButton"
+              onClick={() => setLightboxOpen(true)}
+              aria-label={textFor(language, "Mở ảnh đầy đủ", "Open full image")}
+            >
+              <img
+                src={activeImageUrl}
+                alt={activeImage.alt || model.title}
+                referrerPolicy="no-referrer"
+                onLoad={recordNaturalRatio}
+              />
+            </button>
+          ) : (
+            <Package size={48} />
+          )}
+          {images.length > 1 && (
+            <div className="marketGalleryControls">
+              <button className="previous" type="button" onClick={() => moveImage(-1)} aria-label={textFor(language, "Ảnh trước", "Previous image")}><ChevronLeft size={22} /></button>
+              <button className="next" type="button" onClick={() => moveImage(1)} aria-label={textFor(language, "Ảnh tiếp theo", "Next image")}><ChevronRight size={22} /></button>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+      {lightbox}
+    </>
   );
 }
 
@@ -844,6 +979,8 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   const [openCategory, setOpenCategory] = useState("");
   const [activeFilters, setActiveFilters] = useState(EMPTY_FILTERS);
   const [accessType, setAccessType] = useState("");
+  const [sortMode, setSortMode] = useState("");
+  const [effectiveSort, setEffectiveSort] = useState("newest");
   const [imageSearchMeta, setImageSearchMeta] = useState(null);
   const [imageSearchPreview, setImageSearchPreview] = useState("");
   const [imageSearching, setImageSearching] = useState(false);
@@ -898,6 +1035,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
     if (search.trim()) query.set("q", search.trim());
     if (category) query.set("category", category);
     if (accessType) query.set("accessType", accessType);
+    if (sortMode) query.set("sort", sortMode);
     Object.entries(activeFilters).forEach(([key, values]) => {
       if (values?.length) query.set(key, values.join(","));
     });
@@ -911,12 +1049,13 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
       const data = await api(`/api/marketplace/${segment}?${query.toString()}`);
       setModels(data.assets || data.scenes || data.models || []);
       setPagination(data.pagination || { page: 1, totalPages: 1, total: 0 });
+      setEffectiveSort(data.sort?.effective || (search.trim() ? "relevance" : "newest"));
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [accessType, activeFilters, category, search, segment]);
+  }, [accessType, activeFilters, category, search, segment, sortMode]);
 
   async function searchByImage(file) {
     if (!user) {
@@ -943,6 +1082,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
       setModels(data.assets || data.scenes || data.models || []);
       setPagination(data.pagination || { page: 1, totalPages: 1, total: 0 });
       setImageSearchMeta(data.imageSearch || null);
+      setEffectiveSort("relevance");
       return true;
     } catch (err) {
       setImageSearchDialogError(imageSearchErrorMessage(err.message, language));
@@ -1012,6 +1152,14 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
     [activeFilters],
   );
   const totalFilterCount = activeFilterCount + (category ? 1 : 0) + (accessType ? 1 : 0);
+  const sortOptions = [
+    { value: "relevance", vi: "Phù hợp nhất", en: "Relevance" },
+    { value: "newest", vi: "Mới nhất", en: "Newest" },
+    { value: "popular", vi: "Tải nhiều nhất", en: "Most downloaded" },
+    { value: "oldest", vi: "Cũ nhất", en: "Oldest" },
+    { value: "title_asc", vi: "Tên A-Z", en: "Title A-Z" },
+    { value: "title_desc", vi: "Tên Z-A", en: "Title Z-A" },
+  ];
   const filterChips = useMemo(() => {
     const chips = [];
     if (category) {
@@ -1157,34 +1305,56 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
                 <ImagePlus size={17} />
               </button>
             </label>
-            <div className="marketAccessToggle" role="group" aria-label="Access filter">
-              {["pro", "free"].map((value) => (
-                <button
-                  type="button"
-                  key={value}
-                  className={accessType === value ? "active" : ""}
-                  onClick={() => setAccessType(accessType === value ? "" : value)}
-                >
-                  {value === "pro" ? "Pro" : "Free"}
-                </button>
-              ))}
-            </div>
           </div>
           <div className="marketResultBar">
-            <span>{pagination.total || 0} {textFor(language, noun, `${noun} found`)}</span>
-            {filterChips.length > 0 && (
-              <div className="marketFilterChips">
-                {filterChips.map((chip) => (
-                  <button type="button" key={chip.key} className="marketFilterChip" onClick={chip.onRemove}>
-                    {chip.label}
-                    <X size={12} />
+            <div className="marketResultSummary">
+              <span>{pagination.total || 0} {textFor(language, noun, `${noun} found`)}</span>
+              {filterChips.length > 0 && (
+                <div className="marketFilterChips">
+                  {filterChips.map((chip) => (
+                    <button type="button" key={chip.key} className="marketFilterChip" onClick={chip.onRemove}>
+                      {chip.label}
+                      <X size={12} />
+                    </button>
+                  ))}
+                  <button type="button" className="marketClearLink" onClick={clearAllFilters}>
+                    {textFor(language, "Xóa bộ lọc", "Clear filters")}
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="marketResultControls">
+              <div className="marketAccessToggle" role="group" aria-label={textFor(language, "Lọc quyền tải", "Access filter")}>
+                {["pro", "free"].map((value) => (
+                  <button
+                    type="button"
+                    key={value}
+                    className={accessType === value ? "active" : ""}
+                    onClick={() => setAccessType(accessType === value ? "" : value)}
+                  >
+                    {value === "pro" ? "Pro" : "Free"}
                   </button>
                 ))}
-                <button type="button" className="marketClearLink" onClick={clearAllFilters}>
-                  {textFor(language, "Xóa bộ lọc", "Clear filters")}
-                </button>
               </div>
-            )}
+              <label className="marketSortControl">
+                <span>{textFor(language, "Sắp xếp", "Sort")}</span>
+                <select
+                  value={imageSearchMeta ? "relevance" : effectiveSort}
+                  disabled={Boolean(imageSearchMeta)}
+                  onChange={(event) => {
+                    setSortMode(event.target.value);
+                    setEffectiveSort(event.target.value);
+                  }}
+                >
+                  {sortOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {language === "vi" ? option.vi : option.en}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={15} aria-hidden="true" />
+              </label>
+            </div>
           </div>
           {imageSearchMeta && (
             <div className="marketImageSearchMeta">
@@ -1442,6 +1612,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
   const isDemo = Boolean(model.isDemo);
   const requiresPro = model.accessType !== "free" && !user?.isPro && user?.role !== "admin";
   const canDownload = Boolean(user) && fileReady && !requiresPro && !isDemo;
+  const requiresDownloadVerification = fileReady && downloadProtection.enabled && !turnstileToken;
   const loginReturnTo = `/${segment}/${encodeURIComponent(model.slug || model._id || slug)}`;
   const loginHref = buildApiUrl(`/api/auth/google?returnTo=${encodeURIComponent(loginReturnTo)}`);
   const categoryLabel = modelCategoryLabel(model, language);
@@ -1470,7 +1641,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
       </div>
 
       <section className="marketDetailHero">
-        <ModelPreview model={model} />
+        <ModelPreview model={model} assetType={assetType} language={language} />
         <aside className="marketDetailInfo panel">
           <div className="marketDetailBadges">
             {isDemo && <span className="badge">DEMO</span>}
@@ -1497,7 +1668,16 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
                 ? textFor(language, "Mỗi lần tải Scene trừ 5 lượt.", "Each Scene download costs 5 downloads.")
                 : textFor(language, "Mỗi lần tải Model trừ 1 lượt.", "Each Model download costs 1 download.")}
             </p>
-            {isDemo ? (
+            {requiresDownloadVerification ? (
+              <TurnstileDownloadGate
+                siteKey={downloadProtection.siteKey}
+                action={downloadProtection.action}
+                modelId={model._id}
+                language={language}
+                onVerified={setTurnstileToken}
+                onExpired={() => setTurnstileToken("")}
+              />
+            ) : isDemo ? (
               <button className="primaryButton" type="button" disabled>
                 <Package size={18} />
                 {assetType === "scene" ? textFor(language, "Scene mẫu giao diện", "Interface demo scene") : textFor(language, "Model mẫu giao diện", "Interface demo model")}
@@ -1512,15 +1692,6 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
                 <ShieldCheck size={18} />
                 {textFor(language, "Nâng cấp Pro để tải", "Upgrade to Pro")}
               </button>
-            ) : downloadProtection.enabled && !turnstileToken ? (
-              <TurnstileDownloadGate
-                siteKey={downloadProtection.siteKey}
-                action={downloadProtection.action}
-                modelId={model._id}
-                language={language}
-                onVerified={setTurnstileToken}
-                onExpired={() => setTurnstileToken("")}
-              />
             ) : (
               <button className="primaryButton" type="button" disabled={downloading || !canDownload} onClick={downloadModel}>
                 <Download size={18} />

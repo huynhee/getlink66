@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Check, CreditCard, Sparkles } from "lucide-react";
 import { api } from "../api.js";
+import { membershipDurationLabel, membershipFeatureLabel } from "../utils/membershipPresentation.js";
 
 const PENDING_MEMBERSHIP_ORDER_KEY = "pendingMembershipOrderId";
 
@@ -154,10 +155,10 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
             {plan.badge && <span className="badge success">{plan.badge}</span>}
             <h3>{plan.name}</h3>
             <strong>{money(plan.price, locale)}</strong>
-            <span>{plan.durationDays} days · {plan.dailyDownloadLimit}/day</span>
+            <span>{membershipDurationLabel(plan, language)}</span>
             <ul>
               {(plan.features || []).map((feature) => (
-                <li key={feature}><Check size={14} /> {feature}</li>
+                <li key={feature}><Check size={14} /> {membershipFeatureLabel(feature, language)}</li>
               ))}
             </ul>
           </button>

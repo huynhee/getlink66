@@ -4,6 +4,8 @@ Cap nhat: 2026-07-10
 
 Checklist nay danh cho staging truoc, sau do production. Moi o `HUMAN CONFIRMATION` can nguoi co tham quyen xac nhan; agent audit khong tu dong deploy, migrate, thay secret hoac phe duyet giao dich.
 
+Cau hinh bien moi truong: `docs/ENV_CONFIGURATION.md`.
+
 ## A. Change record va pham vi
 
 - [ ] Ghi commit SHA, branch/tag release, backend image digest va frontend image digest.
@@ -17,7 +19,9 @@ Checklist nay danh cho staging truoc, sau do production. Moi o `HUMAN CONFIRMATI
 
 - [ ] Tao backup/snapshot Mongo ngay truoc change window; ghi id/thoi gian/noi luu ma khong ghi credential.
 - [ ] Restore thu backup vao moi truong tach biet va chay truy van sanity.
-- [ ] Xac nhan `MONGO_URI` tro den replica set, khong phai Mongo standalone.
+- [ ] Xac nhan `MONGO_CORE_URI` tro den Atlas Core va `MONGO_MARKETPLACE_URI` tro den MongoDB VPS rieng.
+- [ ] Xac nhan MongoDB VPS la replica set/sharded cluster va ho tro transaction.
+- [ ] Xac nhan hai URI khong tro cung database.
 - [ ] Xac nhan primary/secondary healthy, replication lag, disk headroom va quyen tao index.
 - [ ] Kiem tra khong co collection/index build dang treo.
 - [ ] Review index additive se tao:
@@ -41,6 +45,9 @@ Checklist nay danh cho staging truoc, sau do production. Moi o `HUMAN CONFIRMATI
 - [ ] `CLIENT_URL`, `PUBLIC_BASE_URL`, `CORS_ORIGINS` la HTTPS/domain dung.
 - [ ] `TRUST_PROXY` khop voi so hop reverse proxy; khong bat rong hon ha tang thuc.
 - [ ] `ALLOW_MEMORY_DB=false` va `THREED66_MOCK=false` tren production.
+- [ ] `MARKETPLACE_DB_TARGET=vps` va `MONGO_MARKETPLACE_TRANSACTIONS_REQUIRED=true`.
+- [ ] Drive OAuth hien `Automatic refresh: yes`; khong phu thuoc access token tam.
+- [ ] Root folder Model, Scene va history archive da co ID va tai khoan Drive co quyen Editor.
 - [ ] `GOOGLE_CLIENT_ID`, callback `/api/auth/google/callback` va allowed origin khop staging/prod.
 - [ ] SePay environment, merchant, success/error/cancel URL va IPN `/api/payments/sepay/ipn` khop moi truong.
 - [ ] 3D66 cookie/proxy duoc nap tu secret store; khong dua gia tri vao ticket/checklist.

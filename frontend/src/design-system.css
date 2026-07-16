@@ -1,0 +1,2115 @@
+/* ==========================================================================
+   3DiPL unified visual system
+   Source: TROLLLLM_DESIGN_REFERENCE.md
+   This layer intentionally loads after legacy styles and owns shared visuals.
+   ========================================================================== */
+
+:root,
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --brand-primary: #00ff88;
+  --brand-primary-hover: #28ffa0;
+  --brand-primary-active: #00d975;
+  --accent-neon: #00ff88;
+  --accent-purple: #ff2bd6;
+  --accent-cyan: #00e5ff;
+  --warning: #fbbf24;
+  --danger: #ef4444;
+  --success: #34d399;
+
+  --page-bg: #0a0a0a;
+  --surface-1: #101112;
+  --surface-2: #151617;
+  --surface-3: #1b1c1d;
+  --surface-raised: #202122;
+  --control-bg: #111213;
+  --nav-bg: rgba(10, 10, 10, 0.94);
+  --text-primary: #faf8f5;
+  --text-secondary: #d5d0c9;
+  --text-tertiary: #aaa39b;
+  --text-muted: #aaa39b;
+  --muted: #aaa39b;
+  --border: #30302f;
+  --border-light: #30302f;
+  --border-soft: #252524;
+  --border-warm: #3a3937;
+  --border-accent: rgba(52, 211, 153, 0.54);
+  --grid-line: rgba(250, 248, 245, 0.035);
+  --overlay: rgba(0, 0, 0, 0.72);
+
+  --bg-app: var(--page-bg);
+  --bg-card: var(--surface-1);
+  --bg-panel: var(--surface-1);
+  --bg-hover: var(--surface-3);
+  --terminal-bar: var(--surface-2);
+  --terminal-card: var(--surface-1);
+  --panel-bg: var(--surface-1);
+  --neon-green: var(--brand-primary);
+  --neon-cyan: var(--accent-cyan);
+  --neon-magenta: var(--accent-purple);
+  --accent: var(--brand-primary);
+
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-body: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: var(--font-body);
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.18);
+  --shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.38);
+  --focus-ring: rgba(52, 211, 153, 0.44);
+  --scroll-track: var(--page-bg);
+  --scroll-thumb: #4a4a47;
+  --cyber-cut: inset(0 round var(--radius-lg));
+  --cyber-cut-sm: inset(0 round var(--radius-sm));
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --brand-primary: #008f58;
+  --brand-primary-hover: #007a4b;
+  --brand-primary-active: #006b42;
+  --accent-neon: #00b86f;
+  --accent-purple: #c500a5;
+  --accent-cyan: #008aa8;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --success: #059669;
+
+  --page-bg: #faf8f5;
+  --surface-1: #ffffff;
+  --surface-2: #f6f3ef;
+  --surface-3: #eeeae4;
+  --surface-raised: #ffffff;
+  --control-bg: #ffffff;
+  --nav-bg: rgba(250, 248, 245, 0.95);
+  --text-primary: #0a0a0a;
+  --text-secondary: #292524;
+  --text-tertiary: #6f6964;
+  --text-muted: #6f6964;
+  --muted: #6f6964;
+  --border: #e5e1db;
+  --border-light: #e5e1db;
+  --border-soft: #eee9e2;
+  --border-warm: #d7d0c7;
+  --border-accent: rgba(5, 150, 105, 0.45);
+  --grid-line: rgba(41, 37, 36, 0.045);
+  --overlay: rgba(10, 10, 10, 0.54);
+
+  --bg-app: var(--page-bg);
+  --bg-card: var(--surface-1);
+  --bg-panel: var(--surface-1);
+  --bg-hover: var(--surface-2);
+  --terminal-bar: var(--surface-2);
+  --terminal-card: var(--surface-1);
+  --panel-bg: var(--surface-1);
+  --neon-green: var(--brand-primary);
+  --neon-cyan: var(--accent-cyan);
+  --neon-magenta: var(--accent-purple);
+  --accent: var(--brand-primary);
+
+  --shadow-sm: 0 1px 2px rgba(41, 37, 36, 0.05);
+  --shadow-md: 0 8px 24px rgba(41, 37, 36, 0.07);
+  --shadow-lg: 0 24px 70px rgba(41, 37, 36, 0.15);
+  --focus-ring: rgba(5, 150, 105, 0.3);
+  --scroll-track: #f3efe9;
+  --scroll-thumb: #aaa39b;
+}
+
+html {
+  background: var(--page-bg);
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+}
+
+body {
+  min-width: 320px;
+  color: var(--text-primary);
+  background-color: var(--page-bg);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+html::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+  border: 0;
+}
+
+html::-webkit-scrollbar-thumb {
+  min-height: 48px;
+  background: var(--scroll-thumb);
+  border: 3px solid var(--scroll-track);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+html::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-primary);
+}
+
+.cyber-scanlines {
+  display: none;
+}
+
+::selection {
+  color: #ffffff;
+  background: var(--brand-primary);
+}
+
+a {
+  color: var(--brand-primary);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: var(--brand-primary-hover);
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+  letter-spacing: 0;
+  text-shadow: none;
+}
+
+h1 {
+  font-size: 76px;
+  font-weight: 900;
+  line-height: 0.96;
+}
+
+h2 {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.08;
+  text-transform: none;
+}
+
+h3,
+h4,
+label,
+.badge,
+button,
+.smallButton,
+.primaryButton {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+h3 {
+  color: var(--text-primary);
+  text-transform: none;
+}
+
+p {
+  color: var(--text-secondary);
+}
+
+.muted {
+  color: var(--text-muted) !important;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Layout */
+.appFrame {
+  min-height: 100vh;
+}
+
+.shell {
+  width: min(1440px, 100%);
+  margin: 0 auto;
+  padding: 48px 64px 72px;
+}
+
+.shell-home {
+  padding-top: 0;
+}
+
+.shell-admin {
+  width: min(1440px, 100%);
+}
+
+.stack,
+.dashboard {
+  gap: 24px;
+}
+
+/* Header and global navigation */
+.topbar {
+  min-height: 64px;
+  padding-inline: 24px;
+  grid-template-columns: minmax(126px, 1fr) auto minmax(126px, 1fr);
+  gap: 24px;
+  background: var(--nav-bg);
+  border-bottom: 1px solid var(--border);
+  box-shadow: none;
+  backdrop-filter: blur(14px);
+}
+
+.brandButton {
+  color: var(--accent-neon);
+  font-size: 17px;
+  text-transform: none;
+  text-shadow: none;
+}
+
+.brandButton::before {
+  margin-right: 8px;
+  color: var(--accent-purple);
+}
+
+.tabs {
+  width: auto;
+  justify-self: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.tabs button {
+  height: 64px;
+  padding: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
+  text-transform: uppercase;
+}
+
+.tabs button span {
+  min-height: 40px;
+  padding: 0 12px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  clip-path: none;
+}
+
+.tabs button:hover,
+.tabs button.active {
+  color: var(--brand-primary);
+  background: transparent;
+}
+
+.tabs button:hover span,
+.tabs button.active span {
+  color: inherit;
+  background: transparent;
+  border-color: var(--brand-primary);
+  box-shadow: none;
+}
+
+.account,
+.accountMenuContent {
+  gap: 6px;
+}
+
+.iconButton,
+.notificationButton,
+.accountCreditPill,
+.accountTrigger,
+.languageToggle,
+.mobileMenuButton,
+.tabletAccountButton,
+.adminLink {
+  min-height: 38px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: none;
+  clip-path: none;
+}
+
+.iconButton:hover,
+.notificationButton:hover,
+.accountCreditPill:hover,
+.accountTrigger:hover,
+.mobileMenuButton:hover,
+.adminLink:hover {
+  color: var(--brand-primary);
+  background: var(--surface-2);
+  border-color: var(--brand-primary);
+}
+
+.accountCreditPill {
+  color: var(--brand-primary);
+}
+
+.accountTrigger {
+  padding: 0 7px;
+}
+
+.accountIdentity small {
+  color: var(--brand-primary);
+}
+
+.languageToggle {
+  min-height: 38px;
+  grid-template-columns: repeat(2, 30px);
+  gap: 0;
+  padding: 3px;
+  background: transparent;
+}
+
+.languageToggle button {
+  width: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  color: var(--text-tertiary);
+  border-radius: 2px;
+}
+
+.languageToggle button.active {
+  color: var(--text-primary);
+  background: var(--surface-3);
+  box-shadow: none;
+}
+
+.headerLoginButton {
+  min-height: 40px;
+  color: #ffffff;
+  background: var(--brand-primary);
+  border: 2px solid var(--brand-primary);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.headerLoginButton:hover {
+  color: #ffffff;
+  background: var(--brand-primary-hover);
+  border-color: var(--brand-primary-hover);
+}
+
+.accountMenuContent,
+.notificationDropdown {
+  color: var(--text-primary);
+  background: var(--surface-raised) !important;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
+  clip-path: none;
+}
+
+.accountStatusRow,
+.notificationDropdown button {
+  background: var(--surface-2);
+  border-color: var(--border-soft);
+  border-radius: 4px;
+}
+
+.facebookGroupBanner {
+  min-height: 28px;
+  color: #ffffff;
+  background: #4f46e5;
+  border: 0;
+  box-shadow: none;
+  font-family: var(--font-mono);
+}
+
+.facebookGroupBanner:hover {
+  color: #ffffff;
+  background: #4338ca;
+}
+
+/* Controls */
+.googleButton,
+.loginPanel button,
+.inputRow button,
+.inputWrapper button,
+.primaryButton {
+  min-height: 42px;
+  padding: 10px 20px;
+  color: #ffffff;
+  background: var(--brand-primary);
+  border: 2px solid var(--brand-primary);
+  border-radius: 0;
+  box-shadow: none;
+  clip-path: none;
+  text-transform: none;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.googleButton::before,
+.loginPanel button::before,
+.inputRow button::before,
+.smallButton::before,
+.inputWrapper button::before,
+.primaryButton::before {
+  display: none;
+}
+
+.googleButton:hover,
+.loginPanel button:hover,
+.inputRow button:hover:not(:disabled),
+.inputWrapper button:hover:not(:disabled),
+.primaryButton:hover {
+  color: #ffffff;
+  background: var(--brand-primary-hover);
+  border-color: var(--brand-primary-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+.googleButton:active,
+.loginPanel button:active,
+.inputRow button:active:not(:disabled),
+.inputWrapper button:active:not(:disabled),
+.primaryButton:active {
+  background: var(--brand-primary-active);
+  border-color: var(--brand-primary-active);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.18);
+}
+
+.googleButton {
+  color: var(--text-primary);
+  background: transparent;
+  border-color: var(--border-warm);
+}
+
+.googleButton:hover {
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
+  border-color: var(--brand-primary);
+}
+
+.smallButton,
+.ghostButton,
+.marketBackButton,
+.marketRecommendationToggle {
+  min-height: 34px;
+  padding: 7px 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  clip-path: none;
+  text-transform: none;
+}
+
+.smallButton:hover:not(:disabled),
+.ghostButton:hover:not(:disabled),
+.marketBackButton:hover,
+.marketRecommendationToggle:hover {
+  color: var(--brand-primary);
+  background: var(--surface-2);
+  border-color: var(--brand-primary);
+  box-shadow: none;
+  transform: none;
+}
+
+button:disabled,
+.disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+input,
+select,
+textarea,
+.adminSearchField {
+  min-height: 42px;
+  height: 42px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: none;
+  clip-path: none;
+}
+
+textarea {
+  height: auto;
+  min-height: 112px;
+  resize: vertical;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--border-warm);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+label {
+  color: var(--text-secondary);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
+  accent-color: var(--brand-primary);
+}
+
+/* Shared surfaces */
+.panel,
+.accountCard,
+.featureGrid article,
+.loginBox,
+.previewPanel,
+.pricingCard,
+.package,
+.voucherCard,
+.inviteTerminalPanel,
+.legalAside,
+.legalArticle,
+.fullscreenNotice,
+.redownloadFormatCard,
+.banOverlayCard,
+.adminKpiCard,
+.overviewCard,
+.marketAdminFact,
+.result {
+  color: var(--text-primary);
+  background: var(--surface-1) !important;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: none;
+  clip-path: none;
+  backdrop-filter: none;
+}
+
+.panel,
+.accountCard {
+  padding: 24px;
+}
+
+.panel::before,
+.panel::after,
+.accountCard::before,
+.accountCard::after,
+.pricingCard::before,
+.pricingCard::after,
+.package::before,
+.package::after,
+.featureGrid article::before,
+.featureGrid article::after,
+.getlinkForm::after,
+.previewPanel::before {
+  display: none !important;
+}
+
+.panel:not(.has-window-controls) > h2:first-child {
+  padding-left: 0;
+}
+
+.panel:hover,
+.accountCard:hover,
+.featureGrid article:hover {
+  background: var(--surface-1) !important;
+  border-color: var(--border);
+  box-shadow: none;
+  transform: none;
+}
+
+.panel:focus-within {
+  border-color: var(--border);
+}
+
+.getlinkForm:focus-within,
+.marketSearchPanel:focus-within,
+.marketImageSearchDialog:focus-within {
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border));
+}
+
+.pricingCard:hover,
+.package:hover,
+.voucherCard:hover,
+.membershipPlanCard:hover,
+.topupPackageCard:hover,
+.marketModelCard:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 60%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-primary) 16%, transparent);
+  transform: translateY(-2px);
+}
+
+.badge {
+  min-height: 22px;
+  padding: 3px 7px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: none;
+  text-transform: uppercase;
+}
+
+.badge.success {
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 8%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--border));
+}
+
+.badge.pending {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+}
+
+.badge.error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+}
+
+.eyebrowSignal,
+.sectionTitle > span,
+.inviteSectionTag {
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 34%, var(--border));
+  border-radius: 0;
+  box-shadow: none;
+  clip-path: none;
+  text-shadow: none;
+}
+
+.eyebrowSignal::before {
+  background: var(--brand-primary);
+  box-shadow: none;
+}
+
+.hl-green {
+  color: var(--brand-primary);
+}
+
+.hl-magenta {
+  color: var(--accent-purple);
+}
+
+.error {
+  color: var(--danger) !important;
+}
+
+.success {
+  color: var(--brand-primary) !important;
+}
+
+/* Landing page */
+.landing {
+  padding-bottom: 80px;
+}
+
+.landing::before {
+  opacity: 0.32;
+}
+
+.signalRail {
+  height: 32px;
+  color: var(--brand-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  clip-path: none;
+}
+
+.heroSection {
+  min-height: 560px;
+  gap: 64px;
+  padding: 80px 0 72px;
+}
+
+.heroLeft {
+  max-width: 680px;
+}
+
+.heroLeft h1 {
+  margin: 22px 0 20px;
+}
+
+.heroLeft p {
+  max-width: 620px;
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+.heroActions {
+  gap: 12px;
+}
+
+.heroRight {
+  align-self: center;
+}
+
+.loginPanel,
+.getlinkForm {
+  border-radius: 8px;
+}
+
+.window-controls {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.homeModelsSection,
+.homeScenesSection,
+#pricing,
+.homeGuideSection,
+.ctaSection {
+  padding-block: 72px;
+}
+
+.sectionTitle {
+  margin-bottom: 28px;
+}
+
+.sectionTitle h2,
+.sectionTitle h3 {
+  color: var(--text-primary);
+}
+
+.homeModelGrid,
+.homeSceneGrid {
+  gap: 20px;
+}
+
+.homeTopupChooser,
+.homeTopupPanel,
+.homeTopupPurpose {
+  background: transparent;
+}
+
+.pricingGrid {
+  gap: 16px;
+}
+
+.pricingCard,
+.package {
+  padding: 22px;
+}
+
+.pricingCard.selectedPackage,
+.package.selectedPackage,
+.membershipPlanCard.selectedPackage,
+.topupPackageCard.selectedPackage {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-primary) 14%, transparent);
+}
+
+.ctaSection {
+  border-top: 1px solid var(--border);
+}
+
+.siteFooter,
+.landingFooter {
+  padding: 40px;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.siteFooter nav h3 {
+  color: var(--text-primary);
+}
+
+.siteFooter a {
+  color: var(--text-secondary);
+}
+
+.siteFooter a:hover {
+  color: var(--brand-primary);
+}
+
+/* Marketplace */
+.shell-models,
+.shell-scenes {
+  padding-top: 36px;
+}
+
+.marketLayout {
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 24px;
+}
+
+.marketSidebar.panel {
+  padding: 20px 18px;
+}
+
+.marketSidebar h2 {
+  font-size: 20px;
+}
+
+.marketFilterBlock {
+  border-color: var(--border-soft);
+}
+
+.marketCategoryRow,
+.marketFacetOption,
+.marketAccessToggle button,
+.marketFilterChip {
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: transparent;
+  border-radius: 3px;
+  clip-path: none;
+}
+
+.marketCategoryRow:hover,
+.marketFacetOption:hover,
+.marketCategoryRow.active,
+.marketFacetOption.active {
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 7%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--brand-primary) 25%, transparent);
+}
+
+.marketCategoryRow.parent {
+  color: var(--text-primary);
+  padding: 0;
+}
+
+.marketCategoryCheck {
+  border-color: var(--border-warm);
+  background: var(--control-bg);
+}
+
+.marketCategoryCheck.checked,
+.marketCategorySelector input:checked + .marketCategoryCheck {
+  color: #ffffff;
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+
+.marketSearchPanel {
+  padding: 18px 20px;
+}
+
+.marketSearchCenter {
+  align-items: center;
+}
+
+.marketSearchField {
+  max-width: 820px;
+  min-height: 44px;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.marketSearchField input {
+  border: 0;
+  box-shadow: none;
+}
+
+.marketAccessToggle button {
+  min-width: 72px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.marketAccessToggle button.active {
+  color: #ffffff;
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+
+.marketResultBar {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.marketGrid {
+  gap: 22px 16px;
+}
+
+.marketModelCard {
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.marketModelThumb {
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.marketModelCard:hover .marketModelThumb,
+.marketModelCard:focus-visible .marketModelThumb {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-primary) 14%, transparent);
+}
+
+.marketModelCard > strong {
+  margin-top: 8px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+}
+
+.marketModelHoverMeta {
+  color: #ffffff;
+  background: rgba(10, 10, 10, 0.82);
+  border: 0;
+}
+
+.marketPageFooter {
+  margin-top: 44px;
+}
+
+.marketDetailPage {
+  gap: 40px;
+}
+
+.marketDetailTopbar {
+  align-items: center;
+}
+
+.marketDetailHero {
+  grid-template-columns: minmax(0, 1.6fr) minmax(360px, 0.86fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.marketDetailImage,
+.marketPreviewStrip button {
+  background: var(--surface-2);
+  border-color: var(--border);
+  border-radius: 4px;
+}
+
+.marketDetailImage {
+  overflow: hidden;
+}
+
+.marketDetailInfo.panel {
+  padding: 28px;
+}
+
+.marketDetailInfo h1 {
+  font-size: 44px;
+  line-height: 1.02;
+}
+
+.marketDetailQuickFacts,
+.marketDetailMeta {
+  border-color: var(--border);
+}
+
+.marketMetaRow {
+  border-color: var(--border-soft);
+}
+
+.marketDetailFacetChip {
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border-color: var(--border);
+  border-radius: 4px;
+}
+
+.marketRecommendations {
+  margin-top: 48px;
+  padding-top: 40px;
+  border-top: 1px solid var(--border);
+}
+
+.marketRecommendationToggle {
+  width: 100%;
+  margin-top: 24px;
+}
+
+.marketDownloadVerifyGate {
+  background: var(--surface-2);
+  border-color: var(--border);
+  border-radius: 4px;
+}
+
+.marketImageSearchDialog,
+.marketAdminConflictDialog,
+.redownloadFormatCard,
+.twoFactorCard {
+  background: var(--surface-raised) !important;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+}
+
+.marketImageSearchOverlay,
+.marketAdminConflictOverlay,
+.redownloadFormatOverlay,
+.twoFactorOverlay,
+.banOverlay {
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+}
+
+/* Account, getlink, payment, history and content pages */
+.accountCard,
+.getlinkForm,
+.historyTimelinePanel,
+.inviteHero,
+.inviteLinkPanel,
+.inviteHistoryPanel,
+.guideSidebar,
+.guideArticle,
+.legalAside,
+.legalArticle {
+  border-color: var(--border);
+}
+
+.dashboardHistoryGrid {
+  gap: 24px;
+}
+
+.table {
+  border-color: var(--border);
+}
+
+.tableRow {
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: var(--border-soft);
+  border-radius: 0;
+}
+
+.tableRow:hover {
+  background: var(--surface-2);
+}
+
+.topupPurposeGrid {
+  gap: 16px;
+}
+
+.topupPurposeItem {
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.topupPurposeItem:hover,
+.topupPurposeItem:focus-visible,
+.topupPurposeItem.active {
+  background: var(--surface-1);
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-primary) 12%, transparent);
+}
+
+.topupUnifiedSection {
+  padding: 32px;
+}
+
+.topupPackageGrid,
+.topupMembershipPlans,
+.membershipPlans {
+  gap: 16px;
+}
+
+.topupPackageCard,
+.membershipPlanCard {
+  min-height: 100%;
+  background: var(--surface-1);
+}
+
+.topupCheckoutBox {
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.topupVoucherPanel {
+  margin-top: 8px;
+}
+
+.historyFilterBar button,
+.adminSubTabs button,
+.segmentedControl button,
+.chartControls button {
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.historyFilterBar button:hover,
+.adminSubTabs button:hover,
+.segmentedControl button:hover,
+.chartControls button:hover,
+.historyFilterBar button.active,
+.adminSubTabs button.active,
+.segmentedControl button.active,
+.chartControls button.active {
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 7%, var(--surface-1));
+  border-color: var(--brand-primary);
+}
+
+.timelineEventCard {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.guideLayout,
+.legalGrid {
+  gap: 24px;
+}
+
+.guideNav button {
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: var(--border);
+  border-radius: 0;
+}
+
+.guideNav button:hover,
+.guideNav button.active {
+  color: var(--brand-primary);
+  background: var(--surface-2);
+  border-color: var(--brand-primary);
+}
+
+.legalHero {
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Pagination */
+.appPagination,
+.adminPagination {
+  min-height: 60px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 10px 14px;
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.appPaginationPages {
+  grid-column: 2;
+  justify-self: center;
+}
+
+.appPaginationJump {
+  grid-column: 3;
+  justify-self: end;
+}
+
+.appPaginationArrow,
+.appPaginationPages button {
+  min-width: 36px;
+  height: 36px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.appPaginationPages button.active {
+  color: #ffffff;
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+
+/* Admin */
+.adminPage {
+  gap: 32px;
+}
+
+.adminSectionNav,
+.adminDataNav {
+  gap: 8px;
+}
+
+.adminSectionNav button,
+.adminDataNav button {
+  min-height: 44px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.adminSectionNav button:hover,
+.adminDataNav button:hover,
+.adminSectionNav button.active,
+.adminDataNav button.active {
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 7%, var(--surface-1));
+  border-color: var(--brand-primary);
+}
+
+.overviewHero {
+  align-items: center;
+}
+
+.overviewHeroStats,
+.systemHealthItem,
+.runtimeSettingRow,
+.marketAdminFact,
+.adminDetailCard,
+.adminActivityItem,
+.packageBarItem,
+.cookiePoolCard,
+.voucherEditor,
+.voucherPackagePicker,
+.voucherScopeSummary,
+.voucherValue,
+.voucherMetaGrid div,
+.voucherApplies {
+  color: var(--text-primary);
+  background: var(--surface-2) !important;
+  border-color: var(--border);
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.adminKpiGrid {
+  gap: 16px;
+}
+
+.adminKpiCard {
+  min-height: 132px;
+  padding: 22px;
+  overflow: hidden;
+}
+
+.adminKpiCard::before {
+  width: 3px;
+}
+
+.adminKpiCard > svg {
+  opacity: 0.8;
+}
+
+.overviewTopGrid,
+.overviewActivityGrid {
+  gap: 20px;
+}
+
+.revenueChartPanel {
+  padding: 28px 24px 24px;
+  overflow: hidden;
+}
+
+.chartHeader {
+  align-items: start;
+}
+
+.chartBarTrack {
+  background: var(--surface-2);
+  border-color: var(--border);
+  border-radius: 3px;
+}
+
+.chartBarFill {
+  background: var(--brand-primary);
+  box-shadow: none;
+}
+
+.adminDataPanel,
+.adminVoucherPanel,
+.adminMarketplace {
+  overflow: visible;
+}
+
+.adminTableToolbar {
+  gap: 10px;
+}
+
+.adminSearchField {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+}
+
+.adminSearchField input {
+  min-height: 40px;
+  padding: 0 8px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.adminUserTable,
+.topupAuditTable,
+.getlinkAuditTable,
+.referralTable,
+.articleTable,
+.logTable {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.adminUserTable .tableRow,
+.topupAuditTable .tableRow,
+.getlinkAuditTable .tableRow,
+.referralTable .tableRow,
+.articleTable .tableRow,
+.logTable .tableRow {
+  min-width: 900px;
+}
+
+.adminMarketplaceTypeTabs button,
+.marketAdminTabs button {
+  border-radius: 0;
+}
+
+.marketAdminModelGrid,
+.marketAdminList {
+  gap: 12px;
+}
+
+.marketAdminModelHead,
+.marketAdminEditSection,
+.marketTaxonomyRow,
+.marketAdminLogItem,
+.adminTimelineItem {
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border-color: var(--border);
+  border-radius: 4px;
+}
+
+.adminPage .voucherCard {
+  background: var(--surface-1) !important;
+  border-color: var(--border);
+}
+
+.adminPage .packageGrid {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+}
+
+.adminPage .voucherPackagePicker label,
+.adminPage .voucherActiveToggle,
+.adminPage .packageActions span,
+.adminPage .packageActions button {
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border-color: var(--border);
+  border-radius: 4px;
+}
+
+.adminPage .voucherPackagePicker label:hover,
+.adminPage .packageActions span:hover,
+.adminPage .packageActions button:hover {
+  color: var(--brand-primary);
+  background: var(--surface-3);
+  border-color: var(--brand-primary);
+}
+
+/* Floating support */
+.messengerFloat {
+  width: 48px;
+  height: 48px;
+  color: #ffffff;
+  background: var(--brand-primary);
+  border: 2px solid color-mix(in srgb, #ffffff 72%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+.messengerFloat:hover {
+  color: #ffffff;
+  background: var(--brand-primary-hover);
+  transform: translateY(-2px);
+}
+
+/* Responsive */
+@media (max-width: 1240px) {
+  .shell {
+    padding-inline: 32px;
+  }
+
+  .topbar {
+    padding-inline: 24px;
+    gap: 12px;
+  }
+
+  .tabs {
+    gap: 4px;
+  }
+
+  .tabs button span {
+    padding-inline: 8px;
+  }
+
+  .accountIdentity {
+    display: none;
+  }
+
+  .marketDetailHero {
+    grid-template-columns: minmax(0, 1.4fr) minmax(330px, 0.9fr);
+  }
+
+  .adminPage .packageGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  .shell {
+    padding: 36px 24px 56px;
+  }
+
+  .shell-home {
+    padding-top: 0;
+  }
+
+  h1 {
+    font-size: 64px;
+  }
+
+  h2 {
+    font-size: 34px;
+  }
+
+  .heroSection {
+    gap: 36px;
+    padding-block: 64px;
+  }
+
+  .marketLayout {
+    grid-template-columns: 210px minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .marketDetailHero {
+    grid-template-columns: 1fr;
+  }
+
+  .marketDetailInfo.panel {
+    min-height: 0;
+  }
+
+  .adminPage .packageGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  .topbar {
+    min-height: 58px;
+    grid-template-columns: 1fr auto;
+  }
+
+  .mobileMenuButton {
+    display: grid;
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .topbarMenu {
+    position: absolute;
+    top: 58px;
+    right: 16px;
+    left: 16px;
+    display: none;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 14px;
+    color: var(--text-primary);
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .topbarMenu.open {
+    display: grid;
+    gap: 12px;
+  }
+
+  .topbarMenu .tabs,
+  .topbarMenu .account {
+    grid-column: 1;
+    justify-self: stretch;
+  }
+
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .tabs button {
+    width: 100%;
+    height: 42px;
+  }
+
+  .tabs button span {
+    width: 100%;
+    min-height: 40px;
+    justify-content: flex-start;
+    border: 1px solid var(--border);
+  }
+
+  .tabs button.active span {
+    border-color: var(--brand-primary);
+  }
+
+  .account {
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .account .headerLoginButton {
+    flex: 1 1 180px;
+  }
+
+  .accountMenuContent {
+    position: static;
+  }
+}
+
+@media (max-width: 900px) {
+  .heroSection {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .heroLeft {
+    max-width: 760px;
+  }
+
+  .marketLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .marketSidebar {
+    position: static;
+  }
+
+  .marketSidebarBody {
+    display: none;
+  }
+
+  .marketSidebar.open .marketSidebarBody {
+    display: grid;
+  }
+
+  .marketMobileFilterToggle {
+    display: grid;
+  }
+
+  .marketDetailInfo h1 {
+    font-size: 38px;
+  }
+
+  .overviewTopGrid,
+  .overviewActivityGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  body {
+    background-size: 40px 40px;
+  }
+
+  .shell {
+    padding: 28px 16px 48px;
+  }
+
+  .shell-home {
+    padding-top: 0;
+  }
+
+  h1 {
+    font-size: 52px;
+  }
+
+  h2 {
+    font-size: 30px;
+  }
+
+  .facebookGroupBanner {
+    min-height: 32px;
+    padding-inline: 16px;
+    font-size: 10px;
+    text-align: center;
+  }
+
+  .panel,
+  .accountCard {
+    padding: 18px;
+  }
+
+  .heroSection {
+    padding-block: 48px;
+  }
+
+  .homeModelsSection,
+  .homeScenesSection,
+  #pricing,
+  .homeGuideSection,
+  .ctaSection {
+    padding-block: 48px;
+  }
+
+  .siteFooter,
+  .landingFooter {
+    padding: 28px 20px;
+  }
+
+  .marketGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 10px;
+  }
+
+  .marketDetailPage {
+    gap: 28px;
+  }
+
+  .marketDetailInfo.panel {
+    padding: 22px 18px;
+  }
+
+  .marketDetailInfo h1 {
+    font-size: 34px;
+  }
+
+  .marketDetailQuickFacts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .marketRecommendations {
+    margin-top: 32px;
+    padding-top: 30px;
+  }
+
+  .topupPurposeGrid,
+  .topupPackageGrid,
+  .topupMembershipPlans,
+  .membershipPlans,
+  .adminPage .packageGrid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .topupUnifiedSection {
+    padding: 22px 18px;
+  }
+
+  .appPagination,
+  .adminPagination {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 10px;
+  }
+
+  .appPaginationPages,
+  .appPaginationJump {
+    grid-column: 1;
+    justify-self: center;
+  }
+
+  .adminPage {
+    gap: 22px;
+  }
+
+  .adminSectionNav,
+  .adminDataNav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .adminKpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .adminKpiCard {
+    min-height: 122px;
+    padding: 16px;
+  }
+
+  .revenueChartPanel {
+    padding: 20px 16px;
+  }
+
+  .chartHeader {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .chartControls {
+    justify-self: stretch;
+  }
+}
+
+@media (max-width: 479px) {
+  h1 {
+    font-size: 44px;
+  }
+
+  h2 {
+    font-size: 27px;
+  }
+
+  .account {
+    justify-content: flex-start;
+  }
+
+  .accountMenuContent {
+    width: 100%;
+  }
+
+  .heroActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .heroActions a,
+  .heroActions button {
+    width: 100%;
+  }
+
+  .marketDetailMedia.hasPreviews {
+    gap: 10px;
+  }
+
+  .marketPreviewStrip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .adminKpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .adminKpiCard {
+    min-height: 108px;
+    padding: 14px 12px;
+  }
+
+  .adminKpiCard strong {
+    font-size: 24px;
+  }
+}
+
+/* Marketplace discovery, ordering, and gallery */
+.homeRecommendationsSection {
+  gap: 30px;
+}
+
+.homeRecommendationGroup {
+  display: grid;
+  gap: 14px;
+}
+
+.homeRecommendationGroup + .homeRecommendationGroup {
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.homeRecommendationGroupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.homeRecommendationGroupHeader h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+}
+
+.homeRecommendationGroupHeader a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--brand-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.homeRecommendationGroupHeader a:hover,
+.homeRecommendationGroupHeader a:focus-visible {
+  color: var(--brand-primary);
+}
+
+.marketResultBar {
+  justify-content: space-between;
+  min-height: 38px;
+}
+
+.marketResultSummary {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.marketResultControls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.marketResultControls .marketAccessToggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(72px, 1fr));
+  gap: 6px;
+}
+
+.marketSortControl {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(142px, auto) 16px;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--control-bg);
+}
+
+.marketSortControl > span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.marketSortControl select {
+  width: 100%;
+  min-height: 34px;
+  padding: 0;
+  color: var(--text-primary);
+  border: 0;
+  outline: 0;
+  appearance: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.marketSortControl select:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.marketSortControl > svg {
+  pointer-events: none;
+}
+
+.marketDetailMedia.asset-model .marketDetailImage {
+  aspect-ratio: 1 / 1;
+  max-height: none;
+}
+
+.marketDetailMedia.asset-scene .marketDetailImage {
+  width: min(100%, var(--market-preview-max-width, 100%));
+  justify-self: center;
+  aspect-ratio: var(--market-preview-ratio, 16 / 9);
+  max-height: 760px;
+}
+
+.marketDetailImageButton {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  overflow: hidden;
+  color: inherit;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.marketDetailImageButton img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.marketLightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 48px 72px;
+  background: rgba(2, 5, 8, 0.94);
+  backdrop-filter: blur(8px);
+  outline: none;
+}
+
+.marketLightbox > img {
+  max-width: 100%;
+  max-height: calc(100vh - 96px);
+  object-fit: contain;
+  user-select: none;
+}
+
+.marketLightboxClose,
+.marketLightboxNav {
+  position: fixed;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 4px;
+  background: rgba(10, 14, 18, 0.78);
+}
+
+.marketLightboxClose {
+  top: 18px;
+  right: 18px;
+  width: 42px;
+  height: 42px;
+}
+
+.marketLightboxNav {
+  top: 50%;
+  width: 48px;
+  height: 58px;
+  transform: translateY(-50%);
+}
+
+.marketLightboxNav.previous {
+  left: 18px;
+}
+
+.marketLightboxNav.next {
+  right: 18px;
+}
+
+.marketLightboxClose:hover,
+.marketLightboxClose:focus-visible,
+.marketLightboxNav:hover,
+.marketLightboxNav:focus-visible {
+  color: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+
+@media (max-width: 760px) {
+  .homeRecommendationGroup + .homeRecommendationGroup {
+    padding-top: 18px;
+  }
+
+  .marketResultBar,
+  .marketResultSummary {
+    align-items: stretch;
+  }
+
+  .marketResultControls {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .marketSortControl {
+    width: 100%;
+    grid-template-columns: auto minmax(0, 1fr) 16px;
+  }
+
+  .marketDetailMedia.asset-scene .marketDetailImage {
+    width: min(100%, var(--market-preview-mobile-max-width, 100%));
+    max-height: 70vh;
+  }
+
+  .marketLightbox {
+    padding: 54px 12px 18px;
+  }
+
+  .marketLightbox > img {
+    max-height: calc(100vh - 72px);
+  }
+
+  .marketLightboxNav {
+    width: 42px;
+    height: 52px;
+    background: rgba(10, 14, 18, 0.88);
+  }
+
+  .marketLightboxNav.previous {
+    left: 8px;
+  }
+
+  .marketLightboxNav.next {
+    right: 8px;
+  }
+}
+
+@media (max-width: 479px) {
+  .marketResultControls {
+    grid-template-columns: 1fr;
+  }
+
+  .marketResultControls .marketAccessToggle {
+    width: 100%;
+  }
+}

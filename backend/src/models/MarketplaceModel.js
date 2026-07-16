@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 import { marketplaceModel } from "../config/modelFactory.js";
+import { normalizeMarketplaceTitle } from "../utils/marketplaceSort.js";
 
 const previewImageSchema = new mongoose.Schema(
   {
@@ -26,6 +27,7 @@ const marketplaceModelSchema = new mongoose.Schema(
       syncedAt: Date,
     },
     title: { type: String, required: true, trim: true },
+    titleSort: { type: String, default: "", trim: true },
     slug: { type: String, required: true, trim: true, lowercase: true },
     // Legacy ObjectIds stay readable during migration. New writes use stable
     // Atlas taxonomy keys below so no cross-database populate is required.
@@ -103,6 +105,10 @@ const marketplaceModelSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+marketplaceModelSchema.pre("validate", function normalizeTitleForSorting() {
+  this.titleSort = normalizeMarketplaceTitle(this.title);
+});
+
 marketplaceModelSchema.index({ assetType: 1, slug: 1 }, { unique: true });
 marketplaceModelSchema.index(
   { assetType: 1, "source.provider": 1, "source.assetId": 1 },
@@ -110,6 +116,8 @@ marketplaceModelSchema.index(
 );
 marketplaceModelSchema.index({ title: "text", slug: "text" }, { name: "marketplace_model_text" });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, createdAt: -1 });
+marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, downloadCount: -1, createdAt: -1 });
+marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, titleSort: 1, _id: 1 });
 marketplaceModelSchema.index({ assetType: 1, categorySourceId: 1, isPublished: 1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, parentCategorySourceId: 1, isPublished: 1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, accessType: 1, isPublished: 1, createdAt: -1 });

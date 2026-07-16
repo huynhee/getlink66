@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Check, Copy, Gift, CreditCard, Sparkles, Wallet } from "lucide-react";
 import { api } from "../api.js";
 import { translations } from "../i18n.js";
+import { membershipFeatureLabel } from "../utils/membershipPresentation.js";
 
 const CURRENCY = "đ";
 const PENDING_TOPUP_ID_KEY = "pendingSepayTopupId";
@@ -592,7 +593,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               </span>
               <ul>
                 {(plan.features || []).map((feature) => (
-                  <li key={feature}><Check size={14} /> {feature}</li>
+                  <li key={feature}><Check size={14} /> {membershipFeatureLabel(feature, language)}</li>
                 ))}
               </ul>
             </button>

@@ -2332,7 +2332,10 @@ button:disabled {
   right: 0;
   bottom: 0;
   left: 0;
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
   padding: 7px 8px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.72);
@@ -2344,6 +2347,35 @@ button:disabled {
   transform: translateY(8px);
   transition: opacity 0.16s ease, transform 0.16s ease;
   white-space: nowrap;
+}
+
+.marketModelHoverMeta > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.marketModelHoverSize {
+  justify-self: start;
+  text-align: left;
+}
+
+.marketModelHoverRenderer {
+  justify-self: center;
+  max-width: 100%;
+  text-align: center;
+}
+
+.marketModelHoverDownloads {
+  display: inline-flex;
+  align-items: center;
+  justify-self: end;
+  gap: 4px;
+  text-align: right;
+}
+
+.marketModelHoverDownloads svg {
+  flex: 0 0 auto;
 }
 
 .marketModelCard:hover .marketModelHoverMeta,

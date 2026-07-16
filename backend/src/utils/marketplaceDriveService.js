@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 import MarketplaceModel from "../models/MarketplaceModel.js";
+import { normalizeMarketplaceTitle } from "./marketplaceSort.js";
 import {
   createGoogleDriveFile,
   getGoogleDriveFileMetadata,
@@ -402,6 +403,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     discoveryStatus: "pending",
     discoveryError: "",
   };
+  payload.titleSort = normalizeMarketplaceTitle(payload.title);
   if (!existing?.slug) payload.slug = await uniqueSlug(metadata.title || metadata.sourceAssetId || metadata.sourceModelId, folderId, existing?._id, normalizedType);
   const query = existing?._id ? { _id: existing._id } : { assetType: normalizedType, "source.provider": "drive", "source.modelId": folderId };
   const model = await MarketplaceModel.findOneAndUpdate(query, {

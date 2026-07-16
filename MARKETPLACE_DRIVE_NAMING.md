@@ -1,7 +1,8 @@
 # Marketplace Google Drive naming V3
 
-Day la quick reference cho nguoi sap xep Drive va upload tool. Contract day du nam
-trong `MARKETPLACE_DATA_CONTRACT.md`.
+Day la quick reference cho nguoi sap xep Drive. Contract data day du nam trong
+`MARKETPLACE_DATA_CONTRACT.md`; dac ta tool tao folder local truoc khi upload
+thu cong nam trong `MARKETPLACE_UPLOAD_TOOL_SPEC.md`.
 
 ## Folder
 

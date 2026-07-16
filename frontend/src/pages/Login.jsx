@@ -5,6 +5,7 @@ import GuideContent from "../components/GuideContent.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
 import { ModelCard } from "./Models.jsx";
 import { translations } from "../i18n.js";
+import { membershipFeatureLabel } from "../utils/membershipPresentation.js";
 
 const HOME_TEXT_DEFAULTS = {
   vi: {
@@ -189,8 +190,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
         })
         .catch(console.error);
       setFeaturedModelsLoading(true);
-      api("/api/marketplace/models?limit=12&page=1")
-        .then((data) => setFeaturedModels((data.models || []).slice(0, 12)))
+      api("/api/marketplace/models?limit=6&page=1")
+        .then((data) => setFeaturedModels((data.models || data.assets || []).slice(0, 6)))
         .catch(() => setFeaturedModels([]))
         .finally(() => setFeaturedModelsLoading(false));
       setFeaturedScenesLoading(true);
@@ -507,64 +508,64 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
       )}
 
       {!adminMode && (
-        <section className="homeModelsSection" aria-labelledby="home-models-title">
+        <section className="homeModelsSection homeRecommendationsSection" aria-labelledby="home-recommendations-title">
           <div className="homeModelsHeader">
             <div>
               <span className="eyebrowSignal">{language === "vi" ? "Thư viện 3D" : "3D library"}</span>
-              <h2 id="home-models-title">{language === "vi" ? "Model mới đề xuất" : "Recommended new models"}</h2>
+              <h2 id="home-recommendations-title">{language === "vi" ? "Đề xuất mới" : "New recommendations"}</h2>
               <p>
                 {language === "vi"
-                  ? "Khám phá model Free và Pro mới nhất, tải trực tiếp trên web hoặc qua plugin."
-                  : "Explore the latest Free and Pro models, ready for web and plugin downloads."}
+                  ? "Model và Scene Free/Pro mới nhất, sẵn sàng tải trên web và plugin."
+                  : "The latest Free and Pro Models and Scenes, ready for web and plugin downloads."}
               </p>
             </div>
-            <a className="smallButton" href="/models">
-              {language === "vi" ? "Xem thư viện" : "View library"} <ChevronRight size={16} />
-            </a>
           </div>
-          {featuredModelsLoading ? (
-            <div className="homeModelGrid" aria-label={language === "vi" ? "Đang tải model" : "Loading models"}>
-              {Array.from({ length: 12 }).map((_, index) => <span className="homeModelSkeleton" key={index} />)}
-            </div>
-          ) : featuredModels.length ? (
-            <div className="homeModelGrid">
-              {featuredModels.map((model) => <ModelCard key={model._id} model={model} language={language} />)}
-            </div>
-          ) : (
-            <div className="homeModelsEmpty">
-              <span>{language === "vi" ? "Model đang được cập nhật." : "Models are being updated."}</span>
-              <a href="/models">{language === "vi" ? "Mở thư viện" : "Open library"}</a>
-            </div>
-          )}
-        </section>
-      )}
 
-      {!adminMode && (
-        <section className="homeModelsSection homeScenesSection" aria-labelledby="home-scenes-title">
-          <div className="homeModelsHeader">
-            <div>
-              <span className="eyebrowSignal">{language === "vi" ? "Không gian hoàn chỉnh" : "Complete spaces"}</span>
-              <h2 id="home-scenes-title">{language === "vi" ? "Scene mới đề xuất" : "Recommended new scenes"}</h2>
-              <p>{language === "vi" ? "Scene nội ngoại thất Free và Pro, dùng chung gói thành viên và quota tải." : "Free and Pro interior and exterior scenes using the same membership and download quota."}</p>
+          <div className="homeRecommendationGroup">
+            <div className="homeRecommendationGroupHeader">
+              <h3>Model</h3>
+              <a href="/models">
+                {language === "vi" ? "Xem tất cả" : "View all"} <ChevronRight size={15} />
+              </a>
             </div>
-            <a className="smallButton" href="/scenes">
-              {language === "vi" ? "Xem thư viện scene" : "View scene library"} <ChevronRight size={16} />
-            </a>
+            {featuredModelsLoading ? (
+              <div className="homeModelGrid" aria-label={language === "vi" ? "Đang tải model" : "Loading models"}>
+                {Array.from({ length: 6 }).map((_, index) => <span className="homeModelSkeleton" key={index} />)}
+              </div>
+            ) : featuredModels.length ? (
+              <div className="homeModelGrid">
+                {featuredModels.map((model) => <ModelCard key={model._id} model={model} language={language} />)}
+              </div>
+            ) : (
+              <div className="homeModelsEmpty">
+                <span>{language === "vi" ? "Model đang được cập nhật." : "Models are being updated."}</span>
+                <a href="/models">{language === "vi" ? "Mở thư viện" : "Open library"}</a>
+              </div>
+            )}
           </div>
-          {featuredScenesLoading ? (
-            <div className="homeModelGrid homeSceneGrid" aria-label={language === "vi" ? "Đang tải scene" : "Loading scenes"}>
-              {Array.from({ length: 6 }).map((_, index) => <span className="homeModelSkeleton" key={index} />)}
+
+          <div className="homeRecommendationGroup">
+            <div className="homeRecommendationGroupHeader">
+              <h3>Scene</h3>
+              <a href="/scenes">
+                {language === "vi" ? "Xem tất cả" : "View all"} <ChevronRight size={15} />
+              </a>
             </div>
-          ) : featuredScenes.length ? (
-            <div className="homeModelGrid homeSceneGrid">
-              {featuredScenes.map((scene) => <ModelCard key={scene._id} model={scene} language={language} />)}
-            </div>
-          ) : (
-            <div className="homeModelsEmpty">
-              <span>{language === "vi" ? "Scene đang được cập nhật." : "Scenes are being updated."}</span>
-              <a href="/scenes">{language === "vi" ? "Mở thư viện" : "Open library"}</a>
-            </div>
-          )}
+            {featuredScenesLoading ? (
+              <div className="homeModelGrid homeSceneGrid" aria-label={language === "vi" ? "Đang tải scene" : "Loading scenes"}>
+                {Array.from({ length: 6 }).map((_, index) => <span className="homeModelSkeleton" key={index} />)}
+              </div>
+            ) : featuredScenes.length ? (
+              <div className="homeModelGrid homeSceneGrid">
+                {featuredScenes.map((scene) => <ModelCard key={scene._id} model={scene} language={language} />)}
+              </div>
+            ) : (
+              <div className="homeModelsEmpty">
+                <span>{language === "vi" ? "Scene đang được cập nhật." : "Scenes are being updated."}</span>
+                <a href="/scenes">{language === "vi" ? "Mở thư viện" : "Open library"}</a>
+              </div>
+            )}
+          </div>
         </section>
       )}
 
@@ -733,7 +734,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                     </div>
                     <ul>
                       {(plan.features || []).map((feature, featureIndex) => (
-                        <li key={featureIndex}>{feature}</li>
+                        <li key={featureIndex}>{membershipFeatureLabel(feature, language)}</li>
                       ))}
                     </ul>
                     <a className={plan.code === "GOLD" ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("pro", plan._id))}>

@@ -17,12 +17,13 @@ import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
 import { getInitialLanguage, setStoredLanguage, translations } from "./i18n.js";
 import "./styles.css";
+import "./design-system.css";
 
 const MESSENGER_URL = "https://m.me/1079508495252841";
 const THEME_STORAGE_KEY = "3dipl-theme";
 const THEME_META_COLORS = {
-  dark: "#07111f",
-  light: "#f5f8fb"
+  dark: "#0a0a0a",
+  light: "#faf8f5"
 };
 
 function isValidTheme(value) {
@@ -276,9 +277,9 @@ function App() {
 
   if (isAdminPath) {
     return (
-      <div className="appFrame">
+      <div className="appFrame page-admin">
         <Navbar user={user} page="admin" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
-        <main className="shell">
+        <main className="shell shell-admin">
           {user?.requires2FA && <TwoFactorModal onVerify={refreshUser} language={language} />}
           {!user && <Login onLogin={refreshUser} adminMode returnTo="/admin" language={language} />}
           {user?.role === "admin" && !user?.requires2FA && <Admin user={user} language={language} />}
@@ -298,10 +299,10 @@ function App() {
 
   if (isPublicHome) {
     return (
-      <div className="appFrame">
+      <div className="appFrame page-home">
         <Navbar user={user} page="" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
         <FacebookGroupBanner language={language} />
-        <main className="shell">
+        <main className="shell shell-home">
           <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />
         </main>
         {user?.isBanned && !banOverlayClosed && (
@@ -312,10 +313,10 @@ function App() {
   }
 
   return (
-    <div className="appFrame">
+    <div className={`appFrame page-${page || "getlink"}`}>
       <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
       <FacebookGroupBanner language={language} />
-      <main className="shell">
+      <main className={`shell shell-${page || "getlink"}`}>
         {!user && !["guide", "privacy", "terms", "models", "scenes"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />}
         {page === "models" && <Models user={user} language={language} path={path} onNavigate={navigate} onUserChange={setUser} />}
         {page === "scenes" && <Scenes user={user} language={language} path={path} onNavigate={navigate} onUserChange={setUser} />}

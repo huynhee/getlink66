@@ -1,5 +1,6 @@
 import MarketplaceCategory from "../models/MarketplaceCategory.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
+import { normalizeMarketplaceTitle } from "./marketplaceSort.js";
 
 const DEMO_NAMES = [
   "Amoebe Armchair",
@@ -44,6 +45,7 @@ export async function seedMarketplaceDemoModels(options = {}) {
             syncedAt: new Date(),
           },
           title,
+          titleSort: normalizeMarketplaceTitle(title),
           slug,
           categorySourceId: "98",
           parentCategorySourceId: "2",
@@ -117,6 +119,7 @@ export async function seedMarketplaceDemoScenes(options = {}) {
         assetType: "scene",
         source: { provider: "demo", modelId: assetId, assetId, slug, categoryId: "living-room", syncedAt: new Date() },
         title,
+        titleSort: normalizeMarketplaceTitle(title),
         slug,
         categorySourceId: "living-room",
         parentCategorySourceId: "house-space",

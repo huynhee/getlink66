@@ -19,6 +19,15 @@ const port = process.env.PORT || 5000;
 const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
 let shuttingDown = false;
 
+function googleCallbackUrl() {
+  const configured = String(process.env.GOOGLE_CALLBACK_URL || "").trim();
+  if (configured) return configured;
+  if (process.env.NODE_ENV === "production") {
+    return `${String(process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "")}/api/auth/google/callback`;
+  }
+  return `http://localhost:${port}/api/auth/google/callback`;
+}
+
 function configuredOrigins() {
   const origins = new Set([
     clientUrl,
@@ -100,6 +109,11 @@ requireProductionSecret("DOWNLOAD_TOKEN_SECRET", process.env.DOWNLOAD_TOKEN_SECR
 requireProductionSecret("COOKIE_ENCRYPTION_KEY", process.env.COOKIE_ENCRYPTION_KEY);
 requireProductionHttpsUrl("CLIENT_URL", process.env.CLIENT_URL);
 requireProductionHttpsUrl("PUBLIC_BASE_URL", process.env.PUBLIC_BASE_URL);
+if (process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_SECRET) {
+  requireProductionValue("GOOGLE_CLIENT_ID", process.env.GOOGLE_CLIENT_ID);
+  requireProductionSecret("GOOGLE_CLIENT_SECRET", process.env.GOOGLE_CLIENT_SECRET);
+  requireProductionHttpsUrl("GOOGLE_CALLBACK_URL", process.env.GOOGLE_CALLBACK_URL);
+}
 if (process.env.SEPAY_ENABLED !== "false") {
   requireProductionValue("SEPAY_MERCHANT_ID", process.env.SEPAY_MERCHANT_ID);
   requireProductionSecret("SEPAY_SECRET_KEY", process.env.SEPAY_SECRET_KEY);
@@ -216,7 +230,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       {
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: "/api/auth/google/callback",
+        callbackURL: googleCallbackUrl(),
         passReqToCallback: true
       },
       async (req, _accessToken, _refreshToken, profile, done) => {

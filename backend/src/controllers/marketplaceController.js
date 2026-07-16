@@ -31,6 +31,10 @@ import {
   marketplaceCategorySnapshot,
   marketplaceFilterSnapshot,
 } from "../utils/marketplaceTaxonomy.js";
+import {
+  marketplaceSortSelection,
+  marketplaceSortSpec,
+} from "../utils/marketplaceSort.js";
 
 const PAGE_SIZE = 60;
 const IMAGE_SEARCH_FREE_LIMIT = 10;
@@ -366,6 +370,7 @@ export async function listMarketplaceModels(req, res, next) {
     const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const limit = Math.min(60, Math.max(1, Number(req.query.limit || PAGE_SIZE)));
     const search = String(req.query.q || req.query.search || "").trim().slice(0, 120);
+    const sortSelection = marketplaceSortSelection(req.query.sort, Boolean(search));
     const accessType = String(req.query.accessType || "").trim();
     const fileStatus = String(req.query.fileStatus || "").trim();
     const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready" };
@@ -392,12 +397,13 @@ export async function listMarketplaceModels(req, res, next) {
     const total = await MarketplaceModel.countDocuments(query);
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const safePage = Math.min(page, totalPages);
+    const useSemanticOrder = Boolean(semanticQuery && sortSelection.effective === "relevance");
     let models = await MarketplaceModel.find(query)
-      .sort({ createdAt: -1 })
-      .skip(semanticQuery ? 0 : (safePage - 1) * limit)
-      .limit(semanticQuery ? Math.min(1_000, total) : limit)
+      .sort(marketplaceSortSpec(sortSelection.effective))
+      .skip(useSemanticOrder ? 0 : (safePage - 1) * limit)
+      .limit(useSemanticOrder ? Math.min(1_000, total) : limit)
       .lean();
-    if (semanticQuery) {
+    if (useSemanticOrder) {
       models = sortByDiscoveryMatches(models, semanticSearch.matches).slice((safePage - 1) * limit, safePage * limit);
     }
     await hydrateMarketplaceCategoryRefs(models);
@@ -408,6 +414,7 @@ export async function listMarketplaceModels(req, res, next) {
       ...(assetType === "scene" ? { scenes: assets } : { models: assets }),
       pagination: { page: safePage, pageSize: limit, total, totalPages },
       search: { engine: semanticQuery ? semanticSearch.provider : "catalog" },
+      sort: sortSelection,
     });
   } catch (error) {
     next(error);

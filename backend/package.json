@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
+    "env:check": "node scripts/env-check.js",
     "drive:auth": "node scripts/google-drive-auth.js",
     "drive:check": "node scripts/google-drive-check.js",
     "seed:models": "node scripts/marketplace-demo-seed.js",
@@ -16,6 +17,8 @@
     "data:split:dry-run": "node scripts/split-marketplace-databases.js",
     "data:split:execute": "node scripts/split-marketplace-databases.js --execute",
     "data:split:finalize": "node scripts/split-marketplace-databases.js --finalize",
+    "marketplace:sort:dry-run": "node scripts/backfill-marketplace-title-sort.js",
+    "marketplace:sort:backfill": "node scripts/backfill-marketplace-title-sort.js --execute",
     "test": "node --test"
   },
   "dependencies": {

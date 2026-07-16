@@ -166,14 +166,32 @@ function applySelect(doc, fields = "") {
   return picked;
 }
 
+function compareSortValues(field, left, right) {
+  if (left === right) return 0;
+  if (left === undefined || left === null || left === "") return -1;
+  if (right === undefined || right === null || right === "") return 1;
+  if (left instanceof Date || right instanceof Date || /At$/.test(field)) {
+    const leftTime = new Date(left).valueOf();
+    const rightTime = new Date(right).valueOf();
+    if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return leftTime - rightTime;
+  }
+  if (typeof left === "number" && typeof right === "number") return left - right;
+  return String(left).localeCompare(String(right), "en", {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
 function chain(result, isArray = true, projection = "") {
   return {
     sort(sortSpec = {}) {
-      const [[field, dir] = []] = Object.entries(sortSpec);
+      const fields = Object.entries(sortSpec);
       const sorted = [...result].sort((a, b) => {
-        const av = new Date(a[field] || 0).valueOf();
-        const bv = new Date(b[field] || 0).valueOf();
-        return dir < 0 ? bv - av : av - bv;
+        for (const [field, direction] of fields) {
+          const comparison = compareSortValues(field, getByPath(a, field), getByPath(b, field));
+          if (comparison) return direction < 0 ? -comparison : comparison;
+        }
+        return 0;
       });
       return chain(sorted, isArray, projection);
     },

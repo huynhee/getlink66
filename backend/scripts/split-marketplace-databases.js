@@ -7,6 +7,7 @@ import {
   marketplaceDbIsDistinct,
   marketplaceDbUsesCore,
 } from "../src/config/db.js";
+import { normalizeMarketplaceTitle } from "../src/utils/marketplaceSort.js";
 
 const args = new Set(process.argv.slice(2));
 const execute = args.has("--execute") || args.has("--finalize");
@@ -139,6 +140,7 @@ function transformModel(document, categories) {
   delete next.description;
   delete next.tags;
   delete next.creditPrice;
+  next.titleSort = normalizeMarketplaceTitle(next.title);
   next.downloadCount = Number(next.downloadCount || 0);
   return next;
 }

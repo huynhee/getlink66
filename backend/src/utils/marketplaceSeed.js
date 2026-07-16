@@ -11,7 +11,7 @@ function categoryPayload(item, parent = null, assetType = "model") {
     title: item.title || "",
     titleEn: item.titleEn || "",
     slug: item.slug || "",
-    parentId: parent?._id,
+    parentId: parent?._id || null,
     parentSourceCategoryId: item.parentId ? String(item.parentId) : "",
     position: Number(item.position || 0),
     isActive: true,
@@ -30,11 +30,14 @@ async function seedCategories(items, assetType) {
     const category = await MarketplaceCategory.findOneAndUpdate(
       query,
       {
-        $setOnInsert: payload,
+        $setOnInsert: {
+          title: payload.title,
+          titleEn: payload.titleEn,
+          position: payload.position,
+          isActive: payload.isActive,
+        },
         $set: {
-          assetType: payload.assetType,
-          sourceProvider: payload.sourceProvider,
-          sourceCategoryId: payload.sourceCategoryId,
+          slug: payload.slug,
           parentId: payload.parentId,
           parentSourceCategoryId: payload.parentSourceCategoryId,
         },
@@ -56,11 +59,14 @@ async function seedCategories(items, assetType) {
     const category = await MarketplaceCategory.findOneAndUpdate(
       query,
       {
-        $setOnInsert: payload,
+        $setOnInsert: {
+          title: payload.title,
+          titleEn: payload.titleEn,
+          position: payload.position,
+          isActive: payload.isActive,
+        },
         $set: {
-          assetType: payload.assetType,
-          sourceProvider: payload.sourceProvider,
-          sourceCategoryId: payload.sourceCategoryId,
+          slug: payload.slug,
           parentId: payload.parentId,
           parentSourceCategoryId: payload.parentSourceCategoryId,
         },

@@ -3,9 +3,10 @@
 ## Status
 
 - Purpose: retained visual reference for the final UI unification phase.
-- Current state: documented only; these rules are not yet applied across the application.
+- Current state: implemented as the shared visual layer across the public site, marketplace, account flows, payments, and admin.
 - Product identity remains 3DiPL. Do not copy the TrollLLM name, content, products, or page structure literally.
-- Use the references to derive reusable design tokens and components, not page-specific CSS patches.
+- The implementation source of truth is `frontend/src/design-system.css`, loaded after the legacy stylesheet.
+- Use the references to evolve reusable design tokens and components, not page-specific CSS patches.
 
 ## Reference Inputs
 
@@ -22,9 +23,9 @@ The target is a developer-oriented, high-contrast interface that feels technical
 
 - Minimal, mostly flat surfaces with generous whitespace.
 - Warm off-white light mode and near-black dark mode.
-- Emerald green as the primary action and success color.
-- Neon green for small highlights and intentional hover glows only.
-- Purple for premium or advanced features.
+- 3DiPL brand accents use neon green, magenta, and cyan.
+- Dark mode may use the exact neon brand values; light mode uses darker accessible variants for readable controls and text.
+- Magenta marks premium or advanced features.
 - Monospace typography for technical labels, statuses, model metadata, IDs, badges, and compact navigation.
 - Humanist sans-serif typography for descriptions, forms, body copy, and longer reading.
 - Sharp controls, restrained 4px/8px rounding, thin borders, and little default shadow.
@@ -36,12 +37,12 @@ The target is a developer-oriented, high-contrast interface that feels technical
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `--brand-primary` | `#059669` | Primary CTA, active navigation, success |
-| `--brand-primary-hover` | `#047857` | Primary hover |
-| `--brand-primary-active` | `#065F46` | Primary active |
+| `--brand-primary` | Dark `#00FF88`, light `#008F58` | Primary CTA, active navigation, success |
+| `--brand-primary-hover` | Dark `#28FFA0`, light `#007A4B` | Primary hover |
+| `--brand-primary-active` | Dark `#00D975`, light `#006B42` | Primary active |
 | `--accent-neon` | `#00FF88` | Small highlights and hover glow |
-| `--accent-purple` | `#A855F7` | Pro, premium, advanced features |
-| `--accent-cyan` | `#06B6D4` | Informational emphasis |
+| `--accent-purple` | `#FF2BD6` | Pro, premium, advanced features |
+| `--accent-cyan` | `#00E5FF` | Informational emphasis |
 | `--warning` | `#FBBF24` | Warning and pending states |
 | `--danger` | `#EF4444` | Destructive and error states |
 
@@ -201,16 +202,30 @@ For 3DiPL, preserve the existing domain-specific catalog behavior:
 - Icon-only controls require tooltips or accessible labels.
 - Hover-only information must have an accessible mobile/focus equivalent when important.
 
-## Implementation Order for the Final Design Phase
+## Implementation Record
 
-1. Audit current colors, fonts, spacing, radius, shadows, and component variants.
-2. Introduce shared light/dark design tokens without changing behavior.
-3. Normalize primitives: button, input, select, checkbox, badge, table, modal, pagination.
-4. Normalize global shell: navbar, announcements, account menu, footer, mobile navigation.
-5. Apply patterns to Marketplace Models and Scenes.
-6. Apply patterns to Getlink, Top-up, Membership, History, Invite, and Account.
-7. Apply patterns to every Admin module, including light mode.
-8. Verify desktop/mobile, light/dark, Vietnamese/English, overflow, focus, and visual regression screenshots.
+Implemented on 2026-07-16:
+
+- `frontend/src/design-system.css` owns shared color, typography, spacing, border, elevation, focus, responsive, and light/dark tokens.
+- `frontend/index.html` loads DM Sans, Inter, and JetBrains Mono with system fallbacks.
+- `frontend/src/App.jsx` adds page and shell namespaces so public, marketplace, account, payment, and admin views can share primitives without losing domain-specific density.
+- Header, announcement bar, navigation, account menu, language/theme controls, footer, buttons, fields, badges, tables, modals, pagination, and cards now follow one visual system.
+- Models and Scenes retain square image-led cards, compact metadata, dense filters, aligned detail views, and responsive recommendations.
+- Getlink, Top-up, Membership, History, Invite, Guide, Privacy, and Terms use the same surface, type, control, and spacing hierarchy.
+- Admin modules use the same light/dark tokens, five-column desktop package layout, responsive tables, and two-column mobile KPI layout.
+- Membership feature labels now pass through one presentation helper so database keys can remain English while Vietnamese and English UI labels stay consistent.
+- The header switches to its compact menu at 1100px to prevent navigation/account overlap. Content layout breakpoints remain independent.
+- Visual checks cover desktop and mobile, light and dark themes, public routes, marketplace detail/list views, account/payment views, and admin modules.
+- Automated checks confirm no horizontal page overflow at the tested 390px and 1440px viewports.
+
+## Maintenance Order
+
+1. Change shared tokens and primitives in `frontend/src/design-system.css` first.
+2. Preserve page behavior and domain-specific density when updating shared components.
+3. Verify public and admin light/dark themes after every visual change.
+4. Verify 390px, 768px, 1100px, and 1440px widths without horizontal overflow.
+5. Verify Vietnamese and English labels, especially data-backed package and taxonomy text.
+6. Keep visual regression screenshots for changes that affect the global shell, marketplace cards, payment cards, or admin layout.
 
 ## Do Not
 
@@ -220,4 +235,4 @@ For 3DiPL, preserve the existing domain-specific catalog behavior:
 - Do not use neon green as a large background color.
 - Do not add arbitrary radii, spacing, or new accent colors.
 - Do not sacrifice marketplace density or admin usability to mimic a marketing page.
-- Do not treat this document as proof that the final design has already been implemented.
+- Do not bypass the shared design layer with isolated page-specific colors, shadows, radii, or typography.
