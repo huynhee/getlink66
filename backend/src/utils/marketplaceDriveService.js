@@ -136,6 +136,15 @@ function titleFromName(folderName = "", sourceId = "") {
   return clean(title || (sourceId ? `Model ${sourceId}` : folderName), 200);
 }
 
+function sourceSlugFromFolderName(folderName = "", sourceId = "") {
+  const normalizedName = clean(folderName, 200);
+  const normalizedSourceId = clean(sourceId, 80);
+  if (!normalizedName || !normalizedSourceId) return "";
+  const prefix = `${normalizedSourceId}-`;
+  if (!normalizedName.toLowerCase().startsWith(prefix.toLowerCase())) return "";
+  return slugify(normalizedName.slice(prefix.length));
+}
+
 function driveSignature(folder, files) {
   const value = {
     folder: { id: folder.id, name: folder.name, modifiedTime: folder.modifiedTime || "" },
@@ -294,6 +303,9 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
   const checksumFile = pickChecksum(files);
   const folderName = clean(folder.name, 200);
   const fallbackSourceId = sourceIdFromName(folderName, existing?.metadataSourceModelId || existing?.slug || folderId);
+  const folderSourceSlug = normalizedType === "model"
+    ? sourceSlugFromFolderName(folderName, fallbackSourceId)
+    : "";
   let metadataResult = { document: null, metadata: null, hash: "", errors: [{ field: "metadataFile", code: "required" }] };
   let syncError = "";
   if (metadataFile) {
@@ -404,7 +416,14 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     discoveryError: "",
   };
   payload.titleSort = normalizeMarketplaceTitle(payload.title);
-  if (!existing?.slug) payload.slug = await uniqueSlug(metadata.title || metadata.sourceAssetId || metadata.sourceModelId, folderId, existing?._id, normalizedType);
+  if (!existing?.slug) {
+    payload.slug = await uniqueSlug(
+      folderSourceSlug || metadata.title || metadata.sourceAssetId || metadata.sourceModelId,
+      folderId,
+      existing?._id,
+      normalizedType,
+    );
+  }
   const query = existing?._id ? { _id: existing._id } : { assetType: normalizedType, "source.provider": "drive", "source.modelId": folderId };
   const model = await MarketplaceModel.findOneAndUpdate(query, {
     $set: payload,

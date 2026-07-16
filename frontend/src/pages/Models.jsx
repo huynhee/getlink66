@@ -1283,8 +1283,11 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
 
       <section className="marketContent">
         <div className="panel marketSearchPanel">
-          <div className="marketSearchCenter">
-            <label className="marketSearchField">
+          <div className="marketResultBar">
+            <div className="marketResultSummary">
+              <span>{pagination.total || 0} {textFor(language, noun, `${noun} found`)}</span>
+            </div>
+            <label className="marketSearchField marketResultSearch">
               <Search size={18} />
               <input
                 value={search}
@@ -1305,24 +1308,6 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
                 <ImagePlus size={17} />
               </button>
             </label>
-          </div>
-          <div className="marketResultBar">
-            <div className="marketResultSummary">
-              <span>{pagination.total || 0} {textFor(language, noun, `${noun} found`)}</span>
-              {filterChips.length > 0 && (
-                <div className="marketFilterChips">
-                  {filterChips.map((chip) => (
-                    <button type="button" key={chip.key} className="marketFilterChip" onClick={chip.onRemove}>
-                      {chip.label}
-                      <X size={12} />
-                    </button>
-                  ))}
-                  <button type="button" className="marketClearLink" onClick={clearAllFilters}>
-                    {textFor(language, "Xóa bộ lọc", "Clear filters")}
-                  </button>
-                </div>
-              )}
-            </div>
             <div className="marketResultControls">
               <div className="marketAccessToggle" role="group" aria-label={textFor(language, "Lọc quyền tải", "Access filter")}>
                 {["pro", "free"].map((value) => (
@@ -1355,6 +1340,19 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
                 <ChevronDown size={15} aria-hidden="true" />
               </label>
             </div>
+            {filterChips.length > 0 && (
+              <div className="marketFilterChips marketResultChips">
+                {filterChips.map((chip) => (
+                  <button type="button" key={chip.key} className="marketFilterChip" onClick={chip.onRemove}>
+                    {chip.label}
+                    <X size={12} />
+                  </button>
+                ))}
+                <button type="button" className="marketClearLink" onClick={clearAllFilters}>
+                  {textFor(language, "Xóa bộ lọc", "Clear filters")}
+                </button>
+              </div>
+            )}
           </div>
           {imageSearchMeta && (
             <div className="marketImageSearchMeta">

@@ -244,6 +244,42 @@ test("single-folder sync preserves public state and only removes missing preview
   }
 });
 
+test("new model public slug comes from the source slug in the Drive folder name", async () => {
+  const fixture = createDriveFixture();
+  fixture.folder.name = `${fixture.sourceModelId}-decorative-tea-ceremony-set`;
+  const restoreFetch = fixture.install();
+  try {
+    const created = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id });
+    assert.equal(created.model.slug, "decorative-tea-ceremony-set");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("duplicate folder source slugs use the existing unique slug fallback", async () => {
+  const firstFixture = createDriveFixture();
+  firstFixture.folder.name = `${firstFixture.sourceModelId}-shared-drive-slug`;
+  const restoreFirst = firstFixture.install();
+  let first;
+  try {
+    first = await syncMarketplaceDriveFolder({ driveFolderId: firstFixture.folder.id });
+  } finally {
+    restoreFirst();
+  }
+
+  const secondFixture = createDriveFixture();
+  secondFixture.folder.name = `${secondFixture.sourceModelId}-shared-drive-slug`;
+  const restoreSecond = secondFixture.install();
+  try {
+    const second = await syncMarketplaceDriveFolder({ driveFolderId: secondFixture.folder.id });
+    assert.equal(first.model.slug, "shared-drive-slug");
+    assert.notEqual(second.model.slug, first.model.slug);
+    assert.match(second.model.slug, /^shared-drive-slug-/);
+  } finally {
+    restoreSecond();
+  }
+});
+
 test("missing archive blocks publication and restoring it honors desiredPublished", async () => {
   const fixture = createDriveFixture();
   const restoreFetch = fixture.install();

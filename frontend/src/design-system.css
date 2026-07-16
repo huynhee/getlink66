@@ -913,7 +913,20 @@ input[type="radio"] {
   padding: 0;
 }
 
+.marketCategorySelector {
+  align-self: center;
+  width: 16px;
+  height: 16px;
+}
+
+.marketCategoryToggle {
+  min-height: 28px;
+}
+
 .marketCategoryCheck {
+  display: block;
+  align-self: center;
+  box-sizing: border-box;
   border-color: var(--border-warm);
   background: var(--control-bg);
 }
@@ -926,7 +939,7 @@ input[type="radio"] {
 }
 
 .marketSearchPanel {
-  padding: 18px 20px;
+  padding: 14px 20px;
 }
 
 .marketSearchCenter {
@@ -1888,25 +1901,44 @@ input[type="radio"] {
 }
 
 .marketResultBar {
-  justify-content: space-between;
-  min-height: 38px;
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr) auto;
+  grid-template-areas:
+    "summary search controls"
+    "chips chips chips";
+  align-items: center;
+  gap: 10px 12px;
+  min-height: 40px;
 }
 
 .marketResultSummary {
+  grid-area: summary;
   min-width: 0;
   display: flex;
   align-items: center;
-  flex: 1 1 auto;
   flex-wrap: wrap;
   gap: 8px 12px;
+  white-space: nowrap;
+}
+
+.marketResultSearch {
+  grid-area: search;
+  width: 100%;
+  max-width: none;
+  min-height: 38px;
 }
 
 .marketResultControls {
+  grid-area: controls;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
   flex: 0 0 auto;
+}
+
+.marketResultChips {
+  grid-area: chips;
 }
 
 .marketResultControls .marketAccessToggle {
@@ -1950,6 +1982,20 @@ input[type="radio"] {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.marketSortControl select option {
+  color: #0a0a0a;
+  background: #ffffff;
+}
+
+html[data-theme="dark"] .marketSortControl select option {
+  color: #faf8f5;
+  background: #151617;
+}
+
+.marketSortControl select option:disabled {
+  color: #8b8580;
 }
 
 .marketSortControl select:disabled {
@@ -2060,9 +2106,18 @@ input[type="radio"] {
     padding-top: 18px;
   }
 
-  .marketResultBar,
-  .marketResultSummary {
+  .marketResultBar {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "search"
+      "controls"
+      "summary"
+      "chips";
     align-items: stretch;
+  }
+
+  .marketResultSummary {
+    align-items: center;
   }
 
   .marketResultControls {
