@@ -74,6 +74,15 @@ function postCommitWaitMs() {
   return numberEnv("THREED66_BROWSER_POST_COMMIT_WAIT_MS", 1200);
 }
 
+function footprintRefreshAttempts() {
+  const value = numberEnv("THREED66_FOOTPRINT_REFRESH_ATTEMPTS", 4);
+  return Math.min(8, Math.max(1, Math.floor(value)));
+}
+
+function footprintRefreshDelayMs() {
+  return Math.max(250, numberEnv("THREED66_FOOTPRINT_REFRESH_DELAY_MS", 1500));
+}
+
 function navigationRetries() {
   const value = numberEnv("THREED66_BROWSER_NAV_RETRIES", 2);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 2;
@@ -513,6 +522,54 @@ function footprintCardMatches(card = {}, expectedProductIds = []) {
   if (expectedIds.includes(cardId)) return true;
 
   return expectedIds.some((productId) => modelIdsShareAssetIdentity(productId, cardId));
+}
+
+async function readFootprintCards(page) {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('a[href*="/reshtmla/"][href*="sof="]'))
+      .map((anchor, index) => {
+        try {
+          const href = new URL(anchor.getAttribute("href") || "", location.href).toString();
+          return {
+            href,
+            productId: new URL(href).searchParams.get("sof") || "",
+            index,
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean),
+  );
+}
+
+async function findFootprintCardWithRefresh(page, expectedIds = []) {
+  const attempts = footprintRefreshAttempts();
+  let cards = [];
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await page.waitForTimeout(footprintRefreshDelayMs()).catch(() => {});
+      await page.reload({
+        waitUntil: navigationWaitUntil(),
+        timeout: timeoutMs(),
+      }).catch(() => {});
+    }
+
+    await page
+      .waitForSelector('a[href*="/reshtmla/"][href*="sof="]', {
+        timeout: Math.min(timeoutMs(), 5000),
+      })
+      .catch(() => {});
+
+    cards = await readFootprintCards(page);
+    const selected = cards.find((card) => footprintCardMatches(card, expectedIds));
+    if (selected) {
+      return { selected, cards, attemptsUsed: attempt + 1 };
+    }
+  }
+
+  return { selected: null, cards, attemptsUsed: attempts };
 }
 
 function evaluateMetadata() {
@@ -969,80 +1026,13 @@ export async function resolve3D66ModelUrlFromFootprint(
     await page.waitForTimeout(Math.max(500, postCommitWaitMs())).catch(() => {});
 
     await goto3D66Page(page, FOOTPRINT_URL);
-    await page.reload({
-      waitUntil: navigationWaitUntil(),
-      timeout: timeoutMs(),
-    }).catch(() => {});
-    await page
-      .waitForSelector('a[href*="/reshtmla/"][href*="sof="]', {
-        timeout: Math.min(timeoutMs(), 15000),
-      })
-      .catch(() => {});
 
     const sourceProductId = modelIdFromUrl(url);
     const expectedIds = [...new Set([sourceProductId, ...expectedProductIds].filter(Boolean))];
-    await page
-      .waitForFunction(
-        (productIds) => {
-          const identity = (value = "") => {
-            const match = String(value).trim().toUpperCase().match(/^([A-Z]{3})(\d{6,})$/);
-            return match ? { family: match[1].slice(1), digits: match[2] } : null;
-          };
-          const sameAsset = (left = "", right = "") => {
-            const normalizedLeft = String(left).trim().toUpperCase();
-            const normalizedRight = String(right).trim().toUpperCase();
-            if (normalizedLeft === normalizedRight) return true;
-            const leftParts = identity(normalizedLeft);
-            const rightParts = identity(normalizedRight);
-            if (!leftParts || !rightParts || leftParts.family !== rightParts.family) return false;
-            let commonDigits = 0;
-            while (
-              commonDigits < leftParts.digits.length &&
-              commonDigits < rightParts.digits.length &&
-              leftParts.digits[leftParts.digits.length - 1 - commonDigits] ===
-                rightParts.digits[rightParts.digits.length - 1 - commonDigits]
-            ) {
-              commonDigits += 1;
-            }
-            return commonDigits >= 6;
-          };
-          const expected = productIds.map((value) => String(value).trim().toUpperCase());
-          return Array.from(
-            document.querySelectorAll('a[href*="/reshtmla/"][href*="sof="]'),
-          ).some((anchor) => {
-            try {
-              const id = String(
-                new URL(anchor.getAttribute("href") || "", location.href).searchParams.get("sof") || "",
-              ).toUpperCase();
-              return expected.some((productId) => sameAsset(productId, id));
-            } catch {
-              return false;
-            }
-          });
-        },
-        expectedIds,
-        { timeout: Math.min(timeoutMs(), 15000) },
-      )
-      .catch(() => {});
-
-    const cards = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('a[href*="/reshtmla/"][href*="sof="]'))
-        .map((anchor, index) => {
-          try {
-            const href = new URL(anchor.getAttribute("href") || "", location.href).toString();
-            return {
-              href,
-              productId: new URL(href).searchParams.get("sof") || "",
-              index,
-            };
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean),
+    const { selected, cards, attemptsUsed } = await findFootprintCardWithRefresh(
+      page,
+      expectedIds,
     );
-
-    const selected = cards.find((card) => footprintCardMatches(card, expectedIds));
     if (!selected) {
       throw browserHttpError(
         "Không tìm thấy đúng model vừa mở trong lịch sử truy cập 3D66.",
@@ -1050,6 +1040,7 @@ export async function resolve3D66ModelUrlFromFootprint(
         {
           expectedProductIds: expectedIds,
           footprintProductIds: cards.slice(0, 10).map((card) => card.productId),
+          footprintRefreshAttempts: attemptsUsed,
         },
       );
     }
