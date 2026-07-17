@@ -22,6 +22,28 @@ async function getCsrfToken() {
   return csrfToken;
 }
 
+async function readResponseData(response) {
+  const rawText = await response.text().catch(() => "");
+  if (!rawText) return {};
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return { rawText };
+  }
+}
+
+function responseErrorMessage(response, data = {}) {
+  if (data.message) return data.message;
+
+  if ([502, 503, 504].includes(response.status)) {
+    return `HTTP ${response.status}: Gateway không nhận được phản hồi kịp thời từ backend.`;
+  }
+
+  const statusText = String(response.statusText || "").trim();
+  return `HTTP ${response.status}${statusText ? `: ${statusText}` : ""}`;
+}
+
 export async function api(path, options = {}) {
   const method = options.method || "GET";
   const mutating = isMutatingMethod(method);
@@ -41,7 +63,7 @@ export async function api(path, options = {}) {
       credentials: "include",
       headers
     });
-    const data = await response.json().catch(() => ({}));
+    const data = await readResponseData(response);
     return { response, data };
   }
 
@@ -53,7 +75,7 @@ export async function api(path, options = {}) {
     }
   }
   if (!response.ok) {
-    throw new Error(data.message || "Request failed");
+    throw new Error(responseErrorMessage(response, data));
   }
 
   return data;
