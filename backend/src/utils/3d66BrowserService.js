@@ -1,10 +1,3 @@
-import {
-  create3D66ProxyConnectionError,
-  get3D66ProxyUrl,
-  mask3D66ProxyUrl,
-  resolve3D66ProxyRoute,
-  shouldFallback3D66ProxyFailure,
-} from "./3d66ProxyPolicy.js";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -103,7 +96,34 @@ function shouldBlockAssets() {
   return process.env.THREED66_BROWSER_BLOCK_ASSETS !== "false";
 }
 
-function browserProxyConfig(rawUrl) {
+function booleanEnv(name, fallback = false) {
+  const value = process.env[name];
+  if (value === undefined || value === "") return fallback;
+  return value === "true" || value === "1" || value === 1 || value === true;
+}
+
+function proxyFailClosed() {
+  return booleanEnv("THREED66_PROXY_FAIL_CLOSED", false);
+}
+
+function maskProxyUrl(value = "") {
+  try {
+    const parsed = new URL(value);
+    if (parsed.username) parsed.username = "***";
+    if (parsed.password) parsed.password = "***";
+    return parsed.toString();
+  } catch {
+    return "[invalid proxy url]";
+  }
+}
+
+function browserProxyConfig() {
+  if (!booleanEnv("THREED66_PROXY_ENABLED", false)) return null;
+  if (!booleanEnv("THREED66_PROXY_FOR_BROWSER", false)) return null;
+
+  const rawUrl = String(process.env.THREED66_PROXY_URL || "").trim();
+  if (!rawUrl) return null;
+
   try {
     const parsed = new URL(rawUrl);
     if (!["http:", "https:", "socks5:"].includes(parsed.protocol)) {
@@ -116,6 +136,15 @@ function browserProxyConfig(rawUrl) {
       ...(parsed.password ? { password: decodeURIComponent(parsed.password) } : {}),
     };
   } catch (error) {
+    if (!proxyFailClosed()) {
+      notify3D66ProxyFallback({
+        stage: "browser",
+        proxy: maskProxyUrl(rawUrl),
+        error,
+      });
+      return null;
+    }
+
     const proxyError = new Error(`3D66 browser proxy URL is invalid: ${error.message}`);
     proxyError.status = 500;
     throw proxyError;
@@ -253,30 +282,8 @@ function runBrowserTask(task) {
 
 async function withBrowserContext(url, cookieValue, callback) {
   return runBrowserTask(async () => {
-    const route = await resolve3D66ProxyRoute("browser", url);
-    if (route.fallback) {
-      notify3D66ProxyFallback({
-        stage: "browser",
-        proxy: mask3D66ProxyUrl(get3D66ProxyUrl()),
-        error: route.error,
-      });
-    }
-
     const browser = await getSharedBrowser();
-
-    let proxy = null;
-    if (route.useProxy) {
-      try {
-        proxy = browserProxyConfig(route.proxyUrl);
-      } catch (error) {
-        if (!shouldFallback3D66ProxyFailure("browser")) throw error;
-        notify3D66ProxyFallback({
-          stage: "browser",
-          proxy: mask3D66ProxyUrl(get3D66ProxyUrl()),
-          error,
-        });
-      }
-    }
+    const proxy = browserProxyConfig();
     const runWithProxy = async (currentProxy) => {
       const context = await browser.newContext({
         userAgent: DEFAULT_USER_AGENT,
@@ -309,20 +316,10 @@ async function withBrowserContext(url, cookieValue, callback) {
     try {
       return await runWithProxy(proxy);
     } catch (error) {
-      if (!shouldFallback3D66ProxyFailure("browser")) {
-        const message = String(error?.message || "").toLowerCase();
-        const isConnectionFailure =
-          message.includes("proxy") ||
-          message.includes("econn") ||
-          message.includes("etimedout") ||
-          message.includes("err_tunnel") ||
-          message.includes("err_connection");
-        if (isConnectionFailure) throw create3D66ProxyConnectionError("browser", error);
-        throw error;
-      }
+      if (proxyFailClosed()) throw error;
       notify3D66ProxyFallback({
         stage: "browser",
-        proxy: mask3D66ProxyUrl(get3D66ProxyUrl()),
+        proxy: maskProxyUrl(process.env.THREED66_PROXY_URL || ""),
         error,
       });
       return runWithProxy(null);

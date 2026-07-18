@@ -117,18 +117,14 @@ const defaultSiteSettings = {
   threed66DisableBrowserDownloadFallback: false,
   threed66DownloadHandleBrowserFallback: false,
   threed66ProxyEnabled: false,
-  threed66ProxyMode: "generic",
   threed66ProxyUrl: "",
   threed66ProxyUrlConfigured: false,
   threed66ProxyUrlClear: false,
   threed66ProxyForPreview: false,
-  threed66ProxyForApi: true,
-  threed66ProxyForDownload: true,
-  threed66ProxyForBrowser: true,
+  threed66ProxyForApi: false,
+  threed66ProxyForDownload: false,
+  threed66ProxyForBrowser: false,
   threed66ProxyFailClosed: false,
-  threed66WarpRequireHkgForAccount: true,
-  threed66WarpFileFallbackDirect: true,
-  threed66WarpHealthTtlMs: 30000,
   threed66TimeoutMs: 30000,
   threed66CookieMaxFailures: 2,
   threed66CookieCooldownMinutes: 30,
@@ -190,8 +186,6 @@ export default function Admin({ user, language = "vi" }) {
   const [homeTextMsg, setHomeTextMsg] = useState("");
   const [referralMsg, setReferralMsg] = useState("");
   const [runtimeSettingsMsg, setRuntimeSettingsMsg] = useState("");
-  const [warpStatus, setWarpStatus] = useState(null);
-  const [warpStatusLoading, setWarpStatusLoading] = useState(false);
   const [cookieRecords, setCookieRecords] = useState([]);
   const [cookiePool, setCookiePool] = useState(null);
   const [systemLogs, setSystemLogs] = useState([]);
@@ -256,18 +250,6 @@ export default function Admin({ user, language = "vi" }) {
     setSiteSettings({ ...defaultSiteSettings, ...(settingRes.settings || {}) });
   }, [revenuePeriod]);
 
-  const loadWarpStatus = React.useCallback(async ({ force = false } = {}) => {
-    setWarpStatusLoading(true);
-    try {
-      const data = await api(force ? "/api/admin/warp/test" : "/api/admin/warp/status", {
-        ...(force ? { method: "POST" } : {}),
-      });
-      setWarpStatus(data.proxy || null);
-    } finally {
-      setWarpStatusLoading(false);
-    }
-  }, []);
-
   const loadUsers = React.useCallback(async () => {
     const query = new URLSearchParams({
       page: String(userPage),
@@ -307,11 +289,6 @@ export default function Admin({ user, language = "vi" }) {
   useEffect(() => {
     loadData().catch(console.error);
   }, [loadData]);
-
-  useEffect(() => {
-    if (activeSection !== "threed66" || threed66SettingsTab !== "proxy") return;
-    loadWarpStatus().catch((error) => setRuntimeSettingsMsg(error.message));
-  }, [activeSection, threed66SettingsTab, loadWarpStatus]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -567,29 +544,6 @@ export default function Admin({ user, language = "vi" }) {
     }));
   }
 
-  function setProxyMode(mode) {
-    setSiteSettings((settings) => {
-      const switchingToWarp = mode === "warp" && settings.threed66ProxyMode !== "warp";
-      return {
-        ...settings,
-        threed66ProxyMode: mode,
-        ...(switchingToWarp
-          ? {
-              threed66ProxyUrl: "http://127.0.0.1:40000",
-              threed66ProxyUrlClear: false,
-              threed66ProxyForPreview: false,
-              threed66ProxyForApi: true,
-              threed66ProxyForDownload: true,
-              threed66ProxyForBrowser: true,
-              threed66WarpRequireHkgForAccount: true,
-              threed66WarpFileFallbackDirect: true,
-            }
-          : {}),
-      };
-    });
-    setWarpStatus(null);
-  }
-
   async function saveRuntimeSettings(event) {
     event.preventDefault();
     try {
@@ -609,7 +563,6 @@ export default function Admin({ user, language = "vi" }) {
           threed66DisableBrowserDownloadFallback: Boolean(siteSettings.threed66DisableBrowserDownloadFallback),
           threed66DownloadHandleBrowserFallback: Boolean(siteSettings.threed66DownloadHandleBrowserFallback),
           threed66ProxyEnabled: Boolean(siteSettings.threed66ProxyEnabled),
-          threed66ProxyMode: String(siteSettings.threed66ProxyMode || "generic"),
           threed66ProxyUrl: String(siteSettings.threed66ProxyUrl || "").trim(),
           threed66ProxyUrlClear: Boolean(siteSettings.threed66ProxyUrlClear),
           threed66ProxyForPreview: Boolean(siteSettings.threed66ProxyForPreview),
@@ -617,9 +570,6 @@ export default function Admin({ user, language = "vi" }) {
           threed66ProxyForDownload: Boolean(siteSettings.threed66ProxyForDownload),
           threed66ProxyForBrowser: Boolean(siteSettings.threed66ProxyForBrowser),
           threed66ProxyFailClosed: Boolean(siteSettings.threed66ProxyFailClosed),
-          threed66WarpRequireHkgForAccount: Boolean(siteSettings.threed66WarpRequireHkgForAccount),
-          threed66WarpFileFallbackDirect: Boolean(siteSettings.threed66WarpFileFallbackDirect),
-          threed66WarpHealthTtlMs: Number(siteSettings.threed66WarpHealthTtlMs || 30000),
           threed66TimeoutMs: Number(siteSettings.threed66TimeoutMs || 30000),
           threed66CookieMaxFailures: Number(siteSettings.threed66CookieMaxFailures || 2),
           threed66CookieCooldownMinutes: Number(siteSettings.threed66CookieCooldownMinutes || 30),
@@ -633,7 +583,6 @@ export default function Admin({ user, language = "vi" }) {
       setSiteSettings({ ...defaultSiteSettings, ...(data.settings || {}) });
       setRuntimeSettingsMsg(l("Đã cập nhật thông số 3D66.", "3D66 runtime settings updated."));
       await loadData();
-      if (threed66SettingsTab === "proxy") await loadWarpStatus();
     } catch (err) {
       setRuntimeSettingsMsg(err.message);
     }
@@ -1087,43 +1036,17 @@ export default function Admin({ user, language = "vi" }) {
     {
       field: "threed66ProxyForDownload",
       label: l("Proxy khi kéo file tải", "Proxy file download"),
-      help: l("Dùng proxy khi VPS kéo fileUrl thật từ 3D66. User vẫn nhận file qua 3dipl.org. WARP Local Proxy có giới hạn request 10 giây, chỉ bật mục này sau khi đã thử file lớn.", "Use the proxy when the VPS pulls the real 3D66 fileUrl. Users still receive files through 3dipl.org. Local WARP has a 10-second request limit, so enable this only after testing a large file."),
+      help: l("Dùng proxy khi VPS kéo fileUrl thật từ 3D66 trước khi stream về user.", "Use proxy when the VPS pulls the real 3D66 fileUrl before streaming to the user."),
     },
     {
       field: "threed66ProxyForBrowser",
       label: l("Proxy cho Playwright", "Proxy Playwright"),
       help: l("Dùng proxy cho browser fallback. Chỉ bật khi đã test proxy ổn.", "Use proxy for browser fallback. Enable only after the proxy is tested."),
     },
-  ];
-  const genericProxyPolicySettings = [
     {
       field: "threed66ProxyFailClosed",
       label: l("Proxy lỗi thì dừng", "Fail closed on proxy error"),
       help: l("Mặc định tắt: proxy lỗi sẽ tự chuyển về IP VPS và gửi cảnh báo Telegram. Bật nếu muốn dừng hẳn khi proxy lỗi.", "Off by default: proxy failures fall back to the VPS IP and send a Telegram alert. Enable to stop requests when proxy fails."),
-    },
-  ];
-  const warpPolicySettings = [
-    {
-      field: "threed66WarpRequireHkgForAccount",
-      label: l("Bắt buộc WARP + HKG cho Browser/API", "Require WARP + HKG for Browser/API"),
-      help: l("Bật để dừng với HTTP 503 nếu WARP không hoạt động hoặc colo không phải HKG. Không tự đổi IP giữa phiên cookie.", "Stop with HTTP 503 when WARP is unavailable or the colo is not HKG. Never switch IP mid cookie session."),
-    },
-    {
-      field: "threed66WarpFileFallbackDirect",
-      label: l("WARP lỗi khi tải file thì dùng IP VPS", "Use VPS IP when WARP file pull fails"),
-      help: l("Fallback khi WARP không khỏe hoặc chưa mở được response. Nếu stream đã gửi một phần rồi mới đứt, trình tải cần retry bằng Range vì không thể đổi route giữa response.", "Falls back when WARP is unhealthy or cannot open the response. If an active stream breaks after sending bytes, the downloader must retry with Range because the route cannot change mid-response."),
-    },
-  ];
-  const proxyModes = [
-    {
-      value: "warp",
-      label: l("WARP local", "Local WARP"),
-      help: l("Dùng cloudflare-warp tại 127.0.0.1:40000 và kiểm tra warp=on, colo=HKG trước khi route.", "Use cloudflare-warp at 127.0.0.1:40000 and verify warp=on with colo=HKG before routing."),
-    },
-    {
-      value: "generic",
-      label: l("Proxy thường", "Generic proxy"),
-      help: l("Giữ tương thích proxy HTTP/HTTPS có user và password như cơ chế cũ.", "Keep compatibility with the existing authenticated HTTP/HTTPS proxy flow."),
     },
   ];
   const currentPlaywrightMode = siteSettings.threed66BrowserAlways
@@ -1179,19 +1102,11 @@ export default function Admin({ user, language = "vi" }) {
   const threed66SettingsTabs = [
     { key: "tasks", label: l("Tác vụ", "Tasks"), icon: Activity },
     { key: "downloads", label: l("Tải file", "Downloads"), icon: FileDown },
-    { key: "proxy", label: l("WARP / Proxy", "WARP / Proxy"), icon: Zap },
+    { key: "proxy", label: l("Proxy", "Proxy"), icon: Zap },
     { key: "playwright", label: l("Playwright", "Playwright"), icon: Gauge },
     { key: "cookie", label: l("Cookie", "Cookie"), icon: Cookie },
     { key: "status", label: l("Trạng thái", "Status"), icon: Cookie },
   ];
-  const appliedProxyEnabled = warpStatus?.config?.enabled ?? Boolean(siteSettings.threed66ProxyEnabled);
-  const appliedProxyStages = warpStatus?.config?.stages || {
-    preview: Boolean(siteSettings.threed66ProxyForPreview),
-    browser: Boolean(siteSettings.threed66ProxyForBrowser),
-    api: Boolean(siteSettings.threed66ProxyForApi),
-    file: Boolean(siteSettings.threed66ProxyForDownload),
-  };
-  const appliedRoute = (stage) => appliedProxyEnabled && appliedProxyStages[stage] ? "WARP" : "VPS";
 
   return (
     <div className="stack">
@@ -1987,41 +1902,21 @@ export default function Admin({ user, language = "vi" }) {
             )}
             {threed66SettingsTab === "proxy" && (
             <div className="runtimeSettingGroup">
-              <h3>{l("WARP / Proxy 3D66", "3D66 WARP / Proxy")}</h3>
-              <div className="runtimeModeGrid proxyModeGrid">
-                {proxyModes.map((mode) => (
-                  <button
-                    key={mode.value}
-                    type="button"
-                    className={`runtimeModeButton ${siteSettings.threed66ProxyMode === mode.value ? "active" : ""}`}
-                    aria-pressed={siteSettings.threed66ProxyMode === mode.value}
-                    onClick={() => setProxyMode(mode.value)}
-                  >
-                    <strong>{mode.label}</strong>
-                    <small>{mode.help}</small>
-                  </button>
-                ))}
-              </div>
+              <h3>{l("Proxy Hong Kong", "Hong Kong proxy")}</h3>
               <div className="runtimeSettingList">
                 <label className="runtimeSettingRow">
                   <span className="runtimeSettingText">
-                    <strong>
-                      {siteSettings.threed66ProxyMode === "warp"
-                        ? l("WARP Local Proxy URL", "WARP Local Proxy URL")
-                        : l("Proxy URL", "Proxy URL")}
-                    </strong>
+                    <strong>{l("Proxy URL", "Proxy URL")}</strong>
                     <small>
                       {siteSettings.threed66ProxyUrlConfigured
                         ? l("Đã cấu hình proxy URL. Nhập URL mới nếu muốn thay thế; để trống sẽ giữ nguyên.", "Proxy URL is configured. Enter a new URL to replace it; leave blank to keep it.")
-                        : siteSettings.threed66ProxyMode === "warp"
-                          ? l("Mặc định dùng WARP local tại http://127.0.0.1:40000. WARP service được quản lý qua SSH.", "The default local WARP endpoint is http://127.0.0.1:40000. Manage the WARP service over SSH.")
-                          : l("Chưa cấu hình proxy. Nhập dạng http://user:pass@host:port sau khi mua proxy.", "No proxy configured. Enter http://user:pass@host:port after buying a proxy.")}
+                        : l("Chưa cấu hình proxy. Nhập dạng http://user:pass@host:port sau khi mua proxy.", "No proxy configured. Enter http://user:pass@host:port after buying a proxy.")}
                     </small>
                   </span>
                   <input
                     type="password"
                     value={siteSettings.threed66ProxyUrl || ""}
-                    placeholder={siteSettings.threed66ProxyMode === "warp" ? "http://127.0.0.1:40000" : "http://user:pass@host:port"}
+                    placeholder="http://user:pass@host:port"
                     autoComplete="off"
                     onChange={(event) =>
                       setSiteSettings((settings) => ({
@@ -2062,90 +1957,7 @@ export default function Admin({ user, language = "vi" }) {
                     />
                   </label>
                 ))}
-                {(siteSettings.threed66ProxyMode === "warp"
-                  ? warpPolicySettings
-                  : genericProxyPolicySettings
-                ).map((setting) => (
-                  <label className="runtimeSettingRow" key={setting.field}>
-                    <span className="runtimeSettingText">
-                      <strong>{setting.label}</strong>
-                      <small>{setting.help}</small>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(siteSettings[setting.field])}
-                      onChange={(event) => updateRuntimeSetting(setting.field, event.target.checked)}
-                    />
-                  </label>
-                ))}
               </div>
-              {siteSettings.threed66ProxyMode === "warp" && (
-                <div className="runtimeSettingGroup warpHealthPanel">
-                  <div className="warpHealthHeader">
-                    <div>
-                      <h3>{l("Trạng thái WARP", "WARP status")}</h3>
-                      <small className="muted">
-                        {l("Lưu cấu hình trước, sau đó kiểm tra listener và Cloudflare trace.", "Save the configuration before testing the listener and Cloudflare trace.")}
-                      </small>
-                    </div>
-                    <button
-                      type="button"
-                      className="smallButton"
-                      disabled={warpStatusLoading}
-                      onClick={() => loadWarpStatus({ force: true }).catch((error) => setRuntimeSettingsMsg(error.message))}
-                    >
-                      {warpStatusLoading ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />}
-                      {l("Kiểm tra WARP", "Test WARP")}
-                    </button>
-                  </div>
-                  <div className="cookiePoolGrid warpHealthGrid">
-                    <div className={`cookiePoolCard ${warpStatus?.health && !warpStatus.health.listener ? "error" : ""}`}>
-                      <span>Listener</span>
-                      <strong>
-                        {!warpStatus?.health
-                          ? "-"
-                          : warpStatus.health.listener
-                            ? "ONLINE"
-                            : "OFFLINE"}
-                      </strong>
-                      <small>127.0.0.1:40000</small>
-                    </div>
-                    <div className={`cookiePoolCard ${warpStatus?.health && warpStatus.health.warp !== "on" ? "error" : ""}`}>
-                      <span>WARP</span>
-                      <strong>{warpStatus?.health?.warp || "-"}</strong>
-                      <small>required: on</small>
-                    </div>
-                    <div className={`cookiePoolCard ${warpStatus?.health && !warpStatus.health.hkg ? "warning" : ""}`}>
-                      <span>Cloudflare colo</span>
-                      <strong>{warpStatus?.health?.colo || "-"}</strong>
-                      <small>required: HKG</small>
-                    </div>
-                    <div className={`cookiePoolCard ${warpStatus?.health && !warpStatus.health.healthy ? "error" : ""}`}>
-                      <span>{l("Độ trễ", "Latency")}</span>
-                      <strong>
-                        {Number.isFinite(warpStatus?.health?.latencyMs)
-                          ? `${warpStatus.health.latencyMs}ms`
-                          : "-"}
-                      </strong>
-                      <small>
-                        {warpStatus?.health?.healthy ? l("Sẵn sàng", "Ready") : l("Chưa sẵn sàng", "Not ready")}
-                      </small>
-                    </div>
-                  </div>
-                  {warpStatus?.health?.checkedAt && (
-                    <p className="muted" style={{ margin: 0 }}>
-                      {l("Kiểm tra lúc", "Checked at")}: {new Date(warpStatus.health.checkedAt).toLocaleString(locale)}
-                    </p>
-                  )}
-                  {warpStatus?.health?.error && <p className="error" style={{ margin: 0 }}>{warpStatus.health.error}</p>}
-                  <p className="muted" style={{ margin: 0 }}>
-                    {l(
-                      `Route đã áp dụng: Proxy ${appliedProxyEnabled ? "BẬT" : "TẮT"} · Preview ${appliedRoute("preview")} · Browser ${appliedRoute("browser")} · API ${appliedRoute("api")} · File ${appliedRoute("file")}. Stream trả user luôn qua VPS.`,
-                      `Applied routes: Proxy ${appliedProxyEnabled ? "ON" : "OFF"} · Preview ${appliedRoute("preview")} · Browser ${appliedRoute("browser")} · API ${appliedRoute("api")} · File ${appliedRoute("file")}. User-facing streams always leave through the VPS.`,
-                    )}
-                  </p>
-                </div>
-              )}
             </div>
             )}
             {threed66SettingsTab === "playwright" && (

@@ -18,7 +18,5 @@ test("guest settings only expose landing-page fields and input mode", async () =
   assert.equal(typeof payload.settings.threed66ModelResolveMode, "string");
   assert.equal(Object.hasOwn(payload.settings, "threed66TimeoutMs"), false);
   assert.equal(Object.hasOwn(payload.settings, "threed66ProxyEnabled"), false);
-  assert.equal(Object.hasOwn(payload.settings, "threed66ProxyMode"), false);
-  assert.equal(Object.hasOwn(payload.settings, "threed66WarpRequireHkgForAccount"), false);
   assert.equal(Object.hasOwn(payload.settings, "_id"), false);
 });

@@ -472,7 +472,7 @@ function diagnosticSystemLogDetails(error, controllerStage) {
 
   copyIdList("expectedProductIds");
   copyIdList("footprintProductIds");
-  ["selectedProductId", "resolvedProductId", "warp", "colo"].forEach((field) => {
+  ["selectedProductId", "resolvedProductId"].forEach((field) => {
     if (source[field] !== undefined && source[field] !== null) {
       details[field] = String(source[field]).slice(0, 100);
     }
@@ -480,7 +480,6 @@ function diagnosticSystemLogDetails(error, controllerStage) {
   if (Number.isFinite(Number(source.footprintRefreshAttempts))) {
     details.footprintRefreshAttempts = Number(source.footprintRefreshAttempts);
   }
-  if (typeof source.listener === "boolean") details.listener = source.listener;
   if (source.stage) details.upstreamStage = String(source.stage).slice(0, 100);
   return details;
 }

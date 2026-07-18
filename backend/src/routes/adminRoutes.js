@@ -39,10 +39,6 @@ import {
   listAdminArticles,
   updateAdminArticle
 } from "../controllers/guideController.js";
-import {
-  get3D66WarpStatus,
-  test3D66Warp,
-} from "../controllers/3d66ProxyController.js";
 import { adminOnly } from "../middleware/adminOnly.js";
 import { auditAdmin, listAuditLogs } from "../middleware/auditLog.js";
 import { requireAuth } from "../middleware/requireAuth.js";
@@ -66,8 +62,6 @@ router.post("/add-credit", adminWriteLimit, auditAdmin("ADD_CREDIT"), adminAddCr
 router.post("/set-credit", adminWriteLimit, auditAdmin("SET_CREDIT"), adminSetCredit);
 router.get("/cookies", listCookies);
 router.get("/cookies/status", cookiePoolStatus);
-router.get("/warp/status", get3D66WarpStatus);
-router.post("/warp/test", adminWriteLimit, test3D66Warp);
 router.post("/cookie", adminWriteLimit, auditAdmin("SAVE_COOKIE"), saveCookie);
 router.post("/cookie/test", adminWriteLimit, testCookie);
 router.post("/cookies/:id/test", adminWriteLimit, testSavedCookie);

@@ -1110,28 +1110,6 @@ button:disabled {
   color: var(--text-primary);
 }
 
-.warpHealthPanel {
-  margin-top: var(--space-8);
-  padding-top: var(--space-12);
-  border-top: 1px solid var(--border-light);
-}
-
-.warpHealthHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-12);
-}
-
-.warpHealthHeader > div {
-  display: grid;
-  gap: 4px;
-}
-
-.warpHealthGrid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
 .runtimeSettingList {
   display: grid;
   gap: 8px;
@@ -1240,10 +1218,6 @@ button:disabled {
   gap: var(--space-8);
 }
 
-.proxyModeGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .runtimeModeButton {
   display: grid;
   gap: 6px;
@@ -1290,19 +1264,6 @@ button:disabled {
 
   .runtimeModeGrid {
     grid-template-columns: 1fr;
-  }
-
-  .proxyModeGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .warpHealthHeader {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .warpHealthGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -4064,23 +4025,6 @@ label {
 .logUserIdentity span {
   color: var(--muted);
   font-size: 11px;
-}
-
-.logMessageDetails {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-.logMessageDetails strong,
-.logMessageDetails small {
-  overflow-wrap: anywhere;
-}
-
-.logMessageDetails small {
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.45;
 }
 
 .getlinkAuditTable .tableRow {

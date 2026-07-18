@@ -6,14 +6,6 @@ import {
   inspect3D66DownloadFormatsWithBrowser,
   resolve3D66ModelUrlFromFootprint,
 } from "./3d66BrowserService.js";
-import {
-  close3D66ProxyPolicy,
-  create3D66ProxyConnectionError,
-  get3D66ProxyUrl,
-  mask3D66ProxyUrl,
-  resolve3D66ProxyRoute,
-  shouldFallback3D66ProxyFailure,
-} from "./3d66ProxyPolicy.js";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 
 const DEFAULT_DOWNLOAD_ENDPOINT = "https://user.3d66.com/api/v1/download/handle";
@@ -22,6 +14,12 @@ const DEFAULT_TIMEOUT_MS = 30000;
 const MAX_HTML_LENGTH = 2 * 1024 * 1024;
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
+const PROXY_STAGE_ENV = {
+  preview: "THREED66_PROXY_FOR_PREVIEW",
+  api: "THREED66_PROXY_FOR_API",
+  file: "THREED66_PROXY_FOR_DOWNLOAD",
+  browser: "THREED66_PROXY_FOR_BROWSER",
+};
 const ACCOUNT_SEARCH_ENDPOINT = "https://www.3d66.com/api/v1/search/checkKeyword";
 const SEARCH_REFERER = "https://user.3d66.com/";
 const MODEL_RESOLVE_MODES = new Set(["search", "footprint", "direct"]);
@@ -101,7 +99,38 @@ function booleanEnv(name, fallback = false) {
   return value === "true" || value === "1" || value === 1 || value === true;
 }
 
-function proxyDispatcher(urlValue, stage) {
+function maskProxyUrl(value = "") {
+  try {
+    const parsed = new URL(value);
+    if (parsed.username) parsed.username = "***";
+    if (parsed.password) parsed.password = "***";
+    return parsed.toString();
+  } catch {
+    return "[invalid proxy url]";
+  }
+}
+
+function proxyUrl() {
+  return String(process.env.THREED66_PROXY_URL || "").trim();
+}
+
+function shouldUseProxyFor3D66(url, stage = "api") {
+  if (!booleanEnv("THREED66_PROXY_ENABLED", false)) return false;
+  if (!proxyUrl()) return false;
+  const stageEnv = PROXY_STAGE_ENV[stage] || "";
+  if (stageEnv && !booleanEnv(stageEnv, false)) return false;
+
+  try {
+    return isAllowed3D66Host(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function proxyDispatcher(stage, url) {
+  if (!shouldUseProxyFor3D66(url, stage)) return null;
+
+  const urlValue = proxyUrl();
   try {
     const parsed = new URL(urlValue);
     if (!["http:", "https:"].includes(parsed.protocol)) {
@@ -110,7 +139,7 @@ function proxyDispatcher(urlValue, stage) {
   } catch (error) {
     throw httpError("3D66 proxy URL is invalid", 500, {
       stage,
-      proxy: mask3D66ProxyUrl(urlValue),
+      proxy: maskProxyUrl(urlValue),
       cause: error.message,
     });
   }
@@ -131,33 +160,20 @@ function proxyDispatcher(urlValue, stage) {
 export async function close3D66ProxyAgents() {
   const agents = [...proxyAgentCache.values()];
   proxyAgentCache.clear();
-  await Promise.allSettled([
-    ...agents.map((agent) => Promise.resolve(agent?.close?.())),
-    close3D66ProxyPolicy(),
-  ]);
+  await Promise.allSettled(
+    agents.map((agent) => Promise.resolve(agent?.close?.())),
+  );
 }
 
 async function fetch3D66(url, options = {}, { stage = "api" } = {}) {
-  const route = await resolve3D66ProxyRoute(stage, url);
-
-  if (route.fallback) {
-    notify3D66ProxyFallback({
-      stage,
-      proxy: mask3D66ProxyUrl(get3D66ProxyUrl()),
-      error: route.error,
-    });
-    return fetch(url, options);
-  }
-  if (!route.useProxy) return fetch(url, options);
-
   let dispatcher;
   try {
-    dispatcher = proxyDispatcher(route.proxyUrl, stage);
+    dispatcher = proxyDispatcher(stage, url);
   } catch (error) {
-    if (shouldFallback3D66ProxyFailure(stage)) {
+    if (!booleanEnv("THREED66_PROXY_FAIL_CLOSED", false)) {
       notify3D66ProxyFallback({
         stage,
-        proxy: mask3D66ProxyUrl(get3D66ProxyUrl()),
+        proxy: maskProxyUrl(proxyUrl()),
         error,
       });
       return fetch(url, options);
@@ -165,19 +181,25 @@ async function fetch3D66(url, options = {}, { stage = "api" } = {}) {
     throw error;
   }
 
+  if (!dispatcher) return fetch(url, options);
+
   try {
     return await fetch(url, { ...options, dispatcher });
   } catch (error) {
     if (error.name === "AbortError") throw error;
-    if (shouldFallback3D66ProxyFailure(stage)) {
+    if (!booleanEnv("THREED66_PROXY_FAIL_CLOSED", false)) {
       notify3D66ProxyFallback({
         stage,
-        proxy: mask3D66ProxyUrl(get3D66ProxyUrl()),
+        proxy: maskProxyUrl(proxyUrl()),
         error,
       });
       return fetch(url, options);
     }
-    throw create3D66ProxyConnectionError(stage, error);
+    throw httpError("3D66 proxy connection failed", 502, {
+      stage,
+      proxy: maskProxyUrl(proxyUrl()),
+      cause: error.message,
+    });
   }
 }
 

@@ -1,11 +1,9 @@
 import SiteSetting from "../models/SiteSetting.js";
-import { clear3D66WarpHealthCache } from "../utils/3d66ProxyPolicy.js";
 import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
 import { limitedString, rejectUnknownKeys, sanitizeHtml } from "../utils/validators.js";
 
 const REFERRAL_MODES = ["both", "referrer_only", "off"];
 const THREED66_MODEL_RESOLVE_MODES = ["search", "footprint", "direct"];
-const THREED66_PROXY_MODES = ["generic", "warp"];
 const HOME_TEXT_FIELDS = [
   "heroText",
   "heroSubtitle",
@@ -101,14 +99,6 @@ const RUNTIME_BOOLEAN_FIELDS = {
     env: "THREED66_PROXY_FAIL_CLOSED",
     fallback: normalizeBoolean(process.env.THREED66_PROXY_FAIL_CLOSED, false),
   },
-  threed66WarpRequireHkgForAccount: {
-    env: "THREED66_WARP_REQUIRE_HKG_FOR_ACCOUNT",
-    fallback: normalizeBoolean(process.env.THREED66_WARP_REQUIRE_HKG_FOR_ACCOUNT, true),
-  },
-  threed66WarpFileFallbackDirect: {
-    env: "THREED66_WARP_FILE_FALLBACK_DIRECT",
-    fallback: normalizeBoolean(process.env.THREED66_WARP_FILE_FALLBACK_DIRECT, true),
-  },
 };
 const RUNTIME_NUMBER_FIELDS = {
   threed66GetlinkConcurrency: {
@@ -190,12 +180,6 @@ const RUNTIME_NUMBER_FIELDS = {
     max: 100,
     fallback: 5,
   },
-  threed66WarpHealthTtlMs: {
-    env: "THREED66_WARP_HEALTH_TTL_MS",
-    min: 5000,
-    max: 300000,
-    fallback: 30000,
-  },
 };
 
 const defaultSettings = {
@@ -239,16 +223,12 @@ const defaultSettings = {
   threed66DisableBrowserDownloadFallback: RUNTIME_BOOLEAN_FIELDS.threed66DisableBrowserDownloadFallback.fallback,
   threed66DownloadHandleBrowserFallback: RUNTIME_BOOLEAN_FIELDS.threed66DownloadHandleBrowserFallback.fallback,
   threed66ProxyEnabled: RUNTIME_BOOLEAN_FIELDS.threed66ProxyEnabled.fallback,
-  threed66ProxyMode: normalizeProxyMode(process.env.THREED66_PROXY_MODE),
   threed66ProxyUrl: process.env.THREED66_PROXY_URL ? encryptSecret(process.env.THREED66_PROXY_URL) : "",
   threed66ProxyForPreview: RUNTIME_BOOLEAN_FIELDS.threed66ProxyForPreview.fallback,
   threed66ProxyForApi: RUNTIME_BOOLEAN_FIELDS.threed66ProxyForApi.fallback,
   threed66ProxyForDownload: RUNTIME_BOOLEAN_FIELDS.threed66ProxyForDownload.fallback,
   threed66ProxyForBrowser: RUNTIME_BOOLEAN_FIELDS.threed66ProxyForBrowser.fallback,
   threed66ProxyFailClosed: RUNTIME_BOOLEAN_FIELDS.threed66ProxyFailClosed.fallback,
-  threed66WarpRequireHkgForAccount: RUNTIME_BOOLEAN_FIELDS.threed66WarpRequireHkgForAccount.fallback,
-  threed66WarpFileFallbackDirect: RUNTIME_BOOLEAN_FIELDS.threed66WarpFileFallbackDirect.fallback,
-  threed66WarpHealthTtlMs: Number(process.env.THREED66_WARP_HEALTH_TTL_MS || 30000),
   threed66TimeoutMs: Number(process.env.THREED66_TIMEOUT_MS || 30000),
   threed66CookieMaxFailures: Number(process.env.THREED66_COOKIE_MAX_FAILURES || 2),
   threed66CookieCooldownMinutes: Math.round(Number(process.env.THREED66_COOKIE_COOLDOWN_MS || 1800000) / 60000),
@@ -391,11 +371,6 @@ function normalizeModelResolveMode(value) {
   return THREED66_MODEL_RESOLVE_MODES.includes(mode) ? mode : "search";
 }
 
-function normalizeProxyMode(value) {
-  const mode = String(value || "").trim().toLowerCase();
-  return THREED66_PROXY_MODES.includes(mode) ? mode : "generic";
-}
-
 function normalizeProxyUrl(value) {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -429,7 +404,6 @@ function applyRuntimeSettings(settings = {}) {
   process.env.THREED66_MODEL_RESOLVE_MODE = normalizeModelResolveMode(
     settings.threed66ModelResolveMode,
   );
-  process.env.THREED66_PROXY_MODE = normalizeProxyMode(settings.threed66ProxyMode);
   const storedProxyUrl = rawSettingValue(settings, "threed66ProxyUrl");
   if (storedProxyUrl !== undefined && String(storedProxyUrl || "").trim()) {
     process.env.THREED66_PROXY_URL = decryptProxyUrl(storedProxyUrl);
@@ -484,16 +458,6 @@ async function loadSettings() {
     settings.threed66ModelResolveMode !== normalizedModelResolveMode
   ) {
     runtimePatch.threed66ModelResolveMode = normalizedModelResolveMode;
-  }
-  const proxyModeIsSchemaDefault =
-    typeof settings.$isDefault === "function" && settings.$isDefault("threed66ProxyMode");
-  const hasStoredProxyMode =
-    rawSettings.threed66ProxyMode !== undefined && !proxyModeIsSchemaDefault;
-  const normalizedProxyMode = normalizeProxyMode(
-    hasStoredProxyMode ? settings.threed66ProxyMode : defaultSettings.threed66ProxyMode,
-  );
-  if (!hasStoredProxyMode || settings.threed66ProxyMode !== normalizedProxyMode) {
-    runtimePatch.threed66ProxyMode = normalizedProxyMode;
   }
   Object.entries(RUNTIME_BOOLEAN_FIELDS).forEach(([field, config]) => {
     const isSchemaDefault =
@@ -575,7 +539,6 @@ export async function updateSettings(req, res, next) {
       "threed66DisableBrowserDownloadFallback",
       "threed66DownloadHandleBrowserFallback",
       "threed66ProxyEnabled",
-      "threed66ProxyMode",
       "threed66ProxyUrl",
       "threed66ProxyUrlClear",
       "threed66ProxyForPreview",
@@ -583,9 +546,6 @@ export async function updateSettings(req, res, next) {
       "threed66ProxyForDownload",
       "threed66ProxyForBrowser",
       "threed66ProxyFailClosed",
-      "threed66WarpRequireHkgForAccount",
-      "threed66WarpFileFallbackDirect",
-      "threed66WarpHealthTtlMs",
       "threed66TimeoutMs",
       "threed66CookieMaxFailures",
       "threed66CookieCooldownMinutes",
@@ -619,10 +579,6 @@ export async function updateSettings(req, res, next) {
         update[field] = normalizeModelResolveMode(req.body[field]);
         return;
       }
-      if (field === "threed66ProxyMode") {
-        update[field] = normalizeProxyMode(req.body[field]);
-        return;
-      }
       if (field === "threed66ProxyUrl") {
         const normalized = normalizeProxyUrl(req.body[field]);
         if (normalized) update[field] = encryptSecret(normalized);
@@ -649,7 +605,6 @@ export async function updateSettings(req, res, next) {
     if (update.threed66ProxyUrl === "") {
       process.env.THREED66_PROXY_URL = "";
     }
-    clear3D66WarpHealthCache();
     cacheSettings(settings);
 
     res.json({ settings: publicSettings(settings, { includeRuntime: true }) });
