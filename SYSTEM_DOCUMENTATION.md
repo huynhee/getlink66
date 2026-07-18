@@ -931,6 +931,35 @@ He thong co proxy layer rieng cho request toi 3D66, mac dinh tat de chua mua pro
 - Neu proxy loi va `THREED66_PROXY_FAIL_CLOSED=false`, backend fallback ve route mac dinh va gui Telegram canh bao.
 - Neu `THREED66_PROXY_FAIL_CLOSED=true`, request loi ro rang thay vi am tham doi route.
 
+Proxy mode:
+
+- `generic`: giu hanh vi proxy HTTP/HTTPS cu va dung `THREED66_PROXY_FAIL_CLOSED`.
+- `warp`: dung WARP Local Proxy, mac dinh `http://127.0.0.1:40000`.
+- Health checker goi Cloudflare trace qua proxy, cache 30 giay va coalesce request song song.
+- WARP chi san sang khi trace co ca `warp=on` va `colo=HKG`.
+- Browser/API mac dinh fail closed HTTP 503 neu WARP/HKG khong dat, tranh doi IP giua phien cookie.
+- File pull co policy rieng: mac dinh fallback IP VPS va gui Telegram; stream tu VPS ve user khong di qua WARP.
+- Cloudflare ghi ro Local Proxy co gioi han request 10 giay. Vi vay chi bat route `file` sau khi test file lon; co the chi bat Browser/API va de file pull di thang VPS.
+- Fallback file xu ly WARP khong healthy hoac loi truoc khi mo response. Neu stream da gui byte cho user moi dut, client can retry bang HTTP Range vi backend khong the doi route giua response.
+- Endpoint admin-only: `GET /api/admin/warp/status`, `POST /api/admin/warp/test`.
+- Khong co endpoint web nao chay `warp-cli`; service WARP chi quan ly qua SSH.
+
+Cai WARP Local Proxy tren VPS:
+
+```bash
+warp-cli --accept-tos registration new
+warp-cli tunnel protocol set MASQUE
+warp-cli mode proxy
+warp-cli proxy port 40000
+warp-cli connect
+
+warp-cli status
+ss -ltnp | grep ':40000'
+curl -x http://127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace
+```
+
+Khong set `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` va khong bat WARP route toan he thong. Nginx production nen giu `proxy_read_timeout 300s` cho request footprint cham.
+
 ### 6.5 Playwright browser fallback
 
 `3d66BrowserService.js` dung Playwright khi:
@@ -1225,7 +1254,7 @@ Section chinh:
 - 3D66 settings:
   - Runtime concurrency, paytype, request interval, Playwright mode, timeout, cookie cooldown, redownload limits.
   - Che do resolve model: `search`, `footprint`, `direct`.
-  - Proxy Hong Kong/3D66: bat/tat, stage preview/api/download/browser, fail closed, nhap/xoa proxy URL.
+  - WARP/Proxy 3D66: chon `warp`/`generic`, bat/tat stage, policy account/file, nhap/xoa URL va test listener/trace.
 - Cookie:
   - Save/test/delete 3D66 cookies.
   - View cookie pool health.
@@ -1405,12 +1434,16 @@ Production can:
 Proxy rieng cho 3D66:
 
 - `THREED66_PROXY_ENABLED`
+- `THREED66_PROXY_MODE`
 - `THREED66_PROXY_URL`
 - `THREED66_PROXY_FOR_PREVIEW`
 - `THREED66_PROXY_FOR_API`
 - `THREED66_PROXY_FOR_DOWNLOAD`
 - `THREED66_PROXY_FOR_BROWSER`
 - `THREED66_PROXY_FAIL_CLOSED`
+- `THREED66_WARP_REQUIRE_HKG_FOR_ACCOUNT`
+- `THREED66_WARP_FILE_FALLBACK_DIRECT`
+- `THREED66_WARP_HEALTH_TTL_MS`
 
 Browser fallback:
 

@@ -457,6 +457,34 @@ function shouldWriteSystemError(error) {
   return !error.status || Number(error.status) >= 500;
 }
 
+function diagnosticSystemLogDetails(error, controllerStage) {
+  const source = error?.details && typeof error.details === "object"
+    ? error.details
+    : {};
+  const details = { stage: controllerStage };
+  const copyIdList = (field) => {
+    if (!Array.isArray(source[field])) return;
+    details[field] = source[field]
+      .map((value) => String(value || "").trim().slice(0, 64))
+      .filter(Boolean)
+      .slice(0, 10);
+  };
+
+  copyIdList("expectedProductIds");
+  copyIdList("footprintProductIds");
+  ["selectedProductId", "resolvedProductId", "warp", "colo"].forEach((field) => {
+    if (source[field] !== undefined && source[field] !== null) {
+      details[field] = String(source[field]).slice(0, 100);
+    }
+  });
+  if (Number.isFinite(Number(source.footprintRefreshAttempts))) {
+    details.footprintRefreshAttempts = Number(source.footprintRefreshAttempts);
+  }
+  if (typeof source.listener === "boolean") details.listener = source.listener;
+  if (source.stage) details.upstreamStage = String(source.stage).slice(0, 100);
+  return details;
+}
+
 function isClientDownloadAbort(error, signal) {
   return (
     error?.code === "ERR_STREAM_PREMATURE_CLOSE" ||
@@ -1241,7 +1269,7 @@ export async function previewGetlink(req, res, next) {
         ip: req.ip,
         path: req.path,
         status: error.status,
-        details: { stage: "preview" },
+        details: diagnosticSystemLogDetails(error, "preview"),
       });
     }
     next(error);
@@ -1267,7 +1295,7 @@ export async function inspectGetlink(req, res, next) {
         ip: req.ip,
         path: req.path,
         status: error.status,
-        details: { stage: "inspect" },
+        details: diagnosticSystemLogDetails(error, "inspect"),
       });
     }
     next(error);
@@ -1637,7 +1665,7 @@ export async function getLink(req, res, next) {
         ip: req.ip,
         path: req.path,
         status: error.status,
-        details: { stage: "create" },
+        details: diagnosticSystemLogDetails(error, "create"),
       });
     }
     next(error);
