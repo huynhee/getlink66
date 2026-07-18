@@ -928,14 +928,25 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
               skipBrowser: true,
             };
           }
+
+          const nextBrowserInspection = await inspect3D66DownloadFormats(url, cookieValue);
+          return {
+            choiceInspection,
+            inspection: null,
+            browserInspection: nextBrowserInspection,
+            formatOptions: sanitizeDownloadFormatOptions(
+              nextBrowserInspection?.formatOptions || nextBrowserInspection?.metadata?.formatOptions,
+            ),
+            skipBrowser: false,
+          };
         }
 
         const inspection = await inspect3D66Page(url, cookieValue);
-        const inspectedOptions = preferLive
-          ? []
-          : sanitizeDownloadFormatOptions(inspection?.metadata?.formatOptions);
+        const inspectedOptions = sanitizeDownloadFormatOptions(
+          inspection?.metadata?.formatOptions,
+        );
 
-        if (preferLive || inspectedOptions.length <= 1) {
+        if (inspectedOptions.length <= 1) {
           const nextBrowserInspection = await inspect3D66DownloadFormats(url, cookieValue);
           return {
             choiceInspection,
