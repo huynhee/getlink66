@@ -481,6 +481,8 @@ function modelIdentityParts(value = "") {
   return { family: match[1].slice(1), digits: match[2] };
 }
 
+const MIN_ASSET_ID_SUFFIX_DIGITS = 5;
+
 function commonTrailingDigitCount(left = "", right = "") {
   let count = 0;
   while (
@@ -502,7 +504,10 @@ export function modelIdsShareAssetIdentity(left = "", right = "") {
   const leftParts = modelIdentityParts(normalizedLeft);
   const rightParts = modelIdentityParts(normalizedRight);
   if (!leftParts || !rightParts || leftParts.family !== rightParts.family) return false;
-  return commonTrailingDigitCount(leftParts.digits, rightParts.digits) >= 6;
+  return (
+    commonTrailingDigitCount(leftParts.digits, rightParts.digits) >=
+    MIN_ASSET_ID_SUFFIX_DIGITS
+  );
 }
 
 export function resolvedFootprintUrlMatches(value = "", selectedProductId = "") {

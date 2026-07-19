@@ -2718,7 +2718,18 @@ export default function Admin({ user, language = "vi" }) {
                   <strong>{item.user?.email || l("Không có user", "No user")}</strong>
                   {item.user?.name && <span>{item.user.name}</span>}
                 </div>
-                <strong>{item.message}</strong>
+                <div className="logMessageDetails">
+                  <strong>{item.message}</strong>
+                  {(item.details?.expectedProductIds?.length || item.details?.footprintProductIds?.length) && (
+                    <small>
+                      Expected: {(item.details.expectedProductIds || []).join(", ") || "-"}
+                      {" | "}Footprint: {(item.details.footprintProductIds || []).join(", ") || "-"}
+                      {item.details.footprintRefreshAttempts
+                        ? ` | Refresh: ${item.details.footprintRefreshAttempts}`
+                        : ""}
+                    </small>
+                  )}
+                </div>
                 <span>{item.productId || item.historyId || "system"}</span>
                 <span>{item.status ? `HTTP ${item.status}` : item.level}</span>
                 <time>{new Date(item.createdAt).toLocaleString(locale)}</time>

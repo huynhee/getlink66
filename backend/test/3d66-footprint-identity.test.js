@@ -14,6 +14,10 @@ test("matches a footprint model when account markers have different lengths", ()
     modelIdsShareAssetIdentity("IGI996720815561599", "AGI896357715561599"),
     true,
   );
+  assert.equal(
+    modelIdsShareAssetIdentity("FBG45630336091", "ABG8963577136091"),
+    true,
+  );
 });
 
 test("does not match a different model family or trailing identity", () => {
@@ -23,6 +27,10 @@ test("does not match a different model family or trailing identity", () => {
   );
   assert.equal(
     modelIdsShareAssetIdentity("FDH456303315848", "ADH89635771999999"),
+    false,
+  );
+  assert.equal(
+    modelIdsShareAssetIdentity("FBG45630336091", "ABG8963577196092"),
     false,
   );
 });

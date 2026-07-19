@@ -457,6 +457,33 @@ function shouldWriteSystemError(error) {
   return !error.status || Number(error.status) >= 500;
 }
 
+function diagnosticSystemLogDetails(error, controllerStage) {
+  const source = error?.details && typeof error.details === "object"
+    ? error.details
+    : {};
+  const details = { stage: controllerStage };
+  const copyIdList = (field) => {
+    if (!Array.isArray(source[field])) return;
+    details[field] = source[field]
+      .map((value) => String(value || "").trim().slice(0, 64))
+      .filter(Boolean)
+      .slice(0, 10);
+  };
+
+  copyIdList("expectedProductIds");
+  copyIdList("footprintProductIds");
+  ["selectedProductId", "resolvedProductId"].forEach((field) => {
+    if (source[field] !== undefined && source[field] !== null) {
+      details[field] = String(source[field]).slice(0, 100);
+    }
+  });
+  if (Number.isFinite(Number(source.footprintRefreshAttempts))) {
+    details.footprintRefreshAttempts = Number(source.footprintRefreshAttempts);
+  }
+  if (source.stage) details.upstreamStage = String(source.stage).slice(0, 100);
+  return details;
+}
+
 function isClientDownloadAbort(error, signal) {
   return (
     error?.code === "ERR_STREAM_PREMATURE_CLOSE" ||
@@ -905,14 +932,25 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
               skipBrowser: true,
             };
           }
+
+          const nextBrowserInspection = await inspect3D66DownloadFormats(url, cookieValue);
+          return {
+            choiceInspection,
+            inspection: null,
+            browserInspection: nextBrowserInspection,
+            formatOptions: sanitizeDownloadFormatOptions(
+              nextBrowserInspection?.formatOptions || nextBrowserInspection?.metadata?.formatOptions,
+            ),
+            skipBrowser: false,
+          };
         }
 
         const inspection = await inspect3D66Page(url, cookieValue);
-        const inspectedOptions = preferLive
-          ? []
-          : sanitizeDownloadFormatOptions(inspection?.metadata?.formatOptions);
+        const inspectedOptions = sanitizeDownloadFormatOptions(
+          inspection?.metadata?.formatOptions,
+        );
 
-        if (preferLive || inspectedOptions.length <= 1) {
+        if (inspectedOptions.length <= 1) {
           const nextBrowserInspection = await inspect3D66DownloadFormats(url, cookieValue);
           return {
             choiceInspection,
@@ -1245,7 +1283,7 @@ export async function previewGetlink(req, res, next) {
         ip: req.ip,
         path: req.path,
         status: error.status,
-        details: { stage: "preview" },
+        details: diagnosticSystemLogDetails(error, "preview"),
       });
     }
     next(error);
@@ -1271,7 +1309,7 @@ export async function inspectGetlink(req, res, next) {
         ip: req.ip,
         path: req.path,
         status: error.status,
-        details: { stage: "inspect" },
+        details: diagnosticSystemLogDetails(error, "inspect"),
       });
     }
     next(error);
@@ -1641,7 +1679,7 @@ export async function getLink(req, res, next) {
         ip: req.ip,
         path: req.path,
         status: error.status,
-        details: { stage: "create" },
+        details: diagnosticSystemLogDetails(error, "create"),
       });
     }
     next(error);

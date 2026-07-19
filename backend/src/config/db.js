@@ -38,6 +38,45 @@ async function assertMarketplaceTransactions(connection) {
   }
 }
 
+export function mongoConnectionOptions() {
+  return {
+    serverSelectionTimeoutMS: positiveIntegerEnv(
+      "MONGO_SERVER_SELECTION_TIMEOUT_MS",
+      30000,
+    ),
+    connectTimeoutMS: positiveIntegerEnv("MONGO_CONNECT_TIMEOUT_MS", 10000),
+    socketTimeoutMS: positiveIntegerEnv("MONGO_SOCKET_TIMEOUT_MS", 60000),
+    maxPoolSize: positiveIntegerEnv("MONGO_MAX_POOL_SIZE", 50),
+    minPoolSize: positiveIntegerEnv("MONGO_MIN_POOL_SIZE", 5),
+  };
+}
+
+function marketplaceConnectionOptions() {
+  const coreOptions = mongoConnectionOptions();
+  return {
+    serverSelectionTimeoutMS: positiveIntegerEnv(
+      "MONGO_MARKETPLACE_SERVER_SELECTION_TIMEOUT_MS",
+      coreOptions.serverSelectionTimeoutMS,
+    ),
+    connectTimeoutMS: positiveIntegerEnv(
+      "MONGO_MARKETPLACE_CONNECT_TIMEOUT_MS",
+      coreOptions.connectTimeoutMS,
+    ),
+    socketTimeoutMS: positiveIntegerEnv(
+      "MONGO_MARKETPLACE_SOCKET_TIMEOUT_MS",
+      coreOptions.socketTimeoutMS,
+    ),
+    maxPoolSize: positiveIntegerEnv(
+      "MONGO_MARKETPLACE_MAX_POOL_SIZE",
+      coreOptions.maxPoolSize,
+    ),
+    minPoolSize: positiveIntegerEnv(
+      "MONGO_MARKETPLACE_MIN_POOL_SIZE",
+      coreOptions.minPoolSize,
+    ),
+  };
+}
+
 export async function connectDb() {
   const uri = process.env.MONGO_CORE_URI || process.env.MONGO_URI;
   const marketplaceUri = String(process.env.MONGO_MARKETPLACE_URI || "").trim();
@@ -57,33 +96,16 @@ export async function connectDb() {
 
   mongoose.set("strictQuery", true);
   try {
-    await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: positiveIntegerEnv(
-        "MONGO_SERVER_SELECTION_TIMEOUT_MS",
-        5000,
-      ),
-      maxPoolSize: positiveIntegerEnv("MONGO_MAX_POOL_SIZE", 50),
-      minPoolSize: positiveIntegerEnv("MONGO_MIN_POOL_SIZE", 5),
-    });
+    await mongoose.connect(uri, mongoConnectionOptions());
     marketplaceUsesCore = !marketplaceUri || marketplaceTarget === "core";
     if (marketplaceUsesCore) {
       marketplaceConnection = mongoose.connection;
       marketplaceDistinct = false;
     } else {
-      marketplaceConnection = mongoose.createConnection(marketplaceUri, {
-        serverSelectionTimeoutMS: positiveIntegerEnv(
-          "MONGO_MARKETPLACE_SERVER_SELECTION_TIMEOUT_MS",
-          positiveIntegerEnv("MONGO_SERVER_SELECTION_TIMEOUT_MS", 5000),
-        ),
-        maxPoolSize: positiveIntegerEnv(
-          "MONGO_MARKETPLACE_MAX_POOL_SIZE",
-          positiveIntegerEnv("MONGO_MAX_POOL_SIZE", 50),
-        ),
-        minPoolSize: positiveIntegerEnv(
-          "MONGO_MARKETPLACE_MIN_POOL_SIZE",
-          positiveIntegerEnv("MONGO_MIN_POOL_SIZE", 5),
-        ),
-      });
+      marketplaceConnection = mongoose.createConnection(
+        marketplaceUri,
+        marketplaceConnectionOptions(),
+      );
       await marketplaceConnection.asPromise();
       marketplaceDistinct = connectionIdentity(marketplaceConnection) !== connectionIdentity(mongoose.connection);
       if (!marketplaceDistinct) {
