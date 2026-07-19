@@ -14,6 +14,19 @@ function allowMemoryDb() {
   return enabled;
 }
 
+export function mongoConnectionOptions() {
+  return {
+    serverSelectionTimeoutMS: positiveIntegerEnv(
+      "MONGO_SERVER_SELECTION_TIMEOUT_MS",
+      30000,
+    ),
+    connectTimeoutMS: positiveIntegerEnv("MONGO_CONNECT_TIMEOUT_MS", 10000),
+    socketTimeoutMS: positiveIntegerEnv("MONGO_SOCKET_TIMEOUT_MS", 60000),
+    maxPoolSize: positiveIntegerEnv("MONGO_MAX_POOL_SIZE", 50),
+    minPoolSize: positiveIntegerEnv("MONGO_MIN_POOL_SIZE", 5),
+  };
+}
+
 export async function connectDb() {
   const uri = process.env.MONGO_URI;
   const canUseMemoryDb = allowMemoryDb();
@@ -28,14 +41,7 @@ export async function connectDb() {
 
   mongoose.set("strictQuery", true);
   try {
-    await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: positiveIntegerEnv(
-        "MONGO_SERVER_SELECTION_TIMEOUT_MS",
-        5000,
-      ),
-      maxPoolSize: positiveIntegerEnv("MONGO_MAX_POOL_SIZE", 50),
-      minPoolSize: positiveIntegerEnv("MONGO_MIN_POOL_SIZE", 5),
-    });
+    await mongoose.connect(uri, mongoConnectionOptions());
     console.log("MongoDB connected");
   } catch (error) {
     if (canUseMemoryDb) {
