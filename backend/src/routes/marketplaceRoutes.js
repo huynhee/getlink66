@@ -3,6 +3,7 @@ import {
   createDownloadSession,
   downloadSessionFile,
   getMarketplaceModel,
+  listMarketplaceHomeRecommendations,
   listMarketplaceModelRecommendations,
   listMarketplaceCategories,
   listMarketplaceFilters,
@@ -13,6 +14,7 @@ import {
 } from "../controllers/marketplaceController.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { exportMarketplaceTaxonomy } from "../controllers/marketplaceTaxonomyExportController.js";
 
 const router = Router();
 const downloadSessionLimit = createRateLimit({
@@ -32,6 +34,8 @@ function sceneCatalog(req, _res, next) {
 }
 
 router.get("/marketplace/categories", listMarketplaceCategories);
+router.get("/marketplace/taxonomy/export", exportMarketplaceTaxonomy);
+router.get("/marketplace/recommendations/home", listMarketplaceHomeRecommendations);
 router.get("/marketplace/filters", listMarketplaceFilters);
 router.get("/marketplace/models", listMarketplaceModels);
 router.post("/marketplace/image-search", imageSearchLimit, searchMarketplaceByImage);

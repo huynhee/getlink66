@@ -10,7 +10,7 @@ const { default: SiteSetting } = await import("../src/models/SiteSetting.js");
 const { awardReferralSignup } = await import("../src/utils/referralService.js");
 const { endOfVietnamDay } = await import("../src/utils/membershipService.js");
 
-test("referral grants one Pro day to both users and is idempotent", async () => {
+test("referral grants one Pro day and 28 credits to both users exactly once", async () => {
   await SiteSetting.create({ key: "homepage", referralMode: "both" });
   const referrer = await User.create({
     email: "referrer@example.test",
@@ -33,8 +33,8 @@ test("referral grants one Pro day to both users and is idempotent", async () => 
   assert.equal(first.referrerProDays, 1);
   assert.equal(first.referredProDays, 1);
   assert.equal(second, null);
-  assert.equal((await User.findById(referrer._id)).credit, 0);
-  assert.equal((await User.findById(referred._id)).credit, 0);
+  assert.equal((await User.findById(referrer._id)).credit, 28);
+  assert.equal((await User.findById(referred._id)).credit, 28);
   assert.equal(
     new Date((await User.findById(referrer._id)).proUntil).getTime(),
     new Date(firstReferrer.proUntil).getTime(),
@@ -45,6 +45,8 @@ test("referral grants one Pro day to both users and is idempotent", async () => 
   const reward = await Referral.findOne({ referredUserId: referred._id });
   assert.equal(reward.rewardType, "pro");
   assert.equal(reward.rewardProDays, 1);
+  assert.equal(reward.referrerRewardCredit, 28);
+  assert.equal(reward.referredRewardCredit, 28);
 });
 
 test("referral Pro reward extends an existing membership without replacing it", async () => {
@@ -71,7 +73,8 @@ test("referral Pro reward extends an existing membership without replacing it", 
     originalUntil.getTime() + 24 * 60 * 60 * 1000,
   );
   assert.equal(updatedReferrer.proDailyDownloadLimit, 150);
-  assert.equal(updatedReferrer.credit, 7);
+  assert.equal(updatedReferrer.credit, 35);
+  assert.equal((await User.findById(referred._id)).credit, 33);
 });
 
 test("referrer-only mode does not grant Pro to the invited user", async () => {
@@ -99,5 +102,9 @@ test("referrer-only mode does not grant Pro to the invited user", async () => {
   assert.equal(result.referredProDays, 0);
   assert.ok(new Date(updatedReferrer.proUntil).getTime() > Date.now());
   assert.equal(updatedReferred.proUntil, undefined);
+  assert.equal(updatedReferrer.credit, 28);
+  assert.equal(Number(updatedReferred.credit || 0), 0);
+  assert.equal(reward.referrerRewardCredit, 28);
+  assert.equal(reward.referredRewardCredit, 0);
   assert.equal(reward.referredRewardProDays, 0);
 });

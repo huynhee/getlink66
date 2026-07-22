@@ -436,34 +436,36 @@ File size se duoc backend doc tu archive tren Drive.
 
 Tool khong cho nguoi dung nhap category/filter tuy y.
 
-### Cach 1: Doc API public
-
-Model:
+### Cach 1: Dong bo bundle public
 
 ```http
-GET /api/marketplace/categories
-GET /api/marketplace/filters
+GET /api/marketplace/taxonomy/export?assetType=all
 ```
 
-Scene:
+Bundle gom category va filter cua ca Model/Scene, co `schemaVersion`,
+`taxonomyVersion=sha256:...`, nhan VI/EN va alias. Day la API read-only, khong can
+admin login va chi export muc dang active.
+
+Admin co the tai ca muc da tat de doi soat:
 
 ```http
-GET /api/marketplace/scenes/categories
-GET /api/marketplace/scenes/filters
+GET /api/admin/marketplace/taxonomy/export?assetType=all&includeInactive=true
 ```
 
-Day la API read-only, khong can admin login va khong ghi du lieu.
+Tool phai verify SHA-256 truoc khi thay cache. File sai checksum hoac schemaVersion
+khong ho tro khong duoc ghi de snapshot dang dung.
 
 ### Cach 2: Taxonomy cache local
 
 Neu web khong chay, tool dung snapshot da tai gan nhat:
 
 ```text
-data\taxonomy-model.json
-data\taxonomy-scene.json
+data\taxonomy-bundle-v1.json
+data\taxonomy-bundle-v1.previous.json
 ```
 
-Tool hien thoi gian snapshot va canh bao neu qua 7 ngay.
+Tool ghi cache theo kieu atomic, giu snapshot hop le truoc do, hien thoi gian snapshot
+va canh bao neu qua 7 ngay. UI co `Dong bo taxonomy tu web` va `Nhap file taxonomy`.
 
 ### Category
 

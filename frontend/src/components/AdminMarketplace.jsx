@@ -426,6 +426,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
   const [migrationRunning, setMigrationRunning] = useState(false);
   const [migrationResult, setMigrationResult] = useState(null);
   const [metadataSavingId, setMetadataSavingId] = useState("");
+  const [verifyingFileId, setVerifyingFileId] = useState("");
   const [metadataConflict, setMetadataConflict] = useState(null);
   const [selectedModelIds, setSelectedModelIds] = useState([]);
   const [bulkAction, setBulkAction] = useState("publish");
@@ -639,6 +640,26 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
       await loadModels(page);
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function verifyArchiveFile(model) {
+    setMessage("");
+    setError("");
+    setVerifyingFileId(model._id);
+    try {
+      const data = await api(`${adminAssetBase}/${model._id}/verify-file`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      const verification = data.verification || {};
+      setMessage(
+        `${l("File hợp lệ", "File verified")}: ${verification.fileName || "archive"} · ${formatBytes(verification.fileSize)}`,
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setVerifyingFileId("");
     }
   }
 
@@ -1231,6 +1252,9 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
                   <ModelFact label={l("Trạng thái thực tế", "Actual state")} value={currentSelectedModel.isPublished ? l("Đang online", "Online") : l("Đang offline", "Offline")} detail={(currentSelectedModel.publicationBlockers || []).join(", ") || l("Không có blocker", "No blockers")} />
                 </div>
                 <div className="marketAdminSyncActions">
+                  <button type="button" className="smallButton" onClick={() => verifyArchiveFile(currentSelectedModel)} disabled={verifyingFileId === currentSelectedModel._id || !currentSelectedModel.driveFileId}>
+                    <CheckCircle2 size={16} /> {verifyingFileId === currentSelectedModel._id ? l("Đang kiểm tra...", "Checking...") : l("Kiểm tra file", "Verify file")}
+                  </button>
                   <button type="button" className="smallButton" onClick={() => rescanDriveFolder(currentSelectedModel)} disabled={!currentSelectedModel.driveFolderId}>
                     <RefreshCw size={16} /> {l("Đồng bộ lại folder này", "Resync this folder")}
                   </button>

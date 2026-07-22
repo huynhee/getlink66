@@ -3,7 +3,12 @@ const RRF_K = 60;
 const RRF_SCORE_SCALE = 2_500;
 
 function normalize(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u0111\u0110]/g, "d")
+    .trim()
+    .toLowerCase();
 }
 
 function values(value) {
@@ -40,15 +45,15 @@ function recencyScore(date, now = Date.now()) {
 
 export function marketplaceContentScore(source, candidate, now = Date.now()) {
   let score = 0;
-  if (sameRef(source.categorySourceId, candidate.categorySourceId)) score += 28;
-  if (sameRef(source.parentCategorySourceId, candidate.parentCategorySourceId)) score += 12;
+  if (sameRef(source.categorySourceId || source.categoryId, candidate.categorySourceId || candidate.categoryId)) score += 32;
+  if (sameRef(source.parentCategorySourceId || source.parentCategoryId, candidate.parentCategorySourceId || candidate.parentCategoryId)) score += 14;
+  score += overlap(normalize(source.title).split(/[^a-z0-9]+/), normalize(candidate.title).split(/[^a-z0-9]+/)) * 15;
   if (normalize(source.renderer) && normalize(source.renderer) === normalize(candidate.renderer)) score += 8;
   score += overlap(source.renderers, candidate.renderers) * 12;
   score += overlap(source.styles, candidate.styles) * 10;
   score += overlap(source.materials, candidate.materials) * 8;
   score += overlap(source.forms, candidate.forms) * 6;
   score += overlap(source.colors, candidate.colors) * 5;
-  if (normalize(source.accessType) === normalize(candidate.accessType)) score += 2;
   score += Math.log2(Number(candidate.downloadCount || 0) + 1) * 0.8;
   score += recencyScore(candidate.createdAt, now) * 2;
   return score;

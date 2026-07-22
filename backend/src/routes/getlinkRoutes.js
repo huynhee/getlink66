@@ -8,6 +8,15 @@ import {
   prepareRedownload,
   previewGetlink,
 } from "../controllers/getlinkController.js";
+import {
+  acknowledgeJob,
+  cancelJob,
+  chooseJobFormat,
+  createJob,
+  getJob,
+  latestJob,
+  retryJob,
+} from "../controllers/getlinkJobController.js";
 import { adminOnly } from "../middleware/adminOnly.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireNotBanned } from "../middleware/requireNotBanned.js";
@@ -32,6 +41,13 @@ const getlinkIpLimit = createRateLimit({
 
 router.post("/getlink/preview", requireAuth, requireNotBanned, previewLimit, previewIpLimit, previewGetlink);
 router.post("/getlink/inspect", requireAuth, adminOnly, previewLimit, inspectGetlink);
+router.post("/getlink/jobs", requireAuth, requireNotBanned, getlinkLimit, getlinkIpLimit, createJob);
+router.get("/getlink/jobs/latest", requireAuth, latestJob);
+router.get("/getlink/jobs/:id", requireAuth, getJob);
+router.post("/getlink/jobs/:id/format", requireAuth, requireNotBanned, getlinkLimit, chooseJobFormat);
+router.post("/getlink/jobs/:id/retry", requireAuth, requireNotBanned, getlinkLimit, retryJob);
+router.post("/getlink/jobs/:id/cancel", requireAuth, cancelJob);
+router.post("/getlink/jobs/:id/acknowledge", requireAuth, acknowledgeJob);
 router.post("/getlink", requireAuth, requireNotBanned, getlinkLimit, getlinkIpLimit, getLink);
 router.post("/getlink/redownload/:id", requireAuth, requireNotBanned, getlinkLimit, getlinkIpLimit, prepareRedownload);
 router.get("/getlink/download/:id", downloadLimit, downloadGetlink);

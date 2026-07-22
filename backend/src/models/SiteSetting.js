@@ -11,8 +11,8 @@ const HOME_TEXT_DEFAULTS = {
   systemStatusLabel: "Trạng thái hệ thống",
   pricePerDownloadLabel: "Giá tải chỉ từ",
   pricePerDownloadValue: "10K",
-  referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí.",
-  referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro miễn phí.",
+  referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro + 28 credit.",
+  referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro + 28 credit.",
   pricingEyebrow: "Bảng giá",
   pricingTitle: "Chọn gói phù hợp",
   pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
@@ -49,11 +49,11 @@ const siteSettingSchema = new mongoose.Schema(
     pricePerDownloadValue: { type: String, default: "10K" },
     referralTitleBoth: {
       type: String,
-      default: "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí."
+      default: "Mời bạn bè, cả hai nhận 1 ngày Pro + 28 credit."
     },
     referralTitleReferrerOnly: {
       type: String,
-      default: "Mời bạn bè để nhận 1 ngày Pro miễn phí."
+      default: "Mời bạn bè để nhận 1 ngày Pro + 28 credit."
     },
     pricingEyebrow: { type: String, default: "Bảng giá" },
     pricingTitle: { type: String, default: "Chọn gói phù hợp" },

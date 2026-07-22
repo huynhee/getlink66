@@ -194,7 +194,7 @@ export default function AdminDownloadHistory({
                     <span className={`badge ${item.quotaCharged ? "success" : ""}`}>
                       {item.quotaCharged
                         ? `${item.assetType === "scene" ? "Scene" : "Model"} · ${Number(item.quotaCost || (item.assetType === "scene" ? 5 : 1))} ${l("lượt", "downloads")}`
-                        : l("Miễn lượt", "No quota charge")}
+                        : l("Miễn phí", "No quota charge")}
                     </span>
                     <time>{new Date(item.createdAt).toLocaleString(locale)}</time>
                   </div>

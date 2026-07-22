@@ -28,6 +28,19 @@ const marketplaceModelSchema = new mongoose.Schema(
     },
     title: { type: String, required: true, trim: true },
     titleSort: { type: String, default: "", trim: true },
+    searchTitle: { type: String, default: "", trim: true },
+    searchTaxonomy: { type: String, default: "", trim: true },
+    searchTokens: { type: [String], default: [] },
+    searchVersion: { type: Number, default: 0, min: 0 },
+    searchDocumentHash: { type: String, default: "", trim: true },
+    searchStatus: {
+      type: String,
+      enum: ["pending", "indexed", "error"],
+      default: "pending",
+      index: true,
+    },
+    searchIndexedAt: Date,
+    searchError: { type: String, default: "" },
     slug: { type: String, required: true, trim: true, lowercase: true },
     // Legacy ObjectIds stay readable during migration. New writes use stable
     // Atlas taxonomy keys below so no cross-database populate is required.
@@ -107,6 +120,22 @@ const marketplaceModelSchema = new mongoose.Schema(
 
 marketplaceModelSchema.pre("validate", function normalizeTitleForSorting() {
   this.titleSort = normalizeMarketplaceTitle(this.title);
+  const searchFields = [
+    "title",
+    "slug",
+    "categorySourceId",
+    "parentCategorySourceId",
+    "renderer",
+    "styles",
+    "renderers",
+    "forms",
+    "colors",
+    "materials",
+  ];
+  if (!this.isNew && searchFields.some((field) => this.isModified(field))) {
+    this.searchStatus = "pending";
+    this.searchError = "";
+  }
 });
 
 marketplaceModelSchema.index({ assetType: 1, slug: 1 }, { unique: true });
@@ -114,10 +143,18 @@ marketplaceModelSchema.index(
   { assetType: 1, "source.provider": 1, "source.assetId": 1 },
   { unique: true, partialFilterExpression: { "source.assetId": { $type: "string", $gt: "" } } },
 );
-marketplaceModelSchema.index({ title: "text", slug: "text" }, { name: "marketplace_model_text" });
+marketplaceModelSchema.index(
+  { searchTitle: "text", searchTaxonomy: "text", slug: "text" },
+  {
+    name: "marketplace_model_bilingual_text",
+    default_language: "none",
+    weights: { searchTitle: 10, searchTaxonomy: 6, slug: 2 },
+  },
+);
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, downloadCount: -1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, titleSort: 1, _id: 1 });
+marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, searchTokens: 1 });
 marketplaceModelSchema.index({ assetType: 1, categorySourceId: 1, isPublished: 1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, parentCategorySourceId: 1, isPublished: 1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, accessType: 1, isPublished: 1, createdAt: -1 });
@@ -128,6 +165,7 @@ marketplaceModelSchema.index({ assetType: 1, colors: 1, isPublished: 1 });
 marketplaceModelSchema.index({ assetType: 1, materials: 1, isPublished: 1 });
 marketplaceModelSchema.index({ assetType: 1, syncStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, discoveryStatus: 1, updatedAt: 1 });
+marketplaceModelSchema.index({ assetType: 1, searchStatus: 1, updatedAt: 1 });
 
 export default isMemoryDb()
   ? createMemoryModel("MarketplaceModel")

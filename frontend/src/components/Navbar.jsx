@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Bell, CalendarClock, Chrome, Download, LogOut, Menu, Moon, Sun, UserCircle, Wallet, X } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import CoinAmount from "./CoinAmount.jsx";
@@ -86,6 +86,7 @@ export default function Navbar({
   const t = translations[language] || translations.vi;
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [sessionHiddenFullscreenIds, setSessionHiddenFullscreenIds] = useState(() => new Set());
@@ -123,6 +124,27 @@ export default function Navbar({
     setFaviconNotificationCount(unreadCount);
   }, [unreadCount]);
 
+  useEffect(() => {
+    if (!accountOpen) return undefined;
+
+    function closeAccountOnOutsidePointer(event) {
+      if (accountRef.current && !accountRef.current.contains(event.target)) {
+        setAccountOpen(false);
+      }
+    }
+
+    function closeAccountOnEscape(event) {
+      if (event.key === "Escape") setAccountOpen(false);
+    }
+
+    document.addEventListener("pointerdown", closeAccountOnOutsidePointer);
+    document.addEventListener("keydown", closeAccountOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeAccountOnOutsidePointer);
+      document.removeEventListener("keydown", closeAccountOnEscape);
+    };
+  }, [accountOpen]);
+
   async function logout() {
     await api("/api/auth/logout", { method: "POST" });
     onUserChange(null);
@@ -142,7 +164,7 @@ export default function Navbar({
     ["scenes", "Scenes"],
     ["getlink", t.getlink],
     ["topup", language === "vi" ? "Gói nạp" : "Top-up"],
-    ["invite", language === "vi" ? "Mời bạn" : "Invite friends"],
+    ["invite", language === "vi" ? "Giới thiệu" : "Invite friends"],
     ["history", t.history],
     ["guide", t.guide]
   ];
@@ -221,207 +243,209 @@ export default function Navbar({
 
   return (
     <>
-    <header className="topbar">
-      <button className="brandButton" onClick={goHome}>
-        3DiPL
-      </button>
-      <button
-        type="button"
-        className="mobileMenuButton"
-        onClick={() => setMenuOpen((current) => !current)}
-        aria-label="Menu"
-        aria-expanded={menuOpen}
-      >
-        {menuOpen ? <X size={19} /> : <Menu size={19} />}
-      </button>
-      <div className={`topbarMenu ${menuOpen ? "open" : ""}`}>
-        {!adminMode && (
-          <nav className="tabs">
-            {tabs.map(([key, label]) => {
-              return (
-                <button 
-                  key={key} 
-                  className={page === key ? "active" : ""} 
+      <header className="topbar">
+        <button className="brandButton" onClick={goHome}>
+          3DiPL
+        </button>
+        <button
+          type="button"
+          className="mobileMenuButton"
+          onClick={() => setMenuOpen((current) => !current)}
+          aria-label="Menu"
+          aria-expanded={menuOpen}
+        >
+          {menuOpen ? <X size={19} /> : <Menu size={19} />}
+        </button>
+        <div className={`topbarMenu ${menuOpen ? "open" : ""}`}>
+          {!adminMode && (
+            <nav className="tabs">
+              {tabs.map(([key, label]) => {
+                return (
+                  <button
+                    key={key}
+                    className={page === key ? "active" : ""}
+                    onClick={() => {
+                      if (!user && !["guide", "models"].includes(key)) {
+                        window.location.href = googleHref("/");
+                      } else if (key === "guide") {
+                        goPath("/guide");
+                      } else if (key === "models") {
+                        goPath("/models");
+                      } else {
+                        goPage(key);
+                      }
+                    }}
+                  >
+                    <span>[ {label} ]</span>
+                  </button>
+                );
+              })}
+            </nav>
+          )}
+          {adminMode && <nav className="tabs" />}
+
+          {user ? (
+            <div className={`account ${accountOpen ? "open" : ""}`}>
+              <div className={`notificationMenu ${notificationOpen ? "open" : ""}`}>
+                <button
+                  type="button"
+                  className="notificationButton"
                   onClick={() => {
-                    if (!user && !["guide", "models"].includes(key)) {
-                      window.location.href = googleHref("/");
-                    } else if (key === "guide") {
-                      goPath("/guide");
-                    } else if (key === "models") {
-                      goPath("/models");
-                    } else {
-                      goPage(key);
-                    }
+                    setNotificationOpen((current) => !current);
+                    setAccountOpen(false);
                   }}
+                  aria-label={t.notifications}
+                  aria-expanded={notificationOpen}
                 >
-                  <span>[ {label} ]</span>
+                  <Bell size={16} />
+                  {unreadCount > 0 && <span>{unreadCount}</span>}
                 </button>
-              );
-            })}
-          </nav>
-        )}
-        {adminMode && <nav className="tabs" />}
-        
-        {user ? (
-          <div className={`account ${accountOpen ? "open" : ""}`}>
-            <div className={`notificationMenu ${notificationOpen ? "open" : ""}`}>
+                <div className="notificationDropdown">
+                  <strong>{t.notifications}</strong>
+                  {notifications.slice(0, 8).map((item) => (
+                    <button
+                      key={item._id}
+                      type="button"
+                      className={item.isRead ? "read" : ""}
+                      onClick={() => goNotificationAction(item)}
+                    >
+                      <b>{item.title}</b>
+                      <span>{item.body}</span>
+                      <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
+                    </button>
+                  ))}
+                  {!notifications.length && <p>{t.noNotifications}</p>}
+                </div>
+              </div>
+              <ThemeToggle theme={theme} language={language} onThemeToggle={onThemeToggle} />
+              <LanguageToggle language={language} onLanguageChange={onLanguageChange} />
               <button
                 type="button"
-                className="notificationButton"
-                onClick={() => {
-                  setNotificationOpen((current) => !current);
-                  setAccountOpen(false);
-                }}
-                aria-label={t.notifications}
-                aria-expanded={notificationOpen}
+                className="accountCreditPill"
+                onClick={() => goPath("/topup?mode=credit")}
+                title={language === "vi" ? "Nạp credit" : "Top up credits"}
               >
-                <Bell size={16} />
-                {unreadCount > 0 && <span>{unreadCount}</span>}
+                <Wallet size={15} />
+                <strong><CoinAmount value={user.credit} className="compact" /></strong>
               </button>
-              <div className="notificationDropdown">
-                <strong>{t.notifications}</strong>
-                {notifications.slice(0, 8).map((item) => (
-                  <button
-                    key={item._id}
-                    type="button"
-                    className={item.isRead ? "read" : ""}
-                    onClick={() => goNotificationAction(item)}
-                  >
-                    <b>{item.title}</b>
-                    <span>{item.body}</span>
-                    <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
-                  </button>
-                ))}
-                {!notifications.length && <p>{t.noNotifications}</p>}
-              </div>
-            </div>
-            <ThemeToggle theme={theme} language={language} onThemeToggle={onThemeToggle} />
-            <LanguageToggle language={language} onLanguageChange={onLanguageChange} />
-            <button
-              type="button"
-              className="accountCreditPill"
-              onClick={() => goPath("/topup?mode=credit")}
-              title={language === "vi" ? "Nạp credit" : "Top up credits"}
-            >
-              <Wallet size={15} />
-              <strong><CoinAmount value={user.credit} className="compact" /></strong>
-            </button>
-            <button
-              type="button"
-              className="accountTrigger"
-              onClick={toggleAccountMenu}
-              aria-label={language === "vi" ? "Trạng thái tài khoản" : "Account status"}
-              aria-expanded={accountOpen}
-            >
-              <span className="accountAvatar" aria-hidden="true">
-                {user.avatar ? (
-                  <img src={user.avatar} alt="" referrerPolicy="no-referrer" />
-                ) : (
-                  <UserCircle size={22} />
-                )}
-              </span>
-              <span className="accountIdentity">
-                <span>{user.name || user.email}</span>
-                <small>{user.isPro ? "PRO" : "FREE"}</small>
-              </span>
-            </button>
-            <div className="accountMenuContent">
-              <div className="accountStatusHeader">
-                <span className="accountAvatar large" aria-hidden="true">
-                  {user.avatar ? (
-                    <img src={user.avatar} alt="" referrerPolicy="no-referrer" />
-                  ) : (
-                    <UserCircle size={30} />
-                  )}
-                </span>
-                <div>
-                  <strong>{user.name || user.email}</strong>
-                  <span>{user.email}</span>
-                </div>
-                <span className={`badge ${user.isPro ? "success" : ""}`}>
-                  {user.isPro ? "PRO" : "FREE"}
-                </span>
-              </div>
-              <div className="accountStatusGrid">
-                <div className="accountStatusRow">
-                  <Wallet size={16} />
-                  <span>{language === "vi" ? "Số dư" : "Balance"}</span>
-                  <strong><CoinAmount value={user.credit} /></strong>
-                </div>
-                <div className="accountStatusRow">
-                  <CalendarClock size={16} />
-                  <span>{language === "vi" ? "Hạn Pro" : "Pro expires"}</span>
-                  <strong>{formatProUntil(user, language)}</strong>
-                </div>
-                <div className="accountStatusRow">
-                  <Download size={16} />
-                  <span>{language === "vi" ? "Tải hôm nay" : "Downloads today"}</span>
-                  <strong>{downloadQuotaText(user, language)}</strong>
-                  {downloadQuotaHint(user, language) && <small>{downloadQuotaHint(user, language)}</small>}
-                </div>
-              </div>
-              <div className="accountMenuActions">
-                {user.role === "admin" && (
-                  <button className="adminLink" onClick={() => goPath("/admin")}>
-                    {t.admin}
-                  </button>
-                )}
-                <button className="iconButton" onClick={logout} title={t.logout}>
-                  <LogOut size={17} />
+              <div ref={accountRef} className="accountProfile">
+                <button
+                  type="button"
+                  className="accountTrigger"
+                  onClick={toggleAccountMenu}
+                  aria-label={language === "vi" ? "Trạng thái tài khoản" : "Account status"}
+                  aria-expanded={accountOpen}
+                >
+                  <span className="accountAvatar" aria-hidden="true">
+                    {user.avatar ? (
+                      <img src={user.avatar} alt="" referrerPolicy="no-referrer" />
+                    ) : (
+                      <UserCircle size={22} />
+                    )}
+                  </span>
+                  <span className="accountIdentity">
+                    <span>{user.name || user.email}</span>
+                    <small>{user.isPro ? "PRO" : "FREE"}</small>
+                  </span>
                 </button>
+                <div className="accountMenuContent">
+                  <div className="accountStatusHeader">
+                    <span className="accountAvatar large" aria-hidden="true">
+                      {user.avatar ? (
+                        <img src={user.avatar} alt="" referrerPolicy="no-referrer" />
+                      ) : (
+                        <UserCircle size={30} />
+                      )}
+                    </span>
+                    <div>
+                      <strong>{user.name || user.email}</strong>
+                      <span>{user.email}</span>
+                    </div>
+                    <span className={`badge ${user.isPro ? "success" : ""}`}>
+                      {user.isPro ? "PRO" : "FREE"}
+                    </span>
+                  </div>
+                  <div className="accountStatusGrid">
+                    <div className="accountStatusRow">
+                      <Wallet size={16} />
+                      <span>{language === "vi" ? "Số dư" : "Balance"}</span>
+                      <strong><CoinAmount value={user.credit} /></strong>
+                    </div>
+                    <div className="accountStatusRow">
+                      <CalendarClock size={16} />
+                      <span>{language === "vi" ? "Hạn Pro" : "Pro expires"}</span>
+                      <strong>{formatProUntil(user, language)}</strong>
+                    </div>
+                    <div className="accountStatusRow">
+                      <Download size={16} />
+                      <span>{language === "vi" ? "Tải hôm nay" : "Downloads today"}</span>
+                      <strong>{downloadQuotaText(user, language)}</strong>
+                      {downloadQuotaHint(user, language) && <small>{downloadQuotaHint(user, language)}</small>}
+                    </div>
+                  </div>
+                  <div className="accountMenuActions">
+                    {user.role === "admin" && (
+                      <button className="adminLink" onClick={() => goPath("/admin")}>
+                        {t.admin}
+                      </button>
+                    )}
+                    <button className="iconButton" onClick={logout} title={t.logout}>
+                      <LogOut size={17} />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="account">
-            <a className="headerLoginButton" href={googleHref()}>
-              <Chrome size={15} />
-              {t.googleLogin}
-            </a>
-            <ThemeToggle theme={theme} language={language} onThemeToggle={onThemeToggle} />
-            <LanguageToggle language={language} onLanguageChange={onLanguageChange} />
-          </div>
-        )}
-      </div>
-    </header>
-    {fullscreenNotification && (
-      <div className="fullscreenNoticeOverlay" role="dialog" aria-modal="true" aria-labelledby="fullscreenNoticeTitle">
-        <div className="fullscreenNotice">
-          <button
-            type="button"
-            className="fullscreenNoticeClose"
-            onClick={() => closeFullscreenNotification(fullscreenNotification._id)}
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
-          {fullscreenNotification.imageUrl && (
-            <div className="fullscreenNoticeImage">
-              <img src={fullscreenNotification.imageUrl} alt={fullscreenNotification.title} loading="eager" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="account">
+              <a className="headerLoginButton" href={googleHref()}>
+                <Chrome size={15} />
+                {t.googleLogin}
+              </a>
+              <ThemeToggle theme={theme} language={language} onThemeToggle={onThemeToggle} />
+              <LanguageToggle language={language} onLanguageChange={onLanguageChange} />
             </div>
           )}
-          <div className="fullscreenNoticeContent">
-            <span>
-              {fullscreenNotification.expiresAt
-                ? `${t.until} ${new Date(fullscreenNotification.expiresAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}`
-                : t.notifications}
-            </span>
-            <h2 id="fullscreenNoticeTitle">{fullscreenNotification.title}</h2>
-            <p>{fullscreenNotification.body}</p>
-            <div className="fullscreenNoticeActions">
-              {fullscreenNotification.actionUrl && (
-                <button type="button" className="primaryButton" onClick={() => goFullscreenAction(fullscreenNotification)}>
-                  {fullscreenNotification.actionLabel || t.viewNow}
+        </div>
+      </header>
+      {fullscreenNotification && (
+        <div className="fullscreenNoticeOverlay" role="dialog" aria-modal="true" aria-labelledby="fullscreenNoticeTitle">
+          <div className="fullscreenNotice">
+            <button
+              type="button"
+              className="fullscreenNoticeClose"
+              onClick={() => closeFullscreenNotification(fullscreenNotification._id)}
+              aria-label="Close"
+            >
+              <X size={20} />
+            </button>
+            {fullscreenNotification.imageUrl && (
+              <div className="fullscreenNoticeImage">
+                <img src={fullscreenNotification.imageUrl} alt={fullscreenNotification.title} loading="eager" referrerPolicy="no-referrer" />
+              </div>
+            )}
+            <div className="fullscreenNoticeContent">
+              <span>
+                {fullscreenNotification.expiresAt
+                  ? `${t.until} ${new Date(fullscreenNotification.expiresAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}`
+                  : t.notifications}
+              </span>
+              <h2 id="fullscreenNoticeTitle">{fullscreenNotification.title}</h2>
+              <p>{fullscreenNotification.body}</p>
+              <div className="fullscreenNoticeActions">
+                {fullscreenNotification.actionUrl && (
+                  <button type="button" className="primaryButton" onClick={() => goFullscreenAction(fullscreenNotification)}>
+                    {fullscreenNotification.actionLabel || t.viewNow}
+                  </button>
+                )}
+                <button type="button" className="smallButton" onClick={() => closeFullscreenNotification(fullscreenNotification._id)}>
+                  {t.close}
                 </button>
-              )}
-              <button type="button" className="smallButton" onClick={() => closeFullscreenNotification(fullscreenNotification._id)}>
-                {t.close}
-              </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
     </>
   );
 }

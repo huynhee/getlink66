@@ -254,6 +254,8 @@ export async function adminUpdateMarketplaceModel(req, res, next) {
       currentModel.fileStatus === "ready" &&
       !(currentModel.publicationBlockers || []).length;
     payload.discoveryStatus = "pending";
+    payload.searchStatus = "pending";
+    payload.searchError = "";
     payload.discoveryError = "";
     const model = await MarketplaceModel.findByIdAndUpdate(
       req.params.id,
@@ -484,6 +486,53 @@ export async function adminRescanMarketplaceModelDriveFolder(req, res, next) {
     res.json(result);
   } catch (error) {
     if (error?.code === 11000) return res.status(409).json({ message: "Model slug or source already exists" });
+    next(error);
+  }
+}
+
+export async function adminVerifyMarketplaceFile(req, res, next) {
+  try {
+    const assetType = adminAssetType(req);
+    if (!isSafeId(req.params.id)) return res.status(400).json({ message: `Invalid ${assetNoun(assetType).toLowerCase()} id` });
+    const model = await MarketplaceModel.findById(req.params.id).select("assetType storageProvider driveFileId driveFolderId fileName fileSize").lean();
+    if (!model || normalizeAssetType(model.assetType) !== assetType) {
+      return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
+    }
+    if (model.storageProvider !== "google_drive" || !model.driveFileId) {
+      return res.status(409).json({
+        message: `${assetNoun(assetType)} does not have a Google Drive archive attached.`,
+        code: "DRIVE_ARCHIVE_NOT_ATTACHED",
+      });
+    }
+
+    const metadata = await getGoogleDriveFileMetadata(model.driveFileId, {
+      fields: "id,name,mimeType,size,modifiedTime,version,parents,trashed,capabilities(canDownload)",
+    });
+    if (metadata.trashed) {
+      return res.status(404).json({ message: "Google Drive archive is in trash.", code: "DRIVE_ARCHIVE_MISSING" });
+    }
+    if (metadata.capabilities?.canDownload === false) {
+      return res.status(409).json({ message: "Google Drive has disabled downloads for this archive.", code: "DRIVE_DOWNLOAD_DISABLED" });
+    }
+    const parentMatched = !model.driveFolderId || (metadata.parents || []).includes(model.driveFolderId);
+    if (!parentMatched) {
+      return res.status(409).json({ message: "Google Drive archive is outside the asset folder.", code: "DRIVE_FILE_PARENT_MISMATCH" });
+    }
+
+    return res.json({
+      verification: {
+        ok: true,
+        provider: "google_drive",
+        fileName: metadata.name || model.fileName || "",
+        mimeType: metadata.mimeType || "",
+        fileSize: Number(metadata.size || model.fileSize || 0),
+        modifiedTime: metadata.modifiedTime || null,
+        canDownload: metadata.capabilities?.canDownload !== false,
+        parentMatched,
+        checkedAt: new Date(),
+      },
+    });
+  } catch (error) {
     next(error);
   }
 }
@@ -939,12 +988,28 @@ export async function adminBulkMarketplaceModels(req, res, next) {
           const blockers = model.publicationBlockers || [];
           const online = model.metadataStatus === "complete" && model.fileStatus === "ready" && blockers.length === 0;
             await MarketplaceModel.findByIdAndUpdate(id, {
-              $set: { desiredPublished: true, isPublished: online, discoveryStatus: "pending", discoveryError: "" },
+              $set: {
+                desiredPublished: true,
+                isPublished: online,
+                discoveryStatus: "pending",
+                discoveryError: "",
+                searchStatus: "pending",
+                searchError: "",
+              },
           });
           updatedCount += 1;
           results.push({ id, status: "updated", title: model.title, online, blockers });
         } else if (action === "unpublish") {
-            await MarketplaceModel.findByIdAndUpdate(id, { $set: { desiredPublished: false, isPublished: false, discoveryStatus: "pending", discoveryError: "" } });
+            await MarketplaceModel.findByIdAndUpdate(id, {
+              $set: {
+                desiredPublished: false,
+                isPublished: false,
+                discoveryStatus: "pending",
+                discoveryError: "",
+                searchStatus: "pending",
+                searchError: "",
+              },
+            });
           updatedCount += 1;
           results.push({ id, status: "updated", title: model.title });
         } else if (action === "access") {

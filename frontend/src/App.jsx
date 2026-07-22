@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MessageCircle } from "lucide-react";
 import { api } from "./api.js";
@@ -15,6 +15,7 @@ import Admin from "./pages/Admin.jsx";
 import Guide from "./pages/Guide.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
+import { GetlinkJobProvider, useGetlinkJob } from "./contexts/GetlinkJobContext.jsx";
 import { getInitialLanguage, setStoredLanguage, translations } from "./i18n.js";
 import "./styles.css";
 import "./design-system.css";
@@ -187,9 +188,11 @@ function App() {
   const [language, setLanguage] = useState(getInitialLanguage);
   const [theme, setTheme] = useState(getInitialTheme);
   const [banOverlayClosed, setBanOverlayClosed] = useState(false);
+  const previousUserIdRef = useRef("");
   const isAdminPath = path === "/admin";
   const isPublicHome = path === "/";
   const t = translations[language];
+  const { job: getlinkJob, setIdentity: setGetlinkJobIdentity, setRoute: setGetlinkJobRoute } = useGetlinkJob();
 
   function changeLanguage(nextLanguage) {
     setLanguage(nextLanguage);
@@ -263,6 +266,34 @@ function App() {
   useEffect(() => {
     setBanOverlayClosed(false);
   }, [user?._id, user?.isBanned]);
+
+  useEffect(() => {
+    setGetlinkJobIdentity(user?._id || "");
+  }, [setGetlinkJobIdentity, user?._id]);
+
+  useEffect(() => {
+    const previousUserId = previousUserIdRef.current;
+    const currentUserId = String(user?._id || "");
+    if (previousUserId && !currentUserId) {
+      try {
+        window.localStorage.removeItem(`3dipl-getlink-draft:${previousUserId}`);
+        window.localStorage.removeItem(`3dipl-getlink-draft:${previousUserId}:request-id`);
+      } catch {
+        // Logout cleanup is best effort only.
+      }
+    }
+    previousUserIdRef.current = currentUserId;
+  }, [user?._id]);
+
+  useEffect(() => {
+    setGetlinkJobRoute(page);
+  }, [page, setGetlinkJobRoute]);
+
+  useEffect(() => {
+    const nextCredit = Number(getlinkJob?.result?.credit);
+    if (!user?._id || !Number.isFinite(nextCredit) || Number(user.credit) === nextCredit) return;
+    setUser((current) => current?._id === user._id ? { ...current, credit: nextCredit } : current);
+  }, [getlinkJob?.result?.credit, user?._id, user?.credit]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -339,7 +370,9 @@ function App() {
 createRoot(document.getElementById("root")).render(
   <>
     <div className="cyber-scanlines" aria-hidden="true" />
-    <App />
+    <GetlinkJobProvider>
+      <App />
+    </GetlinkJobProvider>
     <MessengerFloatButton />
   </>,
 );

@@ -37,8 +37,8 @@ const HOME_TEXT_DEFAULTS = {
   systemStatusLabel: "Trạng thái hệ thống",
   pricePerDownloadLabel: "Giá tải chỉ từ",
   pricePerDownloadValue: "10K",
-  referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí.",
-  referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro miễn phí.",
+  referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro + 28 credit.",
+  referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro + 28 credit.",
   pricingEyebrow: "Bảng giá",
   pricingTitle: "Chọn gói phù hợp",
   pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
@@ -207,8 +207,8 @@ const defaultSettings = {
   systemStatusLabel: "Trạng thái hệ thống",
   pricePerDownloadLabel: "Giá tải chỉ từ",
   pricePerDownloadValue: "10K",
-  referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí.",
-  referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro miễn phí.",
+  referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro + 28 credit.",
+  referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro + 28 credit.",
   pricingEyebrow: "Bảng giá",
   pricingTitle: "Chọn gói phù hợp",
   pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
@@ -462,13 +462,17 @@ async function loadSettings() {
   const legacyReferralTitlePatch = {};
   if (
     settings.referralTitleBoth === "Giới thiệu bạn bè, cả hai +1 lượt tải." ||
-    settings.referralTitleBoth === "Invite friends, both get rewards +1 download."
+    settings.referralTitleBoth === "Invite friends, both get rewards +1 download." ||
+    settings.referralTitleBoth === "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí." ||
+    settings.referralTitleBoth === "Invite friends and both receive 1 free Pro day."
   ) {
     legacyReferralTitlePatch.referralTitleBoth = defaultSettings.referralTitleBoth;
   }
   if (
     settings.referralTitleReferrerOnly === "Giới thiệu bạn bè để +1 lượt tải." ||
-    settings.referralTitleReferrerOnly === "Invite friends to get +1 download."
+    settings.referralTitleReferrerOnly === "Invite friends to get +1 download." ||
+    settings.referralTitleReferrerOnly === "Mời bạn bè để nhận 1 ngày Pro miễn phí." ||
+    settings.referralTitleReferrerOnly === "Invite friends to receive 1 free Pro day."
   ) {
     legacyReferralTitlePatch.referralTitleReferrerOnly = defaultSettings.referralTitleReferrerOnly;
   }

@@ -11,7 +11,7 @@ const FOOTER_COPY = {
     topup: "Gói nạp",
     guide: "Hướng dẫn",
     history: "Lịch sử",
-    invite: "Mời bạn",
+    invite: "Giới thiệu",
     membership: "Quyền lợi Pro",
     privacy: "Chính sách bảo mật",
     terms: "Điều khoản sử dụng",

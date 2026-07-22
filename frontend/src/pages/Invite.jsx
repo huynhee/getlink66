@@ -40,6 +40,14 @@ export default function Invite({ language = "vi" }) {
       ),
     [summary],
   );
+  const earnedCredits = useMemo(
+    () =>
+      (summary?.invitedUsers || []).reduce(
+        (total, item) => total + Number(item.rewardCredit || 0),
+        0,
+      ),
+    [summary],
+  );
 
   async function copyReferralUrl() {
     if (!summary?.referralUrl) return;
@@ -106,11 +114,11 @@ export default function Invite({ language = "vi" }) {
   const rewardText =
     summary.mode === "referrer_only"
       ? isVi
-        ? <>Mỗi người đăng ký thành công giúp bạn nhận thêm <strong>1 ngày Pro miễn phí</strong>.</>
-        : <>Each successful signup gives you <strong>1 free Pro day</strong>.</>
+        ? <>Mỗi người đăng ký thành công giúp bạn nhận <strong>1 ngày Pro + 28 credit</strong>.</>
+        : <>Each successful signup gives you <strong>1 Pro day + 28 credits</strong>.</>
       : isVi
-        ? <>Mỗi lượt đăng ký thành công: cả hai nhận thêm <strong>1 ngày Pro miễn phí</strong>.</>
-        : <>Each successful signup gives both users <strong>1 free Pro day</strong>.</>;
+        ? <>Mỗi lượt đăng ký thành công: cả hai nhận <strong>1 ngày Pro + 28 credit</strong>.</>
+        : <>Each successful signup gives both users <strong>1 Pro day + 28 credits</strong>.</>;
 
   return (
     <div className="stack invitePage">
@@ -120,7 +128,7 @@ export default function Invite({ language = "vi" }) {
             [ {isVi ? "Chương trình giới thiệu" : "Referral program"} ]
           </span>
           <h1>
-            <span>{isVi ? "Mời bạn" : "Invite"}</span>
+            <span>{isVi ? "Giới thiệu" : "Invite"}</span>
             <strong>{isVi ? "Nhận Pro" : "Earn Pro"} <ShieldCheck size={28} /></strong>
           </h1>
           <p>{rewardText}</p>
@@ -137,12 +145,12 @@ export default function Invite({ language = "vi" }) {
           <div>
             <Gift size={18} />
             <span>{isVi ? "Đã nhận" : "Earned"}</span>
-            <strong>{earnedProDays} {isVi ? "ngày Pro" : "Pro days"}</strong>
+            <strong>{earnedProDays} {isVi ? "ngày Pro" : "Pro days"} + {earnedCredits} credit</strong>
           </div>
           <div>
             <CalendarDays size={18} />
             <span>{isVi ? "Thưởng mỗi lượt" : "Reward per invite"}</span>
-            <strong>1 {isVi ? "ngày Pro" : "Pro day"}</strong>
+            <strong>1 {isVi ? "ngày Pro" : "Pro day"} + 28 credit</strong>
           </div>
         </div>
       </section>
@@ -179,8 +187,8 @@ export default function Invite({ language = "vi" }) {
           <p className="inviteLinkHint">
             <span>&gt;</span>{" "}
             {isVi
-                ? "Gửi link này cho bạn bè. Một ngày Pro được cộng tự động khi đăng ký thành công."
-                : "Send this link to friends. One Pro day is added automatically after successful signup."}
+              ? "Gửi link này cho bạn bè. 1 ngày Pro và 28 credit được cộng tự động khi đăng ký thành công."
+              : "Send this link to friends. One Pro day and 28 credits are added automatically after successful signup."}
           </p>
         </div>
       </section>
@@ -213,9 +221,9 @@ export default function Invite({ language = "vi" }) {
                     : "Invited you"}
               </span>
               <strong>
-                {item.rewardType === "pro"
-                  ? `+${item.proDays} ${isVi ? "ngày Pro" : "Pro day"}`
-                  : <CoinAmount value={item.credit} prefix="+" />}
+                {item.proDays > 0 && `+${item.proDays} ${isVi ? "ngày Pro" : "Pro day"}`}
+                {item.proDays > 0 && item.credit > 0 ? " + " : ""}
+                {item.credit > 0 && <CoinAmount value={item.credit} prefix="+" />}
               </strong>
               <time>{new Date(item.createdAt).toLocaleString(isVi ? "vi-VN" : "en-US")}</time>
             </div>

@@ -85,7 +85,6 @@ if (production) {
   ].forEach((name) => requireValue(name));
   if (process.env.ALLOW_MEMORY_DB === "true") errors.push("ALLOW_MEMORY_DB must be false in production");
   if (process.env.ALLOW_DEV_LOGIN === "true") errors.push("ALLOW_DEV_LOGIN must be false in production");
-  if (process.env.SEED_MARKETPLACE_DEMO === "true") errors.push("SEED_MARKETPLACE_DEMO must be false in production");
   if (process.env.TURNSTILE_ENABLED === "true") {
     requireValue("TURNSTILE_EXPECTED_HOSTNAME");
     requireValue("TURNSTILE_EXPECTED_ACTION");

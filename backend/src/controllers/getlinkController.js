@@ -550,7 +550,7 @@ function publicPreviewImageUrl(req, historyId) {
   return `${publicBaseUrl(req)}/api/getlink/preview-image/${historyId}?t=${token}`;
 }
 
-function publicHistoryItem(req, item) {
+export function publicHistoryItem(req, item) {
   const doc = item.toObject ? item.toObject() : item;
   const allowed = canRedownload(doc);
   const formatOptions = sanitizeDownloadFormatOptions(doc.formatOptions);
@@ -586,6 +586,7 @@ function sendFreeRedownload(req, res, history, options = {}) {
   const downloadUrl = publicDownloadUrl(req, history._id);
   const includePreviewImage = Boolean(options.includePreviewImage);
   return res.json({
+    historyId: history._id,
     url: downloadUrl,
     downloadUrl,
     previewImageDownloadUrl:
@@ -1324,6 +1325,7 @@ export async function getLink(req, res, next) {
     if (!url) return;
     const includePreviewImage = normalizeBooleanFlag(req.body?.includePreviewImage);
     const downloadFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
+    await req.getlinkProgress?.("validating", 20);
 
     const productId = extractProductId(url);
     const lockToInputProductId = hasExplicitProductId(url);
@@ -1509,6 +1511,7 @@ export async function getLink(req, res, next) {
     }
 
     if (!downloadFormat) {
+      await req.getlinkProgress?.("resolving_format", 35);
       const formatSelection = await resolveDownloadFormatSelection(
         url,
         effectiveProductId,
@@ -1559,6 +1562,7 @@ export async function getLink(req, res, next) {
       });
     }
 
+    await req.getlinkProgress?.("resolving_download", 65);
     const cachedBeforeDownload = await ProductCache.findOne({
         productId: effectiveProductId,
         fileUrl: { $ne: "" },
@@ -1605,6 +1609,7 @@ export async function getLink(req, res, next) {
 
     // The credit deduction and history insert are one MongoDB transaction.
     // Development/standalone fallback compensates the credit if history insert fails.
+    await req.getlinkProgress?.("saving", 90);
     let user;
     let history;
     try {
@@ -1649,6 +1654,7 @@ export async function getLink(req, res, next) {
         : null;
 
     res.json({
+      historyId: history._id,
       url: downloadUrl,
       downloadUrl,
       previewImageDownloadUrl,
@@ -1686,6 +1692,64 @@ export async function getLink(req, res, next) {
   } finally {
     if (acquiredLockKey) userProductLocks.delete(acquiredLockKey);
   }
+}
+
+export async function executeGetlinkForJob({ user, body, onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let statusCode = 200;
+
+    function finishError(error) {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    }
+
+    const req = {
+      body: body || {},
+      user,
+      ip: "getlink-job-worker",
+      path: "/api/getlink/jobs/worker",
+      protocol: String(process.env.PUBLIC_BASE_URL || "").startsWith("https:") ? "https" : "http",
+      get(name) {
+        if (String(name || "").toLowerCase() !== "host") return "";
+        try {
+          return new URL(process.env.PUBLIC_BASE_URL || "http://localhost:5000").host;
+        } catch {
+          return "localhost:5000";
+        }
+      },
+      async getlinkProgress(stage, progress) {
+        await onProgress?.(stage, progress);
+      },
+    };
+    const res = {
+      status(value) {
+        statusCode = Number(value) || 500;
+        return this;
+      },
+      json(payload = {}) {
+        if (settled) return payload;
+        settled = true;
+        if (statusCode >= 400) {
+          const error = new Error(payload.message || `Getlink failed with status ${statusCode}`);
+          error.status = statusCode;
+          error.code = payload.code || "";
+          error.publicDetails = payload.details;
+          reject(error);
+        } else {
+          resolve({ status: statusCode, payload });
+        }
+        return payload;
+      },
+    };
+
+    Promise.resolve(getLink(req, res, finishError))
+      .then(() => {
+        if (!settled) finishError(new Error("Getlink job finished without a response."));
+      })
+      .catch(finishError);
+  });
 }
 
 async function refreshHistoryDownload(history, cookieValue, downloadFormatOverride = null) {

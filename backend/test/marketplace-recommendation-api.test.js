@@ -5,8 +5,10 @@ import { useMemoryDb } from "../src/config/memoryStore.js";
 useMemoryDb();
 
 const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
+const { default: ModelDownload } = await import("../src/models/ModelDownload.js");
 const {
   getMarketplaceModel,
+  listMarketplaceHomeRecommendations,
   listMarketplaceModelRecommendations,
 } = await import("../src/controllers/marketplaceController.js");
 
@@ -85,4 +87,72 @@ test("model detail returns six recommendations and expansion returns the next 54
   assert.equal(expanded.state.body.models.length, 54);
   assert.equal(expanded.state.body.pagination.total, 60);
   assert.equal(expanded.state.body.pagination.hasMore, false);
+});
+
+test("home recommendations personalize from downloads and keep asset types separate", async () => {
+  const userId = "aaaaaaaaaaaaaaaaaaaaaaaa";
+  const downloaded = await MarketplaceModel.create({
+    assetType: "model",
+    source: { provider: "drive", modelId: "home-downloaded", assetId: "home-downloaded" },
+    title: "Downloaded lounge seat",
+    slug: "home-downloaded",
+    categorySourceId: "home-lounge",
+    parentCategorySourceId: "home-furniture",
+    styles: ["modern"],
+    renderers: ["corona"],
+    renderer: "Corona",
+    accessType: "free",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+  });
+  await ModelDownload.create({
+    assetType: "model",
+    modelId: downloaded._id,
+    userId,
+    status: "downloaded",
+    downloadedAt: new Date(),
+  });
+  const preferred = await MarketplaceModel.create({
+    assetType: "model",
+    source: { provider: "drive", modelId: "home-preferred", assetId: "home-preferred" },
+    title: "Relevant lounge chair",
+    slug: "home-preferred",
+    categorySourceId: "home-lounge",
+    parentCategorySourceId: "home-furniture",
+    styles: ["modern"],
+    renderers: ["corona"],
+    renderer: "Corona",
+    accessType: "free",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+  });
+  await MarketplaceModel.create({
+    assetType: "scene",
+    source: { provider: "drive", modelId: "home-scene", assetId: "home-scene" },
+    title: "Modern living room",
+    slug: "home-scene",
+    categorySourceId: "living-room",
+    styles: ["modern"],
+    renderers: ["corona"],
+    renderer: "Corona",
+    accessType: "free",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+  });
+
+  const capture = responseCapture();
+  await listMarketplaceHomeRecommendations(
+    { query: { limit: "6" }, user: { _id: userId } },
+    capture.response,
+    (error) => { throw error; },
+  );
+  assert.equal(capture.state.body.engine, "catalog_behavior_v2");
+  assert.equal(capture.state.body.mode, "personalized");
+  assert.equal(capture.state.body.models[0]._id, preferred._id);
+  assert.ok(capture.state.body.models.every((item) => item.assetType === "model"));
+  assert.ok(capture.state.body.scenes.every((item) => item.assetType === "scene"));
+  assert.equal(capture.state.body.models.some((item) => item._id === downloaded._id), false);
 });

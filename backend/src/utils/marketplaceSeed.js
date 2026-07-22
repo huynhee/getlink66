@@ -10,12 +10,27 @@ function categoryPayload(item, parent = null, assetType = "model") {
     sourceCategoryId: String(item.id),
     title: item.title || "",
     titleEn: item.titleEn || "",
+    aliasesVi: item.aliasesVi || [],
+    aliasesEn: item.aliasesEn || [],
     slug: item.slug || "",
     parentId: parent?._id || null,
     parentSourceCategoryId: item.parentId ? String(item.parentId) : "",
     position: Number(item.position || 0),
     isActive: true,
   };
+}
+
+async function backfillLegacyCategoryLabel(category, payload, assetType) {
+  if (!category || assetType !== "model" || !payload.title || payload.title === payload.titleEn) return category;
+  const currentTitle = String(category.title || "").trim();
+  const currentEnglish = String(category.titleEn || "").trim();
+  if (currentTitle && currentTitle !== currentEnglish && currentTitle !== payload.titleEn) return category;
+  return MarketplaceCategory.findByIdAndUpdate(category._id, {
+    $set: {
+      title: payload.title,
+      titleEn: payload.titleEn,
+    },
+  }, { new: true });
 }
 
 async function seedCategories(items, assetType) {
@@ -27,12 +42,14 @@ async function seedCategories(items, assetType) {
   for (const item of roots) {
     const query = { assetType, sourceProvider, sourceCategoryId: String(item.id) };
     const payload = categoryPayload(item, null, assetType);
-    const category = await MarketplaceCategory.findOneAndUpdate(
+    let category = await MarketplaceCategory.findOneAndUpdate(
       query,
       {
         $setOnInsert: {
           title: payload.title,
           titleEn: payload.titleEn,
+          aliasesVi: payload.aliasesVi,
+          aliasesEn: payload.aliasesEn,
           position: payload.position,
           isActive: payload.isActive,
         },
@@ -44,6 +61,7 @@ async function seedCategories(items, assetType) {
       },
       { upsert: true, new: true },
     );
+    category = await backfillLegacyCategoryLabel(category, payload, assetType);
     bySourceId.set(String(item.id), category);
   }
 
@@ -56,12 +74,14 @@ async function seedCategories(items, assetType) {
       });
     const query = { assetType, sourceProvider, sourceCategoryId: String(item.id) };
     const payload = categoryPayload(item, parent, assetType);
-    const category = await MarketplaceCategory.findOneAndUpdate(
+    let category = await MarketplaceCategory.findOneAndUpdate(
       query,
       {
         $setOnInsert: {
           title: payload.title,
           titleEn: payload.titleEn,
+          aliasesVi: payload.aliasesVi,
+          aliasesEn: payload.aliasesEn,
           position: payload.position,
           isActive: payload.isActive,
         },
@@ -73,6 +93,7 @@ async function seedCategories(items, assetType) {
       },
       { upsert: true, new: true },
     );
+    category = await backfillLegacyCategoryLabel(category, payload, assetType);
     bySourceId.set(String(item.id), category);
   }
 }

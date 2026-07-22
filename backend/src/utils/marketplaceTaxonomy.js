@@ -20,6 +20,21 @@ const LABELS_VI = {
   plastic: "Nhựa", rattan: "Mây tre", stone: "Đá", wood: "Gỗ",
 };
 
+export function normalizeTaxonomyAliases(value) {
+  const list = Array.isArray(value) ? value : String(value || "").split(",");
+  const seen = new Set();
+  const aliases = [];
+  for (const item of list) {
+    const alias = String(item || "").replace(/\s+/g, " ").trim().slice(0, 120);
+    const key = alias.toLocaleLowerCase("en");
+    if (!alias || seen.has(key)) continue;
+    seen.add(key);
+    aliases.push(alias);
+    if (aliases.length >= 20) break;
+  }
+  return aliases;
+}
+
 let filterCache = new Map();
 let categoryCache = new Map();
 
@@ -74,6 +89,8 @@ export async function seedMarketplaceFilterOptions() {
               value: option.value,
               labelVi: LABELS_VI[option.value] || option.label,
               labelEn: option.label,
+              aliasesVi: [],
+              aliasesEn: [],
               hex: option.hex || "",
               iconKey: facet === "form" ? option.value : "",
               position: position + 1,
@@ -108,6 +125,8 @@ export async function marketplaceFilterSnapshot(assetType, { includeInactive = f
       label: option.labelEn,
       labelEn: option.labelEn,
       labelVi: option.labelVi,
+      aliasesVi: normalizeTaxonomyAliases(option.aliasesVi),
+      aliasesEn: normalizeTaxonomyAliases(option.aliasesEn),
       ...(option.hex ? { hex: option.hex } : {}),
       ...(option.iconKey ? { iconKey: option.iconKey } : {}),
       isActive: option.isActive !== false,
@@ -119,10 +138,10 @@ export async function marketplaceFilterSnapshot(assetType, { includeInactive = f
   return grouped;
 }
 
-export async function resolveMarketplaceCategory(sourceCategoryId, assetType = "model", { requireLeaf = false } = {}) {
+export async function resolveMarketplaceCategory(sourceCategoryId, assetType = "model", { requireLeaf = false, includeInactive = false } = {}) {
   const value = String(sourceCategoryId || "").trim();
   if (!value) return null;
-  const categories = await marketplaceCategorySnapshot(assetType);
+  const categories = await marketplaceCategorySnapshot(assetType, { includeInactive });
   const category = categories.find((item) => (
     String(item.sourceCategoryId || "") === value
     || String(item.slug || "").toLowerCase() === value.toLowerCase()
@@ -138,17 +157,22 @@ export async function resolveMarketplaceCategory(sourceCategoryId, assetType = "
   return { category, parent };
 }
 
-export async function validateMarketplaceTaxonomy(metadata = {}) {
+export async function validateMarketplaceTaxonomy(metadata = {}, { currentModel = null } = {}) {
   const assetType = normalizeAssetType(metadata.assetType);
-  const resolved = await resolveMarketplaceCategory(metadata.sourceCategoryId, assetType, { requireLeaf: true });
+  let resolved = await resolveMarketplaceCategory(metadata.sourceCategoryId, assetType, { requireLeaf: true });
   const errors = [];
+  const unchangedCategory = String(metadata.sourceCategoryId || "") === String(currentModel?.categorySourceId || "");
+  if (!resolved && unchangedCategory) {
+    resolved = await resolveMarketplaceCategory(metadata.sourceCategoryId, assetType, { includeInactive: true });
+  }
   if (!resolved) errors.push({ field: "sourceCategoryId", code: "invalid_leaf" });
   const filters = await marketplaceFilterSnapshot(assetType);
   const fieldMap = { styles: "style", renderers: "render", forms: "form", colors: "color", materials: "material" };
   for (const [field, facet] of Object.entries(fieldMap)) {
     if (assetType === "scene" && ["forms", "colors", "materials"].includes(field)) continue;
     const allowed = new Set((filters[facet] || []).map((item) => item.value));
-    const unknown = (metadata[field] || []).filter((value) => !allowed.has(value));
+    const existing = new Set((currentModel?.[field] || []).map(String));
+    const unknown = (metadata[field] || []).filter((value) => !allowed.has(value) && !existing.has(String(value)));
     if (unknown.length) errors.push({ field, code: "inactive_or_unknown", values: unknown });
   }
   return { resolved, errors };

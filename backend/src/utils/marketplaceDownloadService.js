@@ -11,6 +11,7 @@ import {
 import { marketplaceDownloadCost, normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { isMemoryDb } from "../config/memoryStore.js";
 import { marketplaceDbConnection } from "../config/db.js";
+import { invalidateMarketplaceHomeRecommendations } from "./marketplaceRecommendationService.js";
 
 const SESSION_TTL_MS = 15 * 60 * 1000;
 
@@ -43,19 +44,16 @@ function safeDownloadFileName(model) {
 export { nextVietnamReset, vietnamDayKey };
 
 function accessTier(req) {
-  if (req.user?.role === "admin") return "admin";
   if (req.user && isProActive(req.user)) return "member";
   return "free";
 }
 
 function tierLimit(req, tier) {
-  if (tier === "admin") return Number.MAX_SAFE_INTEGER;
   if (tier === "member") return Number(req.user?.proDailyDownloadLimit || 100);
   return 5;
 }
 
 function canAccessModel(model, tier) {
-  if (tier === "admin") return true;
   if (model.accessType === "free") return true;
   if (model.accessType === "member") return tier === "member";
   return false;
@@ -63,7 +61,6 @@ function canAccessModel(model, tier) {
 
 async function chargeQuota(req, tier, cost = 1) {
   const quotaCost = Math.max(1, Math.floor(Number(cost || 1)));
-  if (tier === "admin") return { charged: false, cost: 0, remaining: Number.MAX_SAFE_INTEGER };
   const dayKey = vietnamDayKey();
   const resetAt = nextVietnamReset();
   const identity = { userId: req.user._id, guestKey: "" };
@@ -121,7 +118,6 @@ async function chargeQuota(req, tier, cost = 1) {
 }
 
 async function rollbackQuota(req, tier, cost = 1) {
-  if (tier === "admin") return;
   const quotaCost = Math.max(1, Math.floor(Number(cost || 1)));
   const identity = { userId: req.user._id, guestKey: "" };
   await DailyDownloadQuota.findOneAndUpdate(
@@ -164,8 +160,11 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
 
   const tier = accessTier(req);
   if (!canAccessModel(model, tier)) {
-    const error = new Error(`Your account cannot download this ${assetType}.`);
+    const error = new Error(`Pro is required to download this ${assetType}.`);
     error.status = 403;
+    error.code = "PRO_REQUIRED";
+    error.details = { assetType, upgradeUrl: "/topup?mode=pro" };
+    error.publicDetails = error.details;
     throw error;
   }
 
@@ -273,13 +272,18 @@ export async function markMarketplaceDownloadRedeemed(session) {
     error.status = 400;
     throw error;
   }
-  if (isMemoryDb()) return markRedeemedWithSession(session);
+  if (isMemoryDb()) {
+    const result = await markRedeemedWithSession(session);
+    if (result.counted) invalidateMarketplaceHomeRecommendations(session.userId);
+    return result;
+  }
   const databaseSession = await marketplaceDbConnection().startSession();
   let result;
   try {
     await databaseSession.withTransaction(async () => {
       result = await markRedeemedWithSession(session, databaseSession);
     });
+    if (result?.counted) invalidateMarketplaceHomeRecommendations(session.userId);
     return result;
   } finally {
     await databaseSession.endSession();

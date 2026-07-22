@@ -12,13 +12,15 @@
     "env:check": "node scripts/env-check.js",
     "drive:auth": "node scripts/google-drive-auth.js",
     "drive:check": "node scripts/google-drive-check.js",
-    "seed:models": "node scripts/marketplace-demo-seed.js",
-    "seed:marketplace": "node scripts/marketplace-demo-seed.js",
+    "marketplace:demo:purge": "node scripts/purge-marketplace-demo-assets.js",
     "data:split:dry-run": "node scripts/split-marketplace-databases.js",
     "data:split:execute": "node scripts/split-marketplace-databases.js --execute",
     "data:split:finalize": "node scripts/split-marketplace-databases.js --finalize",
     "marketplace:sort:dry-run": "node scripts/backfill-marketplace-title-sort.js",
     "marketplace:sort:backfill": "node scripts/backfill-marketplace-title-sort.js --execute",
+    "marketplace:search:dry-run": "node scripts/backfill-marketplace-bilingual-search.js",
+    "marketplace:search:execute": "node scripts/backfill-marketplace-bilingual-search.js --execute",
+    "marketplace:search:verify": "node scripts/backfill-marketplace-bilingual-search.js --verify",
     "test": "node --test"
   },
   "dependencies": {

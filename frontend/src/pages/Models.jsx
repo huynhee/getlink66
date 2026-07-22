@@ -56,202 +56,6 @@ const FILTER_TITLES_VI = {
   material: "Vật liệu",
 };
 
-const FACET_LABELS_VI = {
-  style: {
-    classic: "Cổ điển",
-    modern: "Hiện đại",
-    ethnic: "Truyền thống",
-    industrial: "Công nghiệp",
-    neoclassic: "Tân cổ điển",
-    luxury: "Sang trọng",
-    indochine: "Đông Dương",
-    japanese: "Nhật Bản",
-    "wabi-sabi": "Wabi-sabi",
-    french: "Phong cách Pháp",
-    "modern-classic": "Cổ điển hiện đại",
-    other: "Khác",
-  },
-  render: {
-    vray: "Vray",
-    corona: "Corona",
-    standard: "Standard",
-  },
-  form: {
-    round: "Tròn",
-    oval: "Bầu dục",
-    square: "Vuông",
-    rectangle: "Chữ nhật",
-    triangle: "Tam giác",
-    diamond: "Hình thoi",
-    pentagon: "Ngũ giác",
-    star: "Ngôi sao",
-    angle: "Angle",
-    bioform: "Bioform",
-    "l-shape": "Angle",
-    organic: "Bioform",
-  },
-  color: {
-    white: "Trắng",
-    gray: "Xám",
-    black: "Đen",
-    brown: "Nâu",
-    red: "Đỏ",
-    orange: "Cam",
-    yellow: "Vàng",
-    beige: "Be",
-    pink: "Hồng",
-    magenta: "Tím hồng",
-    purple: "Tím",
-    blue: "Xanh dương",
-    sky: "Xanh trời",
-    cyan: "Xanh ngọc",
-    lime: "Xanh lá sáng",
-    green: "Xanh lá",
-  },
-  material: {
-    brick: "Gạch",
-    ceramics: "Gốm sứ",
-    concrete: "Bê tông",
-    fabric: "Vải",
-    fur: "Lông",
-    glass: "Kính",
-    gypsum: "Thạch cao",
-    leather: "Da",
-    liquid: "Chất lỏng",
-    metal: "Kim loại",
-    organics: "Hữu cơ",
-    paper: "Giấy",
-    plastic: "Nhựa",
-    rattan: "Mây tre",
-    stone: "Đá",
-    wood: "Gỗ",
-  },
-};
-
-const CATEGORY_LABELS_VI = {
-  "3D panel": "Tấm 3D",
-  "Air Transport": "Phương tiện hàng không",
-  "Architecture": "Kiến trúc",
-  "Arm chair": "Ghế bành",
-  "Audio tech": "Thiết bị âm thanh",
-  "Barbecue and grill": "BBQ và lò nướng",
-  "Bathroom": "Phòng tắm",
-  "Bathroom accessories": "Phụ kiện phòng tắm",
-  "Bathroom furniture": "Nội thất phòng tắm",
-  "Bathtub": "Bồn tắm",
-  "Beauty salon": "Salon làm đẹp",
-  "Bed": "Giường",
-  "Billiards": "Bida",
-  "Books": "Sách",
-  "Bouquet": "Bó hoa",
-  "Brick": "Gạch",
-  "Building": "Công trình",
-  "Bush": "Bụi cây",
-  "Carpets": "Thảm",
-  "Ceiling lamp": "Đèn trần",
-  "Chair": "Ghế",
-  "Childroom": "Phòng trẻ em",
-  "Clothes and Footwear": "Quần áo và giày dép",
-  "Console": "Bàn console",
-  "Creature": "Sinh vật",
-  "Curtain": "Rèm cửa",
-  "Decoration": "Trang trí",
-  "Decorative plaster": "Phào chỉ trang trí",
-  "Decorative set": "Bộ trang trí",
-  "Doors": "Cửa",
-  "Dressing table": "Bàn trang điểm",
-  "Environment elements": "Yếu tố môi trường",
-  "Facade element": "Chi tiết mặt tiền",
-  "Fabric": "Vải",
-  "Faucet": "Vòi nước",
-  "Fence": "Hàng rào",
-  "Fireplace": "Lò sưởi",
-  "Fitowall": "Tường cây",
-  "Floor coverings": "Vật liệu sàn",
-  "Floor lamp": "Đèn sàn",
-  "Food and drinks": "Đồ ăn và đồ uống",
-  "Frame": "Khung tranh",
-  "Full furniture set": "Bộ nội thất đầy đủ",
-  "Furniture": "Nội thất",
-  "Glass": "Kính",
-  "Grass": "Cỏ",
-  "Ground Transport": "Phương tiện mặt đất",
-  "HDRI": "HDRI",
-  "Hallway": "Sảnh/hành lang",
-  "Headboards": "Đầu giường",
-  "Household appliance": "Thiết bị gia dụng",
-  "Indoor": "Cây trong nhà",
-  "Kitchen": "Bếp",
-  "Kitchen appliance": "Thiết bị bếp",
-  "Leather": "Da",
-  "Lighting": "Đèn",
-  "Liquid": "Chất lỏng",
-  "Materials": "Vật liệu",
-  "Metal": "Kim loại",
-  "Mirror": "Gương",
-  "Miscellaneous": "Khác",
-  "Musical instrument": "Nhạc cụ",
-  "Natural materials": "Vật liệu tự nhiên",
-  "Neon": "Đèn neon",
-  "Office furniture": "Nội thất văn phòng",
-  "Other": "Khác",
-  "Other Models": "Model khác",
-  "Other decorative objects": "Đồ trang trí khác",
-  "Other kitchen accessories": "Phụ kiện bếp khác",
-  "Other soft seating": "Ghế mềm khác",
-  "Outdoor": "Cây ngoài trời",
-  "Panorama": "Panorama",
-  "PC & other electronics": "PC và điện tử khác",
-  "Pendant light": "Đèn thả",
-  "Phones": "Điện thoại",
-  "Paving": "Lát nền",
-  "Pillows": "Gối",
-  "Plants": "Cây",
-  "Plastic": "Nhựa",
-  "Playground": "Sân chơi",
-  "Rack": "Kệ",
-  "Radiator": "Bộ tản nhiệt",
-  "Restaurant": "Nhà hàng",
-  "Rug": "Thảm trải",
-  "Scripts": "Script",
-  "Sculpture": "Tượng",
-  "Shower": "Vòi sen",
-  "Shop": "Cửa hàng",
-  "Sideboard & Chest of drawer": "Tủ thấp và tủ ngăn kéo",
-  "Sink": "Bồn rửa",
-  "Sofa": "Sofa",
-  "Spot light": "Đèn rọi",
-  "Sports": "Thể thao",
-  "Staircase": "Cầu thang",
-  "Stone": "Đá",
-  "Street lighting": "Đèn đường",
-  "Table": "Bàn",
-  "Table + Chair": "Bàn + ghế",
-  "Table lamp": "Đèn bàn",
-  "Technical lighting": "Đèn kỹ thuật",
-  "Technology": "Công nghệ",
-  "Textures": "Texture",
-  "Tile": "Gạch ốp/lát",
-  "Toilet and Bidet": "Bồn cầu và bidet",
-  "Towel rail": "Thanh treo khăn",
-  "Transport": "Phương tiện",
-  "Tree": "Cây thân gỗ",
-  "TV": "TV",
-  "TV Wall": "Vách TV",
-  "Urban environment": "Môi trường đô thị",
-  "Vase": "Bình hoa",
-  "Wall covering": "Vật liệu tường",
-  "Wall light": "Đèn tường",
-  "Wardrobe": "Tủ quần áo",
-  "Wardrobe & Display cabinets": "Tủ quần áo và tủ trưng bày",
-  "Wash basin": "Chậu rửa mặt",
-  "Watches & Clocks": "Đồng hồ",
-  "Water Transport": "Phương tiện đường thủy",
-  "Weapon": "Vũ khí",
-  "Windows": "Cửa sổ",
-  "Wood": "Gỗ",
-};
-
 function cover(model = {}) {
   const image = model.previewImages?.[0] || model.coverImage;
   const url = image?.cachedUrl || image?.url || "";
@@ -328,9 +132,8 @@ function statusBadgeClass(fileStatus) {
 }
 
 function labelForCategory(category, language = "vi") {
-  const englishLabel = category?.titleEn || category?.title || "";
-  if (language !== "vi") return englishLabel;
-  return category?.title || CATEGORY_LABELS_VI[englishLabel] || englishLabel;
+  if (language === "vi") return category?.title || category?.titleEn || "";
+  return category?.titleEn || category?.title || "";
 }
 
 function findCategoryBySlug(categories = [], slug = "") {
@@ -354,7 +157,7 @@ function parentSlugForCategory(categories = [], slug = "") {
 
 function labelForFacet(filterOptions = {}, facet, value, language = "vi") {
   const option = filterOptions[facet]?.find((item) => item.value === value);
-  if (language === "vi") return option?.labelVi || FACET_LABELS_VI[facet]?.[value] || option?.label || value;
+  if (language === "vi") return option?.labelVi || option?.labelEn || option?.label || value;
   return option?.labelEn || option?.label || value;
 }
 
@@ -1608,9 +1411,9 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
 
   const fileReady = model.fileStatus === "ready";
   const isDemo = Boolean(model.isDemo);
-  const requiresPro = model.accessType !== "free" && !user?.isPro && user?.role !== "admin";
+  const requiresPro = model.accessType !== "free" && !user?.isPro;
   const canDownload = Boolean(user) && fileReady && !requiresPro && !isDemo;
-  const requiresDownloadVerification = fileReady && downloadProtection.enabled && !turnstileToken;
+  const requiresDownloadVerification = canDownload && downloadProtection.enabled && !turnstileToken;
   const loginReturnTo = `/${segment}/${encodeURIComponent(model.slug || model._id || slug)}`;
   const loginHref = buildApiUrl(`/api/auth/google?returnTo=${encodeURIComponent(loginReturnTo)}`);
   const categoryLabel = modelCategoryLabel(model, language);

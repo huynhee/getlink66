@@ -1,3 +1,5 @@
+import { marketplaceCategoryLabelVi } from "./marketplaceCategoryLabelsVi.js";
+
 const CATEGORY_TREE = [
   ["102", "Architecture", [
     ["256", "Barbecue and grill"],
@@ -183,7 +185,7 @@ function flattenCategoryTree() {
     const parent = {
       id,
       parentId: null,
-      title: titleEn,
+      title: marketplaceCategoryLabelVi(titleEn),
       titleEn,
       slug: parentSlug,
       position: parentIndex + 1,
@@ -191,7 +193,7 @@ function flattenCategoryTree() {
     const childItems = children.map(([childId, childTitleEn], childIndex) => ({
       id: childId,
       parentId: id,
-      title: childTitleEn,
+      title: marketplaceCategoryLabelVi(childTitleEn),
       titleEn: childTitleEn,
       slug: uniqueSlug(childTitleEn, parentSlug),
       position: childIndex + 1,

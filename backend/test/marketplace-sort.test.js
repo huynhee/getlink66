@@ -7,6 +7,7 @@ useMemoryDb();
 const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
 const { listMarketplaceModels } = await import("../src/controllers/marketplaceController.js");
 const { normalizeMarketplaceTitle } = await import("../src/utils/marketplaceSort.js");
+const { initializeMarketplaceCategories } = await import("../src/utils/marketplaceSeed.js");
 
 async function createCatalogAsset({ title, slug, createdAt, downloadCount }) {
   const model = await MarketplaceModel.create({
@@ -124,4 +125,31 @@ test("text search defaults to relevance while invalid sort falls back safely", a
 
   const invalid = await list({ sort: "not-a-sort", limit: "4" });
   assert.deepEqual(invalid.sort, { requested: null, effective: "newest" });
+});
+
+test("taxonomy search accepts Vietnamese, unaccented Vietnamese and English", async () => {
+  await initializeMarketplaceCategories();
+  await createCatalogAsset({
+    title: "Bespoke Seat X",
+    slug: "bilingual-armchair",
+    createdAt: "2026-01-05T00:00:00.000Z",
+    downloadCount: 1,
+  });
+  const created = await MarketplaceModel.findOne({ slug: "bilingual-armchair" });
+  await MarketplaceModel.findByIdAndUpdate(created._id, {
+    $set: { categorySourceId: "98", parentCategorySourceId: "2", searchStatus: "pending" },
+  });
+
+  const vietnamese = await list({ q: "ghế bành", limit: "10" });
+  const unaccented = await list({ q: "ghe banh", limit: "10" });
+  const english = await list({ q: "arm chair", limit: "10" });
+  const reversed = await list({ q: "chair arm", limit: "10" });
+  const vietnameseTypo = await list({ q: "ghe banhh", limit: "10" });
+  const englishTypo = await list({ q: "arm chiar", limit: "10" });
+  for (const payload of [vietnamese, unaccented, english, reversed, vietnameseTypo, englishTypo]) {
+    assert.equal(payload.search.engine, "mongo_hybrid_v3");
+    assert.ok(payload.models.some((item) => item.slug === "bilingual-armchair"));
+  }
+  assert.equal(vietnameseTypo.search.mode, "fuzzy");
+  assert.equal(englishTypo.search.mode, "fuzzy");
 });

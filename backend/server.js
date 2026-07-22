@@ -148,12 +148,13 @@ const { ensureNotificationReceiptIndexes } = await import("./src/models/Notifica
 const { awardReferralSignup, ensureReferralCode } = await import("./src/utils/referralService.js");
 const { initializeMarketplaceCategories } = await import("./src/utils/marketplaceSeed.js");
 const { ensureMarketplaceAssetMigration } = await import("./src/utils/marketplaceMigration.js");
-const { seedMarketplaceDemoModels, seedMarketplaceDemoScenes } = await import("./src/utils/marketplaceDemoSeed.js");
 const { initializeMembershipPlans } = await import("./src/utils/membershipService.js");
 const { startMarketplaceDriveSyncJob, stopMarketplaceDriveSyncJob } = await import("./src/utils/marketplaceDriveSyncJob.js");
 const { startMarketplaceDiscoverySyncJob, stopMarketplaceDiscoverySyncJob } = await import("./src/utils/marketplaceDiscoverySyncJob.js");
+const { startMarketplaceSearchIndexJob, stopMarketplaceSearchIndexJob } = await import("./src/utils/marketplaceSearchIndexJob.js");
 const { startMarketplaceQuotaGrantJob, stopMarketplaceQuotaGrantJob } = await import("./src/utils/marketplaceQuotaGrantJob.js");
 const { startHistoryRetentionJob, stopHistoryRetentionJob } = await import("./src/utils/historyRetentionJob.js");
+const { startGetlinkJobWorker, stopGetlinkJobWorker } = await import("./src/utils/getlinkJobService.js");
 const { close3D66Browser } = await import("./src/utils/3d66BrowserService.js");
 const { close3D66ProxyAgents } = await import("./src/utils/3d66Service.js");
 
@@ -163,16 +164,13 @@ await ensureNotificationReceiptIndexes();
 await ensureMarketplaceAssetMigration();
 await initializeSettings();
 await initializeMarketplaceCategories();
-if (process.env.SEED_MARKETPLACE_DEMO === "true") {
-  const demoSeed = await seedMarketplaceDemoModels();
-  const sceneDemoSeed = await seedMarketplaceDemoScenes();
-  logger.info({ models: demoSeed.created, scenes: sceneDemoSeed.created }, "Marketplace demo assets initialized");
-}
 await initializeMembershipPlans();
 startMarketplaceDriveSyncJob();
 startMarketplaceDiscoverySyncJob();
+startMarketplaceSearchIndexJob();
 startMarketplaceQuotaGrantJob();
 startHistoryRetentionJob();
+startGetlinkJobWorker();
 
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "true") app.set("trust proxy", 1);
@@ -349,8 +347,10 @@ async function gracefulShutdown(signal) {
   shuttingDown = true;
   stopMarketplaceDriveSyncJob();
   stopMarketplaceDiscoverySyncJob();
+  stopMarketplaceSearchIndexJob();
   stopMarketplaceQuotaGrantJob();
   stopHistoryRetentionJob();
+  stopGetlinkJobWorker();
   logger.info({ signal }, "Graceful shutdown started");
 
   const forceTimer = setTimeout(() => {

@@ -147,6 +147,7 @@ export default function Home({ user, onUserChange, language = "vi" }) {
       </section>
 
       <GetlinkBox
+        userId={user._id}
         onCreditChange={updateCredit}
         initialUrl={initialUrl}
         language={language}

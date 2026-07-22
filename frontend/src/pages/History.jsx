@@ -101,7 +101,7 @@ function eventAmount(event, language = "vi") {
   if (["model", "scene"].includes(event.type)) {
     return amount < 0
       ? `${Math.abs(amount)} ${language === "vi" ? "lượt" : "downloads"}`
-      : (language === "vi" ? "Miễn lượt" : "No quota charge");
+      : (language === "vi" ? "Miễn phí" : "No quota charge");
   }
   return amount < 0 ? formatMoney(Math.abs(amount)) : formatMoney(amount);
 }
@@ -173,17 +173,20 @@ function metadataLines(event, language) {
       m.clientType ? `${language === "vi" ? "Thiết bị" : "Client"}: ${m.clientType}` : "",
       m.quotaCharged
         ? `${language === "vi" ? "Đã trừ" : "Charged"}: ${Number(m.quotaCost || (event.type === "scene" ? 5 : 1))} ${language === "vi" ? "lượt" : "downloads"}`
-        : (language === "vi" ? "Miễn lượt" : "No quota charge"),
+        : (language === "vi" ? "Miễn phí" : "No quota charge"),
     ].filter(Boolean);
   }
   if (event.type === "referral") {
     const other = m.otherUser?.name || m.otherUser?.email || "";
     return [
       other ? `User: ${other}` : "",
-      m.rewardType === "pro" && m.proDays
+      m.proDays
         ? `${language === "vi" ? "Phần thưởng" : "Reward"}: ${m.proDays} ${language === "vi" ? "ngày Pro" : "Pro day"}`
         : "",
-      m.rewardType === "pro" && m.proUntil
+      m.rewardCredit
+        ? `Credit: +${m.rewardCredit}`
+        : "",
+      m.proDays && m.proUntil
         ? `${language === "vi" ? "Hạn Pro sau thưởng" : "Pro expiry after reward"}: ${formatDate(m.proUntil, language)}`
         : "",
       m.referralCode ? `${language === "vi" ? "Mã" : "Code"}: ${m.referralCode}` : "",
@@ -239,18 +242,18 @@ export default function History({ language = "vi" }) {
       items.map((event) =>
         event.metadata?.historyId === historyId
           ? {
-              ...event,
-              metadata: {
-                ...event.metadata,
-                downloadUrl: data.downloadUrl || event.metadata.downloadUrl,
-                previewImageDownloadUrl: data.previewImageDownloadUrl || event.metadata.previewImageDownloadUrl,
-                downloadFormat: data.selectedFormat || event.metadata.downloadFormat,
-                formatOptions: data.formatOptions || event.metadata.formatOptions,
-                redownloadCount: data.redownloadCount ?? event.metadata.redownloadCount,
-                redownloadRemaining: data.redownloadRemaining ?? event.metadata.redownloadRemaining,
-                redownloadExpiresAt: data.redownloadExpiresAt || event.metadata.redownloadExpiresAt,
-              },
-            }
+            ...event,
+            metadata: {
+              ...event.metadata,
+              downloadUrl: data.downloadUrl || event.metadata.downloadUrl,
+              previewImageDownloadUrl: data.previewImageDownloadUrl || event.metadata.previewImageDownloadUrl,
+              downloadFormat: data.selectedFormat || event.metadata.downloadFormat,
+              formatOptions: data.formatOptions || event.metadata.formatOptions,
+              redownloadCount: data.redownloadCount ?? event.metadata.redownloadCount,
+              redownloadRemaining: data.redownloadRemaining ?? event.metadata.redownloadRemaining,
+              redownloadExpiresAt: data.redownloadExpiresAt || event.metadata.redownloadExpiresAt,
+            },
+          }
           : event,
       ),
     );

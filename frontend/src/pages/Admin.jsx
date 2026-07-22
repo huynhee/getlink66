@@ -59,13 +59,13 @@ const emptyNotification = {
 const referralModeOptions = [
   {
     value: "both",
-    vi: "Cả hai cùng nhận 1 ngày Pro",
-    en: "Both users receive 1 Pro day",
+    vi: "Cả hai nhận 1 ngày Pro + 28 credit",
+    en: "Both receive 1 Pro day + 28 credits",
   },
   {
     value: "referrer_only",
-    vi: "Chỉ người giới thiệu nhận 1 ngày Pro",
-    en: "Only referrer receives 1 Pro day",
+    vi: "Chỉ người giới thiệu nhận Pro + credit",
+    en: "Only referrer receives Pro + credits",
   },
   {
     value: "off",
@@ -109,8 +109,8 @@ const defaultSiteSettings = {
   systemStatusLabel: "Trạng thái hệ thống",
   pricePerDownloadLabel: "Giá tải chỉ từ",
   pricePerDownloadValue: "10K",
-  referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí.",
-  referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro miễn phí.",
+  referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro + 28 credit.",
+  referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro + 28 credit.",
   pricingEyebrow: "Bảng giá",
   pricingTitle: "Chọn gói phù hợp",
   pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
@@ -2360,7 +2360,7 @@ export default function Admin({ user, language = "vi" }) {
         <section className="panel">
           <h2><UserPlus size={20} /> {l("Ai đã mời ai", "Who invited whom")}</h2>
           <p className="muted" style={{ marginTop: 8 }}>
-            {l("Danh sách người dùng đăng ký qua link giới thiệu và số ngày Pro đã thưởng cho hai bên.", "Users who signed up through referral links and the Pro days rewarded to both sides.")}
+            {l("Danh sách người dùng đăng ký qua link giới thiệu cùng Pro và credit đã thưởng.", "Users who signed up through referral links and their Pro and credit rewards.")}
           </p>
           <div className="segmentedControl" style={{ marginTop: 16 }}>
             {referralModeOptions.map((option) => (
@@ -2376,9 +2376,9 @@ export default function Admin({ user, language = "vi" }) {
           </div>
           <p className="muted" style={{ marginTop: 10 }}>
             {siteSettings.referralMode === "both"
-              ? l("Người mời và người được mời đều nhận thêm 1 ngày Pro.", "Both referrer and invited user receive 1 Pro day.")
+              ? l("Người mời và người được mời đều nhận 1 ngày Pro + 28 credit.", "Both referrer and invited user receive 1 Pro day + 28 credits.")
               : siteSettings.referralMode === "referrer_only"
-                ? l("Chỉ người giới thiệu nhận thêm 1 ngày Pro; trang chủ đổi nội dung lời mời.", "Only the referrer receives 1 Pro day; homepage invite text changes.")
+                ? l("Chỉ người giới thiệu nhận 1 ngày Pro + 28 credit; trang chủ đổi nội dung lời mời.", "Only the referrer receives 1 Pro day + 28 credits; homepage invite text changes.")
                 : l("Ẩn thanh giới thiệu trên trang chủ và không thưởng referral mới.", "Referral invite is hidden and new referral rewards are disabled.")}
           </p>
           {referralMsg && (
@@ -2399,13 +2399,11 @@ export default function Admin({ user, language = "vi" }) {
                 </div>
                 <code>{item.referralCode}</code>
                 <span>
-                  {item.rewardType === "pro"
-                    ? `+${Number(item.referrerRewardProDays || 0)} Pro / +${Number(item.referredRewardProDays || 0)} Pro`
-                    : <>
-                        <CoinAmount value={item.referrerRewardCredit ?? item.rewardCredit ?? 28} prefix="+" />
-                        {" / "}
-                        <CoinAmount value={Number(item.referredRewardCredit ?? item.rewardCredit ?? 28) > 0 ? item.referredRewardCredit ?? item.rewardCredit ?? 28 : 0} prefix="+" />
-                      </>}
+                  {`+${Number(item.referrerRewardProDays || 0)} Pro + `}
+                  <CoinAmount value={item.referrerRewardCredit ?? item.rewardCredit ?? 0} prefix="+" />
+                  {" / "}
+                  {`+${Number(item.referredRewardProDays || 0)} Pro + `}
+                  <CoinAmount value={item.referredRewardCredit ?? item.rewardCredit ?? 0} prefix="+" />
                 </span>
                 <time>{new Date(item.rewardedAt || item.createdAt).toLocaleString(locale)}</time>
               </div>

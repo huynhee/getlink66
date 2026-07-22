@@ -190,7 +190,7 @@ function stableMetadataDocument(raw, normalized) {
   };
 }
 
-export async function readMarketplaceDriveMetadata(file, fallback = {}) {
+export async function readMarketplaceDriveMetadata(file, fallback = {}, options = {}) {
   if (!file?.id) return { document: null, metadata: null, hash: "", errors: [{ field: "metadataFile", code: "required" }] };
   const buffer = await readGoogleDriveFileBuffer(file.id, { fileName: file.name, maxBytes: 1024 * 1024 });
   let body = buffer;
@@ -202,7 +202,7 @@ export async function readMarketplaceDriveMetadata(file, fallback = {}) {
   }
   const parsed = JSON.parse(body.toString("utf8"));
   const { metadata, errors } = normalizeMarketplaceMetadata(legacyMetadata(parsed, fallback));
-  const taxonomy = await validateMarketplaceTaxonomy(metadata);
+  const taxonomy = await validateMarketplaceTaxonomy(metadata, { currentModel: options.currentModel || null });
   const document = stableMetadataDocument(parsed, metadata);
   return {
     document,
@@ -219,10 +219,13 @@ async function readChecksum(file) {
   return String(buffer.toString("utf8").match(/[a-f0-9]{64}/i)?.[0] || "").toLowerCase();
 }
 
-async function categoryFields(sourceCategoryId, assetType = "model") {
+async function categoryFields(sourceCategoryId, assetType = "model", { currentModel = null } = {}) {
   const value = clean(sourceCategoryId, 80);
   if (!value) return { categorySourceId: "", parentCategorySourceId: "" };
-  const resolved = await resolveMarketplaceCategory(value, assetType, { requireLeaf: true });
+  let resolved = await resolveMarketplaceCategory(value, assetType, { requireLeaf: true });
+  if (!resolved && value === String(currentModel?.categorySourceId || "")) {
+    resolved = await resolveMarketplaceCategory(value, assetType, { includeInactive: true });
+  }
   if (!resolved) return { categorySourceId: "", parentCategorySourceId: "" };
   return {
     categorySourceId: String(resolved.category.sourceCategoryId || ""),
@@ -324,7 +327,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
         colors: existing?.colors,
         materials: existing?.materials,
         sha256: existing?.sha256,
-      });
+      }, { currentModel: existing });
     } catch (error) {
       syncError = clean(error?.message || "metadata_parse_failed", 500);
       metadataResult.errors = [{ field: "metadataFile", code: "invalid" }];
@@ -352,7 +355,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     error.code = "MARKETPLACE_SOURCE_MODEL_CONFLICT";
     throw error;
   }
-  const categories = await categoryFields(metadata.sourceCategoryId, normalizedType);
+  const categories = await categoryFields(metadata.sourceCategoryId, normalizedType, { currentModel: existing });
   const blockers = publicationBlockers({
     metadataFile,
     metadataErrors: metadataResult.errors,
@@ -413,6 +416,8 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     syncStatus: syncError ? "error" : blockers.some((item) => ["archive", "cover", "metadata_file"].includes(item)) ? "missing" : "synced",
     syncError,
     discoveryStatus: "pending",
+    searchStatus: "pending",
+    searchError: "",
     discoveryError: "",
   };
   payload.titleSort = normalizeMarketplaceTitle(payload.title);
@@ -465,7 +470,7 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
     colors: model.colors,
     materials: model.materials,
     sha256: model.sha256,
-  });
+  }, { currentModel: model });
   const currentVersion = String(metadataFile?.version || "");
   const expectedHash = String(expected.metadataHash || "");
   const expectedVersion = String(expected.driveVersion || "");
@@ -499,7 +504,7 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
     error.details = errors;
     throw error;
   }
-  const taxonomy = await validateMarketplaceTaxonomy(document);
+  const taxonomy = await validateMarketplaceTaxonomy(document, { currentModel: model });
   if (taxonomy.errors.length) {
     const error = new Error("Marketplace taxonomy is invalid.");
     error.status = 400;
@@ -507,7 +512,7 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
     error.details = taxonomy.errors;
     throw error;
   }
-  const category = await categoryFields(document.sourceCategoryId, model.assetType);
+  const category = await categoryFields(document.sourceCategoryId, model.assetType, { currentModel: model });
   if (!category.categorySourceId) {
     const error = new Error("Marketplace category must be an existing leaf category.");
     error.status = 400;
@@ -530,7 +535,11 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
       content: compressed,
       contentType: "application/gzip",
     });
-  const confirmed = await readMarketplaceDriveMetadata({ ...written, name: written.name || "metadata.json.gz" });
+  const confirmed = await readMarketplaceDriveMetadata(
+    { ...written, name: written.name || "metadata.json.gz" },
+    {},
+    { currentModel: model },
+  );
   const expectedWrittenHash = marketplaceMetadataHash(document);
   if (confirmed.hash !== expectedWrittenHash) {
     const error = new Error("Google Drive metadata verification failed.");
@@ -550,7 +559,7 @@ export async function inspectMarketplaceModelMetadata(model) {
   const files = await listGoogleDriveFolderFiles(model.driveFolderId);
   const metadataFile = pickMetadata(files);
   const current = metadataFile
-    ? await readMarketplaceDriveMetadata(metadataFile, metadataFromMarketplaceModel(model))
+    ? await readMarketplaceDriveMetadata(metadataFile, metadataFromMarketplaceModel(model), { currentModel: model })
     : { document: null, metadata: null, hash: "", errors: [] };
   const desired = metadataFromMarketplaceModel(model);
   const { document, errors } = marketplaceMetadataDocument(desired, {

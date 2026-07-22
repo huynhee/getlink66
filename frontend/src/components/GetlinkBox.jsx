@@ -10,6 +10,7 @@ import {
   resetFaviconProgress,
   setFaviconProgress,
 } from "../utils/faviconProgress.js";
+import { useGetlinkJob } from "../contexts/GetlinkJobContext.jsx";
 
 function isUsableFormatOption(option = {}) {
   const fileFormat = String(option.fileFormat || option.file_format || String(option.key || "").split("|")[0] || "").trim();
@@ -70,7 +71,22 @@ function inputModeText(resolveMode = "search", language = "vi") {
   };
 }
 
-export default function GetlinkBox({ onCreditChange, initialUrl = "", language = "vi", disabledReason = "" }) {
+function getlinkJobStageLabel(stage, language = "vi") {
+  const labels = {
+    queued: ["Đang xếp hàng...", "Queued..."],
+    validating: ["Đang kiểm tra yêu cầu...", "Validating request..."],
+    resolving_format: ["Đang kiểm tra định dạng file...", "Checking file formats..."],
+    resolving_download: ["Đang lấy link tải...", "Resolving download link..."],
+    saving: ["Đang lưu lịch sử...", "Saving download history..."],
+  };
+  return (labels[stage] || labels.queued)[language === "vi" ? 0 : 1];
+}
+
+function draftStorageKey(userId) {
+  return `3dipl-getlink-draft:${String(userId || "anonymous")}`;
+}
+
+export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "", language = "vi", disabledReason = "" }) {
   const t = translations[language] || translations.vi;
   const [url, setUrl] = useState(initialUrl);
   const [result, setResult] = useState("");
@@ -82,7 +98,6 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   const [pendingFormatSelection, setPendingFormatSelection] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [copied, setCopied] = useState(false);
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
   const [modelResolveMode, setModelResolveMode] = useState("search");
@@ -90,6 +105,25 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   const [progressLabel, setProgressLabel] = useState("");
   const progressTimerRef = useRef(null);
   const resetTimerRef = useRef(null);
+  const formatDialogDismissedRef = useRef("");
+  const acknowledgeInFlightRef = useRef(false);
+  const completedJobAppliedRef = useRef("");
+  const [draftOwner, setDraftOwner] = useState("");
+  const {
+    job,
+    actionLoading: jobActionLoading,
+    isActive: jobActive,
+    createJob,
+    chooseFormat,
+    retryJob,
+    cancelJob,
+    acknowledgeJob,
+  } = useGetlinkJob();
+  const confirming = jobActionLoading || Boolean(job && ["queued", "processing"].includes(job.status));
+  const visibleProgress = jobActive && job?.status !== "awaiting_format" ? Number(job.progress || 0) : progress;
+  const visibleProgressLabel = jobActive && job?.status !== "awaiting_format"
+    ? getlinkJobStageLabel(job.stage, language)
+    : progressLabel;
   const modeText = inputModeText(modelResolveMode, language);
   const cursorText = url || modeText.placeholder;
   const cursorX = Math.min(cursorText.length * 8.4, 520);
@@ -108,6 +142,89 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
   useEffect(() => {
     if (initialUrl) setUrl(initialUrl);
   }, [initialUrl]);
+
+  useEffect(() => {
+    if (!userId) {
+      setDraftOwner("");
+      return;
+    }
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(draftStorageKey(userId)) || "null");
+      if (stored && typeof stored === "object") {
+        if (!initialUrl && stored.url) setUrl(String(stored.url));
+        setIncludePreviewImage(Boolean(stored.includePreviewImage));
+        if (stored.preview && typeof stored.preview === "object") setPreview(stored.preview);
+        if (stored.previewUrl) setPreviewUrl(String(stored.previewUrl));
+      }
+    } catch {
+      // A malformed draft is ignored and replaced by the next valid state.
+    }
+    setDraftOwner(String(userId));
+  }, [initialUrl, userId]);
+
+  useEffect(() => {
+    if (!userId || draftOwner !== String(userId) || job) return;
+    try {
+      window.localStorage.setItem(draftStorageKey(userId), JSON.stringify({
+        url,
+        includePreviewImage,
+        preview,
+        previewUrl,
+      }));
+    } catch {
+      // Draft persistence is best effort only.
+    }
+  }, [draftOwner, includePreviewImage, job, preview, previewUrl, url, userId]);
+
+  useEffect(() => {
+    if (!job) return;
+    if (job.status === "awaiting_format") {
+      if (formatDialogDismissedRef.current !== job.id) {
+        setPendingFormatSelection(job);
+        const defaultFormat = (job.formatOptions || []).find((option) => option.isDefault)
+          || job.formatOptions?.[0]
+          || job.selectedFormat;
+        setSelectedFormatKey(defaultFormat?.key || "");
+      }
+      setPreview((current) => ({
+        ...(current || {}),
+        title: job.title || current?.title,
+        imageUrl: job.imageUrl || current?.imageUrl,
+        productId: job.productId || current?.productId,
+        creditCost: Number(job.creditCost || current?.creditCost || 0),
+      }));
+      return;
+    }
+    if (job.status === "completed") {
+      setPendingFormatSelection(null);
+      setResult(job.result?.downloadUrl || "");
+      setPreviewImageDownloadUrl(job.result?.previewImageDownloadUrl || "");
+      setIncludePreviewImage(Boolean(job.includePreviewImage));
+      setPreview((current) => ({
+        ...(current || {}),
+        title: job.title || current?.title,
+        imageUrl: job.imageUrl || current?.imageUrl,
+        productId: job.productId || current?.productId,
+        creditCost: Number(job.result?.creditUsed || current?.creditCost || 0),
+        selectedFormat: job.selectedFormat || current?.selectedFormat || null,
+      }));
+      setError("");
+      if (completedJobAppliedRef.current !== job.id) {
+        completedJobAppliedRef.current = job.id;
+        onCreditChange(Number(job.result?.credit || 0));
+      }
+      return;
+    }
+    if (job.status === "failed") {
+      setPendingFormatSelection(null);
+      setError(job.error?.message || (language === "vi" ? "Lấy link thất bại." : "Getlink failed."));
+      return;
+    }
+    if (job.status === "canceled") {
+      setPendingFormatSelection(null);
+      setError("");
+    }
+  }, [job, language, onCreditChange]);
 
   useEffect(() => {
     api("/api/system/3d66-status")
@@ -175,19 +292,23 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     clearProgressLater(2200);
   }
 
-  function triggerBrowserDownload(downloadUrl) {
-    if (!downloadUrl) return;
-    const anchor = document.createElement("a");
-    anchor.href = downloadUrl;
-    anchor.target = "_blank";
-    anchor.rel = "noreferrer";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
+  function dismissTerminalJob() {
+    if (!job || !["completed", "failed", "canceled"].includes(job.status) || acknowledgeInFlightRef.current) return;
+    acknowledgeInFlightRef.current = true;
+    acknowledgeJob(job.id)
+      .catch(() => {})
+      .finally(() => {
+        acknowledgeInFlightRef.current = false;
+      });
   }
 
   async function submit(event) {
     event.preventDefault();
+    if (jobActive) {
+      setError(language === "vi" ? "Một yêu cầu getlink đang được xử lý." : "A getlink request is already processing.");
+      return;
+    }
+    dismissTerminalJob();
     setError("");
     setResult("");
     setPreviewImageDownloadUrl("");
@@ -249,60 +370,44 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
       setError(disabledReason);
       return;
     }
-    setConfirming(true);
     setCopied(false);
-    beginProgress(language === "vi" ? "Đang lấy link tải..." : "Getting download link...", 12, 92);
     try {
       const modelInput = normalize3D66Input(previewUrl || url, modelResolveMode);
       if (!modelInput) {
         setError(modeText.invalid);
-        errorProgress(language === "vi" ? "Mã model không hợp lệ" : "Invalid model ID");
         return;
       }
-      const data = await api("/api/getlink", {
-        method: "POST",
-        body: JSON.stringify({
-          modelId: modelInput,
-          includePreviewImage,
-          downloadFormat: downloadFormatPayload(downloadFormatOverride)
-        })
-      });
-      if (data.requiresFormatSelection) {
-        const nextFormats = Array.isArray(data.formatOptions) ? data.formatOptions.filter(isUsableFormatOption) : [];
-        const defaultFormat = nextFormats.find((option) => option.isDefault) || nextFormats[0] || data.selectedFormat;
-        setPendingFormatSelection(data);
-        setSelectedFormatKey(defaultFormat?.key || "");
-        setPreview({
-          ...(preview || {}),
-          title: data.title || preview?.title,
-          imageUrl: data.imageUrl || preview?.imageUrl,
-          productId: data.productId || preview?.productId,
-          creditCost: data.creditCost || preview?.creditCost
-        });
-        finishProgress(language === "vi" ? "Chọn định dạng file" : "Choose file format");
+      if (job?.status === "awaiting_format" && downloadFormatOverride?.key) {
+        await chooseFormat(job.id, downloadFormatOverride.key);
+        setPendingFormatSelection(null);
+        formatDialogDismissedRef.current = "";
         return;
       }
-      setPendingFormatSelection(null);
-      setResult(data.downloadUrl || data.url);
-      setPreviewImageDownloadUrl(data.previewImageDownloadUrl || "");
-      setPreview({
-        ...(preview || {}),
-        title: data.title || preview?.title,
-        imageUrl: data.imageUrl || preview?.imageUrl,
-        productId: data.productId || preview?.productId,
-        creditCost: data.creditUsed || preview?.creditCost,
-        selectedFormat: data.selectedFormat || downloadFormatOverride || null
-      });
-      onCreditChange(data.credit);
-      if (includePreviewImage && data.previewImageDownloadUrl) {
-        window.setTimeout(() => triggerBrowserDownload(data.previewImageDownloadUrl), 250);
+      if (job && ["completed", "failed", "canceled"].includes(job.status)) {
+        await acknowledgeJob(job.id);
       }
-      finishProgress(language === "vi" ? "Đã sẵn sàng tải file" : "Download is ready");
+      const requestStorageKey = `${draftStorageKey(userId)}:request-id`;
+      let clientRequestId = "";
+      try {
+        clientRequestId = window.localStorage.getItem(requestStorageKey) || crypto.randomUUID();
+        window.localStorage.setItem(requestStorageKey, clientRequestId);
+      } catch {
+        clientRequestId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      }
+      await createJob({
+        modelId: modelInput,
+        includePreviewImage,
+        downloadFormat: downloadFormatPayload(downloadFormatOverride),
+        clientRequestId,
+      });
+      try {
+        window.localStorage.removeItem(draftStorageKey(userId));
+        window.localStorage.removeItem(requestStorageKey);
+      } catch {
+        // The server-side idempotency key still protects the request.
+      }
     } catch (err) {
       setError(err.message);
-      errorProgress(language === "vi" ? "Lấy link thất bại" : "Getlink failed");
-    } finally {
-      setConfirming(false);
     }
   }
 
@@ -316,8 +421,29 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
     }
   }
 
+  async function retryCurrentJob() {
+    try {
+      setError("");
+      await retryJob(job.id);
+    } catch (retryError) {
+      setError(retryError.message);
+    }
+  }
+
+  async function cancelCurrentJob() {
+    try {
+      setError("");
+      await cancelJob(job.id);
+      setPendingFormatSelection(null);
+      formatDialogDismissedRef.current = "";
+    } catch (cancelError) {
+      setError(cancelError.message);
+    }
+  }
+
   async function pasteLink() {
     setError("");
+    dismissTerminalJob();
     try {
       if (!navigator.clipboard?.readText) {
         setError(t.clipboardUnsupported);
@@ -361,6 +487,8 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               value={url}
               aria-label={t.getlinkInputAria}
               onChange={(event) => {
+                dismissTerminalJob();
+                setError("");
                 setUrl(inputValueWhileTyping(event.target.value, modelResolveMode));
                 setPreview(null);
                 setSelectedFormatKey("");
@@ -372,13 +500,14 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
                 resetFaviconProgress();
               }}
               placeholder={modeText.placeholder}
+              disabled={jobActive}
             />
-            <button type="button" className="pasteInlineButton" onClick={pasteLink} title={t.pasteTitle}>
+            <button type="button" className="pasteInlineButton" onClick={pasteLink} title={t.pasteTitle} disabled={jobActive}>
               <ClipboardPaste size={14} />
               {t.paste}
             </button>
           </div>
-          <button type="submit" disabled={loading || !url || Boolean(disabledReason)}>
+          <button type="submit" disabled={loading || jobActive || !url || Boolean(disabledReason)}>
             {loading ? <Loader2 size={18} className="spin" /> : <Search size={18} />}
             {loading ? t.processing : t.checkLink}
           </button>
@@ -388,25 +517,42 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
             type="checkbox"
             checked={includePreviewImage}
             onChange={(event) => setIncludePreviewImage(event.target.checked)}
+            disabled={jobActive}
           />
           <span>
             <strong>{t.downloadPreviewImageOption}</strong>
           </span>
         </label>
       </form>
-      {(loading || confirming || progress > 0) && (
+      {(loading || confirming || visibleProgress > 0) && (
         <div className="getlinkProgress" aria-live="polite">
           <div>
-            <span>{progressLabel || t.processing}</span>
-            <strong>{Math.round(progress)}%</strong>
+            <span>{visibleProgressLabel || t.processing}</span>
+            <strong>{Math.round(visibleProgress)}%</strong>
           </div>
           <div className="getlinkProgressTrack">
-            <i style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+            <i style={{ width: `${Math.max(0, Math.min(100, visibleProgress))}%` }} />
           </div>
+        </div>
+      )}
+      {job?.canCancel && job.status !== "awaiting_format" && (
+        <div className="getlinkJobActions">
+          <button type="button" className="smallButton" onClick={cancelCurrentJob} disabled={jobActionLoading}>
+            <X size={14} />
+            {language === "vi" ? "Hủy yêu cầu" : "Cancel request"}
+          </button>
         </div>
       )}
       {disabledReason && <p className="error">{disabledReason}</p>}
       {error && !disabledReason && <p className="error">{error}</p>}
+      {job?.status === "failed" && (
+        <div className="getlinkJobActions">
+          <button type="button" onClick={retryCurrentJob} disabled={jobActionLoading}>
+            {jobActionLoading ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
+            {language === "vi" ? "Thử lại" : "Retry"}
+          </button>
+        </div>
+      )}
       {preview && (
         <div className="result">
           <span>{t.modelInfo}</span>
@@ -457,7 +603,7 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               </div>
             </div>
           )}
-          {!result && (
+          {!result && job?.status !== "failed" && job?.status !== "canceled" && (
             <button type="button" onClick={() => confirmDownload()} disabled={confirming || Boolean(disabledReason)} style={{ marginTop: 14 }}>
               {confirming ? <Loader2 size={18} className="spin" /> : <ArrowDownToLine size={18} />}
               {confirming
@@ -509,7 +655,10 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               <button
                 type="button"
                 className="iconButton"
-                onClick={() => setPendingFormatSelection(null)}
+                onClick={() => {
+                  formatDialogDismissedRef.current = job?.id || "dismissed";
+                  setPendingFormatSelection(null);
+                }}
                 aria-label="Close"
               >
                 <X size={16} />
@@ -548,10 +697,10 @@ export default function GetlinkBox({ onCreditChange, initialUrl = "", language =
               <button
                 type="button"
                 className="ghostButton"
-                onClick={() => setPendingFormatSelection(null)}
+                onClick={cancelCurrentJob}
                 disabled={confirming}
               >
-                {language === "vi" ? "Hủy" : "Cancel"}
+                {language === "vi" ? "Hủy yêu cầu" : "Cancel request"}
               </button>
               <button type="button" onClick={() => confirmDownload(selectedFormat)} disabled={confirming || !selectedFormat}>
                 {confirming ? <Loader2 size={16} className="spin" /> : <ArrowDownToLine size={16} />}

@@ -31,15 +31,15 @@ export async function referralHistory(req, res, next) {
         const proDays = isReferrer
           ? Number(item.referrerRewardProDays || 0)
           : Number(item.referredRewardProDays || 0);
-        if (rewardType === "pro" ? proDays <= 0 : credit <= 0) return null;
+        if (proDays <= 0 && credit <= 0) return null;
         const otherUser = isReferrer ? item.referredUserId : item.referrerId;
         return {
           _id: item._id,
           role: isReferrer ? "referrer" : "referred",
           referralCode: item.referralCode,
           rewardType,
-          credit: rewardType === "credit" ? credit : 0,
-          proDays: rewardType === "pro" ? proDays : 0,
+          credit,
+          proDays,
           proUntil: isReferrer ? item.referrerProUntil : item.referredProUntil,
           otherUser: otherUser
             ? {

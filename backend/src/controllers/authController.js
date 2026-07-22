@@ -89,20 +89,18 @@ function nextVietnamReset(date = new Date()) {
 async function downloadQuotaSnapshot(user) {
   if (!user) return null;
   const isPro = Boolean(user.proUntil && new Date(user.proUntil) > new Date());
-  const tier = user.role === "admin" ? "admin" : isPro ? "member" : "free";
+  const tier = isPro ? "member" : "free";
   const dayKey = vietnamDayKey();
-  const quota = tier === "admin"
-    ? null
-    : await DailyDownloadQuota.findOne({ dayKey, userId: user._id, tier }).lean();
+  const quota = await DailyDownloadQuota.findOne({ dayKey, userId: user._id, tier }).lean();
   const baseLimit = isPro ? Number(user.proDailyDownloadLimit || 100) : 5;
-  const limit = tier === "admin" ? null : baseLimit + Number(quota?.bonusLimit || 0);
-  const used = tier === "admin" ? 0 : Number(quota?.count || 0);
+  const limit = baseLimit + Number(quota?.bonusLimit || 0);
+  const used = Number(quota?.count || 0);
   return {
     dayKey,
     tier,
     used,
     limit,
-    remaining: tier === "admin" ? null : Math.max(0, limit - used),
+    remaining: Math.max(0, limit - used),
     resetAt: nextVietnamReset(),
   };
 }
@@ -227,7 +225,7 @@ export async function devLogin(req, res, next) {
     if (proEnabled) {
       update.$set.proUntil = endOfVietnamDay(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
       update.$set.proDailyDownloadLimit = 100;
-    } else if (Object.prototype.hasOwnProperty.call(req.query, "pro")) {
+    } else {
       update.$unset = {
         proUntil: 1,
         proPlanId: 1,

@@ -18,8 +18,8 @@ const HOME_TEXT_DEFAULTS = {
     systemStatusLabel: "Trạng thái hệ thống",
     pricePerDownloadLabel: "Giá tải chỉ từ",
     pricePerDownloadValue: "10K",
-    referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí.",
-    referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro miễn phí.",
+    referralTitleBoth: "Mời bạn bè, cả hai nhận 1 ngày Pro + 28 credit.",
+    referralTitleReferrerOnly: "Mời bạn bè để nhận 1 ngày Pro + 28 credit.",
     pricingEyebrow: "Bảng giá",
     pricingTitle: "Chọn gói phù hợp",
     pricingNote: "Nạp credit tự động, cộng credit ngay sau khi chọn gói.",
@@ -41,8 +41,8 @@ const HOME_TEXT_DEFAULTS = {
     systemStatusLabel: "System status",
     pricePerDownloadLabel: "Download price from",
     pricePerDownloadValue: "10K",
-    referralTitleBoth: "Invite friends and both receive 1 free Pro day.",
-    referralTitleReferrerOnly: "Invite friends to receive 1 free Pro day.",
+    referralTitleBoth: "Invite friends and both receive 1 Pro day + 28 credits.",
+    referralTitleReferrerOnly: "Invite friends to receive 1 Pro day + 28 credits.",
     pricingEyebrow: "Pricing",
     pricingTitle: "Choose the right package",
     pricingNote: "Automatic credit top-up after selecting a package.",
@@ -136,11 +136,11 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
     pricePerDownloadLabel: language === "vi" ? "Giá tải chỉ từ" : "Download price from",
     pricePerDownloadValue: "10K",
     referralTitleBoth: language === "vi"
-      ? "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí."
-      : "Invite friends and both receive 1 free Pro day.",
+      ? "Mời bạn bè, cả hai nhận 1 ngày Pro + 28 credit."
+      : "Invite friends and both receive 1 Pro day + 28 credits.",
     referralTitleReferrerOnly: language === "vi"
-      ? "Mời bạn bè để nhận 1 ngày Pro miễn phí."
-      : "Invite friends to receive 1 free Pro day.",
+      ? "Mời bạn bè để nhận 1 ngày Pro + 28 credit."
+      : "Invite friends to receive 1 Pro day + 28 credits.",
     pricingEyebrow: language === "vi" ? "Bảng giá" : "Pricing",
     pricingTitle: language === "vi" ? "Chọn gói phù hợp" : "Choose the right package",
     pricingNote: language === "vi"
@@ -168,8 +168,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const demoCursorX = Math.min(demoCursorText.length * 8.4, 520);
   if (referral?.mode === "referrer_only") {
     t.referralTitle = language === "vi"
-      ? "Mời bạn bè để nhận 1 ngày Pro miễn phí."
-      : "Invite friends to receive 1 free Pro day.";
+      ? "Mời bạn bè để nhận 1 ngày Pro + 28 credit."
+      : "Invite friends to receive 1 Pro day + 28 credits.";
   }
 
   React.useEffect(() => {
@@ -190,15 +190,20 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
         })
         .catch(console.error);
       setFeaturedModelsLoading(true);
-      api("/api/marketplace/models?limit=6&page=1")
-        .then((data) => setFeaturedModels((data.models || data.assets || []).slice(0, 6)))
-        .catch(() => setFeaturedModels([]))
-        .finally(() => setFeaturedModelsLoading(false));
       setFeaturedScenesLoading(true);
-      api("/api/marketplace/scenes?limit=6&page=1")
-        .then((data) => setFeaturedScenes((data.scenes || data.assets || []).slice(0, 6)))
-        .catch(() => setFeaturedScenes([]))
-        .finally(() => setFeaturedScenesLoading(false));
+      api("/api/marketplace/recommendations/home?limit=6")
+        .then((data) => {
+          setFeaturedModels((data.models || []).slice(0, 6));
+          setFeaturedScenes((data.scenes || []).slice(0, 6));
+        })
+        .catch(() => {
+          setFeaturedModels([]);
+          setFeaturedScenes([]);
+        })
+        .finally(() => {
+          setFeaturedModelsLoading(false);
+          setFeaturedScenesLoading(false);
+        });
       api("/api/topup/packages")
         .then((data) => setPackages(data.packages || []))
         .catch(console.error);
@@ -222,7 +227,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
         .catch((err) => setGuideError(err.message))
         .finally(() => setGuideLoading(false));
     }
-  }, [adminMode, language, t.systemOfflineMessage]);
+  }, [adminMode, language, t.systemOfflineMessage, userId]);
 
   React.useEffect(() => {
     if (!userId || adminMode) {
@@ -341,12 +346,12 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   function referralTitle() {
     if ((referral?.mode || siteSettings.referralMode) === "referrer_only") {
       return language === "vi"
-        ? "Mời bạn bè để nhận 1 ngày Pro miễn phí."
-        : "Invite friends to receive 1 free Pro day.";
+        ? "Mời bạn bè để nhận 1 ngày Pro + 28 credit."
+        : "Invite friends to receive 1 Pro day + 28 credits.";
     }
     return t.referralTitle || (language === "vi"
-      ? "Mời bạn bè, cả hai nhận 1 ngày Pro miễn phí"
-      : "Invite friends and both receive 1 free Pro day");
+      ? "Mời bạn bè, cả hai nhận 1 ngày Pro + 28 credit"
+      : "Invite friends and both receive 1 Pro day + 28 credits");
   }
 
   function homepageReferralTitle() {

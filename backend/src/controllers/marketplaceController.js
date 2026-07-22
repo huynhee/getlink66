@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import DailyImageSearchQuota from "../models/DailyImageSearchQuota.js";
+import { isMemoryDb } from "../config/memoryStore.js";
 import { marketplaceAssetTypeFilter, marketplaceDownloadCost, normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { isSafeId } from "../utils/validators.js";
 import {
@@ -13,19 +14,15 @@ import {
 import { isProActive } from "../utils/membershipService.js";
 import {
   getStorageBrowserDownloadLink,
-  openDemoMarketplaceImageStream,
   openGoogleDriveFileStream,
   openStorageStream,
 } from "../utils/storageProvider.js";
 import { marketplaceTurnstileConfig, verifyMarketplaceTurnstile } from "../utils/turnstile.js";
 import { searchMarketplaceImage } from "../utils/marketplaceImageSearchProvider.js";
 import {
-  discoveryIdentityQuery,
   rankMarketplaceRecommendations,
-  semanticRecommendations,
-  semanticTextSearch,
-  sortByDiscoveryMatches,
 } from "../utils/marketplaceDiscovery.js";
+import { marketplaceHomeRecommendations } from "../utils/marketplaceRecommendationService.js";
 import {
   hydrateMarketplaceCategoryRefs,
   marketplaceCategorySnapshot,
@@ -35,6 +32,15 @@ import {
   marketplaceSortSelection,
   marketplaceSortSpec,
 } from "../utils/marketplaceSort.js";
+import {
+  buildMarketplaceSearchDocument,
+  marketplaceSearchCandidatePrefixes,
+  marketplaceSearchMatches,
+  marketplaceSearchQuery,
+  marketplaceSearchScore,
+  marketplaceSearchTokens,
+  marketplaceSearchUsesFuzzyMatch,
+} from "../utils/marketplaceSearch.js";
 
 const PAGE_SIZE = 60;
 const IMAGE_SEARCH_FREE_LIMIT = 10;
@@ -170,75 +176,52 @@ function publicModel(model, options = {}) {
     fileSize: Number(model.fileSize || 0),
     downloadCount: Number(model.downloadCount || 0),
     quotaCost: marketplaceDownloadCost(model.assetType),
-    isDemo: model.source?.provider === "demo",
     createdAt: model.createdAt,
     updatedAt: model.updatedAt,
   };
 }
 
-function recommendationSignals(model) {
-  const signals = [];
-  if (model.categorySourceId) signals.push({ categorySourceId: model.categorySourceId });
-  if (model.parentCategorySourceId) {
-    signals.push({ parentCategorySourceId: model.parentCategorySourceId });
-  }
-  if (model.renderer) signals.push({ renderer: model.renderer });
-  if (model.styles?.length) signals.push({ styles: { $in: model.styles } });
-  if (model.renderers?.length) signals.push({ renderers: { $in: model.renderers } });
-  if (model.forms?.length) signals.push({ forms: { $in: model.forms } });
-  if (model.colors?.length) signals.push({ colors: { $in: model.colors } });
-  if (model.materials?.length) signals.push({ materials: { $in: model.materials } });
-  return signals;
-}
-
 async function recommendedModelsFor(model, options = {}) {
-  if (!model?._id) return { models: [], total: 0, engine: "local_hybrid" };
+  if (!model?._id) return { models: [], total: 0, engine: "catalog_behavior_v2" };
   const offset = Math.max(0, Number(options.offset || 0));
   const limit = Math.min(60, Math.max(1, Number(options.limit || 6)));
   const desiredCount = Math.min(60, offset + limit);
-  const semantic = await semanticRecommendations(model, 180);
-  const signals = recommendationSignals(model);
   const query = {
     assetType: marketplaceAssetTypeFilter(model.assetType),
     _id: { $ne: model._id },
     isPublished: true,
     metadataStatus: "complete",
     fileStatus: "ready",
-    ...(signals.length ? { $or: signals } : {}),
   };
   const candidates = await MarketplaceModel.find(query)
     .sort({ downloadCount: -1, createdAt: -1 })
     .limit(720)
     .lean();
 
-  const semanticQuery = discoveryIdentityQuery(semantic.matches);
-  if (semanticQuery) {
-    const semanticCandidates = await MarketplaceModel.find({
-      assetType: marketplaceAssetTypeFilter(model.assetType),
-      isPublished: true,
-      metadataStatus: "complete",
-      fileStatus: "ready",
-      _id: { $ne: model._id },
-      ...semanticQuery,
-    })
-      .limit(180)
-      .lean();
-    const seen = new Set(candidates.map((candidate) => String(candidate._id)));
-    semanticCandidates.forEach((candidate) => {
-      if (!seen.has(String(candidate._id))) candidates.push(candidate);
-    });
-  }
-
   await hydrateMarketplaceCategoryRefs(candidates);
   const ranked = rankMarketplaceRecommendations(model, candidates, {
-    semanticMatches: semantic.matches,
     limit: Math.max(desiredCount, 60),
   });
   return {
     models: ranked.slice(offset, offset + limit).map((item) => publicModel(item, { includePreviews: false })),
     total: Math.min(60, ranked.length),
-    engine: semantic.matches.length ? semantic.provider : "local_hybrid",
+    engine: "catalog_behavior_v2",
   };
+}
+
+export async function listMarketplaceHomeRecommendations(req, res, next) {
+  try {
+    const limit = Math.min(12, Math.max(1, Number(req.query.limit || 6)));
+    const result = await marketplaceHomeRecommendations({ userId: req.user?._id || null, limit });
+    res.json({
+      engine: result.engine,
+      mode: result.mode,
+      models: result.models.map((model) => publicModel(model, { includePreviews: false })),
+      scenes: result.scenes.map((scene) => publicModel(scene, { includePreviews: false })),
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function listMarketplaceCategories(req, res, next) {
@@ -363,6 +346,178 @@ function applyMarketplaceFacetFilters(query, source = {}, assetType = "model") {
   addFacetFilter(query, "materials", parseFacetValues(source.material || source.materials));
 }
 
+function compareMarketplaceValue(left, right, field) {
+  const a = left?.[field];
+  const b = right?.[field];
+  if (a === b) return 0;
+  if (a === undefined || a === null || a === "") return -1;
+  if (b === undefined || b === null || b === "") return 1;
+  if (field.endsWith("At")) return new Date(a).getTime() - new Date(b).getTime();
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a).localeCompare(String(b), "en", { numeric: true, sensitivity: "base" });
+}
+
+function sortMarketplaceDocuments(models, effectiveSort, search = "") {
+  if (effectiveSort === "relevance") {
+    return [...models].sort((left, right) => (
+      marketplaceSearchScore(right, search) - marketplaceSearchScore(left, search)
+      || Number(right.downloadCount || 0) - Number(left.downloadCount || 0)
+      || new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()
+      || String(left._id).localeCompare(String(right._id))
+    ));
+  }
+  const sortSpec = marketplaceSortSpec(effectiveSort);
+  return [...models].sort((left, right) => {
+    for (const [field, direction] of Object.entries(sortSpec)) {
+      const compared = compareMarketplaceValue(left, right, field);
+      if (compared) return direction < 0 ? -compared : compared;
+    }
+    return 0;
+  });
+}
+
+function escapeSearchRegex(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function exactSearchTokenFilter(search) {
+  const tokens = marketplaceSearchTokens(search);
+  if (!tokens.length) return {};
+  return {
+    $and: tokens.map((token) => {
+      const boundary = new RegExp(`(^|\\s)${escapeSearchRegex(token)}(?=\\s|$)`, "i");
+      return {
+        $or: [
+          { searchTokens: token },
+          { searchTitle: boundary },
+          { searchTaxonomy: boundary },
+        ],
+      };
+    }),
+  };
+}
+
+function fuzzySearchCandidateFilter(search, { broad = false } = {}) {
+  const prefixes = marketplaceSearchCandidatePrefixes(search)
+    .map((prefix) => broad ? prefix.slice(0, 1) : prefix)
+    .filter(Boolean);
+  if (!prefixes.length) return {};
+  return {
+    searchTokens: {
+      $in: [...new Set(prefixes)].map((prefix) => new RegExp(`^${escapeSearchRegex(prefix)}`, "i")),
+    },
+  };
+}
+
+function searchCandidateLimit() {
+  return Math.min(5_000, Math.max(200, Number(process.env.MARKETPLACE_SEARCH_CANDIDATE_LIMIT || 2_000)));
+}
+
+async function fuzzyMarketplacePage({ query, search, sortSelection, page, limit }) {
+  const candidateLimit = searchCandidateLimit();
+  const loadCandidates = async (broad = false) => {
+    const candidateQuery = { ...query };
+    addNestedFilter(candidateQuery, fuzzySearchCandidateFilter(search, { broad }));
+    return MarketplaceModel.find(candidateQuery)
+      .sort({ downloadCount: -1, createdAt: -1, _id: 1 })
+      .limit(candidateLimit)
+      .lean();
+  };
+  let candidates = await loadCandidates(false);
+  if (!candidates.length) candidates = await loadCandidates(true);
+  const matched = candidates.filter((candidate) => marketplaceSearchMatches(candidate, search, { fuzzy: true }));
+  const sorted = sortMarketplaceDocuments(matched, sortSelection.effective, search);
+  const total = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const safePage = Math.min(page, totalPages);
+  return {
+    models: sorted.slice((safePage - 1) * limit, safePage * limit),
+    total,
+    totalPages,
+    safePage,
+    engine: "mongo_hybrid_v3",
+    mode: matched.some((candidate) => marketplaceSearchUsesFuzzyMatch(candidate, search)) ? "fuzzy" : "token",
+    truncated: candidates.length >= candidateLimit,
+  };
+}
+
+async function bilingualMarketplacePage({ query, search, sortSelection, page, limit }) {
+  if (!search) {
+    const total = await MarketplaceModel.countDocuments(query);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    const models = await MarketplaceModel.find(query)
+      .sort(marketplaceSortSpec(sortSelection.effective))
+      .skip((safePage - 1) * limit)
+      .limit(limit)
+      .lean();
+    return { models, total, totalPages, safePage, engine: "catalog", mode: "browse", truncated: false };
+  }
+
+  if (isMemoryDb()) {
+    const candidates = await MarketplaceModel.find(query).lean();
+    for (const candidate of candidates) {
+      if (!candidate.searchTitle || !candidate.searchTaxonomy) {
+        Object.assign(candidate, await buildMarketplaceSearchDocument(candidate));
+      }
+    }
+    const exactMatches = candidates.filter((candidate) => marketplaceSearchMatches(candidate, search, { fuzzy: false }));
+    const matched = exactMatches.length
+      ? exactMatches
+      : candidates.filter((candidate) => marketplaceSearchMatches(candidate, search, { fuzzy: true }));
+    const sorted = sortMarketplaceDocuments(matched, sortSelection.effective, search);
+    const total = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    return {
+      models: sorted.slice((safePage - 1) * limit, safePage * limit),
+      total,
+      totalPages,
+      safePage,
+      engine: "mongo_hybrid_v3",
+      mode: exactMatches.length ? "exact" : "fuzzy",
+      truncated: false,
+    };
+  }
+
+  const enabled = String(process.env.MARKETPLACE_BILINGUAL_SEARCH_ENABLED || "false").toLowerCase() === "true";
+  if (enabled) {
+    try {
+      const textQuery = { ...query, $text: { $search: marketplaceSearchQuery(search) } };
+      addNestedFilter(textQuery, exactSearchTokenFilter(search));
+      const total = await MarketplaceModel.countDocuments(textQuery);
+      if (total > 0) {
+        const totalPages = Math.max(1, Math.ceil(total / limit));
+        const safePage = Math.min(page, totalPages);
+        const relevance = sortSelection.effective === "relevance";
+        const models = await MarketplaceModel.find(
+          textQuery,
+          relevance ? { relevance: { $meta: "textScore" } } : undefined,
+        )
+          .sort(relevance
+            ? { relevance: { $meta: "textScore" }, downloadCount: -1, createdAt: -1, _id: 1 }
+            : marketplaceSortSpec(sortSelection.effective))
+          .skip((safePage - 1) * limit)
+          .limit(limit)
+          .lean();
+        return {
+          models,
+          total,
+          totalPages,
+          safePage,
+          engine: "mongo_hybrid_v3",
+          mode: "exact",
+          truncated: false,
+        };
+      }
+    } catch {
+      // Token candidates keep the catalog usable while a deployment is rebuilding the text index.
+    }
+  }
+
+  return fuzzyMarketplacePage({ query, search, sortSelection, page, limit });
+}
+
 export async function listMarketplaceModels(req, res, next) {
   try {
     const assetType = requestAssetType(req);
@@ -379,33 +534,13 @@ export async function listMarketplaceModels(req, res, next) {
     if (["missing", "pending_upload", "ready", "failed"].includes(fileStatus)) query.fileStatus = fileStatus;
     const categoryQuery = await categoryFilter(req.query.category, assetType);
     addNestedFilter(query, categoryQuery);
-    const semanticSearch = search ? await semanticTextSearch(search, 1_000, assetType) : { matches: [], provider: "catalog" };
-    const semanticQuery = discoveryIdentityQuery(semanticSearch.matches);
-    if (semanticQuery) {
-      addNestedFilter(query, semanticQuery);
-    } else if (search) {
-      const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-      const searchQuery = {
-        $or: [
-          { title: regex },
-          { slug: regex },
-        ],
-      };
-      addNestedFilter(query, searchQuery);
-    }
-
-    const total = await MarketplaceModel.countDocuments(query);
-    const totalPages = Math.max(1, Math.ceil(total / limit));
-    const safePage = Math.min(page, totalPages);
-    const useSemanticOrder = Boolean(semanticQuery && sortSelection.effective === "relevance");
-    let models = await MarketplaceModel.find(query)
-      .sort(marketplaceSortSpec(sortSelection.effective))
-      .skip(useSemanticOrder ? 0 : (safePage - 1) * limit)
-      .limit(useSemanticOrder ? Math.min(1_000, total) : limit)
-      .lean();
-    if (useSemanticOrder) {
-      models = sortByDiscoveryMatches(models, semanticSearch.matches).slice((safePage - 1) * limit, safePage * limit);
-    }
+    const { models, total, totalPages, safePage, engine, mode, truncated } = await bilingualMarketplacePage({
+      query,
+      search,
+      sortSelection,
+      page,
+      limit,
+    });
     await hydrateMarketplaceCategoryRefs(models);
     const assets = models.map((model) => publicModel(model, { includePreviews: false }));
     res.json({
@@ -413,7 +548,7 @@ export async function listMarketplaceModels(req, res, next) {
       assets,
       ...(assetType === "scene" ? { scenes: assets } : { models: assets }),
       pagination: { page: safePage, pageSize: limit, total, totalPages },
-      search: { engine: semanticQuery ? semanticSearch.provider : "catalog" },
+      search: { engine, mode, truncated: Boolean(truncated) },
       sort: sortSelection,
     });
   } catch (error) {
@@ -644,9 +779,7 @@ export async function listMarketplaceModelRecommendations(req, res, next) {
 }
 
 function streamImageRef(res, next, image, defaultFileName) {
-  const openStream = String(image.driveFileId || "").startsWith("demo:")
-    ? Promise.resolve(openDemoMarketplaceImageStream())
-    : openGoogleDriveFileStream(image.driveFileId, image.fileName || defaultFileName);
+  const openStream = openGoogleDriveFileStream(image.driveFileId, image.fileName || defaultFileName);
   return openStream.then((file) => {
     const etag = crypto.createHash("sha1").update(String(image.driveFileId || "")).digest("hex");
     res.setHeader("cache-control", "public, max-age=31536000, immutable");

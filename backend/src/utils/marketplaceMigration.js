@@ -43,6 +43,13 @@ export async function ensureMarketplaceAssetMigration() {
   await dropIndexIfPresent(MarketplaceModel, "slug_1");
   await dropIndexIfPresent(MarketplaceModel, "source.provider_1_source.modelId_1");
   await dropIndexIfPresent(MarketplaceCategory, "sourceProvider_1_sourceCategoryId_1");
-  await Promise.all([MarketplaceModel.createIndexes(), MarketplaceCategory.createIndexes()]);
+  const modelIndexes = await MarketplaceModel.collection.indexes();
+  const hasLegacyTextIndex = modelIndexes.some((index) => index.name === "marketplace_model_text");
+  if (hasLegacyTextIndex) {
+    logger.warn("Legacy marketplace text index is still active; run marketplace:search:execute to replace it safely");
+    await MarketplaceCategory.createIndexes();
+  } else {
+    await Promise.all([MarketplaceModel.createIndexes(), MarketplaceCategory.createIndexes()]);
+  }
   logger.info("Marketplace asset migration and indexes are ready");
 }

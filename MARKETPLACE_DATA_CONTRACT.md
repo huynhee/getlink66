@@ -518,52 +518,39 @@ lam refresh token co Drive scope het han sau 7 ngay.
 - Regression tests: `backend/test/marketplace-drive-sync.test.js`.
 ## 13. Search and recommendation discovery
 
-The public web API owns pagination, access filters and MongoDB catalog validation. Semantic retrieval is delegated to an optional discovery service so vectors never consume the MongoDB catalog quota.
+Current production engine is `mongo_hybrid_v3` on the marketplace VPS. Qdrant and
+heavy embedding models are not required in this phase.
 
-Production target:
+- Atlas taxonomy owns Vietnamese/English labels and aliases; system keys stay English.
+- `MarketplaceModel.searchTitle` stores title, slug and accent-free variants.
+- `searchTaxonomy` stores parent/child category and assigned facet labels/aliases.
+- `searchTokens` stores normalized searchable tokens and compact multi-word aliases.
+- Mongo text weights are `searchTitle=10`, `searchTaxonomy=6`, `slug=2`.
+- Search applies asset/category/access/facet filters before server-side pagination.
+- Queries such as `ghe banh`, `ghế bành` and `arm chair` resolve through one search
+  document. Query token order does not matter. If the exact pass has no result, the
+  indexed fuzzy pass accepts one adjacent transposition or one/two edits based on token
+  length, then reranks by title, taxonomy, popularity and recency.
 
-- SigLIP 2 encodes cover/preview images and multilingual model text into a shared dense vector space.
-- Qdrant stores vectors keyed by `sourceModelId` and combines dense similarity with sparse keyword retrieval.
-- The discovery service returns only model IDs and scores. The backend re-checks publish/file/access state in MongoDB before returning a model.
-- Backend ranking fuses semantic order with category, renderer, style, form, color, material, popularity and recency signals, then applies diversity reranking.
-- Without the discovery service, text search falls back to catalog matching and recommendations use the local hybrid ranker.
+Detail recommendations use `catalog_behavior_v2`: category, title tokens, renderer,
+style, material, form, color, popularity and recency, followed by 86/14 diversity
+reranking. Model and Scene are never mixed. Detail returns six records; the expansion
+endpoint returns at most 54 more.
 
-Environment:
+Homepage recommendations read at most 30 successful downloads from the last 180 days,
+using a 30-day half-life. Ranking is 70% preference, 20% popularity and 10% recency.
+Users without history receive a popularity/newness mix. Cache lifetime is 10 minutes,
+bounded to 2,000 users and invalidated immediately after a successful download.
 
 ```env
-MARKETPLACE_DISCOVERY_URL=http://discovery-service:8080
-MARKETPLACE_DISCOVERY_API_KEY=
-MARKETPLACE_DISCOVERY_TIMEOUT_MS=8000
+MARKETPLACE_BILINGUAL_SEARCH_ENABLED=true
+MARKETPLACE_SEARCH_INDEX_INTERVAL_MS=30000
+MARKETPLACE_SEARCH_INDEX_BATCH_SIZE=100
+MARKETPLACE_SEARCH_CANDIDATE_LIMIT=2000
 ```
 
-Service contract:
-
-```http
-POST /search
-Content-Type: application/json
-
-{"query":"ghe tua lung vai mau be","limit":1000}
-```
-
-```http
-POST /recommendations
-Content-Type: application/json
-
-{"modelId":"6373049","limit":180,"metadata":{"title":"...","styles":["modern"]}}
-```
-
-Both endpoints return:
-
-```json
-{
-  "provider": "siglip2_qdrant",
-  "matches": [
-    { "modelId": "6373049", "score": 0.91 }
-  ]
-}
-```
-
-Recommendation delivery is deliberately incremental. Model detail returns six records. `GET /api/marketplace/models/:slug/recommendations?offset=6&limit=54` loads the remaining 54 records only after the user expands the section.
+Future Qdrant/BGE-M3 integration may reuse the discovery provider contract, but it must
+not change public frontend routes or bypass Mongo publish/file validation.
 
 ## 15. Split database, retention va migration contract
 
@@ -656,6 +643,20 @@ Daily approved duoc danh dau `quotaSyncStatus=pending`; worker tao duy nhat mot
 order `applied`. Retry khong cong lai. Don loi giu `error` va duoc worker retry.
 
 ### 15.6 Migration commands
+
+Bilingual taxonomy/search rollout:
+
+```bash
+npm run marketplace:search:dry-run
+npm run marketplace:search:execute
+npm run marketplace:search:verify
+```
+
+`execute` creates a gzip backup and a resumable checkpoint before translating seeded
+Model categories, backfilling search documents in batches of 500 and replacing the old
+text index. It does not read Drive or rewrite `metadata.json.gz`.
+
+Split database rollout:
 
 ```bash
 cd backend

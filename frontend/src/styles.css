@@ -4357,6 +4357,11 @@ label {
   box-shadow: none;
 }
 
+.accountProfile {
+  display: inline-flex;
+  align-items: center;
+}
+
 .accountTrigger {
   min-height: 38px;
   display: inline-flex;
@@ -8308,6 +8313,22 @@ label {
 
 .marketTaxonomyToolbar .adminSearchField {
   margin: 0;
+  flex: 1 1 280px;
+}
+
+.getlinkJobActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.getlinkJobActions button {
+  min-height: 34px;
+}
+
+.marketTaxonomyToolbar > select {
+  min-width: 150px;
 }
 
 .marketTaxonomyToolbar .badge {
@@ -8327,14 +8348,18 @@ label {
 }
 
 .marketTaxonomyRow {
-  min-width: 880px;
+  min-width: 1480px;
   display: grid;
-  grid-template-columns: minmax(170px, 1.1fr) minmax(170px, 1fr) minmax(170px, 1fr) 90px 90px 44px;
+  grid-template-columns: minmax(170px, 1.1fr) minmax(150px, 1fr) minmax(150px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(130px, 0.8fr) 76px 76px 84px 44px;
   align-items: center;
   gap: 8px;
   padding: 8px;
   border: 1px solid var(--border-light);
   background: var(--surface-1);
+}
+
+.marketTaxonomyRow.disabled {
+  opacity: 0.68;
 }
 
 .marketTaxonomyRow.header {
@@ -8368,10 +8393,70 @@ label {
 }
 
 .marketTaxonomyKey small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   overflow: hidden;
   color: var(--text-tertiary);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.marketTaxonomyKey.child {
+  position: relative;
+  padding-left: 16px;
+}
+
+.marketTaxonomyKey.child::before {
+  position: absolute;
+  margin-left: -14px;
+  color: var(--text-tertiary);
+  content: "\2514";
+}
+
+.marketTaxonomyVisual {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.marketTaxonomyVisual > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketTaxonomyVisual select {
+  width: 100%;
+  min-height: 36px;
+}
+
+.marketTaxonomyColor {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.marketTaxonomyColor input[type="color"] {
+  width: 34px;
+  min-width: 34px;
+  min-height: 30px;
+  padding: 2px;
+}
+
+.marketTaxonomyColor code {
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.marketTaxonomyUsage {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: center;
 }
 
 .marketTaxonomyToggle {
@@ -8385,6 +8470,118 @@ label {
 .marketTaxonomyToggle input {
   width: 16px;
   min-height: 16px;
+}
+
+.marketTaxonomyModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.marketTaxonomyModal {
+  width: min(680px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.marketTaxonomyModalHeader,
+.marketTaxonomyModalHeader > div,
+.marketTaxonomyModalActions,
+.marketTaxonomyColorInput {
+  display: flex;
+  align-items: center;
+}
+
+.marketTaxonomyModalHeader {
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.marketTaxonomyModalHeader > div {
+  gap: 10px;
+}
+
+.marketTaxonomyModalHeader h3 {
+  margin: 0;
+}
+
+.marketTaxonomyCreateGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.marketTaxonomyCreateGrid > label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.marketTaxonomyCreateGrid input,
+.marketTaxonomyCreateGrid select {
+  width: 100%;
+}
+
+.marketTaxonomyKeyField small {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.marketTaxonomyColorInput {
+  gap: 8px;
+}
+
+.marketTaxonomyColorInput input[type="color"] {
+  width: 46px;
+  min-width: 46px;
+  padding: 3px;
+}
+
+.marketTaxonomyCreateToggle {
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  align-self: end;
+  min-height: 42px;
+}
+
+.marketTaxonomyCreateToggle input {
+  width: 16px;
+  min-height: 16px;
+}
+
+.marketTaxonomyModalActions {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.marketTaxonomyModalError {
+  margin: 14px 0 0;
+}
+
+@media (max-width: 640px) {
+  .marketTaxonomyToolbar > .primaryButton,
+  .marketTaxonomyToolbar > .smallButton,
+  .marketTaxonomyToolbar > select {
+    flex: 1 1 auto;
+  }
+
+  .marketTaxonomyCreateGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .marketTaxonomyModalBackdrop {
+    align-items: end;
+    padding: 8px;
+  }
 }
 
 .adminUserIdentity,
@@ -10806,6 +11003,20 @@ html[data-theme="dark"] .inviteSectionTag {
 
 .panel:focus-within {
   border-color: color-mix(in srgb, var(--neon-cyan) 38%, var(--border-light));
+}
+
+/* The catalog search is one composite control; focus belongs to its outer frame. */
+.marketSearchField:focus-within {
+  border-color: var(--neon-green);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--neon-green) 16%, transparent);
+}
+
+.marketSearchField input:focus,
+.marketSearchField input:focus-visible {
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  clip-path: none;
 }
 
 .pricingCard:hover,

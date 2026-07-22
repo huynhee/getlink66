@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
-import { fileURLToPath } from "node:url";
 
 function localRoot() {
   return String(process.env.MARKETPLACE_LOCAL_STORAGE_ROOT || "").trim();
@@ -321,16 +320,6 @@ export async function getStorageBrowserDownloadLink(session) {
     throw error;
   }
   return downloadUrl;
-}
-
-export function openDemoMarketplaceImageStream() {
-  const target = fileURLToPath(new URL("../../../frontend/public/3dipl-d.jpg", import.meta.url));
-  return {
-    stream: fs.createReadStream(target),
-    contentLength: fs.statSync(target).size,
-    contentType: "image/jpeg",
-    fileName: "3dipl-d.jpg",
-  };
 }
 
 export async function updateGoogleDriveFileContent(fileId, content, options = {}) {

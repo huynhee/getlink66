@@ -8,6 +8,7 @@ const { default: User } = await import("../src/models/User.js");
 const { default: Topup } = await import("../src/models/Topup.js");
 const { default: Getlink } = await import("../src/models/Getlink.js");
 const { default: MembershipOrder } = await import("../src/models/MembershipOrder.js");
+const { default: Referral } = await import("../src/models/Referral.js");
 const { buildUserTimeline } = await import("../src/utils/timelineService.js");
 
 test("timeline reports exact totals beyond the first page and hides upstream URLs", async () => {
@@ -139,4 +140,32 @@ test("manual credit adjustment exposes the balance change in user history", asyn
   assert.equal(event.metadata.isManualAdjustment, true);
   assert.equal(event.metadata.manualBalanceBefore, 10);
   assert.equal(event.metadata.manualBalanceAfter, 4);
+});
+
+test("referral timeline exposes both the Pro day and credit reward", async () => {
+  const referrer = await User.create({ email: "timeline-referrer@example.test", name: "Referrer" });
+  const referred = await User.create({ email: "timeline-referred@example.test", name: "Referred" });
+  const proUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await Referral.create({
+    referrerId: referrer._id,
+    referredUserId: referred._id,
+    referralCode: "TIMELINE28",
+    rewardType: "pro",
+    rewardCredit: 28,
+    referrerRewardCredit: 28,
+    referredRewardCredit: 28,
+    rewardProDays: 1,
+    referrerRewardProDays: 1,
+    referredRewardProDays: 1,
+    referrerProUntil: proUntil,
+    referredProUntil: proUntil,
+    status: "rewarded",
+    rewardedAt: new Date(),
+  });
+
+  const event = (await buildUserTimeline({ userId: referrer._id, type: "referral" })).events[0];
+  assert.equal(event.amount, 28);
+  assert.equal(event.metadata.rewardCredit, 28);
+  assert.equal(event.metadata.proDays, 1);
+  assert.equal(new Date(event.metadata.proUntil).getTime(), proUntil.getTime());
 });

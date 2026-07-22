@@ -8,6 +8,8 @@ const marketplaceCategorySchema = new mongoose.Schema(
     sourceCategoryId: { type: String, required: true, trim: true },
     title: { type: String, default: "" },
     titleEn: { type: String, required: true, trim: true },
+    aliasesVi: { type: [String], default: [] },
+    aliasesEn: { type: [String], default: [] },
     slug: { type: String, required: true, trim: true, lowercase: true, index: true },
     parentId: { type: mongoose.Schema.Types.ObjectId, ref: "MarketplaceCategory", index: true },
     parentSourceCategoryId: { type: String, default: "", trim: true },

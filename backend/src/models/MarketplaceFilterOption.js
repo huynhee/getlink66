@@ -13,6 +13,8 @@ const marketplaceFilterOptionSchema = new mongoose.Schema(
     value: { type: String, required: true, trim: true, lowercase: true },
     labelVi: { type: String, required: true, trim: true },
     labelEn: { type: String, required: true, trim: true },
+    aliasesVi: { type: [String], default: [] },
+    aliasesEn: { type: [String], default: [] },
     hex: { type: String, default: "", trim: true },
     iconKey: { type: String, default: "", trim: true },
     position: { type: Number, default: 0 },

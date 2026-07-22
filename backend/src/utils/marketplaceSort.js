@@ -13,6 +13,7 @@ export function normalizeMarketplaceTitle(value = "") {
   return String(value || "")
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u0111\u0110]/g, "d")
     .replace(/[đĐ]/g, "d")
     .toLocaleLowerCase("en")
     .replace(/\s+/g, " ")

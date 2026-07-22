@@ -61,6 +61,7 @@ import {
   adminUpdateMarketplaceMetadata,
   adminUpdateMarketplaceModel,
   adminUpdateMarketplaceState,
+  adminVerifyMarketplaceFile,
 } from "../controllers/marketplaceAdminController.js";
 import {
   adminMarketplaceDriveSyncState,
@@ -83,10 +84,13 @@ import { auditAdmin, listAuditLogs } from "../middleware/auditLog.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
 import {
+  adminCreateMarketplaceCategory,
+  adminCreateMarketplaceFilterOption,
   adminListMarketplaceTaxonomy,
   adminUpdateMarketplaceCategory,
   adminUpdateMarketplaceFilterOption,
 } from "../controllers/marketplaceTaxonomyAdminController.js";
+import { adminExportMarketplaceTaxonomy } from "../controllers/marketplaceTaxonomyExportController.js";
 
 const router = Router();
 const adminWriteLimit = createRateLimit({ keyPrefix: "admin-write", windowMs: 60_000, max: 30, keyGenerator: (req) => req.user?._id || req.ip });
@@ -148,7 +152,10 @@ router.delete("/membership-plans/:id", adminWriteLimit, auditAdmin("DELETE_MEMBE
 
 router.get("/marketplace/models", adminListMarketplaceModels);
 router.get("/marketplace/taxonomy", adminListMarketplaceTaxonomy);
+router.get("/marketplace/taxonomy/export", adminExportMarketplaceTaxonomy);
+router.post("/marketplace/categories", adminWriteLimit, auditAdmin("CREATE_MARKETPLACE_CATEGORY"), adminCreateMarketplaceCategory);
 router.patch("/marketplace/categories/:id", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_CATEGORY_LABEL"), adminUpdateMarketplaceCategory);
+router.post("/marketplace/filter-options", adminWriteLimit, auditAdmin("CREATE_MARKETPLACE_FILTER_OPTION"), adminCreateMarketplaceFilterOption);
 router.patch("/marketplace/filter-options/:id", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_FILTER_LABEL"), adminUpdateMarketplaceFilterOption);
 router.get("/marketplace/stats", adminMarketplaceStats);
 router.get("/marketplace/downloads", adminListMarketplaceDownloads);
@@ -164,6 +171,7 @@ router.put("/marketplace/models/:id", adminWriteLimit, auditAdmin("UPDATE_MARKET
 router.put("/marketplace/models/:id/metadata", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_DRIVE_METADATA"), adminUpdateMarketplaceMetadata);
 router.patch("/marketplace/models/:id/state", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_MODEL_STATE"), adminUpdateMarketplaceState);
 router.post("/marketplace/models/:id/rescan-drive", adminWriteLimit, auditAdmin("RESCAN_MARKETPLACE_MODEL_DRIVE"), adminRescanMarketplaceModelDriveFolder);
+router.post("/marketplace/models/:id/verify-file", adminWriteLimit, auditAdmin("VERIFY_MARKETPLACE_MODEL_FILE"), adminVerifyMarketplaceFile);
 router.post("/marketplace/drive/sync-folder", adminWriteLimit, auditAdmin("SYNC_MARKETPLACE_DRIVE_FOLDER"), adminSyncMarketplaceDriveFolder);
 router.post("/marketplace/drive/reconcile", adminWriteLimit, auditAdmin("RECONCILE_MARKETPLACE_DRIVE"), adminReconcileMarketplaceDrive);
 router.post("/marketplace/drive/migrate-metadata", adminWriteLimit, auditAdmin("MIGRATE_MARKETPLACE_DRIVE_METADATA"), adminMigrateMarketplaceDriveMetadata);
@@ -182,6 +190,7 @@ router.put("/marketplace/scenes/:id", sceneAdmin, adminWriteLimit, auditAdmin("U
 router.put("/marketplace/scenes/:id/metadata", sceneAdmin, adminWriteLimit, auditAdmin("UPDATE_SCENE_DRIVE_METADATA"), adminUpdateMarketplaceMetadata);
 router.patch("/marketplace/scenes/:id/state", sceneAdmin, adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_SCENE_STATE"), adminUpdateMarketplaceState);
 router.post("/marketplace/scenes/:id/rescan-drive", sceneAdmin, adminWriteLimit, auditAdmin("RESCAN_SCENE_DRIVE"), adminRescanMarketplaceModelDriveFolder);
+router.post("/marketplace/scenes/:id/verify-file", sceneAdmin, adminWriteLimit, auditAdmin("VERIFY_SCENE_FILE"), adminVerifyMarketplaceFile);
 router.post("/marketplace/scenes/:id/attach-file", sceneAdmin, adminWriteLimit, auditAdmin("ATTACH_SCENE_FILE"), adminAttachMarketplaceFile);
 router.post("/marketplace/scenes/:id/attach-assets", sceneAdmin, adminWriteLimit, auditAdmin("ATTACH_SCENE_ASSETS"), adminAttachMarketplaceAssets);
 

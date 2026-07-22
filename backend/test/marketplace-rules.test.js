@@ -7,13 +7,17 @@ useMemoryDb();
 const { default: User } = await import("../src/models/User.js");
 const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
 const { default: DailyDownloadQuota } = await import("../src/models/DailyDownloadQuota.js");
+const { default: DownloadSession } = await import("../src/models/DownloadSession.js");
 const { default: ModelDownload } = await import("../src/models/ModelDownload.js");
 const {
   createMarketplaceDownloadSession,
   nextVietnamReset,
   vietnamDayKey,
 } = await import("../src/utils/marketplaceDownloadService.js");
-const { adminUpdateMarketplaceModel } = await import("../src/controllers/marketplaceAdminController.js");
+const {
+  adminUpdateMarketplaceModel,
+  adminVerifyMarketplaceFile,
+} = await import("../src/controllers/marketplaceAdminController.js");
 
 function requestFor(user) {
   return {
@@ -132,4 +136,88 @@ test("marketplace quota is restored when session logging fails", async () => {
     tier: "free",
   });
   assert.equal(quota.count, 0);
+});
+
+async function createMemberModel(slug) {
+  return MarketplaceModel.create({
+    title: slug,
+    slug,
+    categorySourceId: "category-leaf",
+    styles: ["modern"],
+    renderers: ["corona"],
+    forms: ["rectangle"],
+    colors: ["black"],
+    materials: ["metal"],
+    accessType: "member",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+    storageProvider: "google_drive",
+    driveFileId: `drive-${slug}`,
+  });
+}
+
+test("Free, expired Pro and admin-without-Pro accounts cannot download Pro assets", async () => {
+  const model = await createMemberModel("pro-access-regression");
+  const users = [
+    await User.create({ email: "free-pro-check@example.test", name: "Free" }),
+    await User.create({ email: "expired-pro-check@example.test", name: "Expired", proUntil: new Date(Date.now() - 60_000) }),
+    await User.create({ email: "admin-pro-check@example.test", name: "Admin", role: "admin" }),
+  ];
+
+  for (const user of users) {
+    await assert.rejects(
+      createMarketplaceDownloadSession({ req: requestFor(user), modelId: model._id }),
+      (error) => error?.status === 403
+        && error?.code === "PRO_REQUIRED"
+        && error?.details?.assetType === "model",
+    );
+  }
+
+  assert.equal(await DownloadSession.countDocuments({ modelId: model._id }), 0);
+  assert.equal(await ModelDownload.countDocuments({ modelId: model._id }), 0);
+  for (const user of users) {
+    assert.equal(await DailyDownloadQuota.countDocuments({ userId: user._id }), 0);
+  }
+});
+
+test("an active Pro account can download a Pro asset and uses member quota", async () => {
+  const model = await createMemberModel("active-pro-access");
+  const user = await User.create({
+    email: "active-pro-check@example.test",
+    name: "Active Pro",
+    proUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    proDailyDownloadLimit: 100,
+  });
+  const result = await createMarketplaceDownloadSession({ req: requestFor(user), modelId: model._id });
+  const quota = await DailyDownloadQuota.findOne({ dayKey: vietnamDayKey(), userId: user._id, tier: "member" });
+
+  assert.equal(result.session.accessTier, "member");
+  assert.equal(result.quotaCost, 1);
+  assert.equal(quota.count, 1);
+});
+
+test("admin file verification rejects a missing Drive attachment without creating download records", async () => {
+  const model = await MarketplaceModel.create({
+    title: "Archive not attached",
+    slug: "archive-not-attached",
+    assetType: "model",
+    storageProvider: "google_drive",
+    driveFileId: "",
+  });
+  let status = 200;
+  let payload;
+  await adminVerifyMarketplaceFile(
+    { params: { id: model._id }, query: {}, body: {} },
+    {
+      status(code) { status = code; return this; },
+      json(value) { payload = value; return value; },
+    },
+    (error) => { throw error; },
+  );
+
+  assert.equal(status, 409);
+  assert.equal(payload.code, "DRIVE_ARCHIVE_NOT_ATTACHED");
+  assert.equal(await DownloadSession.countDocuments({ modelId: model._id }), 0);
+  assert.equal(await ModelDownload.countDocuments({ modelId: model._id }), 0);
 });

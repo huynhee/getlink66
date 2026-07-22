@@ -223,10 +223,12 @@ function mapReferral(item, userId) {
   return eventBase(
     `referral:${item._id}:${isReferrer ? "referrer" : "referred"}`,
     "referral",
-    rewardType === "pro"
-      ? (isReferrer ? "Thưởng Pro khi mời bạn" : "Pro chào mừng từ lời mời")
+    proDays > 0 && credit > 0
+      ? (isReferrer ? "Thưởng giới thiệu" : "Thưởng chào mừng từ lời mời")
+      : rewardType === "pro"
+        ? (isReferrer ? "Thưởng Pro khi mời bạn" : "Pro chào mừng từ lời mời")
       : (isReferrer ? "Mời bạn bè" : "Được mời"),
-    item.status === "rewarded" && rewardType === "credit" ? credit : 0,
+    item.status === "rewarded" ? credit : 0,
     item.status,
     item.rewardedAt || item.createdAt,
     {
@@ -234,8 +236,9 @@ function mapReferral(item, userId) {
       role: isReferrer ? "referrer" : "referred",
       referralCode: item.referralCode || "",
       rewardType,
-      proDays: rewardType === "pro" ? proDays : 0,
-      proUntil: rewardType === "pro" ? proUntil : null,
+      rewardCredit: credit,
+      proDays,
+      proUntil: proDays > 0 ? proUntil : null,
       otherUser: userSummary(otherUser),
     },
   );
