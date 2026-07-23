@@ -46,6 +46,42 @@ function ThemeToggle({ theme = "dark", language = "vi", onThemeToggle }) {
   );
 }
 
+function PluginDownloadButton({ language = "vi" }) {
+  const downloadUrl = String(import.meta.env.VITE_3DSMAX_PLUGIN_DOWNLOAD_URL || "").trim();
+  const availableLabel = language === "vi" ? "Tải plugin 3ds Max" : "Download 3ds Max plugin";
+  const unavailableLabel = language === "vi"
+    ? "Plugin 3ds Max chưa được phát hành"
+    : "The 3ds Max plugin is not released yet";
+
+  if (!downloadUrl) {
+    return (
+      <button
+        type="button"
+        className="pluginDownloadButton unavailable"
+        title={unavailableLabel}
+        aria-label={unavailableLabel}
+      disabled
+      >
+        <Download size={16} />
+        <span>{language === "vi" ? "Tải plugin" : "Download plugin"}</span>
+      </button>
+    );
+  }
+
+  return (
+    <a
+      className="pluginDownloadButton"
+      href={downloadUrl}
+      title={availableLabel}
+      aria-label={availableLabel}
+      download
+    >
+      <Download size={16} />
+      <span>{language === "vi" ? "Tải plugin" : "Download plugin"}</span>
+    </a>
+  );
+}
+
 function formatProUntil(user, language) {
   if (!user?.isPro || !user.proUntil) return language === "vi" ? "Chưa kích hoạt" : "Not active";
   return new Date(user.proUntil).toLocaleString(language === "vi" ? "vi-VN" : "en-US", {
@@ -286,6 +322,7 @@ export default function Navbar({
 
           {user ? (
             <div className={`account ${accountOpen ? "open" : ""}`}>
+              <PluginDownloadButton language={language} />
               <div className={`notificationMenu ${notificationOpen ? "open" : ""}`}>
                 <button
                   type="button"
@@ -398,6 +435,7 @@ export default function Navbar({
             </div>
           ) : (
             <div className="account">
+              <PluginDownloadButton language={language} />
               <a className="headerLoginButton" href={googleHref()}>
                 <Chrome size={15} />
                 {t.googleLogin}

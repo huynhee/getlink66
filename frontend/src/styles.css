@@ -11573,3 +11573,551 @@ html[data-theme="dark"] .inviteSectionTag {
   margin: 0;
   text-align: center;
 }
+
+/* ==========================================================================
+   Shared motion language
+   ========================================================================== */
+@keyframes appSectionEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes catalogCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes topbarSignalSweep {
+  0% {
+    left: -180px;
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.72;
+  }
+  55% {
+    opacity: 0.38;
+  }
+  100% {
+    left: calc(100% + 40px);
+    opacity: 0;
+  }
+}
+
+@keyframes brandPromptSignal {
+  0%,
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  50% {
+    opacity: 0.55;
+    transform: translateX(2px);
+  }
+}
+
+@keyframes verificationSignal {
+  0%,
+  100% {
+    color: var(--neon-green);
+    transform: scale(1);
+  }
+  50% {
+    color: var(--neon-cyan);
+    transform: scale(1.08);
+  }
+}
+
+@keyframes verificationScan {
+  0% {
+    transform: translateX(-125%);
+  }
+  55%,
+  100% {
+    transform: translateX(125%);
+  }
+}
+
+.shell:not(.shell-admin) > *,
+.shell-admin > .adminPage {
+  animation: appSectionEnter 0.42s cubic-bezier(0.2, 0.72, 0.2, 1) backwards;
+}
+
+.topbar::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: -180px;
+  z-index: 2;
+  width: 140px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--neon-cyan) 74%, transparent),
+    var(--neon-green),
+    transparent
+  );
+  animation: topbarSignalSweep 8s ease-in-out infinite;
+}
+
+.brandButton::before {
+  animation: brandPromptSignal 1.9s steps(2, end) infinite;
+}
+
+.tabs button span,
+.primaryButton,
+.smallButton,
+.iconButton,
+.marketBackButton,
+.marketRecommendationToggle {
+  transition:
+    color 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.tabs button:active span,
+.primaryButton:active:not(:disabled),
+.smallButton:active:not(:disabled),
+.iconButton:active:not(:disabled),
+.marketBackButton:active:not(:disabled),
+.marketRecommendationToggle:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+}
+
+:is(
+  .marketGrid,
+  .homeModelGrid,
+  .marketRecommendationInitialGrid,
+  .marketRecommendationExpandedGrid
+) > .marketModelCard:nth-child(-n + 12) {
+  animation: catalogCardEnter 0.42s cubic-bezier(0.2, 0.72, 0.2, 1) backwards;
+}
+
+:is(
+  .marketGrid,
+  .homeModelGrid,
+  .marketRecommendationInitialGrid,
+  .marketRecommendationExpandedGrid
+) > .marketModelCard:nth-child(6n + 2) {
+  animation-delay: 45ms;
+}
+
+:is(
+  .marketGrid,
+  .homeModelGrid,
+  .marketRecommendationInitialGrid,
+  .marketRecommendationExpandedGrid
+) > .marketModelCard:nth-child(6n + 3) {
+  animation-delay: 90ms;
+}
+
+:is(
+  .marketGrid,
+  .homeModelGrid,
+  .marketRecommendationInitialGrid,
+  .marketRecommendationExpandedGrid
+) > .marketModelCard:nth-child(6n + 4) {
+  animation-delay: 135ms;
+}
+
+:is(
+  .marketGrid,
+  .homeModelGrid,
+  .marketRecommendationInitialGrid,
+  .marketRecommendationExpandedGrid
+) > .marketModelCard:nth-child(6n + 5) {
+  animation-delay: 180ms;
+}
+
+:is(
+  .marketGrid,
+  .homeModelGrid,
+  .marketRecommendationInitialGrid,
+  .marketRecommendationExpandedGrid
+) > .marketModelCard:nth-child(6n) {
+  animation-delay: 225ms;
+}
+
+.marketModelThumb img,
+.marketPreviewStrip img,
+.marketDetailImage img {
+  transition: transform 0.32s cubic-bezier(0.2, 0.72, 0.2, 1), filter 0.32s ease;
+  will-change: transform;
+}
+
+.marketModelCard:hover .marketModelThumb img,
+.marketModelCard:focus-visible .marketModelThumb img {
+  filter: saturate(1.04) contrast(1.02);
+  transform: scale(1.025);
+}
+
+.marketPreviewStrip button:hover img,
+.marketPreviewStrip button:focus-visible img {
+  transform: scale(1.06);
+}
+
+.marketDetailImage:hover img {
+  transform: scale(1.008);
+}
+
+.accountMenuContent,
+.notificationDropdown,
+.marketImageSearchDialog,
+.marketLightbox {
+  transform-origin: top right;
+  animation: appSectionEnter 0.22s ease-out backwards;
+}
+
+.marketDownloadVerifyGate {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.marketDownloadVerifyGate::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 42%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--neon-green) 8%, transparent),
+    transparent
+  );
+  animation: verificationScan 3.8s ease-in-out infinite;
+}
+
+.marketDownloadVerifyHeading svg {
+  animation: verificationSignal 1.8s ease-in-out infinite;
+}
+
+.messengerFloat::after {
+  animation: verificationSignal 2.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .shell:not(.shell-admin) > *,
+  .shell-admin > .adminPage,
+  .topbar::after,
+  .brandButton::before,
+  :is(
+    .marketGrid,
+    .homeModelGrid,
+    .marketRecommendationInitialGrid,
+    .marketRecommendationExpandedGrid
+  ) > .marketModelCard,
+  .accountMenuContent,
+  .notificationDropdown,
+  .marketImageSearchDialog,
+  .marketLightbox,
+  .marketDownloadVerifyGate::before,
+  .marketDownloadVerifyHeading svg,
+  .messengerFloat::after {
+    animation: none !important;
+  }
+
+  .marketModelThumb img,
+  .marketPreviewStrip img,
+  .marketDetailImage img {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Top-up mode clarity and landing pricing fixes
+   ========================================================================== */
+#pricing .sectionTitle {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+#pricing .sectionTitle h2,
+#pricing .sectionTitle h3,
+#pricing .sectionTitle p {
+  width: fit-content;
+  max-width: min(100%, 680px);
+  margin: 0;
+}
+
+.pricingModeDescription {
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.landingTopupChooser {
+  width: min(100%, 820px);
+}
+
+.homeTopupAction {
+  min-height: 98px;
+  grid-template-rows: auto auto auto;
+  opacity: 0.68;
+}
+
+.homeTopupAction:hover,
+.homeTopupAction:focus-visible {
+  opacity: 1;
+}
+
+.homeTopupAction.active {
+  border-width: 2px;
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+.homeTopupAction.pro.active {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--neon-magenta) 10%, var(--surface-1));
+  border-color: var(--neon-magenta);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--neon-magenta) 14%, transparent),
+    var(--shadow-sm);
+}
+
+.homeTopupAction.credit.active {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--neon-cyan) 10%, var(--surface-1));
+  border-color: var(--neon-cyan);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--neon-cyan) 14%, transparent),
+    var(--shadow-sm);
+}
+
+.homeTopupAction.pro.active > svg {
+  color: var(--neon-magenta);
+}
+
+.homeTopupAction.credit.active > svg {
+  color: var(--neon-cyan);
+}
+
+.homeTopupAction .homeTopupActionStatus {
+  grid-column: 2;
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.homeTopupAction.active .homeTopupActionStatus {
+  color: var(--text-primary);
+}
+
+.homeTopupCurrentMode {
+  width: min(100%, 820px);
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px auto 0;
+  padding: 8px 12px;
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.homeTopupCurrentMode strong {
+  color: var(--text-primary);
+}
+
+.homeTopupCurrentMode.pro {
+  border-color: color-mix(in srgb, var(--neon-magenta) 54%, var(--border-light));
+}
+
+.homeTopupCurrentMode.pro > svg {
+  color: var(--neon-magenta);
+}
+
+.homeTopupCurrentMode.credit {
+  border-color: color-mix(in srgb, var(--neon-cyan) 54%, var(--border-light));
+}
+
+.homeTopupCurrentMode.credit > svg {
+  color: var(--neon-cyan);
+}
+
+#pricing .pricingCard {
+  padding: 48px 20px 20px;
+}
+
+#pricing .pricingCard > ul {
+  flex: 1 1 auto;
+}
+
+#pricing .pricingCard > a:last-child {
+  width: 100%;
+  margin-top: auto;
+}
+
+.topupPurposeItem {
+  min-height: 154px;
+  grid-template-rows: auto auto auto auto;
+  opacity: 0.7;
+}
+
+.topupPurposeItem:hover,
+.topupPurposeItem:focus-visible {
+  opacity: 1;
+}
+
+.topupPurposeItem.active {
+  border-width: 2px;
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+.topupPurposeItem.credit.active {
+  background: color-mix(in srgb, var(--neon-cyan) 8%, var(--surface-1));
+  border-color: var(--neon-cyan);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--neon-cyan) 14%, transparent),
+    var(--shadow-sm);
+}
+
+.topupPurposeItem.pro.active {
+  background: color-mix(in srgb, var(--neon-magenta) 8%, var(--surface-1));
+  border-color: var(--neon-magenta);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--neon-magenta) 14%, transparent),
+    var(--shadow-sm);
+}
+
+.topupPurposeItem.credit.active > svg {
+  color: var(--neon-cyan);
+}
+
+.topupPurposeItem.pro.active > svg {
+  color: var(--neon-magenta);
+}
+
+.topupPurposeItem .topupPurposeState {
+  grid-column: 2;
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.topupPurposeItem.active .topupPurposeState {
+  color: var(--text-primary);
+}
+
+.topupCurrentModeNotice {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: -8px;
+  padding: 9px 14px;
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-light);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.topupCurrentModeNotice strong {
+  color: var(--text-primary);
+}
+
+.topupCurrentModeNotice.credit {
+  border-left-color: var(--neon-cyan);
+}
+
+.topupCurrentModeNotice.credit > svg {
+  color: var(--neon-cyan);
+}
+
+.topupCurrentModeNotice.pro {
+  border-left-color: var(--neon-magenta);
+}
+
+.topupCurrentModeNotice.pro > svg {
+  color: var(--neon-magenta);
+}
+
+@media (max-width: 640px) {
+  #pricing .sectionTitle {
+    gap: 7px;
+  }
+
+  #pricing .sectionTitle h2 {
+    font-size: clamp(30px, 10vw, 42px);
+    line-height: 1.05;
+  }
+
+  .landingTopupChooser {
+    padding: 14px;
+  }
+
+  .homeTopupActions {
+    grid-template-columns: 1fr;
+  }
+
+  .homeTopupAction {
+    min-height: 88px;
+  }
+
+  .homeTopupCurrentMode {
+    justify-content: flex-start;
+  }
+
+  #pricing .pricingCard {
+    padding: 48px 18px 18px;
+  }
+
+  .topupPurposeItem {
+    min-height: 0;
+  }
+
+  .topupCurrentModeNotice {
+    align-items: flex-start;
+  }
+}

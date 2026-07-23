@@ -514,11 +514,13 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
 
   return (
     <div className="stack">
-      <section className="topupPurposeGrid" aria-label={language === "vi" ? "Mục đích gói nạp" : "Top-up purposes"}>
+      <section className="topupPurposeGrid" role="tablist" aria-label={language === "vi" ? "Mục đích gói nạp" : "Top-up purposes"}>
         <button
           type="button"
           className={`topupPurposeItem credit ${topupMode === "credit" ? "active" : ""}`}
           onClick={() => changeTopupMode("credit")}
+          role="tab"
+          aria-selected={topupMode === "credit"}
         >
           <Wallet size={18} />
           <strong>Credit</strong>
@@ -528,11 +530,19 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               : "Used only as Getlink balance. Each successful Getlink request deducts credit at the transaction rate."}
           </span>
           <small>{language === "vi" ? "Không mua Pro và không cộng quota tải Model/Scene." : "Does not buy Pro or add Model/Scene download quota."}</small>
+          <span className="topupPurposeState">
+            {topupMode === "credit" && <Check size={13} />}
+            {topupMode === "credit"
+              ? (language === "vi" ? "Đang chọn" : "Selected")
+              : (language === "vi" ? "Chọn Credit" : "Choose Credit")}
+          </span>
         </button>
         <button
           type="button"
           className={`topupPurposeItem pro ${topupMode === "pro" ? "active" : ""}`}
           onClick={() => changeTopupMode("pro")}
+          role="tab"
+          aria-selected={topupMode === "pro"}
         >
           <Sparkles size={18} />
           <strong>Pro</strong>
@@ -542,8 +552,24 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               : "Unlocks membership access: Pro Models/Scenes, fast downloads, and daily quota."}
           </span>
           <small>{language === "vi" ? "Không cộng thêm số dư Credit." : "Does not add Credit balance."}</small>
+          <span className="topupPurposeState">
+            {topupMode === "pro" && <Check size={13} />}
+            {topupMode === "pro"
+              ? (language === "vi" ? "Đang chọn" : "Selected")
+              : (language === "vi" ? "Chọn Pro" : "Choose Pro")}
+          </span>
         </button>
       </section>
+
+      <div className={`topupCurrentModeNotice ${topupMode}`} role="status">
+        <Check size={15} />
+        <span>{language === "vi" ? "Hình thức đang chọn:" : "Selected top-up type:"}</span>
+        <strong>
+          {topupMode === "credit"
+            ? (language === "vi" ? "Nạp Credit dùng cho Getlink" : "Credit for Getlink")
+            : (language === "vi" ? "Mua Pro để tải Model/Scene" : "Pro for Model/Scene downloads")}
+        </strong>
+      </div>
 
       {topupMode === "pro" && (
       <section className="panel topupUnifiedSection topupProSection">

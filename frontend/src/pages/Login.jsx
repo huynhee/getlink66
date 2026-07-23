@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertCircle, ArrowRight, BookOpen, ChevronRight, Chrome, ClipboardPaste, ShieldCheck, Sparkles, UserPlus, Wallet } from "lucide-react";
+import { AlertCircle, ArrowRight, BookOpen, CheckCircle2, ChevronRight, Chrome, ClipboardPaste, ShieldCheck, Sparkles, UserPlus, Wallet } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import GuideContent from "../components/GuideContent.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
@@ -604,7 +604,13 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
               <h2 className="glitchTitle subtle" data-text={siteSettings.pricingTitle || t.choosePackage}>
                 {siteSettings.pricingTitle || t.choosePackage}
               </h2>
-              <p style={{ maxWidth: 600, margin: "0 auto" }}>{siteSettings.pricingNote}</p>
+              <p className="pricingModeDescription">
+                {homeTopupMode === "credit"
+                  ? siteSettings.pricingNote
+                  : (language === "vi"
+                    ? "Bạn đang xem gói Pro dùng để mở quyền và quota tải Model/Scene trong thư viện."
+                    : "You are viewing Pro plans that unlock Model/Scene library access and download quota.")}
+              </p>
             </div>
 
             <div
@@ -624,21 +630,45 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                   type="button"
                   className={`homeTopupAction pro ${homeTopupMode === "pro" ? "active" : ""}`}
                   onClick={() => setHomeTopupMode("pro")}
+                  aria-pressed={homeTopupMode === "pro"}
                 >
                   <Sparkles size={18} />
                   <span>Pro</span>
                   <small>{language === "vi" ? "Quyền tải Model/Scene Pro" : "Pro Model/Scene access"}</small>
+                  <small className="homeTopupActionStatus">
+                    {homeTopupMode === "pro" && <CheckCircle2 size={13} />}
+                    {homeTopupMode === "pro"
+                      ? (language === "vi" ? "Đang chọn" : "Selected")
+                      : (language === "vi" ? "Chọn Pro" : "Choose Pro")}
+                  </small>
                 </button>
                 <button
                   type="button"
                   className={`homeTopupAction credit ${homeTopupMode === "credit" ? "active" : ""}`}
                   onClick={() => setHomeTopupMode("credit")}
+                  aria-pressed={homeTopupMode === "credit"}
                 >
                   <Wallet size={18} />
                   <span>Credit</span>
                   <small>{language === "vi" ? "Số dư chỉ dùng cho Getlink" : "Getlink-only balance"}</small>
+                  <small className="homeTopupActionStatus">
+                    {homeTopupMode === "credit" && <CheckCircle2 size={13} />}
+                    {homeTopupMode === "credit"
+                      ? (language === "vi" ? "Đang chọn" : "Selected")
+                      : (language === "vi" ? "Chọn Credit" : "Choose Credit")}
+                  </small>
                 </button>
               </div>
+            </div>
+
+            <div className={`homeTopupCurrentMode ${homeTopupMode}`} aria-live="polite">
+              <CheckCircle2 size={16} />
+              <span>{language === "vi" ? "Đang hiển thị:" : "Showing:"}</span>
+              <strong>
+                {homeTopupMode === "credit"
+                  ? (language === "vi" ? "Gói Credit cho Getlink" : "Credit plans for Getlink")
+                  : (language === "vi" ? "Gói Pro cho thư viện Model/Scene" : "Pro plans for the Model/Scene library")}
+              </strong>
             </div>
 
             {homeTopupMode === "credit" ? (
