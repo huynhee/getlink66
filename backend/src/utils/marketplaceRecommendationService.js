@@ -3,6 +3,7 @@ import ModelDownload from "../models/ModelDownload.js";
 import { marketplaceAssetTypeFilter } from "../data/marketplaceCatalogs.js";
 import { hydrateMarketplaceCategoryRefs } from "./marketplaceTaxonomy.js";
 import { normalizeMarketplaceSearchText } from "./marketplaceSearch.js";
+import { marketplacePublicDeletionQuery } from "./marketplaceDeletionService.js";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE_USERS = 2_000;
@@ -157,6 +158,7 @@ async function candidatesFor(assetType, excludedIds) {
     isPublished: true,
     metadataStatus: "complete",
     fileStatus: "ready",
+    ...marketplacePublicDeletionQuery(),
     ...(excludedIds.size ? { _id: { $nin: [...excludedIds] } } : {}),
   })
     .sort({ downloadCount: -1, createdAt: -1 })

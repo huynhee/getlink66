@@ -279,6 +279,46 @@ export async function getGoogleDriveFileMetadata(fileId, options = {}) {
   return JSON.parse(text || "{}");
 }
 
+export async function setGoogleDriveFileTrashed(fileId, trashed) {
+  assertGoogleDriveWriteEnabled();
+  const normalizedFileId = String(fileId || "").trim();
+  if (!normalizedFileId) {
+    const error = new Error("Google Drive fileId is required.");
+    error.status = 400;
+    throw error;
+  }
+  const url = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(normalizedFileId)}`);
+  url.searchParams.set("supportsAllDrives", "true");
+  url.searchParams.set("fields", "id,name,mimeType,parents,trashed,modifiedTime,version,driveId");
+  const response = await fetchGoogleDrive(url, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ trashed: Boolean(trashed) }),
+  });
+  return googleDriveJson(response, trashed ? "move to trash" : "restore from trash");
+}
+
+export async function deleteGoogleDriveFile(fileId) {
+  assertGoogleDriveWriteEnabled();
+  const normalizedFileId = String(fileId || "").trim();
+  if (!normalizedFileId) {
+    const error = new Error("Google Drive fileId is required.");
+    error.status = 400;
+    throw error;
+  }
+  const url = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(normalizedFileId)}`);
+  url.searchParams.set("supportsAllDrives", "true");
+  const response = await fetchGoogleDrive(url, { method: "DELETE" });
+  if (response.status === 404) return { deleted: true, missing: true };
+  if (!response.ok) {
+    const text = await response.text();
+    const error = new Error(`Google Drive permanent delete failed: ${response.status} ${text.slice(0, 240)}`);
+    error.status = response.status === 403 ? 403 : 502;
+    throw error;
+  }
+  return { deleted: true, missing: false };
+}
+
 export function marketplaceDownloadDeliveryMode() {
   const mode = String(process.env.MARKETPLACE_DOWNLOAD_DELIVERY || "proxy").trim().toLowerCase();
   return mode === "drive_redirect" ? "drive_redirect" : "proxy";

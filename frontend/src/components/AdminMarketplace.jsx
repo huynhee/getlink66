@@ -1,21 +1,27 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   Database,
   Eye,
   EyeOff,
   GitCompareArrows,
+  ImageOff,
   ListChecks,
+  Maximize2,
   Package,
   Pencil,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
+  Trash2,
   UploadCloud,
   X,
 } from "lucide-react";
-import { api } from "../api.js";
+import { api, buildApiUrl } from "../api.js";
 import Pagination from "./Pagination.jsx";
 import AdminMarketplaceTaxonomy from "./AdminMarketplaceTaxonomy.jsx";
 import { text } from "../i18n.js";
@@ -150,7 +156,7 @@ function formatDate(value) {
 
 function statusClass(value) {
   if (["ready", "complete", "published", "online", "used"].includes(value)) return "success";
-  if (["failed", "incomplete", "unpublished", "draft", "expired", "revoked"].includes(value)) return "error";
+  if (["failed", "incomplete", "unpublished", "draft", "expired", "revoked", "delete_error", "purge_error"].includes(value)) return "error";
   return "pending";
 }
 
@@ -231,6 +237,115 @@ function ModelFact({ label, value, detail }) {
       <strong>{value || "-"}</strong>
       {detail && <span className="marketAdminFactDetail">{detail}</span>}
     </div>
+  );
+}
+
+function formatTimeRemaining(value, language = "vi") {
+  const time = new Date(value).getTime();
+  if (!value || !Number.isFinite(time)) return "-";
+  const remaining = time - Date.now();
+  if (remaining <= 0) return text(language, "Đến hạn xóa", "Due for deletion");
+  const hours = Math.ceil(remaining / (60 * 60 * 1000));
+  if (hours < 24) return text(language, `Còn ${hours} giờ`, `${hours} hours left`);
+  const days = Math.ceil(hours / 24);
+  return text(language, `Còn ${days} ngày`, `${days} days left`);
+}
+
+function AdminCover({ model, adminAssetBase, language = "vi" }) {
+  const [failed, setFailed] = useState(false);
+  const hasImage = Boolean(model.coverImage?.driveFileId || model.previewImages?.[0]?.driveFileId);
+  if (!hasImage || failed || model.deletionStatus === "purged") {
+    return <div className="marketAdminModelCover placeholder"><ImageOff size={20} /><span>{text(language, "Thiếu ảnh", "No image")}</span></div>;
+  }
+  return (
+    <div className="marketAdminModelCover">
+      <img
+        crossOrigin="use-credentials"
+        src={buildApiUrl(`${adminAssetBase}/${model._id}/cover`)}
+        alt={model.title || "Cover"}
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
+}
+
+function AdminPreviewGallery({ model, adminAssetBase, language = "vi" }) {
+  const images = useMemo(() => {
+    const refs = [];
+    const seen = new Set();
+    if (model.coverImage?.driveFileId) {
+      seen.add(model.coverImage.driveFileId);
+      refs.push({ key: `cover-${model.coverImage.driveFileId}`, label: text(language, "Ảnh cover", "Cover"), url: `${adminAssetBase}/${model._id}/cover` });
+    }
+    (model.previewImages || []).forEach((image, index) => {
+      if (!image?.driveFileId || seen.has(image.driveFileId)) return;
+      seen.add(image.driveFileId);
+      refs.push({ key: image.driveFileId, label: `${text(language, "Ảnh", "Preview")} ${index + 1}`, url: `${adminAssetBase}/${model._id}/preview/${index}` });
+    });
+    return refs;
+  }, [adminAssetBase, language, model]);
+  const [selected, setSelected] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const expandButtonRef = useRef(null);
+
+  useEffect(() => {
+    setSelected(0);
+    setLightboxOpen(false);
+  }, [model._id]);
+
+  useEffect(() => {
+    if (!lightboxOpen) return undefined;
+    const returnFocusTo = expandButtonRef.current;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setLightboxOpen(false);
+      if (event.key === "ArrowLeft") setSelected((current) => (current - 1 + images.length) % images.length);
+      if (event.key === "ArrowRight") setSelected((current) => (current + 1) % images.length);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.body.classList.add("modalOpen");
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.classList.remove("modalOpen");
+      returnFocusTo?.focus();
+    };
+  }, [images.length, lightboxOpen]);
+
+  if (!images.length) {
+    return <div className="marketAdminGalleryEmpty"><ImageOff size={28} /><span>{text(language, "Model chưa có cover hoặc preview.", "This asset has no cover or preview images.")}</span></div>;
+  }
+  const current = images[Math.min(selected, images.length - 1)];
+  const move = (direction) => setSelected((selected + direction + images.length) % images.length);
+  return (
+    <section className="marketAdminGallery" aria-label={text(language, "Ảnh model", "Asset images")}>
+      <div className="marketAdminGalleryMain">
+        <img crossOrigin="use-credentials" src={buildApiUrl(current.url)} alt={`${model.title} - ${current.label}`} />
+        <button ref={expandButtonRef} type="button" className="iconButton marketAdminGalleryExpand" onClick={() => setLightboxOpen(true)} title={text(language, "Xem ảnh đầy đủ", "View full image")}>
+          <Maximize2 size={17} />
+        </button>
+        {images.length > 1 && (
+          <div className="marketAdminGalleryNav">
+            <button type="button" className="iconButton" onClick={() => move(-1)} aria-label={text(language, "Ảnh trước", "Previous image")}><ChevronLeft size={18} /></button>
+            <button type="button" className="iconButton" onClick={() => move(1)} aria-label={text(language, "Ảnh sau", "Next image")}><ChevronRight size={18} /></button>
+          </div>
+        )}
+      </div>
+      <div className="marketAdminGalleryThumbs">
+        {images.map((image, index) => (
+          <button type="button" key={image.key} className={index === selected ? "active" : ""} onClick={() => setSelected(index)} title={image.label}>
+            <img crossOrigin="use-credentials" src={buildApiUrl(image.url)} alt={image.label} loading="lazy" />
+          </button>
+        ))}
+      </div>
+      {lightboxOpen && (
+        <div className="marketAdminLightbox" role="dialog" aria-modal="true" aria-label={text(language, "Xem ảnh đầy đủ", "Full image preview")} onMouseDown={(event) => event.target === event.currentTarget && setLightboxOpen(false)}>
+          <button autoFocus type="button" className="iconButton marketAdminLightboxClose" onClick={() => setLightboxOpen(false)} aria-label={text(language, "Đóng", "Close")}><X size={20} /></button>
+          {images.length > 1 && <button type="button" className="iconButton previous" onClick={() => move(-1)} aria-label={text(language, "Ảnh trước", "Previous image")}><ChevronLeft size={22} /></button>}
+          <img crossOrigin="use-credentials" src={buildApiUrl(current.url)} alt={`${model.title} - ${current.label}`} />
+          {images.length > 1 && <button type="button" className="iconButton next" onClick={() => move(1)} aria-label={text(language, "Ảnh sau", "Next image")}><ChevronRight size={22} /></button>}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -334,59 +449,74 @@ function FacetPicker({ field, value, options = [], onChange, language = "vi" }) 
   );
 }
 
-function ModelSummary({ model, selected, selectedForBulk, onBulkToggle, onEdit, language = "vi" }) {
-  const isScene = model.assetType === "scene";
+function ManagedAssetSummary({
+  model,
+  selected,
+  selectedForBulk,
+  onBulkToggle,
+  onEdit,
+  onTrash,
+  onRestore,
+  onPermanentDelete,
+  adminAssetBase,
+  deletedView = false,
+  language = "vi",
+}) {
   const state = publicState(model);
-  const missing = model.metadataMissingFields || [];
   const localizedState = {
     draft: text(language, "Bản nháp", "Draft"),
     incomplete: text(language, "Thiếu metadata", "Incomplete metadata"),
     pending: text(language, "Thiếu file", "Missing file"),
     online: text(language, "Đang online", "Online"),
   }[state.key] || state.label;
+  const deletionLabel = {
+    deleting: text(language, "Đang chuyển vào thùng rác", "Moving to trash"),
+    trashed: text(language, "Trong thùng rác", "In trash"),
+    delete_error: text(language, "Lỗi thao tác Drive", "Drive operation failed"),
+    purging: text(language, "Đang xóa vĩnh viễn", "Deleting permanently"),
+    purge_error: text(language, "Lỗi xóa vĩnh viễn", "Permanent delete failed"),
+  }[model.deletionStatus] || localizedState;
+  const isScene = model.assetType === "scene";
+  const deletionBusy = ["deleting", "purging"].includes(model.deletionStatus);
+
   return (
-    <article className={`marketAdminItem ${state.key} ${selected ? "selected" : ""}`}>
-      <div className="marketAdminModelHead">
-        <label className="marketAdminBulkCheck" title={isScene ? text(language, "Chọn scene", "Select scene") : text(language, "Chọn model", "Select model")}>
-          <input
-            type="checkbox"
-            checked={selectedForBulk}
-            onChange={() => onBulkToggle(model._id)}
-          />
-        </label>
-        <div className="marketAdminModelIcon">
-          <Package size={22} />
-        </div>
+    <article className={`marketAdminItem ${deletedView ? "trashed" : state.key} ${selected ? "selected" : ""}`}>
+      <div className={`marketAdminModelHead ${deletedView ? "withoutBulk" : ""}`}>
+        {!deletedView && (
+          <label className="marketAdminBulkCheck" title={text(language, "Chọn tài nguyên", "Select asset")}>
+            <input type="checkbox" checked={selectedForBulk} onChange={() => onBulkToggle(model._id)} />
+          </label>
+        )}
+        <AdminCover model={model} adminAssetBase={adminAssetBase} language={language} />
         <div className="marketAdminModelTitle">
           <strong>{model.title}</strong>
           <span>{model.slug}</span>
         </div>
         <div className="marketAdminBadges">
-          <span className={`badge ${statusClass(state.key)}`}>{localizedState}</span>
+          <span className={`badge ${statusClass(deletedView ? model.deletionStatus : state.key)}`}>{deletionLabel}</span>
           <span className={`badge ${statusClass(model.metadataStatus)}`}>
             {model.metadataStatus === "complete" ? text(language, "Đủ metadata", "Metadata ready") : text(language, "Thiếu metadata", "Incomplete metadata")}
           </span>
           <span className={`badge ${statusClass(model.fileStatus)}`}>
-            {model.fileStatus === "ready" ? text(language, "Sẵn sàng", "Ready") : (language === "en" ? (model.fileStatus || "Missing file") : (fileStatusLabels[model.fileStatus] || "Thiếu file"))}
+            {model.fileStatus === "ready" ? text(language, "Sẵn sàng", "Ready") : (fileStatusLabels[model.fileStatus] || model.fileStatus)}
           </span>
           <span className="badge">{accessLabels[model.accessType] || model.accessType}</span>
         </div>
       </div>
-
-      <MissingFields fields={missing} language={language} />
-
+      <MissingFields fields={model.metadataMissingFields || []} language={language} />
       <div className="marketAdminModelGrid">
         <ModelFact label={text(language, "File nén", "Archive")} value={formatBytes(model.fileSize)} detail={model.archiveExt || "archive"} />
         <ModelFact label={text(language, "Ảnh cover", "Cover image")} value={model.coverImage?.driveFileId ? text(language, "Đã gắn", "Attached") : text(language, "Thiếu", "Missing")} detail={model.coverImage?.fileName} />
         <ModelFact label="Preview" value={`${model.previewImages?.length || 0} ${text(language, "ảnh", "images")}`} detail={model.metadataFileName || "metadata"} />
         <ModelFact label={text(language, "Lần quét Drive", "Last Drive scan")} value={formatDate(model.lastDriveScanAt)} detail={model.driveFolderName || model.source?.slug} />
-        <ModelFact label={text(language, "Search index", "Search index")} value={model.discoveryStatus || "pending"} detail={model.discoveryError || formatDate(model.discoveryIndexedAt)} />
+        {deletedView && <ModelFact label={text(language, "Xóa vĩnh viễn", "Permanent deletion")} value={formatTimeRemaining(model.purgeAt, language)} detail={model.deletionError || formatDate(model.purgeAt)} />}
       </div>
-
       <div className="marketAdminModelActions">
-        <button type="button" className="primaryButton" onClick={() => onEdit(model)}>
-          <Pencil size={16} /> {isScene ? text(language, "Chỉnh sửa scene", "Edit scene") : text(language, "Chỉnh sửa model", "Edit model")}
-        </button>
+        {!deletedView && <button type="button" className="primaryButton" onClick={() => onEdit(model)}><Pencil size={16} /> {isScene ? text(language, "Chỉnh sửa scene", "Edit scene") : text(language, "Chỉnh sửa model", "Edit model")}</button>}
+        {!deletedView && <button type="button" className="smallButton danger" onClick={() => onTrash(model)}><Trash2 size={16} /> {text(language, "Đưa vào thùng rác", "Move to trash")}</button>}
+        {deletedView && model.deletionStatus === "delete_error" && <button type="button" className="smallButton" onClick={() => onTrash(model)}><RefreshCw size={16} /> {text(language, "Thử xóa lại", "Retry trash")}</button>}
+        {deletedView && <button type="button" className="primaryButton" disabled={deletionBusy} onClick={() => onRestore(model)}><RotateCcw size={16} /> {text(language, "Khôi phục", "Restore")}</button>}
+        {deletedView && <button type="button" className="smallButton danger" disabled={deletionBusy} onClick={() => onPermanentDelete(model)}><Trash2 size={16} /> {model.deletionStatus === "purge_error" ? text(language, "Thử xóa lại", "Retry deletion") : text(language, "Xóa vĩnh viễn", "Delete permanently")}</button>}
       </div>
     </article>
   );
@@ -434,6 +564,10 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
   const [bulkRunning, setBulkRunning] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [catalogView, setCatalogView] = useState("active");
+  const [deleteDialog, setDeleteDialog] = useState(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteRunning, setDeleteRunning] = useState(false);
 
   const currentSelectedModel = useMemo(() => {
     if (!selectedModel?._id) return null;
@@ -491,8 +625,8 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
     }));
   }
 
-  const loadModels = useCallback(async (nextPage = 1) => {
-    const query = new URLSearchParams({ page: String(nextPage), fileStatus, accessType, published, metadataStatus });
+  const loadModels = useCallback(async (nextPage = 1, deletionView = catalogView) => {
+    const query = new URLSearchParams({ page: String(nextPage), fileStatus, accessType, published, metadataStatus, deleted: deletionView });
     if (search.trim()) query.set("search", search.trim());
     const [modelRes, statsRes, syncRes] = await Promise.all([
       api(`${adminAssetBase}?${query.toString()}`),
@@ -505,7 +639,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
     setSyncInfo(syncRes || null);
     setSyncRootFolderId((current) => current || syncRes?.config?.rootFolderId || "");
     setSelectedModelIds((current) => current.filter((id) => (modelRes.models || []).some((model) => model._id === id)));
-  }, [accessType, adminAssetBase, fileStatus, isScene, metadataStatus, published, search]);
+  }, [accessType, adminAssetBase, catalogView, fileStatus, isScene, metadataStatus, published, search]);
 
   const loadTaxonomy = useCallback(async () => {
     const [categoryRes, filterRes] = await Promise.all([
@@ -797,6 +931,63 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
     setMessage("Đã cập nhật trạng thái vận hành trên web.");
   }
 
+  function openDeleteDialog(model, mode = "trash") {
+    setDeleteDialog({ model, mode });
+    setDeleteConfirmation("");
+    setError("");
+  }
+
+  function closeDeleteDialog() {
+    if (deleteRunning) return;
+    setDeleteDialog(null);
+    setDeleteConfirmation("");
+  }
+
+  async function confirmDeleteAction() {
+    if (!deleteDialog?.model?._id || deleteConfirmation !== deleteDialog.model.title) return;
+    const target = deleteDialog.model;
+    const permanent = deleteDialog.mode === "permanent";
+    setDeleteRunning(true);
+    setMessage("");
+    setError("");
+    try {
+      await api(`${adminAssetBase}/${target._id}${permanent ? "/permanent" : ""}`, {
+        method: "DELETE",
+        body: JSON.stringify({ confirmation: deleteConfirmation }),
+      });
+      setDeleteDialog(null);
+      setDeleteConfirmation("");
+      setSelectedModel((current) => current?._id === target._id ? null : current);
+      setSelectedModelIds((current) => current.filter((id) => id !== target._id));
+      setCatalogView("trashed");
+      setActiveTab("search");
+      await loadModels(permanent ? page : 1, "trashed");
+      setMessage(permanent
+        ? l("Đã xóa vĩnh viễn tài sản Drive và giữ bản ghi lịch sử gọn.", "Drive assets were permanently deleted and a compact history record was retained.")
+        : l("Đã đưa tài nguyên vào thùng rác Drive trong 30 ngày.", "The asset was moved to Drive trash for 30 days."));
+    } catch (err) {
+      setCatalogView("trashed");
+      setActiveTab("search");
+      setError(err.message);
+    } finally {
+      setDeleteRunning(false);
+    }
+  }
+
+  async function restoreDeletedAsset(model) {
+    setMessage("");
+    setError("");
+    try {
+      await api(`${adminAssetBase}/${model._id}/restore`, { method: "POST", body: JSON.stringify({}) });
+      setCatalogView("active");
+      await loadModels(1, "active");
+      setMessage(l("Đã khôi phục folder Drive và đồng bộ lại tài nguyên.", "The Drive folder was restored and the asset was synchronized."));
+    } catch (err) {
+      setError(err.message);
+      await loadModels(page);
+    }
+  }
+
   function toggleSelectedModel(id) {
     setSelectedModelIds((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
@@ -881,6 +1072,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
           <KpiCard icon={CheckCircle2} label={l("File sẵn sàng", "Files ready")} value={stats.ready} tone="success" />
           <KpiCard icon={AlertTriangle} label={l("Thiếu file", "Missing files")} value={stats.missing} tone="warning" />
           <KpiCard icon={EyeOff} label={l("Bản nháp", "Drafts")} value={stats.draft} />
+          <KpiCard icon={Trash2} label={l("Thùng rác", "Trash")} value={stats.trashed || 0} tone="warning" />
         </div>
       )}
 
@@ -1048,10 +1240,18 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
 
       {activeTab === "search" && (
         <>
+          <div className="marketAdminCatalogViews" role="tablist" aria-label={l("Trạng thái catalog", "Catalog state")}>
+            <button type="button" role="tab" aria-selected={catalogView === "active"} className={catalogView === "active" ? "active" : ""} onClick={() => { setCatalogView("active"); setPage(1); }}>
+              <Package size={15} /> {l("Đang hoạt động", "Active")}
+            </button>
+            <button type="button" role="tab" aria-selected={catalogView === "trashed"} className={catalogView === "trashed" ? "active" : ""} onClick={() => { setCatalogView("trashed"); setPage(1); }}>
+              <Trash2 size={15} /> {l("Thùng rác", "Trash")} <span>{stats?.trashed || 0}</span>
+            </button>
+          </div>
           <div className="adminTableToolbar marketAdminToolbar">
             <label className="adminSearchField">
               <Search size={15} />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={isScene ? l("Tìm scene theo tên hoặc slug...", "Search by scene name or slug...") : l("Tìm model theo tên hoặc slug...", "Search by model name or slug...")} />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={isScene ? l("Tìm tên, slug, ID hoặc folder scene...", "Search scene name, slug, ID, or folder...") : l("Tìm tên, slug, ID hoặc folder model...", "Search model name, slug, ID, or folder...")} />
             </label>
             <select value={metadataStatus} onChange={(event) => setMetadataStatus(event.target.value)}>
               <option value="all">{l("Tất cả metadata", "All metadata")}</option>
@@ -1081,7 +1281,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
             )}
           </div>
 
-          <div className="marketAdminBulkBar">
+          {catalogView === "active" && <div className="marketAdminBulkBar">
             <label className="checkboxInline">
               <input type="checkbox" checked={allPageSelected} onChange={toggleSelectPage} />
               {l("Chọn trang này", "Select this page")}
@@ -1102,17 +1302,22 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
             <button type="button" className="smallButton" disabled={!selectedModelIds.length || bulkRunning} onClick={runBulkAction}>
               <RefreshCw size={15} /> {bulkRunning ? l("Đang xử lý...", "Processing...") : l("Áp dụng", "Apply")}
             </button>
-          </div>
+          </div>}
 
           <div className="marketAdminList">
             {models.map((model) => (
-              <ModelSummary
+              <ManagedAssetSummary
                 key={model._id}
                 model={model}
                 selected={currentSelectedModel?._id === model._id}
                 selectedForBulk={selectedModelIds.includes(model._id)}
                 onBulkToggle={toggleSelectedModel}
                 onEdit={selectForEdit}
+                onTrash={(model) => openDeleteDialog(model, "trash")}
+                onRestore={restoreDeletedAsset}
+                onPermanentDelete={(model) => openDeleteDialog(model, "permanent")}
+                adminAssetBase={adminAssetBase}
+                deletedView={catalogView === "trashed"}
                 language={language}
               />
             ))}
@@ -1167,6 +1372,13 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
               </div>
 
               <MissingFields fields={currentSelectedModel.metadataMissingFields || []} language={language} />
+
+              <AdminPreviewGallery
+                key={currentSelectedModel._id}
+                model={currentSelectedModel}
+                adminAssetBase={adminAssetBase}
+                language={language}
+              />
 
               <div className="marketAdminModelGrid">
                 <ModelFact label={l("File nén", "Archive")} value={formatBytes(currentSelectedModel.fileSize)} detail={currentSelectedModel.archiveExt || "archive"} />
@@ -1275,6 +1487,33 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
           language={language}
           onChanged={() => loadTaxonomy().catch((err) => setError(err.message))}
         />
+      )}
+
+      {deleteDialog && (
+        <div className="marketAdminConflictOverlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeDeleteDialog()}>
+          <section className="marketAdminDeleteDialog" role="dialog" aria-modal="true" aria-labelledby="market-delete-title">
+            <header>
+              <div>
+                <h3 id="market-delete-title"><Trash2 size={18} /> {deleteDialog.mode === "permanent" ? l("Xóa vĩnh viễn", "Delete permanently") : l("Đưa vào thùng rác", "Move to trash")}</h3>
+                <p>{deleteDialog.mode === "permanent"
+                  ? l("Folder Drive sẽ bị xóa vĩnh viễn và không thể khôi phục. Lịch sử tải vẫn được giữ.", "The Drive folder will be permanently deleted and cannot be restored. Download history is retained.")
+                  : l("Tài nguyên sẽ offline ngay, phiên tải đang hoạt động bị thu hồi và folder Drive được giữ trong thùng rác 30 ngày.", "The asset goes offline immediately, active sessions are revoked, and the Drive folder stays in trash for 30 days.")}</p>
+              </div>
+              <button type="button" className="iconButton" onClick={closeDeleteDialog} aria-label={l("Đóng", "Close")}><X size={18} /></button>
+            </header>
+            <label>
+              <span>{l("Nhập chính xác tên để xác nhận", "Type the exact name to confirm")}</span>
+              <strong>{deleteDialog.model.title}</strong>
+              <input autoFocus value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} placeholder={deleteDialog.model.title} />
+            </label>
+            <footer>
+              <button type="button" className="smallButton" onClick={closeDeleteDialog} disabled={deleteRunning}>{l("Hủy", "Cancel")}</button>
+              <button type="button" className="primaryButton danger" onClick={confirmDeleteAction} disabled={deleteRunning || deleteConfirmation !== deleteDialog.model.title}>
+                <Trash2 size={16} /> {deleteRunning ? l("Đang xử lý...", "Processing...") : deleteDialog.mode === "permanent" ? l("Xóa vĩnh viễn", "Delete permanently") : l("Đưa vào thùng rác", "Move to trash")}
+              </button>
+            </footer>
+          </section>
+        </div>
       )}
 
       {metadataConflict && (

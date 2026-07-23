@@ -246,9 +246,17 @@ export async function processMarketplaceDriveChangeQueue({ rootId = "", limit = 
         action: result.action,
       });
     } catch (error) {
+      if (error?.code === "MARKETPLACE_ASSET_DELETED") {
+        await MarketplaceDriveChange.deleteOne({ _id: item._id });
+        processed += 1;
+        results.push({ folderId: item.driveFolderId, status: "ignored_deleted" });
+        continue;
+      }
       if (error?.status === 404) {
         const model = await MarketplaceModel.findOne({ assetType: item.assetType || assetType, driveFolderId: item.driveFolderId }).lean();
-        if (model) await markMarketplaceDriveModelMissing(model, error.message);
+        if (model && (!model.deletionStatus || model.deletionStatus === "active")) {
+          await markMarketplaceDriveModelMissing(model, error.message);
+        }
         await MarketplaceDriveChange.deleteOne({ _id: item._id });
         processed += 1;
         results.push({ folderId: item.driveFolderId, status: "missing" });

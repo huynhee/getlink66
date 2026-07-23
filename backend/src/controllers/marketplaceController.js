@@ -41,6 +41,7 @@ import {
   marketplaceSearchTokens,
   marketplaceSearchUsesFuzzyMatch,
 } from "../utils/marketplaceSearch.js";
+import { marketplacePublicDeletionQuery } from "../utils/marketplaceDeletionService.js";
 
 const PAGE_SIZE = 60;
 const IMAGE_SEARCH_FREE_LIMIT = 10;
@@ -192,6 +193,7 @@ async function recommendedModelsFor(model, options = {}) {
     isPublished: true,
     metadataStatus: "complete",
     fileStatus: "ready",
+    ...marketplacePublicDeletionQuery(),
   };
   const candidates = await MarketplaceModel.find(query)
     .sort({ downloadCount: -1, createdAt: -1 })
@@ -528,7 +530,7 @@ export async function listMarketplaceModels(req, res, next) {
     const sortSelection = marketplaceSortSelection(req.query.sort, Boolean(search));
     const accessType = String(req.query.accessType || "").trim();
     const fileStatus = String(req.query.fileStatus || "").trim();
-    const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready" };
+    const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() };
     Object.assign(query, accessTypeFilter(accessType));
     applyMarketplaceFacetFilters(query, req.query, assetType);
     if (["missing", "pending_upload", "ready", "failed"].includes(fileStatus)) query.fileStatus = fileStatus;
@@ -666,7 +668,7 @@ export async function searchMarketplaceByImage(req, res, next) {
       assetType,
     });
     const matchedIds = searchResult.matches.map((match) => match.modelId);
-    const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready" };
+    const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() };
 
     Object.assign(query, accessTypeFilter(req.body.accessType));
     applyMarketplaceFacetFilters(query, req.body, assetType);
@@ -728,8 +730,8 @@ export async function getMarketplaceModel(req, res, next) {
     const assetType = requestAssetType(req);
     const slugOrId = String(req.params.slug || "").trim();
     const assetFilter = marketplaceAssetTypeFilter(assetType);
-    const lookup = [{ assetType: assetFilter, slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready" }];
-    if (isSafeId(slugOrId)) lookup.push({ assetType: assetFilter, _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready" });
+    const lookup = [{ assetType: assetFilter, slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() }];
+    if (isSafeId(slugOrId)) lookup.push({ assetType: assetFilter, _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() });
     const model = await MarketplaceModel.findOne({ $or: lookup }).lean();
     if (!model) return res.status(404).json({ message: `${assetLabel(assetType)} not found` });
     await hydrateMarketplaceCategoryRefs(model);
@@ -755,8 +757,8 @@ export async function listMarketplaceModelRecommendations(req, res, next) {
     const assetType = requestAssetType(req);
     const slugOrId = String(req.params.slug || "").trim();
     const assetFilter = marketplaceAssetTypeFilter(assetType);
-    const lookup = [{ assetType: assetFilter, slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready" }];
-    if (isSafeId(slugOrId)) lookup.push({ assetType: assetFilter, _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready" });
+    const lookup = [{ assetType: assetFilter, slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() }];
+    if (isSafeId(slugOrId)) lookup.push({ assetType: assetFilter, _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() });
     const model = await MarketplaceModel.findOne({ $or: lookup }).lean();
     if (!model) return res.status(404).json({ message: `${assetLabel(assetType)} not found` });
     const offset = Math.min(59, Math.max(0, Number(req.query.offset || 6)));
@@ -798,7 +800,7 @@ export async function streamMarketplaceCover(req, res, next) {
     if (!isSafeId(req.params.id)) {
       return res.status(400).json({ message: `Invalid ${assetLabel(assetType).toLowerCase()} id` });
     }
-    const model = await MarketplaceModel.findOne({ _id: req.params.id, assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready" })
+    const model = await MarketplaceModel.findOne({ _id: req.params.id, assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() })
       .select("title coverImage previewImages")
       .lean();
     if (!model) return res.status(404).json({ message: "Model not found" });
@@ -821,7 +823,7 @@ export async function streamMarketplacePreview(req, res, next) {
     if (!Number.isInteger(index) || index < 0 || index > 50) {
       return res.status(400).json({ message: "Invalid preview index" });
     }
-    const model = await MarketplaceModel.findOne({ _id: req.params.id, assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready" })
+    const model = await MarketplaceModel.findOne({ _id: req.params.id, assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() })
       .select("title previewImages")
       .lean();
     if (!model) return res.status(404).json({ message: "Model not found" });
@@ -844,6 +846,7 @@ export async function createDownloadSession(req, res, next) {
       await verifyMarketplaceTurnstile({
         token: req.body?.turnstileToken || req.body?.["cf-turnstile-response"],
         remoteIp: req.get?.("cf-connecting-ip") || req.ip || "",
+        expectedCData: req.params.id,
       });
     }
     const result = await createMarketplaceDownloadSession({

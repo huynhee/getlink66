@@ -3031,9 +3031,13 @@ button:disabled {
 
 .marketAdminModelHead {
   display: grid;
-  grid-template-columns: auto 42px minmax(0, 1fr) auto;
+  grid-template-columns: auto 72px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
+}
+
+.marketAdminModelHead.withoutBulk {
+  grid-template-columns: 72px minmax(0, 1fr) auto;
 }
 
 .marketAdminBulkCheck {
@@ -3468,6 +3472,43 @@ button:disabled {
   .marketAdminConflictDialog footer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .marketAdminModelHead,
+  .marketAdminModelHead.withoutBulk {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .marketAdminBulkCheck {
+    display: none;
+  }
+
+  .marketAdminBadges {
+    grid-column: 1 / -1;
+  }
+
+  .marketAdminGallery {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .marketAdminGalleryThumbs {
+    grid-template-columns: repeat(auto-fill, 60px);
+    max-height: none;
+    overflow-x: auto;
+  }
+
+  .marketAdminGalleryThumbs button {
+    width: 60px;
+  }
+
+  .marketAdminLightbox {
+    padding: 52px 12px;
+  }
+
+  .marketAdminDeleteDialog footer {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
 }
 
@@ -4355,6 +4396,247 @@ label {
   color: currentColor;
   clip-path: none;
   box-shadow: none;
+}
+
+.marketAdminModelCover {
+  width: 72px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  background: var(--surface-2);
+}
+
+.marketAdminModelCover img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.marketAdminModelCover.placeholder {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  color: var(--text-tertiary);
+}
+
+.marketAdminModelCover.placeholder span {
+  font-size: 9px;
+}
+
+.marketAdminItem.trashed {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--border-light));
+  background: color-mix(in srgb, var(--danger) 4%, var(--surface-1));
+}
+
+.marketAdminCatalogViews {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.marketAdminCatalogViews button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.marketAdminCatalogViews button.active {
+  border-bottom-color: var(--neon-green);
+  color: var(--neon-green);
+}
+
+.marketAdminCatalogViews button span {
+  min-width: 20px;
+  padding: 2px 5px;
+  border: 1px solid var(--border-light);
+  color: inherit;
+  font-size: 10px;
+  text-align: center;
+}
+
+.smallButton.danger,
+.primaryButton.danger {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-light));
+  color: var(--danger);
+}
+
+.primaryButton.danger {
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface-1));
+}
+
+.marketAdminGallery {
+  display: grid;
+  grid-template-columns: minmax(280px, 560px) 82px;
+  gap: 10px;
+  align-items: start;
+  width: min(100%, 652px);
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  background: var(--surface-2);
+}
+
+.marketAdminGalleryMain {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: #fff;
+}
+
+.marketAdminGalleryMain > img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.marketAdminGalleryExpand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+}
+
+.marketAdminGalleryNav {
+  position: absolute;
+  inset: 50% 8px auto;
+  display: flex;
+  justify-content: space-between;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.marketAdminGalleryNav button {
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  pointer-events: auto;
+}
+
+.marketAdminGalleryThumbs {
+  display: grid;
+  gap: 8px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+.marketAdminGalleryThumbs button {
+  width: 72px;
+  aspect-ratio: 1;
+  padding: 2px;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  background: var(--surface-1);
+}
+
+.marketAdminGalleryThumbs button.active {
+  border-color: var(--neon-green);
+  box-shadow: 0 0 0 1px var(--neon-green);
+}
+
+.marketAdminGalleryThumbs img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.marketAdminGalleryEmpty {
+  min-height: 150px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  border: 1px dashed var(--border-light);
+  color: var(--text-tertiary);
+}
+
+.marketAdminLightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  display: grid;
+  place-items: center;
+  padding: 36px 70px;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.marketAdminLightbox > img {
+  max-width: 100%;
+  max-height: calc(100vh - 72px);
+  object-fit: contain;
+}
+
+.marketAdminLightboxClose,
+.marketAdminLightbox > .previous,
+.marketAdminLightbox > .next {
+  position: absolute;
+  background: var(--surface-1);
+}
+
+.marketAdminLightboxClose { top: 18px; right: 18px; }
+.marketAdminLightbox > .previous { left: 18px; top: 50%; }
+.marketAdminLightbox > .next { right: 18px; top: 50%; }
+
+.marketAdminDeleteDialog {
+  width: min(540px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--danger) 50%, var(--border-light));
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg);
+}
+
+.marketAdminDeleteDialog header,
+.marketAdminDeleteDialog footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.marketAdminDeleteDialog header h3,
+.marketAdminDeleteDialog header p {
+  margin: 0;
+}
+
+.marketAdminDeleteDialog header h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--danger);
+}
+
+.marketAdminDeleteDialog header p {
+  margin-top: 8px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.marketAdminDeleteDialog label {
+  display: grid;
+  gap: 7px;
+}
+
+.marketAdminDeleteDialog label > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.marketAdminDeleteDialog label > strong {
+  overflow-wrap: anywhere;
+}
+
+.marketAdminDeleteDialog footer {
+  justify-content: flex-end;
 }
 
 .accountProfile {

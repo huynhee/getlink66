@@ -7,6 +7,7 @@ import {
   createGoogleDriveFile,
   getGoogleDriveFileMetadata,
   listGoogleDriveFolderPage,
+  openGoogleDriveFileStream,
 } from "../utils/storageProvider.js";
 import {
   inspectMarketplaceModelMetadata,
@@ -17,6 +18,14 @@ import { metadataFromMarketplaceModel } from "../utils/marketplaceMetadata.js";
 import { isSafeId, limitedString, rejectUnknownKeys, sanitizeString } from "../utils/validators.js";
 import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { hydrateAtlasUserField } from "../utils/crossDatabaseHydration.js";
+import {
+  marketplaceActiveDeletionQuery,
+  marketplaceTrashDeletionQuery,
+  isMarketplaceAssetDeleted,
+  permanentlyDeleteMarketplaceAsset,
+  restoreMarketplaceAsset,
+  trashMarketplaceAsset,
+} from "../utils/marketplaceDeletionService.js";
 
 const ADMIN_MODEL_PAGE_SIZE = 20;
 
@@ -34,6 +43,14 @@ function driveBackupEnv(assetType) {
 
 function assetNoun(assetType) {
   return normalizeAssetType(assetType) === "scene" ? "Scene" : "Model";
+}
+
+function assertMarketplaceAssetEditable(model) {
+  if (!isMarketplaceAssetDeleted(model)) return;
+  const error = new Error("Restore this marketplace asset before editing or syncing it.");
+  error.status = 409;
+  error.code = "MARKETPLACE_ASSET_DELETED";
+  throw error;
 }
 
 function slugify(value = "") {
@@ -193,7 +210,10 @@ export async function adminListMarketplaceModels(req, res, next) {
     const accessType = String(req.query.accessType || "all");
     const published = String(req.query.published || "all");
     const metadataStatus = String(req.query.metadataStatus || "all");
+    const deleted = String(req.query.deleted || "active").trim().toLowerCase();
     const query = { assetType };
+    if (deleted === "trashed") query.$and = [marketplaceTrashDeletionQuery()];
+    else if (deleted !== "all") query.$and = [marketplaceActiveDeletionQuery()];
     if (["missing", "pending_upload", "ready", "failed"].includes(fileStatus)) query.fileStatus = fileStatus;
     if (accessType === "free") query.accessType = "free";
     if (accessType === "member") query.accessType = "member";
@@ -202,7 +222,15 @@ export async function adminListMarketplaceModels(req, res, next) {
     if (["complete", "incomplete"].includes(metadataStatus)) query.metadataStatus = metadataStatus;
     if (search) {
       const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-      query.$or = [{ title: regex }, { slug: regex }, { "source.slug": regex }];
+      query.$or = [
+        { title: regex },
+        { slug: regex },
+        { "source.slug": regex },
+        { "source.assetId": regex },
+        { "source.modelId": regex },
+        { metadataSourceModelId: regex },
+        { driveFolderName: regex },
+      ];
     }
     const total = await MarketplaceModel.countDocuments(query);
     const totalPages = Math.max(1, Math.ceil(total / ADMIN_MODEL_PAGE_SIZE));
@@ -215,6 +243,7 @@ export async function adminListMarketplaceModels(req, res, next) {
       .lean();
     res.json({
       assetType,
+      deleted,
       models,
       pagination: { page: safePage, pageSize: ADMIN_MODEL_PAGE_SIZE, total, totalPages },
     });
@@ -245,6 +274,7 @@ export async function adminUpdateMarketplaceModel(req, res, next) {
     }
     const currentModel = await MarketplaceModel.findById(req.params.id).lean();
     if (!currentModel || normalizeAssetType(currentModel.assetType) !== assetType) return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
+    assertMarketplaceAssetEditable(currentModel);
     const requestedPublish = req.body.desiredPublished === undefined
       ? req.body.isPublished === undefined ? Boolean(currentModel.desiredPublished ?? currentModel.isPublished) : Boolean(req.body.isPublished)
       : Boolean(req.body.desiredPublished);
@@ -301,6 +331,7 @@ export async function adminUpdateMarketplaceMetadata(req, res, next) {
     }
     const model = await MarketplaceModel.findById(req.params.id).lean();
     if (!model || normalizeAssetType(model.assetType) !== assetType) return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
+    assertMarketplaceAssetEditable(model);
     const result = await writeMarketplaceModelMetadata(model, req.body.metadata, {
       metadataHash: limitedString(req.body.expectedMetadataHash, 80),
       driveVersion: limitedString(req.body.expectedDriveVersion, 80),
@@ -357,6 +388,7 @@ export async function adminAttachMarketplaceFile(req, res, next) {
       : "ready";
     const existing = await MarketplaceModel.findById(req.params.id).lean();
     if (!existing || normalizeAssetType(existing.assetType) !== assetType) return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
+    assertMarketplaceAssetEditable(existing);
     if (storageProvider === "google_drive" && existing.driveFolderId) {
       const driveFileId = extractDriveId(req.body.driveFileId);
       if (!driveFileId) return res.status(400).json({ message: "Google Drive file id is required" });
@@ -444,6 +476,7 @@ export async function adminAttachMarketplaceAssets(req, res, next) {
     }
     const existing = await MarketplaceModel.findById(req.params.id).lean();
     if (!existing || normalizeAssetType(existing.assetType) !== assetType) return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
+    assertMarketplaceAssetEditable(existing);
     if (existing.driveFolderId) {
       const driveFileIds = [
         payload.coverImage?.driveFileId,
@@ -479,6 +512,7 @@ export async function adminRescanMarketplaceModelDriveFolder(req, res, next) {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid model id" });
     const existing = await MarketplaceModel.findById(req.params.id).select("-source.raw").lean();
     if (!existing || normalizeAssetType(existing.assetType) !== assetType) return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
+    assertMarketplaceAssetEditable(existing);
     if (!existing.driveFolderId) {
       return res.status(400).json({ message: "Model does not have a Drive folder id" });
     }
@@ -490,14 +524,121 @@ export async function adminRescanMarketplaceModelDriveFolder(req, res, next) {
   }
 }
 
+function adminImageContentType(fileName = "", fallback = "") {
+  const extension = String(fileName).toLowerCase().split(".").pop();
+  if (["jpg", "jpeg"].includes(extension)) return "image/jpeg";
+  if (extension === "png") return "image/png";
+  if (extension === "webp") return "image/webp";
+  return fallback || "application/octet-stream";
+}
+
+async function streamAdminMarketplaceImage(req, res, next, kind) {
+  try {
+    const assetType = adminAssetType(req);
+    if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid marketplace asset id" });
+    const model = await MarketplaceModel.findById(req.params.id)
+      .select("assetType title coverImage previewImages deletionStatus")
+      .lean();
+    if (!model || normalizeAssetType(model.assetType) !== assetType || model.deletionStatus === "purged") {
+      return res.status(404).json({ message: `${assetNoun(assetType)} image not found` });
+    }
+    const index = Math.max(0, Number(req.params.index || 0));
+    const image = kind === "cover"
+      ? (model.coverImage?.driveFileId ? model.coverImage : model.previewImages?.[0])
+      : model.previewImages?.[index];
+    if (!image?.driveFileId) return res.status(404).json({ message: "Preview image not found" });
+    const file = await openGoogleDriveFileStream(image.driveFileId, image.fileName || `${kind}.jpg`);
+    res.setHeader("cache-control", "private, max-age=300");
+    // Local development serves the admin UI and API on different ports.
+    // Authentication still protects the route; same-site only permits the browser to render it.
+    res.setHeader("cross-origin-resource-policy", "same-site");
+    res.setHeader("content-type", adminImageContentType(image.fileName, file.contentType));
+    if (file.contentLength || image.size) res.setHeader("content-length", file.contentLength || image.size);
+    file.stream.on("error", next);
+    return file.stream.pipe(res);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export function adminStreamMarketplaceCover(req, res, next) {
+  return streamAdminMarketplaceImage(req, res, next, "cover");
+}
+
+export function adminStreamMarketplacePreview(req, res, next) {
+  return streamAdminMarketplaceImage(req, res, next, "preview");
+}
+
+async function adminAssetFromRequest(req) {
+  const assetType = adminAssetType(req);
+  if (!isSafeId(req.params.id)) {
+    const error = new Error("Invalid marketplace asset id");
+    error.status = 400;
+    throw error;
+  }
+  const model = await MarketplaceModel.findById(req.params.id).select("-source.raw").lean();
+  if (!model || normalizeAssetType(model.assetType) !== assetType) {
+    const error = new Error(`${assetNoun(assetType)} not found`);
+    error.status = 404;
+    throw error;
+  }
+  return model;
+}
+
+function assertDeletionConfirmation(req, model) {
+  const confirmation = String(req.body?.confirmation || "").trim();
+  if (confirmation === String(model.title || "").trim()) return;
+  const error = new Error(`Type the exact ${assetNoun(model.assetType).toLowerCase()} name to confirm.`);
+  error.status = 400;
+  error.code = "MARKETPLACE_DELETE_CONFIRMATION_REQUIRED";
+  throw error;
+}
+
+export async function adminTrashMarketplaceAsset(req, res, next) {
+  try {
+    const model = await adminAssetFromRequest(req);
+    assertDeletionConfirmation(req, model);
+    if (model.deletionStatus === "purged") return res.status(409).json({ message: "Marketplace asset was permanently deleted." });
+    const deleted = model.deletionStatus === "trashed" ? model : await trashMarketplaceAsset(model);
+    req.auditDetails = { assetType: model.assetType, title: model.title, deletionStatus: deleted.deletionStatus };
+    return res.json({ model: adminModel(deleted) });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function adminRestoreMarketplaceAsset(req, res, next) {
+  try {
+    const model = await adminAssetFromRequest(req);
+    const restored = await restoreMarketplaceAsset(model);
+    req.auditDetails = { assetType: model.assetType, title: model.title, deletionStatus: restored.deletionStatus };
+    return res.json({ model: adminModel(restored) });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function adminPurgeMarketplaceAsset(req, res, next) {
+  try {
+    const model = await adminAssetFromRequest(req);
+    assertDeletionConfirmation(req, model);
+    const purged = await permanentlyDeleteMarketplaceAsset(model);
+    req.auditDetails = { assetType: model.assetType, title: model.title, deletionStatus: purged.deletionStatus };
+    return res.json({ model: adminModel(purged) });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 export async function adminVerifyMarketplaceFile(req, res, next) {
   try {
     const assetType = adminAssetType(req);
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: `Invalid ${assetNoun(assetType).toLowerCase()} id` });
-    const model = await MarketplaceModel.findById(req.params.id).select("assetType storageProvider driveFileId driveFolderId fileName fileSize").lean();
+    const model = await MarketplaceModel.findById(req.params.id).select("assetType storageProvider driveFileId driveFolderId fileName fileSize deletionStatus").lean();
     if (!model || normalizeAssetType(model.assetType) !== assetType) {
       return res.status(404).json({ message: `${assetNoun(assetType)} not found` });
     }
+    assertMarketplaceAssetEditable(model);
     if (model.storageProvider !== "google_drive" || !model.driveFileId) {
       return res.status(409).json({
         message: `${assetNoun(assetType)} does not have a Google Drive archive attached.`,
@@ -541,17 +682,19 @@ export async function adminMarketplaceStats(req, res, next) {
   try {
     const assetType = adminAssetType(req);
     const assetQuery = { assetType };
-    const [models, ready, missing, sessions, downloads] = await Promise.all([
-      MarketplaceModel.countDocuments(assetQuery),
-      MarketplaceModel.countDocuments({ ...assetQuery, fileStatus: "ready" }),
-      MarketplaceModel.countDocuments({ ...assetQuery, fileStatus: { $ne: "ready" } }),
+    const catalogQuery = { assetType, $and: [marketplaceActiveDeletionQuery()] };
+    const [models, ready, missing, sessions, downloads, trashed] = await Promise.all([
+      MarketplaceModel.countDocuments(catalogQuery),
+      MarketplaceModel.countDocuments({ ...catalogQuery, fileStatus: "ready" }),
+      MarketplaceModel.countDocuments({ ...catalogQuery, fileStatus: { $ne: "ready" } }),
       DownloadSession.countDocuments(assetQuery),
       ModelDownload.countDocuments(assetQuery),
+      MarketplaceModel.countDocuments({ assetType, ...marketplaceTrashDeletionQuery() }),
     ]);
     const [completeMetadata, incompleteMetadata, published] = await Promise.all([
-      MarketplaceModel.countDocuments({ ...assetQuery, metadataStatus: "complete" }),
-      MarketplaceModel.countDocuments({ ...assetQuery, metadataStatus: "incomplete" }),
-      MarketplaceModel.countDocuments({ ...assetQuery, isPublished: true }),
+      MarketplaceModel.countDocuments({ ...catalogQuery, metadataStatus: "complete" }),
+      MarketplaceModel.countDocuments({ ...catalogQuery, metadataStatus: "incomplete" }),
+      MarketplaceModel.countDocuments({ ...catalogQuery, isPublished: true }),
     ]);
     res.json({
       stats: {
@@ -565,6 +708,7 @@ export async function adminMarketplaceStats(req, res, next) {
         incompleteMetadata,
         published,
         draft: Math.max(0, models - published),
+        trashed,
       },
     });
   } catch (error) {
@@ -981,6 +1125,11 @@ export async function adminBulkMarketplaceModels(req, res, next) {
       if (!model || normalizeAssetType(model.assetType) !== assetType) {
         skippedCount += 1;
         results.push({ id, status: "skipped", reason: "not_found" });
+        continue;
+      }
+      if (isMarketplaceAssetDeleted(model)) {
+        skippedCount += 1;
+        results.push({ id, status: "skipped", reason: "trashed" });
         continue;
       }
       try {

@@ -342,6 +342,18 @@ export function createMemoryModel(name) {
         deletedCount += 1;
       }
       return { acknowledged: true, deletedCount };
+    },
+    async updateMany(query = {}, update = {}) {
+      let matchedCount = 0;
+      let modifiedCount = 0;
+      collection.forEach((document) => {
+        if (!matches(document, query)) return;
+        matchedCount += 1;
+        applyUpdate(document, update, query);
+        document.updatedAt = new Date().toISOString();
+        modifiedCount += 1;
+      });
+      return { acknowledged: true, matchedCount, modifiedCount };
     }
   };
 }

@@ -58,13 +58,19 @@ test("Turnstile validates a download token on the server", async () => {
         success: true,
         hostname: "3dipl.org",
         action: "marketplace_download",
+        cdata: "asset-123",
         challenge_ts: "2026-07-14T00:00:00.000Z",
       }), { status: 200, headers: { "content-type": "application/json" } });
     };
 
-    const result = await verifyMarketplaceTurnstile({ token: "valid-token", remoteIp: "127.0.0.1" });
+    const result = await verifyMarketplaceTurnstile({
+      token: "valid-token",
+      remoteIp: "127.0.0.1",
+      expectedCData: "asset-123",
+    });
     assert.equal(result.success, true);
     assert.equal(result.action, "marketplace_download");
+    assert.equal(result.cData, "asset-123");
   } finally {
     global.fetch = originalFetch;
     restoreEnvironment(original);
@@ -95,6 +101,18 @@ test("Turnstile rejects missing and mismatched download verification", async () 
     await assert.rejects(
       verifyMarketplaceTurnstile({ token: "wrong-action" }),
       (error) => error.code === "TURNSTILE_ACTION_MISMATCH" && error.status === 400,
+    );
+
+    global.fetch = async () => new Response(JSON.stringify({
+      success: true,
+      hostname: "localhost",
+      action: "marketplace_download",
+      cdata: "asset-a",
+    }), { status: 200, headers: { "content-type": "application/json" } });
+
+    await assert.rejects(
+      verifyMarketplaceTurnstile({ token: "wrong-asset", expectedCData: "asset-b" }),
+      (error) => error.code === "TURNSTILE_CDATA_MISMATCH" && error.status === 400,
     );
   } finally {
     global.fetch = originalFetch;

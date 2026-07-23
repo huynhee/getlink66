@@ -105,6 +105,17 @@ const marketplaceModelSchema = new mongoose.Schema(
     syncError: { type: String, default: "" },
     desiredPublished: { type: Boolean, default: false },
     publicationBlockers: { type: [String], default: [] },
+    deletionStatus: {
+      type: String,
+      enum: ["active", "deleting", "trashed", "delete_error", "purging", "purge_error", "purged"],
+      default: "active",
+      index: true,
+    },
+    deletedAt: Date,
+    purgeAt: Date,
+    purgedAt: Date,
+    deletionError: { type: String, default: "" },
+    restoreDesiredPublished: Boolean,
     downloadCount: { type: Number, default: 0, min: 0 },
     discoveryStatus: {
       type: String,
@@ -166,6 +177,7 @@ marketplaceModelSchema.index({ assetType: 1, materials: 1, isPublished: 1 });
 marketplaceModelSchema.index({ assetType: 1, syncStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, discoveryStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, searchStatus: 1, updatedAt: 1 });
+marketplaceModelSchema.index({ deletionStatus: 1, purgeAt: 1 });
 
 export default isMemoryDb()
   ? createMemoryModel("MarketplaceModel")

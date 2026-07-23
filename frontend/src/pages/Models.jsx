@@ -1413,7 +1413,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
   const isDemo = Boolean(model.isDemo);
   const requiresPro = model.accessType !== "free" && !user?.isPro;
   const canDownload = Boolean(user) && fileReady && !requiresPro && !isDemo;
-  const requiresDownloadVerification = canDownload && downloadProtection.enabled && !turnstileToken;
+  const requiresDownloadVerification = downloadProtection.enabled && !turnstileToken;
   const loginReturnTo = `/${segment}/${encodeURIComponent(model.slug || model._id || slug)}`;
   const loginHref = buildApiUrl(`/api/auth/google?returnTo=${encodeURIComponent(loginReturnTo)}`);
   const categoryLabel = modelCategoryLabel(model, language);

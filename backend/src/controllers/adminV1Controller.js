@@ -15,6 +15,7 @@ import { approvePendingMembershipOrder, isProActive, nextVietnamReset, normalize
 import { buildUserTimeline } from "../utils/timelineService.js";
 import { isSafeId, limitedString, rejectUnknownKeys } from "../utils/validators.js";
 import { hydrateAtlasUserField } from "../utils/crossDatabaseHydration.js";
+import { marketplacePublicDeletionQuery } from "../utils/marketplaceDeletionService.js";
 
 const ADMIN_PAGE_SIZE = 20;
 
@@ -202,12 +203,12 @@ export async function adminDashboard(req, res, next) {
       ModelDownload.countDocuments(rangeQuery("createdAt", range)),
       ModelDownload.countDocuments({ assetType: { $ne: "scene" }, ...rangeQuery("createdAt", range) }),
       ModelDownload.countDocuments({ assetType: "scene", ...rangeQuery("createdAt", range) }),
-      MarketplaceModel.countDocuments({ assetType: "model", fileStatus: { $ne: "ready" } }),
-      MarketplaceModel.countDocuments({ assetType: "scene", fileStatus: { $ne: "ready" } }),
-      MarketplaceModel.countDocuments({ assetType: "model", metadataStatus: "incomplete" }),
-      MarketplaceModel.countDocuments({ assetType: "scene", metadataStatus: "incomplete" }),
-      MarketplaceModel.countDocuments({ assetType: "model", fileStatus: "ready" }),
-      MarketplaceModel.countDocuments({ assetType: "scene", fileStatus: "ready" }),
+      MarketplaceModel.countDocuments({ assetType: "model", fileStatus: { $ne: "ready" }, ...marketplacePublicDeletionQuery() }),
+      MarketplaceModel.countDocuments({ assetType: "scene", fileStatus: { $ne: "ready" }, ...marketplacePublicDeletionQuery() }),
+      MarketplaceModel.countDocuments({ assetType: "model", metadataStatus: "incomplete", ...marketplacePublicDeletionQuery() }),
+      MarketplaceModel.countDocuments({ assetType: "scene", metadataStatus: "incomplete", ...marketplacePublicDeletionQuery() }),
+      MarketplaceModel.countDocuments({ assetType: "model", fileStatus: "ready", ...marketplacePublicDeletionQuery() }),
+      MarketplaceModel.countDocuments({ assetType: "scene", fileStatus: "ready", ...marketplacePublicDeletionQuery() }),
       DownloadSession.countDocuments(rangeQuery("createdAt", range)),
       SystemLog.find().sort({ createdAt: -1 }).limit(8).lean(),
       AuditLog.find().sort({ createdAt: -1 }).limit(8).lean(),

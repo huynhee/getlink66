@@ -55,9 +55,14 @@ import {
   adminListMarketplaceModels,
   adminMarketplaceStats,
   adminMigrateMarketplaceDriveMetadata,
+  adminPurgeMarketplaceAsset,
   adminReconcileMarketplaceDrive,
+  adminRestoreMarketplaceAsset,
   adminRescanMarketplaceModelDriveFolder,
+  adminStreamMarketplaceCover,
+  adminStreamMarketplacePreview,
   adminSyncMarketplaceDriveFolder,
+  adminTrashMarketplaceAsset,
   adminUpdateMarketplaceMetadata,
   adminUpdateMarketplaceModel,
   adminUpdateMarketplaceState,
@@ -151,6 +156,8 @@ router.put("/membership-plans/:id", adminWriteLimit, auditAdmin("UPDATE_MEMBERSH
 router.delete("/membership-plans/:id", adminWriteLimit, auditAdmin("DELETE_MEMBERSHIP_PLAN"), adminDeleteMembershipPlan);
 
 router.get("/marketplace/models", adminListMarketplaceModels);
+router.get("/marketplace/models/:id/cover", adminStreamMarketplaceCover);
+router.get("/marketplace/models/:id/preview/:index", adminStreamMarketplacePreview);
 router.get("/marketplace/taxonomy", adminListMarketplaceTaxonomy);
 router.get("/marketplace/taxonomy/export", adminExportMarketplaceTaxonomy);
 router.post("/marketplace/categories", adminWriteLimit, auditAdmin("CREATE_MARKETPLACE_CATEGORY"), adminCreateMarketplaceCategory);
@@ -172,6 +179,9 @@ router.put("/marketplace/models/:id/metadata", adminWriteLimit, auditAdmin("UPDA
 router.patch("/marketplace/models/:id/state", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_MODEL_STATE"), adminUpdateMarketplaceState);
 router.post("/marketplace/models/:id/rescan-drive", adminWriteLimit, auditAdmin("RESCAN_MARKETPLACE_MODEL_DRIVE"), adminRescanMarketplaceModelDriveFolder);
 router.post("/marketplace/models/:id/verify-file", adminWriteLimit, auditAdmin("VERIFY_MARKETPLACE_MODEL_FILE"), adminVerifyMarketplaceFile);
+router.delete("/marketplace/models/:id", adminWriteLimit, auditAdmin("TRASH_MARKETPLACE_MODEL"), adminTrashMarketplaceAsset);
+router.post("/marketplace/models/:id/restore", adminWriteLimit, auditAdmin("RESTORE_MARKETPLACE_MODEL"), adminRestoreMarketplaceAsset);
+router.delete("/marketplace/models/:id/permanent", adminWriteLimit, auditAdmin("PURGE_MARKETPLACE_MODEL"), adminPurgeMarketplaceAsset);
 router.post("/marketplace/drive/sync-folder", adminWriteLimit, auditAdmin("SYNC_MARKETPLACE_DRIVE_FOLDER"), adminSyncMarketplaceDriveFolder);
 router.post("/marketplace/drive/reconcile", adminWriteLimit, auditAdmin("RECONCILE_MARKETPLACE_DRIVE"), adminReconcileMarketplaceDrive);
 router.post("/marketplace/drive/migrate-metadata", adminWriteLimit, auditAdmin("MIGRATE_MARKETPLACE_DRIVE_METADATA"), adminMigrateMarketplaceDriveMetadata);
@@ -179,6 +189,8 @@ router.post("/marketplace/models/:id/attach-file", adminWriteLimit, auditAdmin("
 router.post("/marketplace/models/:id/attach-assets", adminWriteLimit, auditAdmin("ATTACH_MARKETPLACE_ASSETS"), adminAttachMarketplaceAssets);
 
 router.get("/marketplace/scenes", sceneAdmin, adminListMarketplaceModels);
+router.get("/marketplace/scenes/:id/cover", sceneAdmin, adminStreamMarketplaceCover);
+router.get("/marketplace/scenes/:id/preview/:index", sceneAdmin, adminStreamMarketplacePreview);
 router.get("/marketplace/scenes/stats", sceneAdmin, adminMarketplaceStats);
 router.post("/marketplace/scenes/bulk", sceneAdmin, adminWriteLimit, auditAdmin("BULK_MARKETPLACE_SCENES"), adminBulkMarketplaceModels);
 router.get("/marketplace/scenes/sync-state", sceneAdmin, adminMarketplaceDriveSyncState);
@@ -191,6 +203,9 @@ router.put("/marketplace/scenes/:id/metadata", sceneAdmin, adminWriteLimit, audi
 router.patch("/marketplace/scenes/:id/state", sceneAdmin, adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_SCENE_STATE"), adminUpdateMarketplaceState);
 router.post("/marketplace/scenes/:id/rescan-drive", sceneAdmin, adminWriteLimit, auditAdmin("RESCAN_SCENE_DRIVE"), adminRescanMarketplaceModelDriveFolder);
 router.post("/marketplace/scenes/:id/verify-file", sceneAdmin, adminWriteLimit, auditAdmin("VERIFY_SCENE_FILE"), adminVerifyMarketplaceFile);
+router.delete("/marketplace/scenes/:id", sceneAdmin, adminWriteLimit, auditAdmin("TRASH_MARKETPLACE_SCENE"), adminTrashMarketplaceAsset);
+router.post("/marketplace/scenes/:id/restore", sceneAdmin, adminWriteLimit, auditAdmin("RESTORE_MARKETPLACE_SCENE"), adminRestoreMarketplaceAsset);
+router.delete("/marketplace/scenes/:id/permanent", sceneAdmin, adminWriteLimit, auditAdmin("PURGE_MARKETPLACE_SCENE"), adminPurgeMarketplaceAsset);
 router.post("/marketplace/scenes/:id/attach-file", sceneAdmin, adminWriteLimit, auditAdmin("ATTACH_SCENE_FILE"), adminAttachMarketplaceFile);
 router.post("/marketplace/scenes/:id/attach-assets", sceneAdmin, adminWriteLimit, auditAdmin("ATTACH_SCENE_ASSETS"), adminAttachMarketplaceAssets);
 

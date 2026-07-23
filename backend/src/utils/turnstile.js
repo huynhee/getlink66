@@ -38,7 +38,7 @@ export function marketplaceTurnstileConfig() {
   };
 }
 
-export async function verifyMarketplaceTurnstile({ token, remoteIp = "" } = {}) {
+export async function verifyMarketplaceTurnstile({ token, remoteIp = "", expectedCData = "" } = {}) {
   const config = marketplaceTurnstileConfig();
   if (!config.enabled) return { success: true, skipped: true };
 
@@ -92,10 +92,16 @@ export async function verifyMarketplaceTurnstile({ token, remoteIp = "" } = {}) 
     throw turnstileError("Human verification does not match this website.", "TURNSTILE_HOSTNAME_MISMATCH");
   }
 
+  const requiredCData = String(expectedCData || "").slice(0, 255);
+  if (requiredCData && String(result.cdata || "") !== requiredCData) {
+    throw turnstileError("Human verification does not match this asset.", "TURNSTILE_CDATA_MISMATCH");
+  }
+
   return {
     success: true,
     hostname: String(result.hostname || ""),
     action: String(result.action || ""),
+    cData: String(result.cdata || ""),
     challengeAt: result.challenge_ts || null,
   };
 }

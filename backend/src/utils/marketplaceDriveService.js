@@ -272,6 +272,14 @@ async function findModelForFolder(folder, metadata = {}, assetType = "model") {
   return MarketplaceModel.findOne({ assetType: marketplaceAssetTypeFilter(normalizedType), $or: candidates }).lean();
 }
 
+function assertMarketplaceAssetSyncable(model) {
+  if (!model?.deletionStatus || model.deletionStatus === "active") return;
+  const error = new Error("Marketplace asset is in trash and cannot be synchronized.");
+  error.status = 410;
+  error.code = "MARKETPLACE_ASSET_DELETED";
+  throw error;
+}
+
 export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot = null, force = true, assetType = "model" } = {}) {
   const normalizedType = normalizeAssetType(assetType);
   const folderId = clean(driveFolderId || folderSnapshot?.id, 160);
@@ -291,6 +299,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
   const files = await listGoogleDriveFolderFiles(folderId);
   const signature = driveSignature(folder, files);
   let existing = await findModelForFolder(folder, {}, normalizedType);
+  assertMarketplaceAssetSyncable(existing);
   if (!force && existing?.driveSignature === signature) {
     const model = await MarketplaceModel.findByIdAndUpdate(existing._id, {
       $set: { lastDriveScanAt: new Date(), "source.syncedAt": new Date() },
@@ -349,6 +358,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     sha256: existing?.sha256 || "",
   };
   existing = existing || await findModelForFolder(folder, metadata, normalizedType);
+  assertMarketplaceAssetSyncable(existing);
   if (existing?.driveFolderId && existing.driveFolderId !== folderId) {
     const error = new Error(`Source ${normalizedType} ${metadata.sourceAssetId || metadata.sourceModelId || fallbackSourceId} is already attached to another Drive folder.`);
     error.status = 409;

@@ -153,6 +153,7 @@ const { startMarketplaceDriveSyncJob, stopMarketplaceDriveSyncJob } = await impo
 const { startMarketplaceDiscoverySyncJob, stopMarketplaceDiscoverySyncJob } = await import("./src/utils/marketplaceDiscoverySyncJob.js");
 const { startMarketplaceSearchIndexJob, stopMarketplaceSearchIndexJob } = await import("./src/utils/marketplaceSearchIndexJob.js");
 const { startMarketplaceQuotaGrantJob, stopMarketplaceQuotaGrantJob } = await import("./src/utils/marketplaceQuotaGrantJob.js");
+const { startMarketplaceDeletionJob, stopMarketplaceDeletionJob } = await import("./src/utils/marketplaceDeletionJob.js");
 const { startHistoryRetentionJob, stopHistoryRetentionJob } = await import("./src/utils/historyRetentionJob.js");
 const { startGetlinkJobWorker, stopGetlinkJobWorker } = await import("./src/utils/getlinkJobService.js");
 const { close3D66Browser } = await import("./src/utils/3d66BrowserService.js");
@@ -169,6 +170,7 @@ startMarketplaceDriveSyncJob();
 startMarketplaceDiscoverySyncJob();
 startMarketplaceSearchIndexJob();
 startMarketplaceQuotaGrantJob();
+startMarketplaceDeletionJob();
 startHistoryRetentionJob();
 startGetlinkJobWorker();
 
@@ -349,6 +351,7 @@ async function gracefulShutdown(signal) {
   stopMarketplaceDiscoverySyncJob();
   stopMarketplaceSearchIndexJob();
   stopMarketplaceQuotaGrantJob();
+  stopMarketplaceDeletionJob();
   stopHistoryRetentionJob();
   stopGetlinkJobWorker();
   logger.info({ signal }, "Graceful shutdown started");

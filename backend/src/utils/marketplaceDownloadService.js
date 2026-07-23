@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import DailyDownloadQuota from "../models/DailyDownloadQuota.js";
 import DownloadSession from "../models/DownloadSession.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
+import { isMarketplaceAssetDeleted } from "./marketplaceDeletionService.js";
 import ModelDownload from "../models/ModelDownload.js";
 import {
   isProActive,
@@ -137,7 +138,7 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
   const model = await MarketplaceModel.findById(modelId);
   const assetType = normalizeAssetType(model?.assetType);
   const assetLabel = assetType === "scene" ? "Scene" : "Model";
-  if (!model || !model.isPublished || (expectedAssetType && assetType !== normalizeAssetType(expectedAssetType))) {
+  if (!model || isMarketplaceAssetDeleted(model) || !model.isPublished || (expectedAssetType && assetType !== normalizeAssetType(expectedAssetType))) {
     const error = new Error("Marketplace asset not found");
     error.status = 404;
     throw error;
