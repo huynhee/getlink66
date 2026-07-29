@@ -1,0 +1,11 @@
+[Unit]
+Description=Run 3DIPL history retention daily
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Ho_Chi_Minh
+Persistent=true
+RandomizedDelaySec=120
+Unit=3dipl-history-retention.service
+
+[Install]
+WantedBy=timers.target

@@ -7,6 +7,8 @@ import cors from "cors";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { closeDbConnections, connectDb, databaseHealth } from "./src/config/db.js";
+import { buildHelmetOptions } from "./src/config/httpSecurity.js";
+import { assertProductionReadiness } from "./src/config/productionReadiness.js";
 import { cookieSignatureSecret } from "./src/config/secrets.js";
 import { isMemoryDb } from "./src/config/memoryStore.js";
 import { csrfProtection } from "./src/middleware/csrf.js";
@@ -102,7 +104,18 @@ function adminEmails() {
   );
 }
 
+function pluginApiEnabled(_req, res, next) {
+  if (process.env.PLUGIN_API_ENABLED === "true") return next();
+  return res.status(503).json({
+    message: "Plugin API is not enabled",
+    code: "PLUGIN_API_DISABLED",
+  });
+}
+
 requireProductionSecret("JWT_SECRET", process.env.JWT_SECRET);
+if (process.env.PLUGIN_API_ENABLED === "true") {
+  requireProductionSecret("PLUGIN_JWT_SECRET", process.env.PLUGIN_JWT_SECRET);
+}
 requireProductionSecret("CSRF_HMAC_SECRET", process.env.CSRF_HMAC_SECRET);
 requireProductionSecret("COOKIE_SIGNATURE_SECRET", process.env.COOKIE_SIGNATURE_SECRET);
 requireProductionSecret("DOWNLOAD_TOKEN_SECRET", process.env.DOWNLOAD_TOKEN_SECRET);
@@ -121,6 +134,7 @@ if (process.env.SEPAY_ENABLED !== "false") {
   requireProductionHttpsUrl("SEPAY_ERROR_URL", process.env.SEPAY_ERROR_URL);
   requireProductionHttpsUrl("SEPAY_CANCEL_URL", process.env.SEPAY_CANCEL_URL);
 }
+assertProductionReadiness();
 
 await connectDb();
 
@@ -139,12 +153,16 @@ const { default: guideRoutes } = await import("./src/routes/guideRoutes.js");
 const { default: notificationRoutes } = await import("./src/routes/notificationRoutes.js");
 const { default: referralRoutes } = await import("./src/routes/referralRoutes.js");
 const { default: marketplaceRoutes } = await import("./src/routes/marketplaceRoutes.js");
+const { default: pluginRoutes } = await import("./src/routes/pluginRoutes.js");
+const { default: pluginActivationRoutes } = await import("./src/routes/pluginActivationRoutes.js");
 const { default: membershipRoutes } = await import("./src/routes/membershipRoutes.js");
 const { default: historyRoutes } = await import("./src/routes/historyRoutes.js");
 const { initializeSettings } = await import("./src/controllers/settingsController.js");
 const { ensureTopupIndexes } = await import("./src/models/Topup.js");
 const { ensurePaymentReceiptIndexes } = await import("./src/models/PaymentReceipt.js");
 const { ensureNotificationReceiptIndexes } = await import("./src/models/NotificationReceipt.js");
+const { ensureMarketplaceReportIndexes } = await import("./src/models/MarketplaceReport.js");
+const { ensureBackupRunIndexes } = await import("./src/models/BackupRun.js");
 const { awardReferralSignup, ensureReferralCode } = await import("./src/utils/referralService.js");
 const { initializeMarketplaceCategories } = await import("./src/utils/marketplaceSeed.js");
 const { ensureMarketplaceAssetMigration } = await import("./src/utils/marketplaceMigration.js");
@@ -155,6 +173,7 @@ const { startMarketplaceSearchIndexJob, stopMarketplaceSearchIndexJob } = await 
 const { startMarketplaceQuotaGrantJob, stopMarketplaceQuotaGrantJob } = await import("./src/utils/marketplaceQuotaGrantJob.js");
 const { startMarketplaceDeletionJob, stopMarketplaceDeletionJob } = await import("./src/utils/marketplaceDeletionJob.js");
 const { startHistoryRetentionJob, stopHistoryRetentionJob } = await import("./src/utils/historyRetentionJob.js");
+const { startStorageHealthJob, stopStorageHealthJob } = await import("./src/utils/storageHealthJob.js");
 const { startGetlinkJobWorker, stopGetlinkJobWorker } = await import("./src/utils/getlinkJobService.js");
 const { close3D66Browser } = await import("./src/utils/3d66BrowserService.js");
 const { close3D66ProxyAgents } = await import("./src/utils/3d66Service.js");
@@ -162,7 +181,18 @@ const { close3D66ProxyAgents } = await import("./src/utils/3d66Service.js");
 await ensureTopupIndexes();
 await ensurePaymentReceiptIndexes();
 await ensureNotificationReceiptIndexes();
-await ensureMarketplaceAssetMigration();
+await ensureMarketplaceReportIndexes();
+await ensureBackupRunIndexes();
+if (
+  process.env.NODE_ENV !== "production"
+  || process.env.MARKETPLACE_STARTUP_MIGRATIONS_ENABLED === "true"
+) {
+  await ensureMarketplaceAssetMigration();
+} else {
+  logger.info(
+    "Marketplace startup migrations are disabled; run the reviewed migration command before deploy",
+  );
+}
 await initializeSettings();
 await initializeMarketplaceCategories();
 await initializeMembershipPlans();
@@ -172,31 +202,13 @@ startMarketplaceSearchIndexJob();
 startMarketplaceQuotaGrantJob();
 startMarketplaceDeletionJob();
 startHistoryRetentionJob();
+startStorageHealthJob();
 startGetlinkJobWorker();
 
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "true") app.set("trust proxy", 1);
 
-app.use(helmet({
-  contentSecurityPolicy: process.env.NODE_ENV === "production" ? {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "https://cdnjs.cloudflare.com"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "https://respic.3d66.com", "https://api.vietqr.io", "data:"],
-      connectSrc: ["'self'"],
-      formAction: ["'self'", "https://pay.sepay.vn", "https://pay-sandbox.sepay.vn"],
-      baseUri: ["'self'"],
-      frameAncestors: ["'none'"],
-      frameSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
-      objectSrc: ["'none'"]
-    }
-  } : false,
-  crossOriginEmbedderPolicy: false,
-  hsts: process.env.NODE_ENV === "production"
-    ? { maxAge: 31536000, includeSubDomains: true }
-    : false
-}));
+app.use(helmet(buildHelmetOptions()));
 app.use(compression());
 app.use((_, res, next) => {
   res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
@@ -283,6 +295,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 app.use(passport.initialize());
 app.use(jwtAuth);
 app.use(requestGuard);
+app.use("/api/plugin", pluginApiEnabled, pluginRoutes);
 app.use(csrfProtection);
 
 app.get("/health", (_req, res) => {
@@ -295,7 +308,10 @@ app.get("/ready", (_req, res) => {
   const databases = isMemoryDb()
     ? { core: true, marketplace: true, marketplaceUsesCore: true, memory: true }
     : databaseHealth();
-  const ready = !shuttingDown && databases.core && databases.marketplace;
+  const splitReady = databases.memory
+    || String(process.env.MARKETPLACE_DB_TARGET || "").toLowerCase() !== "vps"
+    || databases.marketplaceDistinct;
+  const ready = !shuttingDown && databases.core && databases.marketplace && splitReady;
   return res.status(ready ? 200 : 503).json({ ready, databases });
 });
 app.get("/api/user", currentUser);
@@ -312,6 +328,7 @@ app.use("/api", referralRoutes);
 app.use("/api", marketplaceRoutes);
 app.use("/api", membershipRoutes);
 app.use("/api", historyRoutes);
+app.use("/api/plugin-activation", pluginApiEnabled, pluginActivationRoutes);
 app.use("/api/admin", adminRoutes);
 
 function publicErrorMessage(message) {
@@ -322,6 +339,16 @@ function publicErrorMessage(message) {
 
 app.use((error, _req, res, _next) => {
   const status = error.status || 500;
+  if (status === 429 && String(_req.originalUrl || "").startsWith("/api/plugin/")) {
+    const explicitSeconds = Number(error.publicDetails?.retryAfter || 0);
+    const resetAt = error.publicDetails?.resetAt
+      ? new Date(error.publicDetails.resetAt).getTime()
+      : 0;
+    const resetSeconds = resetAt > Date.now()
+      ? Math.ceil((resetAt - Date.now()) / 1000)
+      : 0;
+    res.setHeader("retry-after", String(Math.max(1, explicitSeconds, resetSeconds)));
+  }
   if (status >= 500) {
     logger.error({ err: error, status }, "Unhandled server error");
     notifyServerError({ error, req: _req, status });
@@ -344,6 +371,22 @@ const server = app.listen(port, () => {
   logger.info(`Backend listening on http://localhost:${port}`);
 });
 
+if (
+  process.env.NODE_ENV !== "production"
+  && process.env.QA_DIAGNOSTICS_ENABLED === "true"
+  && typeof process.send === "function"
+) {
+  process.on("message", (message) => {
+    if (message?.type !== "qa:memory") return;
+    if (message.collectGarbage === true) global.gc?.();
+    process.send({
+      type: "qa:memory",
+      requestId: message.requestId,
+      memory: process.memoryUsage(),
+    });
+  });
+}
+
 async function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -353,7 +396,8 @@ async function gracefulShutdown(signal) {
   stopMarketplaceQuotaGrantJob();
   stopMarketplaceDeletionJob();
   stopHistoryRetentionJob();
-  stopGetlinkJobWorker();
+  stopStorageHealthJob();
+  const getlinkWorkerStop = stopGetlinkJobWorker({ timeoutMs: 25_000 });
   logger.info({ signal }, "Graceful shutdown started");
 
   const forceTimer = setTimeout(() => {
@@ -370,6 +414,11 @@ async function gracefulShutdown(signal) {
       resolve();
     });
   });
+
+  const getlinkWorkerDrained = await getlinkWorkerStop;
+  if (!getlinkWorkerDrained) {
+    logger.warn({ signal }, "Getlink worker did not drain before database shutdown");
+  }
 
   await Promise.allSettled([
     close3D66Browser(),

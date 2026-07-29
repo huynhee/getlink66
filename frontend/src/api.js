@@ -1,4 +1,5 @@
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+export const API_URL = configuredApiUrl || (import.meta.env.PROD ? "" : "http://localhost:5000");
 let csrfToken = "";
 
 export function buildApiUrl(path) {

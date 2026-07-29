@@ -14,6 +14,7 @@ const DEFAULT_STALE_MS = 30 * 60 * 1000;
 let pollTimer = null;
 let workerRunning = false;
 let stopping = false;
+let activeWorkerPromise = null;
 
 function pollIntervalMs() {
   return Math.min(30_000, Math.max(500, Number(process.env.GETLINK_JOB_POLL_INTERVAL_MS || 1_000)));
@@ -241,7 +242,7 @@ async function recoverStaleJobs() {
   );
 }
 
-export async function processGetlinkJobQueue(dependencies = {}) {
+async function runGetlinkJobQueue(dependencies = {}) {
   if (workerRunning || stopping || !jobsEnabled()) return null;
   workerRunning = true;
   try {
@@ -270,6 +271,14 @@ export async function processGetlinkJobQueue(dependencies = {}) {
   }
 }
 
+export function processGetlinkJobQueue(dependencies = {}) {
+  if (activeWorkerPromise || stopping || !jobsEnabled()) return Promise.resolve(null);
+  activeWorkerPromise = runGetlinkJobQueue(dependencies).finally(() => {
+    activeWorkerPromise = null;
+  });
+  return activeWorkerPromise;
+}
+
 export function wakeGetlinkJobWorker() {
   if (!jobsEnabled()) return;
   setTimeout(() => processGetlinkJobQueue().catch((error) => logger.error({ err: error }, "Getlink job worker failed")), 0).unref?.();
@@ -286,10 +295,26 @@ export function startGetlinkJobWorker() {
   logger.info({ pollIntervalMs: pollIntervalMs() }, "Getlink job worker started");
 }
 
-export function stopGetlinkJobWorker() {
+export async function stopGetlinkJobWorker({ timeoutMs = 25_000 } = {}) {
   stopping = true;
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
+  const active = activeWorkerPromise;
+  if (!active) return true;
+
+  let timeout;
+  const completed = await Promise.race([
+    active.then(() => true, () => true),
+    new Promise((resolve) => {
+      timeout = setTimeout(() => resolve(false), Math.max(100, Number(timeoutMs) || 25_000));
+      timeout.unref?.();
+    }),
+  ]);
+  if (timeout) clearTimeout(timeout);
+  if (!completed) {
+    logger.warn({ timeoutMs }, "Timed out while draining the active getlink job");
+  }
+  return completed;
 }
 
 export async function createGetlinkJob({ userId, body = {} }) {

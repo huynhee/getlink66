@@ -26,6 +26,11 @@ import {
   restoreMarketplaceAsset,
   trashMarketplaceAsset,
 } from "../utils/marketplaceDeletionService.js";
+import MarketplaceReport from "../models/MarketplaceReport.js";
+import {
+  marketplaceReportCountsForAssets,
+  marketplaceReportStats,
+} from "./marketplaceReportController.js";
 
 const ADMIN_MODEL_PAGE_SIZE = 20;
 
@@ -138,18 +143,22 @@ function normalizeMarketplaceAccessType(value) {
 
 const REQUIRED_MARKETPLACE_METADATA = [
   { key: "category", label: "Category", isPresent: (model) => Boolean(model.categorySourceId) },
-  { key: "style", label: "Style", isPresent: (model) => Array.isArray(model.styles) && model.styles.length > 0 },
-  {
-    key: "render",
-    label: "Render",
-    isPresent: (model) =>
-      (Array.isArray(model.renderers) && model.renderers.length > 0) ||
-      Boolean(String(model.renderer || "").trim()),
-  },
-  { key: "form", label: "Form", isPresent: (model) => Array.isArray(model.forms) && model.forms.length > 0 },
-  { key: "color", label: "Color", isPresent: (model) => Array.isArray(model.colors) && model.colors.length > 0 },
-  { key: "material", label: "Material", isPresent: (model) => Array.isArray(model.materials) && model.materials.length > 0 },
 ];
+
+const OPTIONAL_METADATA_BLOCKERS = new Set([
+  "renderer",
+  "styles",
+  "renderers",
+  "forms",
+  "colors",
+  "materials",
+]);
+
+function requiredPublicationBlockers(model = {}) {
+  return [...new Set((model.publicationBlockers || [])
+    .map((value) => String(value || "").trim())
+    .filter((value) => value && !OPTIONAL_METADATA_BLOCKERS.has(value)))];
+}
 
 function metadataCompleteness(model = {}) {
   const missing = REQUIRED_MARKETPLACE_METADATA
@@ -211,6 +220,7 @@ export async function adminListMarketplaceModels(req, res, next) {
     const published = String(req.query.published || "all");
     const metadataStatus = String(req.query.metadataStatus || "all");
     const deleted = String(req.query.deleted || "active").trim().toLowerCase();
+    const reportedOnly = normalizeBoolean(req.query.reportedOnly, false);
     const query = { assetType };
     if (deleted === "trashed") query.$and = [marketplaceTrashDeletionQuery()];
     else if (deleted !== "all") query.$and = [marketplaceActiveDeletionQuery()];
@@ -220,6 +230,13 @@ export async function adminListMarketplaceModels(req, res, next) {
     if (published === "published") query.isPublished = true;
     if (published === "unpublished") query.isPublished = false;
     if (["complete", "incomplete"].includes(metadataStatus)) query.metadataStatus = metadataStatus;
+    if (reportedOnly) {
+      const reportedModelIds = await MarketplaceReport.distinct("modelId", {
+        assetType,
+        isActive: true,
+      });
+      query._id = { $in: reportedModelIds };
+    }
     if (search) {
       const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       query.$or = [
@@ -241,10 +258,14 @@ export async function adminListMarketplaceModels(req, res, next) {
       .limit(ADMIN_MODEL_PAGE_SIZE)
       .select("-source.raw")
       .lean();
+    const reportCounts = await marketplaceReportCountsForAssets(models);
     res.json({
       assetType,
       deleted,
-      models,
+      models: models.map((model) => ({
+        ...model,
+        openReportCount: Number(reportCounts.get(String(model._id)) || 0),
+      })),
       pagination: { page: safePage, pageSize: ADMIN_MODEL_PAGE_SIZE, total, totalPages },
     });
   } catch (error) {
@@ -278,11 +299,16 @@ export async function adminUpdateMarketplaceModel(req, res, next) {
     const requestedPublish = req.body.desiredPublished === undefined
       ? req.body.isPublished === undefined ? Boolean(currentModel.desiredPublished ?? currentModel.isPublished) : Boolean(req.body.isPublished)
       : Boolean(req.body.desiredPublished);
+    const completeness = metadataCompleteness(currentModel);
+    const blockers = requiredPublicationBlockers(currentModel);
     payload.desiredPublished = requestedPublish;
+    payload.metadataStatus = completeness.metadataStatus;
+    payload.metadataMissingFields = completeness.metadataMissingFields;
+    payload.publicationBlockers = blockers;
     payload.isPublished = requestedPublish &&
-      currentModel.metadataStatus === "complete" &&
+      completeness.metadataStatus === "complete" &&
       currentModel.fileStatus === "ready" &&
-      !(currentModel.publicationBlockers || []).length;
+      blockers.length === 0;
     payload.discoveryStatus = "pending";
     payload.searchStatus = "pending";
     payload.searchError = "";
@@ -683,13 +709,14 @@ export async function adminMarketplaceStats(req, res, next) {
     const assetType = adminAssetType(req);
     const assetQuery = { assetType };
     const catalogQuery = { assetType, $and: [marketplaceActiveDeletionQuery()] };
-    const [models, ready, missing, sessions, downloads, trashed] = await Promise.all([
+    const [models, ready, missing, sessions, downloads, trashed, reportStats] = await Promise.all([
       MarketplaceModel.countDocuments(catalogQuery),
       MarketplaceModel.countDocuments({ ...catalogQuery, fileStatus: "ready" }),
       MarketplaceModel.countDocuments({ ...catalogQuery, fileStatus: { $ne: "ready" } }),
       DownloadSession.countDocuments(assetQuery),
       ModelDownload.countDocuments(assetQuery),
       MarketplaceModel.countDocuments({ assetType, ...marketplaceTrashDeletionQuery() }),
+      marketplaceReportStats(assetType),
     ]);
     const [completeMetadata, incompleteMetadata, published] = await Promise.all([
       MarketplaceModel.countDocuments({ ...catalogQuery, metadataStatus: "complete" }),
@@ -709,6 +736,8 @@ export async function adminMarketplaceStats(req, res, next) {
         published,
         draft: Math.max(0, models - published),
         trashed,
+        activeReports: reportStats.activeReports,
+        reportedAssets: reportStats.reportedAssets,
       },
     });
   } catch (error) {
@@ -754,8 +783,8 @@ export async function adminCleanupMarketplaceRaw(_req, res, next) {
         },
       },
     );
-    const metadataDocs = await MarketplaceModel.find(modelOnlyQuery)
-      .select("_id categorySourceId styles renderers renderer forms colors materials fileStatus isPublished metadataStatus metadataMissingFields")
+    const metadataDocs = await MarketplaceModel.find({})
+      .select("_id categorySourceId styles renderers renderer forms colors materials fileStatus desiredPublished isPublished metadataStatus metadataMissingFields publicationBlockers")
       .lean();
     let normalizedMetadata = 0;
     let unpublishedIncomplete = 0;
@@ -764,12 +793,16 @@ export async function adminCleanupMarketplaceRaw(_req, res, next) {
       const update = {
         metadataStatus: completeness.metadataStatus,
         metadataMissingFields: completeness.metadataMissingFields,
+        publicationBlockers: requiredPublicationBlockers(doc),
       };
-      if (
-        doc.isPublished &&
-        (completeness.metadataStatus !== "complete" || doc.fileStatus !== "ready")
-      ) {
-        update.isPublished = false;
+      const shouldBePublished = Boolean(doc.desiredPublished ?? doc.isPublished) &&
+        completeness.metadataStatus === "complete" &&
+        doc.fileStatus === "ready" &&
+        update.publicationBlockers.length === 0;
+      if (Boolean(doc.isPublished) !== shouldBePublished) {
+        update.isPublished = shouldBePublished;
+      }
+      if (doc.isPublished && !shouldBePublished) {
         unpublishedIncomplete += 1;
       }
       await MarketplaceModel.findByIdAndUpdate(doc._id, { $set: update });
@@ -1133,32 +1166,36 @@ export async function adminBulkMarketplaceModels(req, res, next) {
         continue;
       }
       try {
-          if (action === "publish") {
-          const blockers = model.publicationBlockers || [];
-          const online = model.metadataStatus === "complete" && model.fileStatus === "ready" && blockers.length === 0;
-            await MarketplaceModel.findByIdAndUpdate(id, {
-              $set: {
-                desiredPublished: true,
-                isPublished: online,
-                discoveryStatus: "pending",
-                discoveryError: "",
-                searchStatus: "pending",
-                searchError: "",
-              },
+        if (action === "publish") {
+          const completeness = metadataCompleteness(model);
+          const blockers = requiredPublicationBlockers(model);
+          const online = completeness.metadataStatus === "complete" && model.fileStatus === "ready" && blockers.length === 0;
+          await MarketplaceModel.findByIdAndUpdate(id, {
+            $set: {
+              desiredPublished: true,
+              isPublished: online,
+              metadataStatus: completeness.metadataStatus,
+              metadataMissingFields: completeness.metadataMissingFields,
+              publicationBlockers: blockers,
+              discoveryStatus: "pending",
+              discoveryError: "",
+              searchStatus: "pending",
+              searchError: "",
+            },
           });
           updatedCount += 1;
           results.push({ id, status: "updated", title: model.title, online, blockers });
         } else if (action === "unpublish") {
-            await MarketplaceModel.findByIdAndUpdate(id, {
-              $set: {
-                desiredPublished: false,
-                isPublished: false,
-                discoveryStatus: "pending",
-                discoveryError: "",
-                searchStatus: "pending",
-                searchError: "",
-              },
-            });
+          await MarketplaceModel.findByIdAndUpdate(id, {
+            $set: {
+              desiredPublished: false,
+              isPublished: false,
+              discoveryStatus: "pending",
+              discoveryError: "",
+              searchStatus: "pending",
+              searchError: "",
+            },
+          });
           updatedCount += 1;
           results.push({ id, status: "updated", title: model.title });
         } else if (action === "access") {

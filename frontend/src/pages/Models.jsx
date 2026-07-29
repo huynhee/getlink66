@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Download, Filter, HardDrive, Image as ImageIcon, ImagePlus, Loader2, LogIn, Package, Search, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Download, Filter, Flag, HardDrive, Image as ImageIcon, ImagePlus, Loader2, LogIn, Package, Search, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import Pagination from "../components/Pagination.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
@@ -12,6 +12,17 @@ const EMPTY_FILTERS = {
   color: [],
   material: [],
 };
+
+const MARKETPLACE_REPORT_REASONS = [
+  ["download_failed", "Không tải được", "Download failed"],
+  ["archive_corrupt", "File nén bị lỗi", "Corrupt archive"],
+  ["wrong_asset", "Sai model hoặc scene", "Wrong asset"],
+  ["missing_files", "Thiếu file hoặc tài nguyên", "Missing files or assets"],
+  ["preview_incorrect", "Ảnh preview không đúng", "Incorrect preview"],
+  ["metadata_incorrect", "Thông tin không chính xác", "Incorrect information"],
+  ["duplicate", "Tài nguyên bị trùng", "Duplicate asset"],
+  ["other", "Lỗi khác", "Other issue"],
+];
 
 let turnstileScriptPromise = null;
 
@@ -1265,6 +1276,123 @@ function TurnstileDownloadGate({ siteKey, action, modelId, language, onVerified,
   );
 }
 
+function MarketplaceReportModal({
+  assetType,
+  error,
+  language,
+  message,
+  reason,
+  submitting,
+  onClose,
+  onMessageChange,
+  onReasonChange,
+  onSubmit,
+}) {
+  const dialogRef = useRef(null);
+  const closeRef = useRef(onClose);
+  const submittingRef = useRef(submitting);
+
+  useEffect(() => {
+    closeRef.current = onClose;
+    submittingRef.current = submitting;
+  }, [onClose, submitting]);
+
+  useEffect(() => {
+    const returnFocusTo = document.activeElement;
+    function handleDialogKeys(event) {
+      if (event.key === "Escape" && !submittingRef.current) {
+        closeRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...(dialogRef.current?.querySelectorAll(
+        "button:not([disabled]), select:not([disabled]), textarea:not([disabled]), input:not([disabled]), a[href]",
+      ) || [])];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", handleDialogKeys);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleDialogKeys);
+      document.body.style.overflow = previousOverflow;
+      returnFocusTo?.focus?.();
+    };
+  }, []);
+
+  const noun = assetType === "scene" ? "Scene" : "Model";
+
+  return createPortal(
+    <div
+      className="marketReportOverlay"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !submitting) onClose();
+      }}
+    >
+      <section ref={dialogRef} className="marketReportDialog panel" role="dialog" aria-modal="true" aria-labelledby="market-report-title">
+        <header>
+          <div>
+            <h2 id="market-report-title"><Flag size={19} /> {textFor(language, `Báo lỗi ${noun}`, `Report ${noun} issue`)}</h2>
+            <p>{textFor(language, "Chọn đúng vấn đề để admin kiểm tra nhanh hơn.", "Choose the issue that best helps the administrator investigate.")}</p>
+          </div>
+          <button type="button" className="iconButton" onClick={onClose} disabled={submitting} aria-label={textFor(language, "Đóng", "Close")}>
+            <X size={18} />
+          </button>
+        </header>
+        <form onSubmit={onSubmit}>
+          <label>
+            <span>{textFor(language, "Loại lỗi", "Issue type")}</span>
+            <select autoFocus value={reason} onChange={(event) => onReasonChange(event.target.value)} required>
+              <option value="">{textFor(language, "Chọn loại lỗi", "Select an issue")}</option>
+              {MARKETPLACE_REPORT_REASONS.map(([value, vi, en]) => (
+                <option key={value} value={value}>{textFor(language, vi, en)}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>
+              {textFor(language, "Mô tả thêm", "Additional details")}
+              {reason === "other" ? " *" : ""}
+            </span>
+            <textarea
+              value={message}
+              onChange={(event) => onMessageChange(event.target.value.slice(0, 1000))}
+              maxLength={1000}
+              rows={5}
+              required={reason === "other"}
+              placeholder={textFor(language, "Mô tả ngắn vấn đề bạn gặp phải...", "Briefly describe what went wrong...")}
+            />
+            <small>{message.length}/1000</small>
+          </label>
+          {error && <p className="error">{error}</p>}
+          <footer>
+            <button type="button" className="smallButton" onClick={onClose} disabled={submitting}>
+              {textFor(language, "Hủy", "Cancel")}
+            </button>
+            <button type="submit" className="primaryButton" disabled={submitting || !reason || (reason === "other" && !message.trim())}>
+              <Flag size={16} />
+              {submitting
+                ? textFor(language, "Đang gửi...", "Submitting...")
+                : textFor(language, "Gửi báo lỗi", "Submit report")}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, assetType = "model" }) {
   const segment = catalogSegment(assetType);
   const noun = catalogNoun(assetType, language);
@@ -1282,6 +1410,12 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
   const [error, setError] = useState("");
   const [downloadProtection, setDownloadProtection] = useState({ enabled: false, siteKey: "", action: "" });
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportMessage, setReportMessage] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reported, setReported] = useState(false);
+  const [reportError, setReportError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -1316,6 +1450,20 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
       active = false;
     };
   }, [slug, assetType, segment]);
+
+  useEffect(() => {
+    let active = true;
+    setReported(false);
+    if (!user || !model?._id) return () => { active = false; };
+    api(`/api/marketplace/${segment}/${model._id}/report-status`)
+      .then((data) => {
+        if (active) setReported(Boolean(data.reported));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [model?._id, segment, user]);
 
   async function toggleMoreRecommendations() {
     if (recommendationsExpanded) {
@@ -1386,6 +1534,31 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
       }
     } finally {
       setDownloading(false);
+    }
+  }
+
+  async function submitReport(event) {
+    event.preventDefault();
+    if (!model || !user || reportSubmitting) return;
+    setReportSubmitting(true);
+    setReportError("");
+    try {
+      const data = await api(`/api/marketplace/${segment}/${model._id}/reports`, {
+        method: "POST",
+        body: JSON.stringify({
+          reason: reportReason,
+          message: reportMessage.trim(),
+        }),
+      });
+      setReported(Boolean(data.reported));
+      setReportOpen(false);
+      setReportReason("");
+      setReportMessage("");
+      setMessage(textFor(language, "Đã gửi báo lỗi để admin kiểm tra.", "Your report was sent for administrator review."));
+    } catch (err) {
+      setReportError(err.message);
+    } finally {
+      setReportSubmitting(false);
     }
   }
 
@@ -1499,6 +1672,27 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
                 {downloading ? textFor(language, "Đang tạo phiên tải...", "Creating download...") : textFor(language, `Tải ${noun}`, `Download ${noun}`)}
               </button>
             )}
+            {!user ? (
+              <a className="smallButton marketReportButton" href={loginHref}>
+                <Flag size={17} />
+                {textFor(language, "Đăng nhập để báo lỗi", "Sign in to report")}
+              </a>
+            ) : (
+              <button
+                className={`smallButton marketReportButton ${reported ? "reported" : ""}`}
+                type="button"
+                disabled={reported}
+                onClick={() => {
+                  setReportError("");
+                  setReportOpen(true);
+                }}
+              >
+                {reported ? <CheckCircle2 size={17} /> : <Flag size={17} />}
+                {reported
+                  ? textFor(language, "Đã báo lỗi", "Issue reported")
+                  : textFor(language, "Báo lỗi", "Report issue")}
+              </button>
+            )}
           </div>
 
           {!fileReady && (
@@ -1534,6 +1728,21 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
           </div>
         </aside>
       </section>
+
+      {reportOpen && (
+        <MarketplaceReportModal
+          assetType={assetType}
+          error={reportError}
+          language={language}
+          message={reportMessage}
+          reason={reportReason}
+          submitting={reportSubmitting}
+          onClose={() => setReportOpen(false)}
+          onMessageChange={setReportMessage}
+          onReasonChange={setReportReason}
+          onSubmit={submitReport}
+        />
+      )}
 
       <section className="marketRecommendations">
         <div className="marketSectionHeader">

@@ -873,6 +873,50 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.storageHealthPanel {
+  min-width: 0;
+}
+
+.storageHealthHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12);
+  margin-bottom: var(--space-12);
+}
+
+.storageHealthHeading h3,
+.storageHealthHeading p {
+  margin: 0;
+}
+
+.storageHealthHeading h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.storageHealthGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.storageAlertList {
+  display: grid;
+  gap: 6px;
+  margin-top: var(--space-10);
+}
+
+.storageAlertList span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--error);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 .systemHealthGrid,
 .adminActivityList,
 .packageBars {
@@ -993,6 +1037,10 @@ button:disabled {
   .overviewTopGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .storageHealthGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1024px) {
@@ -1026,6 +1074,15 @@ button:disabled {
 
   .overviewTopGrid .systemHealthGrid {
     grid-template-columns: 1fr;
+  }
+
+  .storageHealthGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .storageHealthHeading {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .overviewHero {
@@ -2896,6 +2953,152 @@ button:disabled {
   background: color-mix(in srgb, var(--neon-green) 10%, transparent);
 }
 
+.marketAdminReportedFilter {
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+}
+
+.marketAdminReportBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border-light));
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--warning);
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.marketAdminReports {
+  display: grid;
+  gap: 12px;
+}
+
+.marketAdminReportToolbar {
+  grid-template-columns: minmax(260px, 1fr) repeat(2, minmax(150px, 210px));
+}
+
+.marketAdminReportList {
+  display: grid;
+  gap: 10px;
+}
+
+.marketAdminReportItem {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--border-strong);
+  background: var(--surface-1);
+}
+
+.marketAdminReportItem.open {
+  border-left-color: var(--warning);
+}
+
+.marketAdminReportItem.investigating {
+  border-left-color: var(--neon-cyan);
+}
+
+.marketAdminReportItem.resolved {
+  border-left-color: var(--neon-green);
+}
+
+.marketAdminReportItem.dismissed {
+  opacity: 0.82;
+}
+
+.marketAdminReportItem > header {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.marketAdminReportItem .marketAdminModelCover,
+.marketAdminCoverPlaceholder {
+  width: 58px;
+  height: 58px;
+  border: 1px solid var(--border-light);
+  object-fit: contain;
+  background: var(--surface-2);
+}
+
+.marketAdminCoverPlaceholder {
+  display: grid;
+  place-items: center;
+  color: var(--text-tertiary);
+}
+
+.marketAdminReportIdentity,
+.marketAdminReportMeta,
+.marketAdminReportBody > div,
+.marketAdminReportNote {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.marketAdminReportIdentity strong,
+.marketAdminReportIdentity span {
+  overflow-wrap: anywhere;
+}
+
+.marketAdminReportIdentity span,
+.marketAdminReportMeta time,
+.marketAdminReportBody span,
+.marketAdminReportNote > span,
+.marketAdminReportBody small {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.marketAdminReportMeta {
+  justify-items: end;
+}
+
+.marketAdminReportBody {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.75fr) minmax(180px, 0.75fr) minmax(260px, 1.5fr);
+  gap: 8px;
+}
+
+.marketAdminReportBody > div {
+  padding: 9px;
+  border: 1px solid var(--border-light);
+  background: var(--surface-2);
+}
+
+.marketAdminReportMessage p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.marketAdminReportNote textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.marketAdminReportItem > footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.marketAdminReportEmpty {
+  margin: 0;
+  padding: 28px 12px;
+  border: 1px dashed var(--border-light);
+  text-align: center;
+}
+
 .marketAdminWorkbench {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
@@ -3463,6 +3666,36 @@ button:disabled {
 
   .marketAdminConflictList > div {
     grid-template-columns: 1fr;
+  }
+
+  .marketAdminReportToolbar,
+  .marketAdminReportBody {
+    grid-template-columns: 1fr;
+  }
+
+  .marketAdminReportItem > header {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .marketAdminReportItem .marketAdminModelCover,
+  .marketAdminCoverPlaceholder {
+    width: 48px;
+    height: 48px;
+  }
+
+  .marketAdminReportMeta {
+    grid-column: 1 / -1;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    justify-items: start;
+  }
+
+  .marketAdminReportItem > footer {
+    justify-content: stretch;
+  }
+
+  .marketAdminReportItem > footer button {
+    flex: 1 1 145px;
   }
 
   .marketAdminQueueErrors > div {
@@ -10792,6 +11025,95 @@ html[data-theme="dark"] .inviteSectionTag {
   min-height: 46px;
 }
 
+.marketReportButton {
+  width: 100%;
+  min-height: 40px;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.marketReportButton.reported {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 50%, var(--border));
+}
+
+.marketReportOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+}
+
+.marketReportDialog {
+  width: min(520px, 100%);
+  max-height: min(720px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 22px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+}
+
+.marketReportDialog > header,
+.marketReportDialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.marketReportDialog h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-size: 19px;
+}
+
+.marketReportDialog header p {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.marketReportDialog form {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.marketReportDialog label {
+  display: grid;
+  gap: 7px;
+}
+
+.marketReportDialog label > span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.marketReportDialog textarea {
+  min-height: 118px;
+  resize: vertical;
+}
+
+.marketReportDialog label > small {
+  justify-self: end;
+  color: var(--text-tertiary);
+}
+
+.marketReportDialog footer {
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
 .marketDetailMeta {
   background: var(--surface-2);
   border-radius: var(--radius-sm);
@@ -12119,5 +12441,64 @@ html[data-theme="dark"] .inviteSectionTag {
 
   .topupCurrentModeNotice {
     align-items: flex-start;
+  }
+}
+.pluginAccessPage {
+  width: min(900px, 100%);
+  margin: 28px auto 64px;
+  display: grid;
+  gap: 24px;
+}
+
+.pluginActivationCard {
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+  padding: 24px;
+}
+
+.pluginActivationIcon {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  color: var(--primary, #f5a623);
+  background: color-mix(in srgb, var(--primary, #f5a623) 15%, transparent);
+}
+
+.pluginActivationActions,
+.pluginSessionCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pluginSessionsSection {
+  display: grid;
+  gap: 12px;
+}
+
+.pluginSessionList {
+  display: grid;
+  gap: 10px;
+}
+
+.pluginSessionCard {
+  padding: 16px;
+}
+
+.pluginSessionCard > div {
+  flex: 1;
+}
+
+.pluginSessionCard p {
+  margin: 3px 0;
+}
+
+@media (max-width: 640px) {
+  .pluginSessionCard {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 }

@@ -6,6 +6,8 @@ useMemoryDb();
 
 const { default: Getlink } = await import("../src/models/Getlink.js");
 const { default: HistoryArchiveManifest } = await import("../src/models/HistoryArchiveManifest.js");
+const { default: AuditLog } = await import("../src/models/AuditLog.js");
+const { default: MarketplaceReport } = await import("../src/models/MarketplaceReport.js");
 const { default: ModelDownload } = await import("../src/models/ModelDownload.js");
 const { default: SiteSetting } = await import("../src/models/SiteSetting.js");
 const { archiveHistoryBatch, runHistoryRetentionCycle } = await import("../src/utils/historyRetentionService.js");
@@ -73,6 +75,8 @@ test("retention zero keeps history while detail cleanup and configured boundarie
         getlinkDetailRetentionDaysAfterExpiry: 0,
         getlinkHistoryRetentionDaysAfterExpiry: 0,
         marketplaceDownloadHistoryRetentionDays: 0,
+        marketplaceReportHistoryRetentionDays: 0,
+        auditLogHistoryRetentionDays: 0,
       },
     },
     { upsert: true, new: true },
@@ -100,6 +104,8 @@ test("retention zero keeps history while detail cleanup and configured boundarie
         getlinkDetailRetentionDaysAfterExpiry: 1,
         getlinkHistoryRetentionDaysAfterExpiry: 730,
         marketplaceDownloadHistoryRetentionDays: 365,
+        marketplaceReportHistoryRetentionDays: 365,
+        auditLogHistoryRetentionDays: 365,
       },
     },
     { new: true },
@@ -139,4 +145,81 @@ test("retention zero keeps history while detail cleanup and configured boundarie
   assert.equal(await ModelDownload.findById(expiredDownload._id), null);
   assert.equal(await ModelDownload.findById(boundaryDownload._id), null);
   assert.ok(await ModelDownload.findById(currentDownload._id));
+});
+
+test("closed reports and audit logs are archived before deletion", async () => {
+  const now = new Date("2026-07-29T03:00:00.000Z");
+  await SiteSetting.findOneAndUpdate(
+    { key: "homepage" },
+    {
+      $set: {
+        key: "homepage",
+        getlinkDetailRetentionDaysAfterExpiry: 0,
+        getlinkHistoryRetentionDaysAfterExpiry: 0,
+        marketplaceDownloadHistoryRetentionDays: 0,
+        marketplaceReportHistoryRetentionDays: 365,
+        auditLogHistoryRetentionDays: 365,
+      },
+    },
+    { upsert: true, new: true },
+  );
+  const report = await MarketplaceReport.create({
+    modelId: "retention-report-model",
+    assetType: "model",
+    userId: "retention-report-user",
+    reason: "archive_corrupt",
+    status: "resolved",
+    isActive: false,
+    resolvedAt: dateBefore(now, 366),
+  });
+  await MarketplaceReport.findByIdAndUpdate(report._id, {
+    $set: { resolvedAt: dateBefore(now, 366), updatedAt: dateBefore(now, 366) },
+  });
+  const audit = await AuditLog.create({
+    actor: "retention-admin",
+    action: "RETENTION_TEST",
+  });
+  await AuditLog.findByIdAndUpdate(audit._id, { $set: { createdAt: dateBefore(now, 366) } });
+  const uploadedKinds = [];
+  const writer = async ({ kind, checksum }) => {
+    uploadedKinds.push(kind);
+    return {
+      archiveDriveFileId: `${kind}-${checksum.slice(0, 8)}`,
+      driveManifestFileId: `${kind}-manifest-${checksum.slice(0, 8)}`,
+      archiveFileName: `${kind}.jsonl.gz`,
+    };
+  };
+
+  const result = await runHistoryRetentionCycle({ now, archiveWriter: writer });
+
+  assert.equal(result.reports.deleted, 1);
+  assert.equal(result.audit.deleted, 1);
+  assert.equal(await MarketplaceReport.findById(report._id), null);
+  assert.equal(await AuditLog.findById(audit._id), null);
+  assert.deepEqual(uploadedKinds.sort(), ["audit-log", "marketplace-report"]);
+});
+
+test("Drive failure keeps closed reports and audit logs online", async () => {
+  const now = new Date("2026-07-29T03:00:00.000Z");
+  const report = await MarketplaceReport.create({
+    modelId: "retention-failure-model",
+    assetType: "scene",
+    userId: "retention-failure-user",
+    reason: "missing_files",
+    status: "dismissed",
+    isActive: false,
+    resolvedAt: dateBefore(now, 500),
+  });
+  await MarketplaceReport.findByIdAndUpdate(report._id, {
+    $set: { resolvedAt: dateBefore(now, 500) },
+  });
+
+  await assert.rejects(
+    runHistoryRetentionCycle({
+      now,
+      archiveWriter: async () => { throw new Error("Drive offline"); },
+    }),
+    /Drive offline/,
+  );
+  assert.ok(await MarketplaceReport.findById(report._id));
 });

@@ -36,8 +36,23 @@ jobs:
         run: npm run lint
       - name: Test
         run: npm test
-      - name: Build
-        run: npm run build
+      - name: Build and verify release artifact
+        run: npm run build:release
+      - name: Install Playwright Chromium
+        working-directory: backend
+        run: npx playwright install --with-deps chromium
+      - name: Browser, API, load and memory smoke
+        run: npm run qa:smoke --prefix backend -- ../frontend/dist ../qa-report/screenshots ../qa-report/performance-results/smoke.json
+      - name: Upload QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-smoke-${{ github.sha }}
+          path: |
+            qa-report/screenshots
+            qa-report/performance-results
+          if-no-files-found: warn
+          retention-days: 14
       - name: Audit root tooling
         run: npm audit
       - name: Audit backend runtime

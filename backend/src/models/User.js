@@ -17,6 +17,7 @@ const userSchema = new mongoose.Schema(
     banReason: { type: String, default: "" },
     bannedAt: Date,
     bannedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    sessionVersion: { type: Number, default: 0, min: 0 },
     proUntil: { type: Date, index: true },
     proPlanId: { type: mongoose.Schema.Types.ObjectId, ref: "MembershipPlan" },
     proActivatedAt: Date,

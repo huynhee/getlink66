@@ -87,6 +87,7 @@ import {
 import { adminOnly } from "../middleware/adminOnly.js";
 import { auditAdmin, listAuditLogs } from "../middleware/auditLog.js";
 import { requireAuth } from "../middleware/requireAuth.js";
+import { requireNotBanned } from "../middleware/requireNotBanned.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
 import {
   adminCreateMarketplaceCategory,
@@ -96,6 +97,11 @@ import {
   adminUpdateMarketplaceFilterOption,
 } from "../controllers/marketplaceTaxonomyAdminController.js";
 import { adminExportMarketplaceTaxonomy } from "../controllers/marketplaceTaxonomyExportController.js";
+import {
+  adminListMarketplaceReports,
+  adminUpdateMarketplaceReport,
+} from "../controllers/marketplaceReportController.js";
+import { adminStorageHealth } from "../controllers/storageController.js";
 
 const router = Router();
 const adminWriteLimit = createRateLimit({ keyPrefix: "admin-write", windowMs: 60_000, max: 30, keyGenerator: (req) => req.user?._id || req.ip });
@@ -105,8 +111,9 @@ function sceneAdmin(req, _res, next) {
   next();
 }
 
-router.use(requireAuth, adminOnly);
+router.use(requireAuth, requireNotBanned, adminOnly);
 router.get("/dashboard", adminDashboard);
+router.get("/storage-health", adminStorageHealth);
 router.get("/overview", getOverview);
 router.get("/users", listUsers);
 router.get("/users/:id/profile", adminUserProfile);
@@ -167,6 +174,8 @@ router.patch("/marketplace/filter-options/:id", adminWriteLimit, auditAdmin("UPD
 router.get("/marketplace/stats", adminMarketplaceStats);
 router.get("/marketplace/downloads", adminListMarketplaceDownloads);
 router.get("/marketplace/download-sessions", adminListMarketplaceDownloadSessions);
+router.get("/marketplace/reports", adminListMarketplaceReports);
+router.patch("/marketplace/reports/:id", adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_REPORT"), adminUpdateMarketplaceReport);
 router.post("/marketplace/cleanup-raw", adminWriteLimit, auditAdmin("CLEANUP_MARKETPLACE_RAW"), adminCleanupMarketplaceRaw);
 router.post("/marketplace/import-drive-folder", adminWriteLimit, auditAdmin("IMPORT_DRIVE_MARKETPLACE_FOLDER"), adminImportDriveFolderModels);
 router.post("/marketplace/models/import-metadata", adminWriteLimit, auditAdmin("IMPORT_MARKETPLACE_METADATA"), adminImport3dskyModel);

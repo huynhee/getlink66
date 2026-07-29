@@ -12,6 +12,7 @@ const { default: ModelDownload } = await import("../src/models/ModelDownload.js"
 const {
   createMarketplaceDownloadSession,
   nextVietnamReset,
+  verifyDownloadSession,
   vietnamDayKey,
 } = await import("../src/utils/marketplaceDownloadService.js");
 const {
@@ -195,6 +196,78 @@ test("an active Pro account can download a Pro asset and uses member quota", asy
   assert.equal(result.session.accessTier, "member");
   assert.equal(result.quotaCost, 1);
   assert.equal(quota.count, 1);
+});
+
+test("banned accounts cannot create marketplace download records or consume quota", async () => {
+  const model = await MarketplaceModel.create({
+    title: "Blocked account model",
+    slug: "blocked-account-model",
+    categorySourceId: "category-leaf",
+    accessType: "free",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+    storageProvider: "google_drive",
+    driveFileId: "drive-blocked-account",
+  });
+  const user = await User.create({
+    email: "blocked-marketplace@example.test",
+    name: "Blocked",
+    isBanned: true,
+    banReason: "Policy violation",
+  });
+
+  await assert.rejects(
+    createMarketplaceDownloadSession({
+      req: requestFor(user),
+      modelId: model._id,
+    }),
+    (error) => error?.status === 403 && error?.code === "ACCOUNT_BANNED",
+  );
+
+  assert.equal(await DownloadSession.countDocuments({ modelId: model._id }), 0);
+  assert.equal(await ModelDownload.countDocuments({ modelId: model._id }), 0);
+  assert.equal(await DailyDownloadQuota.countDocuments({ userId: user._id }), 0);
+});
+
+test("marketplace download tokens cannot be redeemed by another account", async () => {
+  const owner = await User.create({
+    email: "download-owner@example.test",
+    name: "Owner",
+  });
+  const other = await User.create({
+    email: "download-other@example.test",
+    name: "Other",
+  });
+  const model = await MarketplaceModel.create({
+    title: "Owner-only download",
+    slug: "owner-only-download",
+    categorySourceId: "category-leaf",
+    accessType: "free",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+    storageProvider: "google_drive",
+    driveFileId: "drive-owner-only",
+  });
+  const created = await createMarketplaceDownloadSession({
+    req: requestFor(owner),
+    modelId: model._id,
+  });
+
+  await assert.rejects(
+    verifyDownloadSession(created.session._id, created.token, other._id),
+    (error) => (
+      error?.status === 403
+      && error?.code === "DOWNLOAD_SESSION_OWNER_MISMATCH"
+    ),
+  );
+  const verified = await verifyDownloadSession(
+    created.session._id,
+    created.token,
+    owner._id,
+  );
+  assert.equal(String(verified.userId), String(owner._id));
 });
 
 test("admin file verification rejects a missing Drive attachment without creating download records", async () => {

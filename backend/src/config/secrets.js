@@ -17,6 +17,10 @@ export function jwtSecret() {
   return getSecret("JWT_SECRET");
 }
 
+export function pluginJwtSecret() {
+  return getSecret("PLUGIN_JWT_SECRET", "");
+}
+
 export function csrfHmacSecret() {
   return getSecret("CSRF_HMAC_SECRET");
 }

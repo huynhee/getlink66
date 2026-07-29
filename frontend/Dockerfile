@@ -11,7 +11,7 @@ RUN npm ci --ignore-scripts
 COPY index.html ./
 COPY public ./public
 COPY src ./src
-RUN test -n "$VITE_API_URL" && npm run build
+RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf

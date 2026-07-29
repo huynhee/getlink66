@@ -7,6 +7,7 @@ import {
   Database,
   Eye,
   EyeOff,
+  Flag,
   GitCompareArrows,
   ImageOff,
   ListChecks,
@@ -55,6 +56,24 @@ const accessLabels = {
   all: "Tất cả quyền",
   free: "Free",
   member: "Pro",
+};
+
+const reportReasonLabels = {
+  download_failed: ["Không tải được", "Download failed"],
+  archive_corrupt: ["File nén bị lỗi", "Corrupt archive"],
+  wrong_asset: ["Sai model hoặc scene", "Wrong asset"],
+  missing_files: ["Thiếu file hoặc tài nguyên", "Missing files or assets"],
+  preview_incorrect: ["Ảnh preview không đúng", "Incorrect preview"],
+  metadata_incorrect: ["Thông tin không chính xác", "Incorrect information"],
+  duplicate: ["Tài nguyên bị trùng", "Duplicate asset"],
+  other: ["Lỗi khác", "Other issue"],
+};
+
+const reportStatusLabels = {
+  open: ["Mới", "Open"],
+  investigating: ["Đang kiểm tra", "Investigating"],
+  resolved: ["Đã xử lý", "Resolved"],
+  dismissed: ["Bỏ qua", "Dismissed"],
 };
 
 const _publishLabels = {
@@ -501,6 +520,11 @@ function ManagedAssetSummary({
             {model.fileStatus === "ready" ? text(language, "Sẵn sàng", "Ready") : (fileStatusLabels[model.fileStatus] || model.fileStatus)}
           </span>
           <span className="badge">{accessLabels[model.accessType] || model.accessType}</span>
+          {Number(model.openReportCount || 0) > 0 && (
+            <span className="badge danger marketAdminReportBadge">
+              <Flag size={12} /> {Number(model.openReportCount).toLocaleString()} {text(language, "báo lỗi", "reports")}
+            </span>
+          )}
         </div>
       </div>
       <MissingFields fields={model.metadataMissingFields || []} language={language} />
@@ -537,6 +561,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
   const [accessType, setAccessType] = useState("all");
   const [published, setPublished] = useState("all");
   const [metadataStatus, setMetadataStatus] = useState("all");
+  const [reportedOnly, setReportedOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [categoryTree, setCategoryTree] = useState([]);
@@ -568,6 +593,14 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
   const [deleteDialog, setDeleteDialog] = useState(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteRunning, setDeleteRunning] = useState(false);
+  const [reports, setReports] = useState([]);
+  const [reportPage, setReportPage] = useState(1);
+  const [reportPagination, setReportPagination] = useState({ page: 1, totalPages: 1, total: 0 });
+  const [reportSearch, setReportSearch] = useState("");
+  const [reportStatus, setReportStatus] = useState("active");
+  const [reportReason, setReportReason] = useState("");
+  const [reportNotes, setReportNotes] = useState({});
+  const [reportLoadingId, setReportLoadingId] = useState("");
 
   const currentSelectedModel = useMemo(() => {
     if (!selectedModel?._id) return null;
@@ -576,8 +609,9 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
 
   const activeFilterCount = useMemo(() => {
     return [fileStatus, accessType, published, metadataStatus].filter((item) => item !== "all").length +
+      (reportedOnly ? 1 : 0) +
       (search.trim() ? 1 : 0);
-  }, [fileStatus, accessType, published, metadataStatus, search]);
+  }, [fileStatus, accessType, published, metadataStatus, reportedOnly, search]);
 
   function updateDriveImport(field, value) {
     setDriveImportForm((current) => ({ ...current, [field]: value }));
@@ -628,6 +662,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
   const loadModels = useCallback(async (nextPage = 1, deletionView = catalogView) => {
     const query = new URLSearchParams({ page: String(nextPage), fileStatus, accessType, published, metadataStatus, deleted: deletionView });
     if (search.trim()) query.set("search", search.trim());
+    if (reportedOnly) query.set("reportedOnly", "true");
     const [modelRes, statsRes, syncRes] = await Promise.all([
       api(`${adminAssetBase}?${query.toString()}`),
       api(isScene ? `${adminAssetBase}/stats` : "/api/admin/marketplace/stats"),
@@ -639,7 +674,21 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
     setSyncInfo(syncRes || null);
     setSyncRootFolderId((current) => current || syncRes?.config?.rootFolderId || "");
     setSelectedModelIds((current) => current.filter((id) => (modelRes.models || []).some((model) => model._id === id)));
-  }, [accessType, adminAssetBase, catalogView, fileStatus, isScene, metadataStatus, published, search]);
+  }, [accessType, adminAssetBase, catalogView, fileStatus, isScene, metadataStatus, published, reportedOnly, search]);
+
+  const loadReports = useCallback(async (nextPage = 1) => {
+    const query = new URLSearchParams({
+      assetType,
+      page: String(nextPage),
+      status: reportStatus,
+    });
+    if (reportReason) query.set("reason", reportReason);
+    if (reportSearch.trim()) query.set("search", reportSearch.trim());
+    const data = await api(`/api/admin/marketplace/reports?${query.toString()}`);
+    setReports(data.reports || []);
+    setReportPagination(data.pagination || { page: 1, totalPages: 1, total: 0 });
+    setReportPage(data.pagination?.page || nextPage);
+  }, [assetType, reportReason, reportSearch, reportStatus]);
 
   const loadTaxonomy = useCallback(async () => {
     const [categoryRes, filterRes] = await Promise.all([
@@ -660,6 +709,14 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
   useEffect(() => {
     loadTaxonomy().catch((err) => setError(err.message));
   }, [loadTaxonomy]);
+
+  useEffect(() => {
+    if (activeTab !== "reports") return undefined;
+    const timer = window.setTimeout(() => {
+      loadReports(1).catch((err) => setError(err.message));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, loadReports]);
 
   async function importDriveFolder(event) {
     event.preventDefault();
@@ -1034,12 +1091,55 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
     }
   }
 
+  async function updateReportStatus(report, status) {
+    setMessage("");
+    setError("");
+    setReportLoadingId(report._id);
+    try {
+      await api(`/api/admin/marketplace/reports/${report._id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status,
+          adminNote: reportNotes[report._id] ?? report.adminNote ?? "",
+        }),
+      });
+      setMessage(l("Đã cập nhật trạng thái báo lỗi.", "Report status updated."));
+      await Promise.all([loadReports(reportPage), loadModels(page)]);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setReportLoadingId("");
+    }
+  }
+
+  async function openReportedAsset(report) {
+    if (!report.model?._id) return;
+    setMessage("");
+    setError("");
+    try {
+      const query = new URLSearchParams({
+        page: "1",
+        deleted: "all",
+        search: report.model._id,
+      });
+      const data = await api(`${adminAssetBase}?${query.toString()}`);
+      const model = (data.models || []).find((item) => item._id === report.model._id);
+      if (!model) throw new Error(l("Không tìm thấy tài nguyên.", "Asset not found."));
+      setModels(data.models || []);
+      setPagination(data.pagination || { page: 1, totalPages: 1, total: 0 });
+      selectForEdit(model);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   function clearFilters() {
     setSearch("");
     setFileStatus("all");
     setAccessType("all");
     setPublished("all");
     setMetadataStatus("all");
+    setReportedOnly(false);
   }
 
   function goToPage(nextPage) {
@@ -1073,6 +1173,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
           <KpiCard icon={AlertTriangle} label={l("Thiếu file", "Missing files")} value={stats.missing} tone="warning" />
           <KpiCard icon={EyeOff} label={l("Bản nháp", "Drafts")} value={stats.draft} />
           <KpiCard icon={Trash2} label={l("Thùng rác", "Trash")} value={stats.trashed || 0} tone="warning" />
+          <KpiCard icon={Flag} label={l("Cần kiểm tra", "Needs review")} value={stats.reportedAssets || 0} tone={Number(stats.reportedAssets || 0) > 0 ? "warning" : "success"} />
         </div>
       )}
 
@@ -1081,6 +1182,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
           ["import", l("Import / đồng bộ", "Import / sync"), UploadCloud],
           ["search", isScene ? l("Tìm kiếm scene", "Search scenes") : l("Tìm kiếm model", "Search models"), Search],
           ["edit", isScene ? l("Chỉnh sửa scene", "Edit scene") : l("Chỉnh sửa model", "Edit model"), Pencil],
+          ["reports", l("Báo lỗi", "Issue reports"), Flag],
           ["taxonomy", l("Danh mục & bộ lọc", "Categories & filters"), ListChecks],
         ].map(([key, label, Icon]) => (
           <button
@@ -1091,6 +1193,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
           >
             <Icon size={16} />
             {label}
+            {key === "reports" && Number(stats?.activeReports || 0) > 0 && <span>{stats.activeReports}</span>}
           </button>
         ))}
       </div>
@@ -1275,6 +1378,10 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
               <option value="free">Free</option>
               <option value="member">Pro</option>
             </select>
+            <label className="checkboxInline marketAdminReportedFilter">
+              <input type="checkbox" checked={reportedOnly} onChange={(event) => setReportedOnly(event.target.checked)} />
+              <Flag size={14} /> {l("Có báo lỗi", "Reported")}
+            </label>
             <span className={`marketFilterCount ${activeFilterCount ? "active" : ""}`}>{activeFilterCount}</span>
             {activeFilterCount > 0 && (
               <button type="button" className="smallButton" onClick={clearFilters}>{l("Xóa lọc", "Clear filters")}</button>
@@ -1333,6 +1440,128 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
             itemLabel={assetName}
           />
         </>
+      )}
+
+      {activeTab === "reports" && (
+        <div className="marketAdminReports">
+          <div className="adminTableToolbar marketAdminReportToolbar">
+            <label className="adminSearchField">
+              <Search size={15} />
+              <input
+                value={reportSearch}
+                onChange={(event) => setReportSearch(event.target.value)}
+                placeholder={l("Tìm tên tài nguyên hoặc người báo...", "Search asset or reporter...")}
+              />
+            </label>
+            <select value={reportStatus} onChange={(event) => setReportStatus(event.target.value)}>
+              <option value="active">{l("Đang chờ xử lý", "Active reports")}</option>
+              <option value="open">{l("Mới", "Open")}</option>
+              <option value="investigating">{l("Đang kiểm tra", "Investigating")}</option>
+              <option value="resolved">{l("Đã xử lý", "Resolved")}</option>
+              <option value="dismissed">{l("Bỏ qua", "Dismissed")}</option>
+              <option value="all">{l("Tất cả trạng thái", "All statuses")}</option>
+            </select>
+            <select value={reportReason} onChange={(event) => setReportReason(event.target.value)}>
+              <option value="">{l("Tất cả loại lỗi", "All issue types")}</option>
+              {Object.entries(reportReasonLabels).map(([value, labels]) => (
+                <option key={value} value={value}>{text(language, labels[0], labels[1])}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="marketAdminReportList">
+            {reports.map((report) => {
+              const busy = reportLoadingId === report._id;
+              const reporter = report.userId && typeof report.userId === "object" ? report.userId : null;
+              const statusLabels = reportStatusLabels[report.status] || [report.status, report.status];
+              const reasonLabels = reportReasonLabels[report.reason] || [report.reason, report.reason];
+              return (
+                <article className={`marketAdminReportItem ${report.status}`} key={report._id}>
+                  <header>
+                    {report.model ? (
+                      <AdminCover model={report.model} adminAssetBase={adminAssetBase} language={language} />
+                    ) : (
+                      <div className="marketAdminCoverPlaceholder"><ImageOff size={18} /></div>
+                    )}
+                    <div className="marketAdminReportIdentity">
+                      <strong>{report.model?.title || l("Tài nguyên không còn tồn tại", "Asset no longer exists")}</strong>
+                      <span>{report.model?.slug || String(report.modelId || "")}</span>
+                    </div>
+                    <div className="marketAdminReportMeta">
+                      <span className={`badge ${report.isActive ? "warning" : "success"}`}>{text(language, statusLabels[0], statusLabels[1])}</span>
+                      <time>{formatDate(report.createdAt)}</time>
+                    </div>
+                  </header>
+                  <div className="marketAdminReportBody">
+                    <div>
+                      <span>{l("Người báo", "Reporter")}</span>
+                      <strong>{reporter?.name || reporter?.email || l("Không rõ user", "Unknown user")}</strong>
+                      {reporter?.name && reporter?.email && <small>{reporter.email}</small>}
+                    </div>
+                    <div>
+                      <span>{l("Loại lỗi", "Issue type")}</span>
+                      <strong>{text(language, reasonLabels[0], reasonLabels[1])}</strong>
+                    </div>
+                    <div className="marketAdminReportMessage">
+                      <span>{l("Mô tả", "Description")}</span>
+                      <p>{report.message || l("Không có mô tả thêm.", "No additional details.")}</p>
+                    </div>
+                  </div>
+                  <label className="marketAdminReportNote">
+                    <span>{l("Ghi chú nội bộ", "Internal note")}</span>
+                    <textarea
+                      rows={2}
+                      maxLength={1000}
+                      value={reportNotes[report._id] ?? report.adminNote ?? ""}
+                      onChange={(event) => setReportNotes((current) => ({ ...current, [report._id]: event.target.value.slice(0, 1000) }))}
+                      placeholder={l("Kết quả kiểm tra hoặc nội dung đã sửa...", "Investigation result or applied fix...")}
+                    />
+                  </label>
+                  <footer>
+                    <button
+                      type="button"
+                      className="smallButton"
+                      disabled={busy || !report.model || (report.model.deletionStatus && report.model.deletionStatus !== "active")}
+                      onClick={() => openReportedAsset(report)}
+                    >
+                      <Pencil size={15} /> {l("Mở chỉnh sửa", "Open editor")}
+                    </button>
+                    {report.status !== "investigating" && report.isActive && (
+                      <button type="button" className="smallButton" disabled={busy} onClick={() => updateReportStatus(report, "investigating")}>
+                        <Search size={15} /> {l("Đang kiểm tra", "Investigating")}
+                      </button>
+                    )}
+                    {!report.isActive && (
+                      <button type="button" className="smallButton" disabled={busy} onClick={() => updateReportStatus(report, "open")}>
+                        <RotateCcw size={15} /> {l("Mở lại", "Reopen")}
+                      </button>
+                    )}
+                    {report.status !== "resolved" && (
+                      <button type="button" className="primaryButton" disabled={busy} onClick={() => updateReportStatus(report, "resolved")}>
+                        <CheckCircle2 size={15} /> {l("Đã xử lý", "Resolve")}
+                      </button>
+                    )}
+                    {report.status !== "dismissed" && (
+                      <button type="button" className="smallButton danger" disabled={busy} onClick={() => updateReportStatus(report, "dismissed")}>
+                        <X size={15} /> {l("Bỏ qua", "Dismiss")}
+                      </button>
+                    )}
+                  </footer>
+                </article>
+              );
+            })}
+            {!reports.length && <p className="muted marketAdminReportEmpty">{l("Không có báo lỗi phù hợp.", "No matching issue reports.")}</p>}
+          </div>
+
+          <Pagination
+            page={reportPagination.page}
+            totalPages={reportPagination.totalPages}
+            total={reportPagination.total}
+            onPageChange={(nextPage) => loadReports(nextPage).catch((err) => setError(err.message))}
+            language={language}
+            itemLabel={l("báo lỗi", "reports")}
+          />
+        </div>
       )}
 
       {activeTab === "edit" && (

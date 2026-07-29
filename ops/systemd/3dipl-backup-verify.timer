@@ -1,0 +1,11 @@
+[Unit]
+Description=Verify latest 3DIPL database backups daily
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Asia/Ho_Chi_Minh
+Persistent=true
+RandomizedDelaySec=120
+Unit=3dipl-backup-verify.service
+
+[Install]
+WantedBy=timers.target

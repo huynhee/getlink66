@@ -9,6 +9,8 @@ const downloadSessionSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
     guestKey: { type: String, default: "", index: true },
     clientType: { type: String, enum: ["web", "plugin"], default: "web", index: true },
+    idempotencyKey: { type: String, default: "", index: true },
+    pluginTokenNonce: { type: String, default: "" },
     tokenHash: { type: String, required: true },
     expiresAt: { type: Date, required: true, index: true },
     purgeAt: { type: Date, required: true },
@@ -25,11 +27,26 @@ const downloadSessionSchema = new mongoose.Schema(
     fileName: { type: String, default: "" },
     fileSize: { type: Number, default: 0 },
     sha256: { type: String, default: "" },
+    assetRevision: { type: String, default: "" },
+    mainMaxFile: { type: String, default: "" },
+    archiveFormat: { type: String, default: "zip" },
+    quotaRemaining: { type: Number, default: 0 },
+    quotaResetAt: Date,
   },
   { timestamps: true },
 );
 
 downloadSessionSchema.index({ expiresAt: 1, status: 1 });
+downloadSessionSchema.index(
+  { userId: 1, clientType: 1, idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      clientType: "plugin",
+      idempotencyKey: { $type: "string", $ne: "" },
+    },
+  },
+);
 downloadSessionSchema.index({ purgeAt: 1 }, { expireAfterSeconds: 0 });
 
 export default isMemoryDb()

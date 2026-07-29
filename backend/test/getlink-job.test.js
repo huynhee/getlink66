@@ -17,6 +17,7 @@ const {
   processGetlinkJobQueue,
   publicGetlinkJob,
   selectGetlinkJobFormat,
+  stopGetlinkJobWorker,
 } = await import("../src/utils/getlinkJobService.js");
 
 function publicRequest(user) {
@@ -169,4 +170,53 @@ test("failed jobs do not change account credit", async () => {
   assert.equal((await GetlinkJob.findById(job._id)).status, "failed");
   assert.equal((await User.findById(user._id)).credit, 7);
   assert.equal(await Getlink.countDocuments({ userId: user._id }), 0);
+});
+
+test("worker shutdown drains an in-flight getlink job", async () => {
+  const user = await User.create({ email: "job-drain@example.test", name: "Drain", credit: 7 });
+  const { job } = await createGetlinkJob({
+    userId: user._id,
+    body: { modelId: "DRAIN123456", clientRequestId: "drain_request_1" },
+  });
+  let releaseExecutor;
+  let markStarted;
+  const started = new Promise((resolve) => {
+    markStarted = resolve;
+  });
+  const release = new Promise((resolve) => {
+    releaseExecutor = resolve;
+  });
+
+  process.env.GETLINK_JOB_ENABLED = "true";
+  const processing = processGetlinkJobQueue({
+    executor: async ({ user: executingUser }) => {
+      markStarted();
+      await release;
+      const history = await Getlink.create({
+        userId: executingUser._id,
+        productId: "drain-product",
+        fileUrl: "https://download.example.test/drain.zip",
+        title: "Drain model",
+        creditUsed: 0,
+      });
+      return {
+        status: 200,
+        payload: {
+          historyId: history._id,
+          productId: "drain-product",
+          title: "Drain model",
+          credit: 7,
+          creditUsed: 0,
+        },
+      };
+    },
+  });
+  await started;
+  const draining = stopGetlinkJobWorker({ timeoutMs: 1_000 });
+  releaseExecutor();
+
+  assert.equal(await draining, true);
+  await processing;
+  process.env.GETLINK_JOB_ENABLED = "false";
+  assert.equal((await GetlinkJob.findById(job._id)).status, "completed");
 });

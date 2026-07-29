@@ -1,0 +1,11 @@
+[Unit]
+Description=Run 3DIPL Atlas Core backup daily
+
+[Timer]
+OnCalendar=*-*-* 01:00:00 Asia/Ho_Chi_Minh
+Persistent=true
+RandomizedDelaySec=120
+Unit=3dipl-backup-core.service
+
+[Install]
+WantedBy=timers.target

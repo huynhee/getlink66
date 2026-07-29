@@ -13,6 +13,7 @@ import { marketplaceDownloadCost, normalizeAssetType } from "../data/marketplace
 import { isMemoryDb } from "../config/memoryStore.js";
 import { marketplaceDbConnection } from "../config/db.js";
 import { invalidateMarketplaceHomeRecommendations } from "./marketplaceRecommendationService.js";
+import { downloadTokenSecret } from "../config/secrets.js";
 
 const SESSION_TTL_MS = 15 * 60 * 1000;
 
@@ -22,6 +23,32 @@ function sha256(value) {
 
 function makeToken() {
   return crypto.randomBytes(32).toString("base64url");
+}
+
+function pluginSessionToken(sessionId, nonce) {
+  return crypto
+    .createHmac("sha256", downloadTokenSecret())
+    .update(`3dipl-plugin-download:${sessionId}:${nonce}`)
+    .digest("base64url");
+}
+
+function downloadSessionUrl(sessionId, token, clientType) {
+  const prefix = clientType === "plugin"
+    ? "/api/plugin/download/session"
+    : "/api/download/session";
+  return `${prefix}/${sessionId}/file?t=${encodeURIComponent(token)}`;
+}
+
+function pluginIdempotencyKey(req, clientType) {
+  if (clientType !== "plugin") return "";
+  const value = String(req.get("idempotency-key") || "").trim();
+  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(value)) {
+    const error = new Error("A valid Idempotency-Key header is required.");
+    error.status = 400;
+    error.code = "IDEMPOTENCY_KEY_REQUIRED";
+    throw error;
+  }
+  return value;
 }
 
 function safeArchiveExt(value = "") {
@@ -135,6 +162,50 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     error.code = "AUTH_REQUIRED";
     throw error;
   }
+  if (req.user.isBanned) {
+    const error = new Error(
+      req.user.banReason || "This account cannot download marketplace assets.",
+    );
+    error.status = 403;
+    error.code = "ACCOUNT_BANNED";
+    throw error;
+  }
+  const normalizedClientType = clientType === "plugin" ? "plugin" : "web";
+  const idempotencyKey = pluginIdempotencyKey(req, normalizedClientType);
+  if (normalizedClientType === "plugin") {
+    const existing = await DownloadSession.findOne({
+      userId: req.user._id,
+      clientType: "plugin",
+      idempotencyKey,
+    });
+    if (existing) {
+      if (String(existing.modelId) !== String(modelId)) {
+        const error = new Error("Idempotency-Key was already used for another asset.");
+        error.status = 409;
+        error.code = "IDEMPOTENCY_KEY_REUSED";
+        throw error;
+      }
+      if (
+        ["active", "used"].includes(existing.status)
+        && new Date(existing.expiresAt) > new Date()
+        && existing.pluginTokenNonce
+      ) {
+        const token = pluginSessionToken(existing._id, existing.pluginTokenNonce);
+        return {
+          session: existing,
+          token,
+          downloadUrl: downloadSessionUrl(existing._id, token, normalizedClientType),
+          remaining: Number(existing.quotaRemaining || 0),
+          quotaCost: Number(existing.quotaCost || 0),
+          resetAt: existing.quotaResetAt || null,
+        };
+      }
+      const error = new Error("The idempotent download operation has expired.");
+      error.status = 409;
+      error.code = "IDEMPOTENCY_OPERATION_EXPIRED";
+      throw error;
+    }
+  }
   const model = await MarketplaceModel.findById(modelId);
   const assetType = normalizeAssetType(model?.assetType);
   const assetLabel = assetType === "scene" ? "Scene" : "Model";
@@ -170,7 +241,8 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
   }
 
   const quota = await chargeQuota(req, tier, marketplaceDownloadCost(assetType));
-  const token = makeToken();
+  const pluginTokenNonce = normalizedClientType === "plugin" ? makeToken() : "";
+  let token = normalizedClientType === "plugin" ? "" : makeToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   const purgeAt = new Date(expiresAt.getTime() + 7 * 24 * 60 * 60 * 1000);
   let session = null;
@@ -180,8 +252,10 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
       modelId: model._id,
       userId: req.user._id,
       guestKey: "",
-      clientType: clientType === "plugin" ? "plugin" : "web",
-      tokenHash: sha256(token),
+      clientType: normalizedClientType,
+      idempotencyKey,
+      pluginTokenNonce,
+      tokenHash: token ? sha256(token) : "pending",
       expiresAt,
       purgeAt,
       status: "active",
@@ -194,7 +268,20 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
       fileName: safeDownloadFileName(model),
       fileSize: model.fileSize,
       sha256: model.sha256,
+      assetRevision: String(model.contentRevision || `${model.sha256 || ""}:${Number(model.fileSize || 0)}`),
+      mainMaxFile: String(model.mainMaxFile || ""),
+      archiveFormat: safeArchiveExt(model.archiveExt),
+      quotaRemaining: quota.remaining,
+      quotaResetAt: quota.resetAt,
     });
+    if (normalizedClientType === "plugin") {
+      token = pluginSessionToken(session._id, pluginTokenNonce);
+      session = await DownloadSession.findByIdAndUpdate(
+        session._id,
+        { $set: { tokenHash: sha256(token) } },
+        { new: true },
+      );
+    }
 
     await ModelDownload.create({
       assetType,
@@ -218,7 +305,7 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
   return {
     session,
     token,
-    downloadUrl: `/api/download/session/${session._id}/file?t=${encodeURIComponent(token)}`,
+    downloadUrl: downloadSessionUrl(session._id, token, normalizedClientType),
     remaining: quota.remaining,
     quotaCost: quota.cost,
     resetAt: quota.resetAt,
@@ -291,7 +378,7 @@ export async function markMarketplaceDownloadRedeemed(session) {
   }
 }
 
-export async function verifyDownloadSession(sessionId, token) {
+export async function verifyDownloadSession(sessionId, token, expectedUserId = "") {
   const session = await DownloadSession.findById(sessionId);
   // "used" van duoc phep tai lai trong TTL: download manager/browser co the mo
   // nhieu ket noi hoac retry; quota da duoc tinh khi tao session, khong tinh lai.
@@ -309,6 +396,15 @@ export async function verifyDownloadSession(sessionId, token) {
   if (sha256(token || "") !== session.tokenHash) {
     const error = new Error("Invalid download token");
     error.status = 403;
+    throw error;
+  }
+  if (
+    expectedUserId
+    && String(session.userId || "") !== String(expectedUserId)
+  ) {
+    const error = new Error("This download session belongs to another account");
+    error.status = 403;
+    error.code = "DOWNLOAD_SESSION_OWNER_MISMATCH";
     throw error;
   }
   return session;

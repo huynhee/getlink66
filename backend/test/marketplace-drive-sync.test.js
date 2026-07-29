@@ -21,6 +21,7 @@ const {
   syncMarketplaceDriveFolder,
   writeMarketplaceModelMetadata,
 } = await import("../src/utils/marketplaceDriveService.js");
+const { adminCleanupMarketplaceRaw } = await import("../src/controllers/marketplaceAdminController.js");
 const {
   pollMarketplaceDriveChanges,
   processMarketplaceDriveChangeQueue,
@@ -215,6 +216,82 @@ test("metadata V2 rejects values outside the controlled vocabulary", () => {
   const { metadata, errors } = normalizeMarketplaceMetadata(metadataInput({ forms: ["rectangle", "made-up-shape"] }));
   assert.deepEqual(metadata.forms, ["rectangle"]);
   assert.ok(errors.some((item) => item.field === "form" && item.code === "unknown_value"));
+});
+
+test("empty optional facets remain publishable and are excluded by facet filters", async () => {
+  const fixture = createDriveFixture();
+  fixture.setMetadata({
+    renderer: "",
+    styles: [],
+    renderers: [],
+    forms: [],
+    colors: [],
+    materials: [],
+  });
+  const restoreFetch = fixture.install();
+  try {
+    const result = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id });
+    assert.equal(result.model.isPublished, true);
+    assert.equal(result.model.metadataStatus, "complete");
+    assert.deepEqual(result.model.publicationBlockers, []);
+    assert.deepEqual(result.model.styles, []);
+    assert.deepEqual(result.model.renderers, []);
+    assert.deepEqual(result.model.forms, []);
+    assert.deepEqual(result.model.colors, []);
+    assert.deepEqual(result.model.materials, []);
+
+    let unfilteredPayload;
+    let filteredPayload;
+    await listMarketplaceModels(
+      { query: {} },
+      { json(value) { unfilteredPayload = value; return value; } },
+      (error) => { throw error; },
+    );
+    await listMarketplaceModels(
+      { query: { style: "modern" } },
+      { json(value) { filteredPayload = value; return value; } },
+      (error) => { throw error; },
+    );
+    assert.ok(unfilteredPayload.models.some((model) => String(model._id) === String(result.model._id)));
+    assert.equal(filteredPayload.models.some((model) => String(model._id) === String(result.model._id)), false);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("Mongo cleanup removes only stale optional blockers and republishes intended assets", async () => {
+  const model = await MarketplaceModel.create({
+    assetType: "model",
+    title: "Legacy sparse model",
+    slug: `legacy-sparse-${fixtureSequence += 1}`,
+    categorySourceId: "category-256",
+    accessType: "free",
+    styles: [],
+    renderers: [],
+    forms: [],
+    colors: [],
+    materials: [],
+    metadataStatus: "incomplete",
+    metadataMissingFields: ["style", "render", "form", "color", "material"],
+    publicationBlockers: ["styles", "renderers", "forms", "colors", "materials"],
+    desiredPublished: true,
+    isPublished: false,
+    fileStatus: "ready",
+    storageProvider: "google_drive",
+    driveFileId: "legacy-sparse-archive",
+  });
+  let payload;
+  await adminCleanupMarketplaceRaw(
+    {},
+    { json(value) { payload = value; return value; } },
+    (error) => { throw error; },
+  );
+  const updated = await MarketplaceModel.findById(model._id).lean();
+  assert.ok(payload.normalizedMetadata >= 1);
+  assert.equal(updated.metadataStatus, "complete");
+  assert.deepEqual(updated.metadataMissingFields, []);
+  assert.deepEqual(updated.publicationBlockers, []);
+  assert.equal(updated.isPublished, true);
 });
 
 test("single-folder sync preserves public state and only removes missing previews", async () => {

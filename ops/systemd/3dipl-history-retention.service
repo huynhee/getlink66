@@ -1,0 +1,17 @@
+[Unit]
+Description=3DIPL verified history archive and retention
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=3dipl
+Group=3dipl
+WorkingDirectory=/opt/3dipl
+EnvironmentFile=/etc/3dipl/backend.env
+ExecStart=/usr/bin/npm run history:retention
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+NoNewPrivileges=true

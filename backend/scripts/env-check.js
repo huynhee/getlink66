@@ -2,6 +2,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { productionReadinessIssues } from "../src/config/productionReadiness.js";
 
 const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.env");
 const raw = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
@@ -47,7 +48,7 @@ else errors.push("MONGO_CORE_URI or MONGO_URI is required");
 
 const marketplaceTarget = String(process.env.MARKETPLACE_DB_TARGET || "").trim().toLowerCase();
 if (marketplaceTarget === "vps") {
-  requireValue("MONGO_MARKETPLACE_URI", { productionOnly: true });
+  requireValue("MONGO_MARKETPLACE_URI");
   if (production && process.env.MONGO_MARKETPLACE_TRANSACTIONS_REQUIRED !== "true") {
     warnings.push("Set MONGO_MARKETPLACE_TRANSACTIONS_REQUIRED=true to document the production requirement");
   }
@@ -71,7 +72,9 @@ else if (has("GOOGLE_DRIVE_ACCESS_TOKEN") || has("GOOGLE_DRIVE_BEARER_TOKEN")) {
   "MARKETPLACE_DRIVE_ROOT_FOLDER_ID",
   "SCENES_DRIVE_ROOT_FOLDER_ID",
   "HISTORY_ARCHIVE_DRIVE_FOLDER_ID",
+  "DATABASE_BACKUP_DRIVE_FOLDER_ID",
 ].forEach((name) => requireValue(name, { productionOnly: true }));
+requireValue("BACKUP_AGE_RECIPIENT", { productionOnly: true });
 
 if (production) {
   [
@@ -88,6 +91,15 @@ if (production) {
   if (process.env.TURNSTILE_ENABLED === "true") {
     requireValue("TURNSTILE_EXPECTED_HOSTNAME");
     requireValue("TURNSTILE_EXPECTED_ACTION");
+  }
+  if (process.env.PLUGIN_API_ENABLED === "true") {
+    [
+      "PLUGIN_JWT_SECRET",
+      "PLUGIN_RELEASE_VERSION",
+      "PLUGIN_MINIMUM_VERSION",
+      "PLUGIN_RELEASE_URL",
+      "PLUGIN_RELEASE_SHA256",
+    ].forEach((name) => requireValue(name));
   }
 }
 
@@ -113,6 +125,14 @@ if (has("GOOGLE_CLIENT_ID") || has("GOOGLE_CLIENT_SECRET")) {
 
 if (!has("MARKETPLACE_IMAGE_SEARCH_URL")) warnings.push("Image search provider is disabled");
 if (!has("MARKETPLACE_DISCOVERY_URL")) warnings.push("Semantic discovery uses the MongoDB fallback");
+
+const productionIssues = productionReadinessIssues(process.env);
+productionIssues.warnings.forEach((message) => {
+  if (!warnings.includes(message)) warnings.push(message);
+});
+productionIssues.errors.forEach((message) => {
+  if (!errors.includes(message)) errors.push(message);
+});
 
 console.log(`Environment: ${production ? "production" : "development"}`);
 ok.forEach((message) => console.log(`[OK] ${message}`));

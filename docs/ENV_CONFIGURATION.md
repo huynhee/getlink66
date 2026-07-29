@@ -217,3 +217,23 @@ npm run drive:check
 ```
 
 Production can dat them `CLIENT_URL`, `PUBLIC_BASE_URL`, `CORS_ORIGINS`, cac secret bao mat, Google Login, SePay va Telegram theo `.env.example`.
+
+## 10. Split database va backup
+
+Production bat buoc dat `MONGO_CORE_URI`, `MONGO_MARKETPLACE_URI`,
+`MARKETPLACE_DB_TARGET=vps` va
+`MONGO_MARKETPLACE_TRANSACTIONS_REQUIRED=true`. Local chi dung mot database phai
+dat `MARKETPLACE_DB_TARGET=core` ro rang; `vps` khong fallback ve Atlas.
+
+Backup can them:
+
+```env
+DATABASE_BACKUP_DRIVE_FOLDER_ID=
+BACKUP_AGE_RECIPIENT=age1...
+BACKUP_WORK_DIR=/var/lib/3dipl/backup-work
+ATLAS_CORE_STORAGE_LIMIT_BYTES=524288000
+VPS_DISK_PATH=/
+```
+
+Khong luu `BACKUP_AGE_IDENTITY_FILE` tren VPS production. Chi gan private key
+tam thoi tren may restore tach biet. Xem `docs/STORAGE_BACKUP_RUNBOOK.md`.

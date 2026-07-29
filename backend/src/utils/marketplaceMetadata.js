@@ -78,11 +78,6 @@ export function normalizeMarketplaceMetadata(raw = {}, fallback = {}) {
   if (!metadata.sourceAssetId) errors.push({ field: "sourceAssetId", code: "required" });
   if (!metadata.title) errors.push({ field: "title", code: "required" });
   if (!metadata.sourceCategoryId) errors.push({ field: "sourceCategoryId", code: "required" });
-  if (assetType === "scene" && !metadata.renderer) errors.push({ field: "renderer", code: "required" });
-  const requiredFacets = assetType === "scene" ? ["styles", "renderers"] : ["styles", "renderers", "forms", "colors", "materials"];
-  for (const field of requiredFacets) {
-    if (!metadata[field].length) errors.push({ field, code: "required" });
-  }
   if (assetType === "scene" && !metadata.sha256) errors.push({ field: "sha256", code: "required" });
   return { metadata, errors };
 }

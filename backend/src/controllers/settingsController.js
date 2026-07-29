@@ -191,8 +191,10 @@ const RUNTIME_NUMBER_FIELDS = {
 
 const RETENTION_NUMBER_FIELDS = {
   getlinkDetailRetentionDaysAfterExpiry: { fallback: 1, minActive: 1 },
-  getlinkHistoryRetentionDaysAfterExpiry: { fallback: 730, minActive: 30 },
+  getlinkHistoryRetentionDaysAfterExpiry: { fallback: 365, minActive: 30 },
   marketplaceDownloadHistoryRetentionDays: { fallback: 365, minActive: 30 },
+  marketplaceReportHistoryRetentionDays: { fallback: 365, minActive: 30 },
+  auditLogHistoryRetentionDays: { fallback: 365, minActive: 30 },
 };
 
 const defaultSettings = {
@@ -251,8 +253,10 @@ const defaultSettings = {
   getlinkRedownloadDays: Number(process.env.GETLINK_REDOWNLOAD_DAYS || 3),
   getlinkRedownloadLimit: Number(process.env.GETLINK_REDOWNLOAD_LIMIT || 5),
   getlinkDetailRetentionDaysAfterExpiry: 1,
-  getlinkHistoryRetentionDaysAfterExpiry: 730,
+  getlinkHistoryRetentionDaysAfterExpiry: 365,
   marketplaceDownloadHistoryRetentionDays: 365,
+  marketplaceReportHistoryRetentionDays: 365,
+  auditLogHistoryRetentionDays: 365,
 };
 
 Object.assign(defaultSettings, HOME_TEXT_DEFAULTS);
@@ -623,6 +627,8 @@ export async function updateSettings(req, res, next) {
       "getlinkDetailRetentionDaysAfterExpiry",
       "getlinkHistoryRetentionDaysAfterExpiry",
       "marketplaceDownloadHistoryRetentionDays",
+      "marketplaceReportHistoryRetentionDays",
+      "auditLogHistoryRetentionDays",
     ];
     const unknownKey = rejectUnknownKeys(req.body, fields);
     if (unknownKey) {

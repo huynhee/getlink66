@@ -860,9 +860,12 @@ export async function createDownloadSession(req, res, next) {
         _id: result.session._id,
         expiresAt: result.session.expiresAt,
         fileName: result.session.fileName,
-        fileSize: result.session.fileSize,
-        sha256: result.session.sha256,
-      },
+         fileSize: result.session.fileSize,
+         sha256: result.session.sha256,
+         assetRevision: result.session.assetRevision || "",
+         mainMaxFile: result.session.mainMaxFile || "",
+         archiveFormat: result.session.archiveFormat || "zip",
+       },
       downloadUrl: result.downloadUrl,
       remaining: result.remaining,
       quotaCost: result.quotaCost,
@@ -878,7 +881,11 @@ export async function downloadSessionFile(req, res, next) {
     if (!isSafeId(req.params.id)) {
       return res.status(400).json({ message: "Invalid session id" });
     }
-    const session = await verifyDownloadSession(req.params.id, req.query.t);
+    const session = await verifyDownloadSession(
+      req.params.id,
+      req.query.t,
+      req.user?._id,
+    );
     res.setHeader("cache-control", "no-store");
     res.setHeader("referrer-policy", "no-referrer");
 

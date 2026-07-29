@@ -28,6 +28,8 @@ upload tool -> Google Drive -> sync-folder / Changes API -> MongoDB index -> web
 - `preview-01.jpg`, `preview-02.png`, ...
 - `model.sha256` neu upload tool tao file checksum rieng.
 - Drive file version, modified time va parent relationship.
+- History archive da verify checksum.
+- Backup Atlas/VPS da ma hoa bang `age` kem manifest SHA-256.
 
 Metadata Drive owns:
 
@@ -41,13 +43,15 @@ Metadata Drive owns:
 - User, Credit, Pro, payment, referral, voucher va Getlink.
 - Site settings va GuideArticle.
 - `MarketplaceCategory` va `MarketplaceFilterOption` la taxonomy chuan.
+- `BackupRun` chi luu trang thai nho; Drive manifest moi la nguon phuc hoi doc lap.
 
 ### MongoDB VPS owns
 
 - `MarketplaceModel`, public `slug`, `desiredPublished`, `isPublished` va sync state.
-- Quota, download session, marketplace download history va cumulative `downloadCount`.
+- Quota, download session, marketplace download history, bao loi tai nguyen va cumulative `downloadCount`.
 - Drive queue/state, product cache, system log, audit va notification.
 - Drive references noi bo de backend cap file/preview; public API khong tra cac field nay.
+- `MarketplaceReport` da dong, `AuditLog` va download history duoc archive sau 365 ngay.
 
 ### Upload tool owns (phase sau)
 
@@ -132,17 +136,19 @@ Field rules:
 | `sourceCategoryId` | Yes | Phai map den leaf category |
 | `accessType` | Yes | `free` hoac `member`; legacy `pro` normalize thanh `member` |
 | `renderer` | No | Label hien thi, max 80 chars |
-| `styles` | Yes | Controlled vocabulary `style` |
-| `renderers` | Yes | Controlled vocabulary `render` |
-| `forms` | Yes | Controlled vocabulary `form` |
-| `colors` | Yes | Controlled vocabulary `color` |
-| `materials` | Yes | Controlled vocabulary `material` |
+| `styles` | No | Controlled vocabulary `style`; de `[]` neu chua co du lieu |
+| `renderers` | No | Controlled vocabulary `render`; de `[]` neu chua co du lieu |
+| `forms` | No | Controlled vocabulary `form`; de `[]` neu chua co du lieu |
+| `colors` | No | Controlled vocabulary `color`; de `[]` neu chua co du lieu |
+| `materials` | No | Controlled vocabulary `material`; de `[]` neu chua co du lieu |
 | `sha256` | Recommended | Dung 64 lowercase hex chars |
 
 Khong co `sourceSlug`, `sizeText`, `description`, `tags`, URL nguon, format,
 3ds Max version, polygon count, Drive ID hoac raw payload trong schema V2.
 
 Dung luong hien thi lay tu `fileSize` cua archive tren Drive. Public slug thuoc Mongo.
+Facet de trong khong chan publish. Khi user loc theo mot facet, model co mang facet
+rong khong khop truy van va khong xuat hien trong ket qua do.
 
 ## 5. Controlled vocabulary
 
@@ -230,7 +236,8 @@ description, tags, format/version/polygon hoac model credit price.
 }
 ```
 
-Scene bat buoc ID, title, leaf category, Free/Pro, renderer, style va SHA-256.
+Scene bat buoc ID, title, leaf category, Free/Pro va SHA-256. Renderer va style co
+the de trong; neu co gia tri thi van phai dung controlled vocabulary.
 Scene khong dung `forms`, `colors` hoac `materials`. Model tiep tuc dung schema V2;
 backend khong migration hang loat metadata Model sang V3.
 
@@ -567,7 +574,7 @@ MarketplaceCategory, MarketplaceFilterOption
 MongoDB VPS:
 
 ```text
-MarketplaceModel, ModelDownload, DownloadSession
+MarketplaceModel, MarketplaceReport, ModelDownload, DownloadSession
 DailyDownloadQuota, DailyImageSearchQuota, MarketplaceQuotaGrant
 MarketplaceDriveChange, MarketplaceDriveSyncState
 ProductCache, SystemLog, AuditLog, Notification, NotificationReceipt

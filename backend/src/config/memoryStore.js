@@ -324,6 +324,18 @@ export function createMemoryModel(name) {
     async countDocuments(query = {}) {
       return collection.filter((document) => matches(document, query)).length;
     },
+    async distinct(field, query = {}) {
+      return [...new Set(
+        collection
+          .filter((document) => matches(document, query))
+          .flatMap((document) => {
+            const value = getByPath(document, field);
+            return Array.isArray(value) ? value : [value];
+          })
+          .filter((value) => value !== undefined && value !== null)
+          .map(String),
+      )];
+    },
     async exists(query = {}) {
       const document = collection.find((item) => matches(item, query));
       return document ? { _id: document._id } : null;

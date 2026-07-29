@@ -337,12 +337,10 @@ Model bat buoc:
 - Title.
 - Category con/leaf.
 - Free hoac Pro.
-- It nhat mot Style.
-- It nhat mot Render.
-- It nhat mot Form.
-- It nhat mot Color.
-- It nhat mot Material.
 - SHA-256.
+
+Style, Render, Form, Color va Material la tuy chon. Tool ghi `[]` khi khong co du
+lieu; khong tu suy doan. Neu co gia tri thi phai dung key trong taxonomy da import.
 
 ## 11. Metadata Scene V3
 
@@ -369,10 +367,10 @@ Scene bat buoc:
 - Title.
 - Category leaf.
 - Free hoac Pro.
-- Renderer.
-- It nhat mot Style.
-- It nhat mot Render.
 - SHA-256.
+
+Renderer, Style va Render la tuy chon. De chuoi rong/`[]` neu chua co du lieu.
+Scene van khong ghi Form, Color hoac Material.
 
 Scene khong ghi:
 
@@ -406,7 +404,8 @@ Renderer:
 | `corona` | `Corona` |
 | `standard` | `Standard` |
 
-`renderer` phai nam trong `renderers`.
+Neu co ca `renderer` va `renderers`, `renderer` phai tuong ung mot key trong
+`renderers`. Neu chua xac dinh renderer, ghi `renderer: ""` va `renderers: []`.
 
 Metadata sau khi giai nen toi da 256 KB.
 

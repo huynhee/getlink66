@@ -17,6 +17,17 @@ const batchArgument = process.argv.find((value) => value.startsWith("--batch="))
 const batchSize = Math.min(5000, Math.max(10, Number(batchArgument?.split("=")[1] || 500)));
 const CHECKPOINT_COLLECTION = "marketplaceMigrationCheckpoints";
 
+function assertMigrationWindow() {
+  if (!execute) return;
+  if (process.env.MIGRATION_WRITES_FROZEN !== "true") {
+    throw new Error("Set MIGRATION_WRITES_FROZEN=true after placing the application in maintenance mode.");
+  }
+  const verifiedAt = new Date(process.env.MIGRATION_BACKUP_VERIFIED_AT || "");
+  if (Number.isNaN(verifiedAt.getTime()) || Date.now() - verifiedAt.getTime() > 26 * 60 * 60 * 1000) {
+    throw new Error("MIGRATION_BACKUP_VERIFIED_AT must reference a verified backup from the last 26 hours.");
+  }
+}
+
 const COLLECTIONS = [
   "marketplacemodels",
   "modeldownloads",
@@ -31,6 +42,7 @@ const COLLECTIONS = [
   "notifications",
   "notificationreceipts",
   "marketplacequotagrants",
+  "marketplacereports",
   "historyarchivemanifests",
 ];
 
@@ -243,7 +255,7 @@ async function ensureTargetIndexes() {
     "MarketplaceModel", "ModelDownload", "DownloadSession", "DailyDownloadQuota",
     "DailyImageSearchQuota", "MarketplaceDriveChange", "MarketplaceDriveSyncState",
     "ProductCache", "SystemLog", "AuditLog", "Notification", "NotificationReceipt",
-    "MarketplaceQuotaGrant", "HistoryArchiveManifest",
+    "MarketplaceQuotaGrant", "HistoryArchiveManifest", "MarketplaceReport",
   ];
   const models = await Promise.all(modules.map(async (name) =>
     (await import(`../src/models/${name}.js`)).default,
@@ -279,6 +291,7 @@ async function finalizeSource(results) {
   }
 }
 
+assertMigrationWindow();
 await connectDb();
 try {
   let coreOwnedMigration = { categories: 0, filterOptions: 0, guideArticles: 0 };

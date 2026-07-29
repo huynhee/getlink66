@@ -30,6 +30,10 @@ const systemLogSchema = new mongoose.Schema(
 
 systemLogSchema.index({ createdAt: -1 });
 systemLogSchema.index({ type: 1, createdAt: -1 });
+systemLogSchema.index(
+  { createdAt: 1 },
+  { expireAfterSeconds: 30 * 24 * 60 * 60, name: "system_log_30_day_ttl" },
+);
 
 export default isMemoryDb()
   ? createMemoryModel("SystemLog")

@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Archive, Ban, BarChart3, Box, Check, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Gauge, Gift, Globe2, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Archive, Ban, BarChart3, Box, Check, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Flag, Gauge, Gift, Globe2, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import AdminDownloadHistory from "../components/AdminDownloadHistory.jsx";
 import AdminMarketplace from "../components/AdminMarketplace.jsx";
@@ -150,8 +150,10 @@ const defaultSiteSettings = {
   getlinkRedownloadDays: 3,
   getlinkRedownloadLimit: 5,
   getlinkDetailRetentionDaysAfterExpiry: 1,
-  getlinkHistoryRetentionDaysAfterExpiry: 730,
+  getlinkHistoryRetentionDaysAfterExpiry: 365,
   marketplaceDownloadHistoryRetentionDays: 365,
+  marketplaceReportHistoryRetentionDays: 365,
+  auditLogHistoryRetentionDays: 365,
 };
 
 function discountedPrice(pkg) {
@@ -165,6 +167,14 @@ function formatMoney(value) {
 
 function formatNumber(value, locale = "vi-VN") {
   return Number(value || 0).toLocaleString(locale);
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  return `${(bytes / (1024 ** index)).toFixed(index > 1 ? 1 : 0)} ${units[index]}`;
 }
 
 function toDatetimeLocal(value) {
@@ -259,6 +269,7 @@ export default function Admin({ user, language = "vi" }) {
   const [revenuePeriod, setRevenuePeriod] = useState("day");
   const [overview, setOverview] = useState(null);
   const [dashboard, setDashboard] = useState(null);
+  const [storageHealth, setStorageHealth] = useState(null);
   const [users, setUsers] = useState([]);
   const [packages, setPackages] = useState([]);
   const [membershipPlans, setMembershipPlans] = useState([]);
@@ -331,9 +342,10 @@ export default function Admin({ user, language = "vi" }) {
 
   const loadData = React.useCallback(async () => {
     const dashboardPeriod = revenuePeriod === "day" ? "day" : revenuePeriod === "month" ? "month" : "month";
-    const [oRes, dRes, pRes, planRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
+    const [oRes, dRes, storageRes, pRes, planRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
       api(`/api/admin/overview?period=${revenuePeriod}`),
       api(`/api/admin/dashboard?period=${dashboardPeriod}`),
+      api("/api/admin/storage-health").catch(() => ({ storage: null })),
       api("/api/admin/topup-packages"),
       api("/api/admin/membership-plans"),
       api("/api/admin/vouchers"),
@@ -347,6 +359,7 @@ export default function Admin({ user, language = "vi" }) {
     ]);
     setOverview(oRes.overview || null);
     setDashboard(dRes.dashboard || null);
+    setStorageHealth(storageRes.storage || null);
     setPackages(pRes.packages || []);
     setMembershipPlans(planRes.plans || []);
     setVouchers(vRes.vouchers || []);
@@ -821,8 +834,10 @@ export default function Admin({ user, language = "vi" }) {
           getlinkRedownloadDays: Number(siteSettings.getlinkRedownloadDays || 3),
           getlinkRedownloadLimit: Number(siteSettings.getlinkRedownloadLimit || 5),
           getlinkDetailRetentionDaysAfterExpiry: Number(siteSettings.getlinkDetailRetentionDaysAfterExpiry ?? 1),
-          getlinkHistoryRetentionDaysAfterExpiry: Number(siteSettings.getlinkHistoryRetentionDaysAfterExpiry ?? 730),
+          getlinkHistoryRetentionDaysAfterExpiry: Number(siteSettings.getlinkHistoryRetentionDaysAfterExpiry ?? 365),
           marketplaceDownloadHistoryRetentionDays: Number(siteSettings.marketplaceDownloadHistoryRetentionDays ?? 365),
+          marketplaceReportHistoryRetentionDays: Number(siteSettings.marketplaceReportHistoryRetentionDays ?? 365),
+          auditLogHistoryRetentionDays: Number(siteSettings.auditLogHistoryRetentionDays ?? 365),
         })
       });
       setSiteSettings({ ...defaultSiteSettings, ...(data.settings || {}) });
@@ -1103,6 +1118,16 @@ export default function Admin({ user, language = "vi" }) {
       icon: AlertTriangle,
       tone: Number(adminKpis.missingModels || 0) + Number(adminKpis.missingScenes || 0) > 0 ? "danger" : "green",
     },
+    {
+      label: l("Báo lỗi cần xử lý", "Issue reports"),
+      value: formatNumber(adminKpis.activeMarketplaceReports, locale),
+      detail: l(
+        `${formatNumber(adminKpis.reportedModels, locale)} model · ${formatNumber(adminKpis.reportedScenes, locale)} scene`,
+        `${formatNumber(adminKpis.reportedModels, locale)} models · ${formatNumber(adminKpis.reportedScenes, locale)} scenes`,
+      ),
+      icon: Flag,
+      tone: Number(adminKpis.activeMarketplaceReports || 0) > 0 ? "danger" : "green",
+    },
   ];
   const systemHealthItems = [
     {
@@ -1370,12 +1395,30 @@ export default function Admin({ user, language = "vi" }) {
       type: "number",
       min: 0,
       max: 3650,
-      fallback: 730,
+      fallback: 365,
     },
     {
       field: "marketplaceDownloadHistoryRetentionDays",
       label: l("Lưu lịch sử tải Model/Scene (ngày)", "Model/Scene download history retention (days)"),
       help: l("Archive sang Drive rồi xóa khỏi MongoDB VPS; tổng lượt tải không bị giảm. 0 là giữ vĩnh viễn.", "Archives to Drive before removal from the VPS; cumulative counts stay unchanged. 0 keeps forever."),
+      type: "number",
+      min: 0,
+      max: 3650,
+      fallback: 365,
+    },
+    {
+      field: "marketplaceReportHistoryRetentionDays",
+      label: l("Lưu báo lỗi đã đóng (ngày)", "Closed report retention (days)"),
+      help: l("Archive báo lỗi đã xử lý hoặc bỏ qua lên Drive trước khi xóa khỏi MongoDB VPS.", "Archives resolved or dismissed reports to Drive before deleting them from the VPS."),
+      type: "number",
+      min: 0,
+      max: 3650,
+      fallback: 365,
+    },
+    {
+      field: "auditLogHistoryRetentionDays",
+      label: l("Lưu AuditLog online (ngày)", "Online AuditLog retention (days)"),
+      help: l("Archive nhật ký thao tác admin lên Drive trước khi xóa khỏi MongoDB VPS.", "Archives admin audit history to Drive before deleting it from the VPS."),
       type: "number",
       min: 0,
       max: 3650,
@@ -1608,6 +1651,77 @@ export default function Admin({ user, language = "vi" }) {
                 })}
               </div>
             </div>
+          </div>
+
+          <div className="panel storageHealthPanel">
+            <div className="storageHealthHeading">
+              <div>
+                <h3><Database size={16} /> {l("Lưu trữ và khôi phục", "Storage and recovery")}</h3>
+                <p className="muted">
+                  {l("Atlas Core, MongoDB VPS, Drive backup và worker archive.", "Atlas Core, marketplace VPS, Drive backups, and archive workers.")}
+                </p>
+              </div>
+              <span className={storageHealth?.ok ? "status active" : "status error"}>
+                {storageHealth?.ok ? l("Ổn định", "Healthy") : l("Cần kiểm tra", "Needs attention")}
+              </span>
+            </div>
+            <div className="storageHealthGrid">
+              <div className="systemHealthItem">
+                <Database size={16} />
+                <div>
+                  <span>Atlas Core</span>
+                  <strong>{storageHealth?.databases?.core?.connected ? l("Đã kết nối", "Connected") : l("Mất kết nối", "Disconnected")}</strong>
+                  <small>{formatBytes(storageHealth?.databases?.core?.storageBytes)}{storageHealth?.databases?.core?.usagePercent != null ? ` · ${storageHealth.databases.core.usagePercent}%` : ""}</small>
+                </div>
+              </div>
+              <div className="systemHealthItem">
+                <Database size={16} />
+                <div>
+                  <span>MongoDB VPS</span>
+                  <strong>{storageHealth?.databases?.marketplace?.replicaSet || storageHealth?.databases?.marketplace?.topology || "-"}</strong>
+                  <small>{formatBytes(storageHealth?.databases?.marketplace?.storageBytes)} · {storageHealth?.databases?.routing?.distinct ? l("Đã tách", "Split") : l("Chưa tách", "Not split")}</small>
+                </div>
+              </div>
+              <div className="systemHealthItem">
+                <Archive size={16} />
+                <div>
+                  <span>{l("Backup Core", "Core backup")}</span>
+                  <strong>{storageHealth?.backups?.core ? `${storageHealth.backups.core.ageHours}h` : "-"}</strong>
+                  <small>{formatBytes(storageHealth?.backups?.core?.encryptedBytes)} · {storageHealth?.backups?.core?.encryptedSha256?.slice(0, 12) || "-"}</small>
+                </div>
+              </div>
+              <div className="systemHealthItem">
+                <Archive size={16} />
+                <div>
+                  <span>{l("Backup Marketplace", "Marketplace backup")}</span>
+                  <strong>{storageHealth?.backups?.marketplace ? `${storageHealth.backups.marketplace.ageHours}h` : "-"}</strong>
+                  <small>{formatBytes(storageHealth?.backups?.marketplace?.encryptedBytes)} · {storageHealth?.backups?.marketplace?.encryptedSha256?.slice(0, 12) || "-"}</small>
+                </div>
+              </div>
+              <div className="systemHealthItem">
+                <Gauge size={16} />
+                <div>
+                  <span>{l("Ổ đĩa VPS", "VPS disk")}</span>
+                  <strong>{storageHealth?.disk?.usagePercent != null ? `${storageHealth.disk.usagePercent}%` : "-"}</strong>
+                  <small>{formatBytes(storageHealth?.disk?.availableBytes)} {l("còn trống", "available")}</small>
+                </div>
+              </div>
+              <div className="systemHealthItem">
+                <RotateCcw size={16} />
+                <div>
+                  <span>Restore drill</span>
+                  <strong>{storageHealth?.backups?.restoreDrill ? `${storageHealth.backups.restoreDrill.ageHours}h` : l("Chưa chạy", "Not run")}</strong>
+                  <small>{l("Khôi phục vào DB tách biệt", "Restored into an isolated DB")}</small>
+                </div>
+              </div>
+            </div>
+            {!!storageHealth?.alerts?.length && (
+              <div className="storageAlertList">
+                {storageHealth.alerts.map((alert) => (
+                  <span key={alert.code}><AlertTriangle size={14} /> {alert.message}</span>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="revenueChartPanel">

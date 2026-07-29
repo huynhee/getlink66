@@ -5,6 +5,12 @@ let marketplaceConnection = null;
 let marketplaceUsesCore = true;
 let marketplaceDistinct = false;
 
+function configurationError(message) {
+  const error = new Error(message);
+  error.code = "DATABASE_CONFIGURATION_INVALID";
+  return error;
+}
+
 function positiveIntegerEnv(name, fallback) {
   const value = Number(process.env[name] || fallback);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
@@ -36,6 +42,31 @@ async function assertMarketplaceTransactions(connection) {
   if (!hello?.setName && hello?.msg !== "isdbgrid") {
     throw new Error("Marketplace MongoDB must run as a replica set or sharded cluster for transactions.");
   }
+}
+
+export function resolveDatabaseRouting(env = process.env) {
+  const coreUri = String(env.MONGO_CORE_URI || env.MONGO_URI || "").trim();
+  const marketplaceUri = String(env.MONGO_MARKETPLACE_URI || "").trim();
+  const target = String(env.MARKETPLACE_DB_TARGET || (marketplaceUri ? "vps" : "core"))
+    .trim()
+    .toLowerCase();
+  const isTest = env.NODE_ENV === "test";
+
+  if (!["core", "vps"].includes(target)) {
+    throw configurationError("MARKETPLACE_DB_TARGET must be either core or vps.");
+  }
+  if (target === "vps" && !marketplaceUri && !isTest) {
+    throw configurationError(
+      "MONGO_MARKETPLACE_URI is required when MARKETPLACE_DB_TARGET=vps. "
+      + "Set MARKETPLACE_DB_TARGET=core explicitly for a local single-database setup.",
+    );
+  }
+  return {
+    coreUri,
+    marketplaceUri,
+    target,
+    usesCore: target === "core" || (isTest && !marketplaceUri),
+  };
 }
 
 export function mongoConnectionOptions() {
@@ -78,10 +109,10 @@ function marketplaceConnectionOptions() {
 }
 
 export async function connectDb() {
-  const uri = process.env.MONGO_CORE_URI || process.env.MONGO_URI;
-  const marketplaceUri = String(process.env.MONGO_MARKETPLACE_URI || "").trim();
-  const marketplaceTarget = String(process.env.MARKETPLACE_DB_TARGET || "").trim().toLowerCase();
   const canUseMemoryDb = allowMemoryDb();
+  const routing = resolveDatabaseRouting();
+  const uri = routing.coreUri;
+  const marketplaceUri = routing.marketplaceUri;
   if (!uri) {
     if (canUseMemoryDb) {
       useMemoryDb();
@@ -90,14 +121,11 @@ export async function connectDb() {
     }
     throw new Error("MONGO_CORE_URI or MONGO_URI is required");
   }
-  if (process.env.NODE_ENV === "production" && marketplaceTarget === "vps" && !marketplaceUri) {
-    throw new Error("MONGO_MARKETPLACE_URI is required when MARKETPLACE_DB_TARGET=vps in production.");
-  }
 
   mongoose.set("strictQuery", true);
   try {
     await mongoose.connect(uri, mongoConnectionOptions());
-    marketplaceUsesCore = !marketplaceUri || marketplaceTarget === "core";
+    marketplaceUsesCore = routing.usesCore;
     if (marketplaceUsesCore) {
       marketplaceConnection = mongoose.connection;
       marketplaceDistinct = false;
@@ -109,14 +137,14 @@ export async function connectDb() {
       await marketplaceConnection.asPromise();
       marketplaceDistinct = connectionIdentity(marketplaceConnection) !== connectionIdentity(mongoose.connection);
       if (!marketplaceDistinct) {
-        throw new Error("MONGO_CORE_URI and MONGO_MARKETPLACE_URI resolve to the same database.");
+        throw configurationError("MONGO_CORE_URI and MONGO_MARKETPLACE_URI resolve to the same database.");
       }
     }
     await assertMarketplaceTransactions(marketplaceConnection);
     console.log(`MongoDB connected (core + marketplace:${marketplaceUsesCore ? "core" : "vps"})`);
   } catch (error) {
     await closeDbConnections().catch(() => {});
-    if (canUseMemoryDb) {
+    if (canUseMemoryDb && error?.code !== "DATABASE_CONFIGURATION_INVALID") {
       useMemoryDb();
       console.warn(`MongoDB unavailable (${error.code || error.message}). Using in-memory dev database.`);
       return;

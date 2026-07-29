@@ -248,10 +248,29 @@ export async function devLogin(req, res, next) {
   }
 }
 
-export function logout(_req, res) {
-  res.clearCookie("accessToken");
-  res.clearCookie("refreshToken");
-  res.json({ ok: true });
+export async function logout(req, res, next) {
+  const options = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+  };
+
+  // Always clear browser credentials, even when the database is temporarily
+  // unavailable and the server-side session version cannot be advanced.
+  res.clearCookie("accessToken", options);
+  res.clearCookie("refreshToken", options);
+
+  try {
+    if (req.user?._id) {
+      await User.findByIdAndUpdate(req.user._id, {
+        $inc: { sessionVersion: 1 },
+      });
+    }
+    return res.json({ ok: true });
+  } catch (error) {
+    return next(error);
+  }
 }
 
 export async function currentUser(req, res, next) {

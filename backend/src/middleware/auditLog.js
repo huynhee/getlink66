@@ -1,5 +1,6 @@
 import AuditLog from "../models/AuditLog.js";
 import { auditEvent } from "../utils/logger.js";
+import logger from "../utils/logger.js";
 import { hydrateAtlasUserField } from "../utils/crossDatabaseHydration.js";
 
 const SENSITIVE_KEYS = new Set([
@@ -68,7 +69,12 @@ export function auditAdmin(action) {
           statusCode
         };
 
-        AuditLog.create(logEntry).catch(() => {});
+        AuditLog.create(logEntry).catch((error) => {
+          logger.error(
+            { err: error, action, actor: req.user?.email || "", target: logEntry.target },
+            "Failed to persist admin audit log",
+          );
+        });
         auditEvent(action, {
           actor: req.user?.email,
           target: logEntry.target,

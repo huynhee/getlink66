@@ -87,6 +87,7 @@ const marketplaceModelSchema = new mongoose.Schema(
     driveFileId: { type: String, default: "" },
     telegramFileRef: { type: String, default: "" },
     archiveExt: { type: String, default: "zip", trim: true },
+    mainMaxFile: { type: String, default: "", trim: true },
     fileSize: { type: Number, default: 0, min: 0 },
     sha256: { type: String, default: "" },
     metadataDriveFileId: { type: String, default: "", trim: true },

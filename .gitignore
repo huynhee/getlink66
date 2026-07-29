@@ -2,6 +2,9 @@ node_modules/
 .env
 .env.*
 !.env.example
+!.env.production.example
+!backend/.env.production.example
+!frontend/.env.production.example
 dist/
 build/
 .vite-build-check/

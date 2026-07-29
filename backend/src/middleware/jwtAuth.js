@@ -33,8 +33,14 @@ function isValidFingerprint(req, fingerprint) {
 }
 
 function clearAuthCookies(res) {
-  res.clearCookie("accessToken");
-  res.clearCookie("refreshToken");
+  const options = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+  };
+  res.clearCookie("accessToken", options);
+  res.clearCookie("refreshToken", options);
 }
 
 function tokenPayload(payload, tokenType, fp = payload.fp) {
@@ -43,6 +49,7 @@ function tokenPayload(payload, tokenType, fp = payload.fp) {
     is2FAVerified: payload.is2FAVerified,
     fp,
     loginAt: payload.loginAt,
+    sv: Number(payload.sv ?? payload.sessionVersion ?? 0),
     tokenType,
   };
 }
@@ -87,6 +94,10 @@ function verifyToken(token, expectedType) {
   }
 
   return payload;
+}
+
+export function sessionVersionMatches(payload, user) {
+  return Number(payload?.sv ?? 0) === Number(user?.sessionVersion ?? 0);
 }
 
 export async function jwtAuth(req, res, next) {
@@ -141,17 +152,32 @@ export async function jwtAuth(req, res, next) {
       shouldRotateTokens = true;
     }
 
-    if (shouldRotateTokens) {
-      const fp = buildFingerprint(req);
-      setAccessTokenCookie(res, signAccessToken(payload, fp));
-      setRefreshTokenCookie(res, signRefreshToken(payload, fp));
-    }
-
-    req.user = await User.findById(payload.id);
-    if (!req.user) {
+    const user = await User.findById(payload.id);
+    if (!user) {
       clearAuthCookies(res);
       return next();
     }
+    if (!sessionVersionMatches(payload, user)) {
+      securityEvent("SESSION_REVOKED", {
+        userId: payload.id,
+        path: req.path,
+        ip: req.ip,
+      });
+      clearAuthCookies(res);
+      return next();
+    }
+
+    if (shouldRotateTokens) {
+      const fp = buildFingerprint(req);
+      const currentPayload = {
+        ...payload,
+        sv: Number(user.sessionVersion || 0),
+      };
+      setAccessTokenCookie(res, signAccessToken(currentPayload, fp));
+      setRefreshTokenCookie(res, signRefreshToken(currentPayload, fp));
+    }
+
+    req.user = user;
     req.jwtPayload = payload;
 
     // Polyfill req.isAuthenticated() for existing middleware
@@ -172,7 +198,13 @@ export function generateTokens(req, res, user, is2FAVerified = false) {
   // `loginAt`: thoi diem dang nhap that (Google OAuth callback hoac 2FA verify).
   // Carry-over khi refresh access token, dung cho `requireFreshLogin` middleware.
   const loginAt = Math.floor(Date.now() / 1000);
-  const payload = { id: user._id, is2FAVerified, fp, loginAt };
+  const payload = {
+    id: user._id,
+    is2FAVerified,
+    fp,
+    loginAt,
+    sv: Number(user.sessionVersion || 0),
+  };
 
   setAccessTokenCookie(res, signAccessToken(payload, fp));
   setRefreshTokenCookie(res, signRefreshToken(payload, fp));

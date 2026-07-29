@@ -113,8 +113,10 @@ const siteSettingSchema = new mongoose.Schema(
     getlinkRedownloadDays: { type: Number, default: 3 },
     getlinkRedownloadLimit: { type: Number, default: 5 },
     getlinkDetailRetentionDaysAfterExpiry: { type: Number, default: 1, min: 0, max: 3650 },
-    getlinkHistoryRetentionDaysAfterExpiry: { type: Number, default: 730, min: 0, max: 3650 },
-    marketplaceDownloadHistoryRetentionDays: { type: Number, default: 365, min: 0, max: 3650 }
+    getlinkHistoryRetentionDaysAfterExpiry: { type: Number, default: 365, min: 0, max: 3650 },
+    marketplaceDownloadHistoryRetentionDays: { type: Number, default: 365, min: 0, max: 3650 },
+    marketplaceReportHistoryRetentionDays: { type: Number, default: 365, min: 0, max: 3650 },
+    auditLogHistoryRetentionDays: { type: Number, default: 365, min: 0, max: 3650 }
   },
   { timestamps: true }
 );

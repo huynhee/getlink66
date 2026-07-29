@@ -10,6 +10,7 @@ import DailyDownloadQuota from "../models/DailyDownloadQuota.js";
 import DailyImageSearchQuota from "../models/DailyImageSearchQuota.js";
 import SystemLog from "../models/SystemLog.js";
 import AuditLog from "../models/AuditLog.js";
+import MarketplaceReport from "../models/MarketplaceReport.js";
 import { approvePendingTopup } from "../utils/topupApprovalService.js";
 import { approvePendingMembershipOrder, isProActive, nextVietnamReset, normalizeProUntil, vietnamDayKey } from "../utils/membershipService.js";
 import { buildUserTimeline } from "../utils/timelineService.js";
@@ -189,6 +190,9 @@ export async function adminDashboard(req, res, next) {
       readyModels,
       readyScenes,
       sessions,
+      activeMarketplaceReports,
+      reportedModelIds,
+      reportedSceneIds,
       recentSystemLogs,
       recentAuditLogs,
     ] = await Promise.all([
@@ -210,6 +214,9 @@ export async function adminDashboard(req, res, next) {
       MarketplaceModel.countDocuments({ assetType: "model", fileStatus: "ready", ...marketplacePublicDeletionQuery() }),
       MarketplaceModel.countDocuments({ assetType: "scene", fileStatus: "ready", ...marketplacePublicDeletionQuery() }),
       DownloadSession.countDocuments(rangeQuery("createdAt", range)),
+      MarketplaceReport.countDocuments({ isActive: true }),
+      MarketplaceReport.distinct("modelId", { assetType: "model", isActive: true }),
+      MarketplaceReport.distinct("modelId", { assetType: "scene", isActive: true }),
       SystemLog.find().sort({ createdAt: -1 }).limit(8).lean(),
       AuditLog.find().sort({ createdAt: -1 }).limit(8).lean(),
     ]);
@@ -242,6 +249,9 @@ export async function adminDashboard(req, res, next) {
           readyModels,
           readyScenes,
           sessions,
+          activeMarketplaceReports,
+          reportedModels: reportedModelIds.length,
+          reportedScenes: reportedSceneIds.length,
         },
         recentSystemLogs,
         recentAuditLogs,

@@ -25,7 +25,7 @@ export default [
     ],
   },
   {
-    files: ["backend/**/*.js"],
+    files: ["backend/**/*.js", "scripts/**/*.js"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",

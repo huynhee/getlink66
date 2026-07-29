@@ -15,6 +15,7 @@ import Admin from "./pages/Admin.jsx";
 import Guide from "./pages/Guide.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
+import PluginAccess from "./pages/PluginAccess.jsx";
 import { GetlinkJobProvider, useGetlinkJob } from "./contexts/GetlinkJobContext.jsx";
 import { getInitialLanguage, setStoredLanguage, translations } from "./i18n.js";
 import "./styles.css";
@@ -176,6 +177,9 @@ function pageFromPath(pathname) {
   if (cleanPath === "/guide") return "guide";
   if (cleanPath === "/privacy" || cleanPath === "/chinh-sach-bao-mat") return "privacy";
   if (cleanPath === "/terms" || cleanPath === "/dieu-khoan-su-dung") return "terms";
+  if (cleanPath === "/plugin/activate") return "pluginActivate";
+  if (cleanPath === "/plugin/sessions") return "pluginSessions";
+  if (cleanPath === "/plugin/challenge") return "pluginChallenge";
   if (cleanPath === "/") return "";
   return "getlink";
 }
@@ -348,12 +352,15 @@ function App() {
       <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
       <FacebookGroupBanner language={language} />
       <main className={`shell shell-${page || "getlink"}`}>
-        {!user && !["guide", "privacy", "terms", "models", "scenes"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />}
+        {!user && !["guide", "privacy", "terms", "models", "scenes"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo={path || "/"} language={language} />}
         {page === "models" && <Models user={user} language={language} path={path} onNavigate={navigate} onUserChange={setUser} />}
         {page === "scenes" && <Scenes user={user} language={language} path={path} onNavigate={navigate} onUserChange={setUser} />}
         {page === "guide" && <Guide language={language} />}
         {page === "privacy" && <Privacy language={language} />}
         {page === "terms" && <Terms language={language} />}
+        {user && page === "pluginActivate" && <PluginAccess language={language} mode="activate" />}
+        {user && page === "pluginSessions" && <PluginAccess language={language} mode="sessions" />}
+        {user && page === "pluginChallenge" && <PluginAccess language={language} mode="challenge" />}
         {user && page === "getlink" && <Home user={user} onUserChange={setUser} language={language} />}
         {user && page === "topup" && <Topup user={user} onUserChange={setUser} language={language} />}
         {user && page === "membership" && <Membership user={user} onUserChange={setUser} language={language} />}

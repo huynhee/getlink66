@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 import Getlink from "../models/Getlink.js";
+import AuditLog from "../models/AuditLog.js";
 import HistoryArchiveManifest from "../models/HistoryArchiveManifest.js";
+import MarketplaceReport from "../models/MarketplaceReport.js";
 import ModelDownload from "../models/ModelDownload.js";
 import SiteSetting from "../models/SiteSetting.js";
 import {
@@ -23,9 +25,16 @@ function plainRecord(record) {
 }
 
 function periodFor(kind, record, redownloadDays = 3) {
-  const sourceDate = kind === "getlink"
-    ? new Date(new Date(record.createdAt).getTime() + redownloadDays * DAY_MS)
-    : new Date(record.downloadedAt || record.createdAt);
+  let sourceDate;
+  if (kind === "getlink") {
+    sourceDate = new Date(new Date(record.createdAt).getTime() + redownloadDays * DAY_MS);
+  } else if (kind === "marketplace-download") {
+    sourceDate = new Date(record.downloadedAt || record.createdAt);
+  } else if (kind === "marketplace-report") {
+    sourceDate = new Date(record.resolvedAt || record.updatedAt || record.createdAt);
+  } else {
+    sourceDate = new Date(record.createdAt);
+  }
   return Number.isNaN(sourceDate.getTime()) ? "unknown" : sourceDate.toISOString().slice(0, 7);
 }
 
@@ -77,7 +86,14 @@ async function defaultArchiveWriter({ kind, period, batchKey, gzip, checksum, re
 
 async function deleteArchivedRecords(kind, recordIds) {
   if (!recordIds.length) return 0;
-  const model = kind === "getlink" ? Getlink : ModelDownload;
+  const models = {
+    getlink: Getlink,
+    "marketplace-download": ModelDownload,
+    "marketplace-report": MarketplaceReport,
+    "audit-log": AuditLog,
+  };
+  const model = models[kind];
+  if (!model) throw new Error(`Unsupported history archive kind: ${kind}`);
   const result = await model.deleteMany({ _id: { $in: recordIds } });
   return Number(result.deletedCount || 0);
 }
@@ -194,8 +210,10 @@ async function retentionSettings() {
   return {
     redownloadDays: Math.max(1, Number(settings?.getlinkRedownloadDays || 3)),
     detailDays: Math.max(0, Number(settings?.getlinkDetailRetentionDaysAfterExpiry ?? 1)),
-    getlinkDays: Math.max(0, Number(settings?.getlinkHistoryRetentionDaysAfterExpiry ?? 730)),
+    getlinkDays: Math.max(0, Number(settings?.getlinkHistoryRetentionDaysAfterExpiry ?? 365)),
     marketplaceDays: Math.max(0, Number(settings?.marketplaceDownloadHistoryRetentionDays ?? 365)),
+    reportDays: Math.max(0, Number(settings?.marketplaceReportHistoryRetentionDays ?? 365)),
+    auditDays: Math.max(0, Number(settings?.auditLogHistoryRetentionDays ?? 365)),
   };
 }
 
@@ -243,5 +261,30 @@ export async function runHistoryRetentionCycle({ now = new Date(), batchSize = 5
       marketplace = await archiveHistoryRecords({ kind: "marketplace-download", records, archiveWriter });
     }
   }
-  return { settings, resumed, detailsPurged, getlink, marketplace };
+  let reports = { archived: 0, deleted: 0, skipped: true };
+  if (settings.reportDays > 0) {
+    const cutoff = new Date(now.getTime() - settings.reportDays * DAY_MS);
+    const records = await MarketplaceReport.find({
+      isActive: false,
+      resolvedAt: { $lte: cutoff },
+    })
+      .sort({ resolvedAt: 1 })
+      .limit(safeBatchSize)
+      .lean();
+    if (records.length) {
+      reports = await archiveHistoryRecords({ kind: "marketplace-report", records, archiveWriter });
+    }
+  }
+  let audit = { archived: 0, deleted: 0, skipped: true };
+  if (settings.auditDays > 0) {
+    const cutoff = new Date(now.getTime() - settings.auditDays * DAY_MS);
+    const records = await AuditLog.find({ createdAt: { $lte: cutoff } })
+      .sort({ createdAt: 1 })
+      .limit(safeBatchSize)
+      .lean();
+    if (records.length) {
+      audit = await archiveHistoryRecords({ kind: "audit-log", records, archiveWriter });
+    }
+  }
+  return { settings, resumed, detailsPurged, getlink, marketplace, reports, audit };
 }

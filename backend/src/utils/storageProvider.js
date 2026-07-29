@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 function localRoot() {
   return String(process.env.MARKETPLACE_LOCAL_STORAGE_ROOT || "").trim();
@@ -414,6 +415,65 @@ export async function createGoogleDriveFile({ folderId, fileName, content, conte
     body,
   });
   return googleDriveJson(response, "file create");
+}
+
+export async function createGoogleDriveFileFromPath({
+  folderId,
+  fileName,
+  filePath,
+  contentType = "application/octet-stream",
+} = {}) {
+  assertGoogleDriveWriteEnabled();
+  const normalizedFolderId = String(folderId || "").trim();
+  const normalizedPath = path.resolve(String(filePath || ""));
+  if (!normalizedFolderId || !filePath || !fs.existsSync(normalizedPath)) {
+    const error = new Error("Google Drive parent folder and existing local file are required.");
+    error.status = 400;
+    throw error;
+  }
+  const size = fs.statSync(normalizedPath).size;
+  const sessionUrl = new URL("https://www.googleapis.com/upload/drive/v3/files");
+  sessionUrl.searchParams.set("uploadType", "resumable");
+  sessionUrl.searchParams.set("supportsAllDrives", "true");
+  sessionUrl.searchParams.set("fields", "id,name,mimeType,size,modifiedTime,version,parents,driveId");
+  const sessionResponse = await fetchGoogleDrive(sessionUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-upload-content-type": contentType,
+      "x-upload-content-length": String(size),
+    },
+    body: JSON.stringify({
+      name: String(fileName || path.basename(normalizedPath)).trim(),
+      parents: [normalizedFolderId],
+    }),
+  });
+  if (!sessionResponse.ok) return googleDriveJson(sessionResponse, "resumable upload session");
+  const uploadUrl = sessionResponse.headers.get("location");
+  if (!uploadUrl) throw new Error("Google Drive did not return a resumable upload URL.");
+  const uploadResponse = await fetchGoogleDrive(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "content-type": contentType,
+      "content-length": String(size),
+    },
+    body: fs.createReadStream(normalizedPath),
+    duplex: "half",
+  });
+  return googleDriveJson(uploadResponse, "resumable file upload");
+}
+
+export async function downloadGoogleDriveFileToPath(fileId, targetPath) {
+  const normalizedTarget = path.resolve(String(targetPath || ""));
+  if (!targetPath) throw new Error("Download target path is required.");
+  await fs.promises.mkdir(path.dirname(normalizedTarget), { recursive: true });
+  const file = await openGoogleDriveFileStream(fileId, path.basename(normalizedTarget));
+  await pipeline(file.stream, fs.createWriteStream(normalizedTarget, { flags: "wx" }));
+  return {
+    filePath: normalizedTarget,
+    size: fs.statSync(normalizedTarget).size,
+    contentType: file.contentType,
+  };
 }
 
 export async function createGoogleDriveFolder({ parentFolderId, name } = {}) {

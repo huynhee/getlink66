@@ -90,6 +90,11 @@ docker build --build-arg VITE_API_URL=https://api.example.com -t get-link-3d66-f
 ## E. Staging validation
 
 - [ ] `/health` tra 200 va `/ready` tra 200 khi Mongo connected.
+- [ ] `MARKETPLACE_DB_TARGET=vps`; Core/VPS khac database va VPS `rs.status().ok == 1`.
+- [ ] `npm run backup:databases` va `npm run backup:verify` thanh cong truoc migration/deploy.
+- [ ] Bat bon timer trong `ops/systemd`; web dat `HISTORY_RETENTION_JOB_ENABLED=false`.
+- [ ] `npm run storage:status` khong co alert critical; backup Core/VPS duoi 26 gio.
+- [ ] Restore drill gan nhat dung database tach biet va hoan tat duoi 24 gio.
 - [ ] Rut ket noi DB co kiem so: `/ready` tra 503; ket noi lai thi tra 200.
 - [ ] Gui SIGTERM tren Linux/container: instance ngung ready/nhan request, dong HTTP/browser/proxy/Mongo trong 30 giay.
 - [ ] Google login dung state thanh cong; callback thieu/sai/replay state bi tu choi.

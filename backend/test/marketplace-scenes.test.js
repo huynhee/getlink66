@@ -50,7 +50,7 @@ async function createAsset(assetType = "scene") {
   });
 }
 
-test("scene metadata v3 accepts only the scene vocabulary and requires checksum", () => {
+test("scene metadata v3 allows empty optional facets, validates values and requires checksum", () => {
   const sha256 = "a".repeat(64);
   const valid = marketplaceMetadataDocument({
     assetType: "scene",
@@ -84,10 +84,22 @@ test("scene metadata v3 accepts only the scene vocabulary and requires checksum"
     renderers: ["unknown-renderer"],
     styles: ["unknown-style"],
   });
-  assert.ok(invalid.errors.some((error) => error.field === "renderer"));
   assert.ok(invalid.errors.some((error) => error.field === "render"));
   assert.ok(invalid.errors.some((error) => error.field === "style"));
   assert.ok(invalid.errors.some((error) => error.field === "sha256"));
+
+  const emptyOptionalFacets = marketplaceMetadataDocument({
+    assetType: "scene",
+    sourceAssetId: "scene-000003",
+    title: "Unclassified Scene",
+    sourceCategoryId: "living-room",
+    accessType: "free",
+    renderer: "",
+    renderers: [],
+    styles: [],
+    sha256,
+  });
+  assert.deepEqual(emptyOptionalFacets.errors, []);
 });
 
 test("an unauthenticated visitor cannot create a Scene download session", async () => {

@@ -1,0 +1,15 @@
+[Unit]
+Description=Verify latest 3DIPL Drive database backups
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=3dipl
+Group=3dipl
+WorkingDirectory=/opt/3dipl
+EnvironmentFile=/etc/3dipl/backend.env
+ExecStart=/usr/bin/npm run backup:verify
+Nice=10
+PrivateTmp=true
+NoNewPrivileges=true

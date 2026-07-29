@@ -1,0 +1,11 @@
+[Unit]
+Description=Run 3DIPL marketplace VPS backup daily
+
+[Timer]
+OnCalendar=*-*-* 01:30:00 Asia/Ho_Chi_Minh
+Persistent=true
+RandomizedDelaySec=120
+Unit=3dipl-backup-marketplace.service
+
+[Install]
+WantedBy=timers.target

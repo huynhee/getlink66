@@ -4,7 +4,12 @@ import { marketplaceModel } from "../config/modelFactory.js";
 
 const historyArchiveManifestSchema = new mongoose.Schema(
   {
-    kind: { type: String, enum: ["getlink", "marketplace-download"], required: true, index: true },
+    kind: {
+      type: String,
+      enum: ["getlink", "marketplace-download", "marketplace-report", "audit-log"],
+      required: true,
+      index: true,
+    },
     batchKey: { type: String, required: true, unique: true },
     period: { type: String, required: true, index: true },
     recordIds: { type: [String], default: [] },
