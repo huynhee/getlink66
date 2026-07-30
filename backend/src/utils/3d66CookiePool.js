@@ -170,6 +170,20 @@ export function isSwitchable3D66Error(error) {
 
   if ([401, 403, 419].includes(status)) return true;
   if (status === 400 && text.includes("cookie")) return true;
+  if (
+    [408, 504].includes(status) ||
+    [
+      "browser navigation timed out",
+      "page.goto: timeout",
+      "request timed out",
+      "etimedout",
+      "econnreset",
+      "econnrefused",
+      "socket hang up",
+    ].some((pattern) => text.includes(pattern))
+  ) {
+    return false;
+  }
 
   return [
     "cookie",

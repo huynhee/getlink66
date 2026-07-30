@@ -84,12 +84,12 @@ function footprintRefreshDelayMs() {
 }
 
 function navigationRetries() {
-  const value = numberEnv("THREED66_BROWSER_NAV_RETRIES", 2);
-  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 2;
+  const value = numberEnv("THREED66_BROWSER_NAV_RETRIES", 3);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 3;
 }
 
 function retryDelayMs(attempt) {
-  return numberEnv("THREED66_BROWSER_RETRY_DELAY_MS", 1200) * attempt;
+  return numberEnv("THREED66_BROWSER_RETRY_DELAY_MS", 1500) * attempt;
 }
 
 function shouldBlockAssets() {
@@ -402,15 +402,28 @@ async function goto3D66Page(page, url) {
     } catch (error) {
       lastError = error;
       if (attempt >= attempts) break;
+      await page
+        .goto("about:blank", {
+          waitUntil: "commit",
+          timeout: 5000,
+        })
+        .catch(() => {});
       await page.waitForTimeout(retryDelayMs(attempt)).catch(() => {});
     }
   }
 
   const error = new Error(
-    `3D66 browser navigation timed out after ${attempts} attempts. 3D66 may be slow, blocking this server, or the cookie/session needs refresh. ${lastError?.message || ""}`.trim(),
+    `3D66 browser navigation timed out after ${attempts} attempts. The 3D66 page did not respond in time. ${lastError?.message || ""}`.trim(),
   );
   error.status = lastError?.status || 504;
   error.cause = lastError;
+  error.details = {
+    stage: "browser-navigation",
+    attempts,
+    requestedUrl: cleanUrl,
+    currentUrl: page.url(),
+    lastError: String(lastError?.message || ""),
+  };
   throw error;
 }
 

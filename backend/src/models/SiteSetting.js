@@ -105,6 +105,8 @@ const siteSettingSchema = new mongoose.Schema(
     threed66ProxyForBrowser: { type: Boolean, default: false },
     threed66ProxyFailClosed: { type: Boolean, default: false },
     threed66TimeoutMs: { type: Number, default: 30000 },
+    threed66BrowserNavRetries: { type: Number, default: 3 },
+    threed66BrowserRetryDelayMs: { type: Number, default: 1500 },
     threed66CookieMaxFailures: { type: Number, default: 2 },
     threed66CookieCooldownMinutes: { type: Number, default: 30 },
     maxGlobalDownloads: { type: Number, default: 20 },

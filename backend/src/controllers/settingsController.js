@@ -137,6 +137,18 @@ const RUNTIME_NUMBER_FIELDS = {
     max: 120000,
     fallback: 30000,
   },
+  threed66BrowserNavRetries: {
+    env: "THREED66_BROWSER_NAV_RETRIES",
+    min: 1,
+    max: 5,
+    fallback: 3,
+  },
+  threed66BrowserRetryDelayMs: {
+    env: "THREED66_BROWSER_RETRY_DELAY_MS",
+    min: 0,
+    max: 10000,
+    fallback: 1500,
+  },
   threed66CookieMaxFailures: {
     env: "THREED66_COOKIE_MAX_FAILURES",
     min: 1,
@@ -230,6 +242,12 @@ const defaultSettings = {
   threed66ProxyForBrowser: RUNTIME_BOOLEAN_FIELDS.threed66ProxyForBrowser.fallback,
   threed66ProxyFailClosed: RUNTIME_BOOLEAN_FIELDS.threed66ProxyFailClosed.fallback,
   threed66TimeoutMs: Number(process.env.THREED66_TIMEOUT_MS || 30000),
+  threed66BrowserNavRetries: Number(
+    process.env.THREED66_BROWSER_NAV_RETRIES || 3,
+  ),
+  threed66BrowserRetryDelayMs: Number(
+    process.env.THREED66_BROWSER_RETRY_DELAY_MS || 1500,
+  ),
   threed66CookieMaxFailures: Number(process.env.THREED66_COOKIE_MAX_FAILURES || 2),
   threed66CookieCooldownMinutes: Math.round(Number(process.env.THREED66_COOKIE_COOLDOWN_MS || 1800000) / 60000),
   maxGlobalDownloads: Number(process.env.MAX_GLOBAL_DOWNLOADS || 20),
@@ -547,6 +565,8 @@ export async function updateSettings(req, res, next) {
       "threed66ProxyForBrowser",
       "threed66ProxyFailClosed",
       "threed66TimeoutMs",
+      "threed66BrowserNavRetries",
+      "threed66BrowserRetryDelayMs",
       "threed66CookieMaxFailures",
       "threed66CookieCooldownMinutes",
       "maxGlobalDownloads",
