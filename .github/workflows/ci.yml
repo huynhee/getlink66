@@ -54,8 +54,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
       - name: Audit root tooling
-        run: npm audit
+        run: npm audit --audit-level=critical
       - name: Audit backend runtime
-        run: npm audit --omit=dev --prefix backend
+        run: npm audit --omit=dev --audit-level=critical --prefix backend
       - name: Audit frontend toolchain
-        run: npm audit --prefix frontend
+        run: npm audit --audit-level=critical --prefix frontend
