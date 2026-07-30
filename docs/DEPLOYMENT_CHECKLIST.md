@@ -48,6 +48,8 @@ Cau hinh bien moi truong: `docs/ENV_CONFIGURATION.md`.
 - [ ] `MARKETPLACE_DB_TARGET=vps` va `MONGO_MARKETPLACE_TRANSACTIONS_REQUIRED=true`.
 - [ ] Drive OAuth hien `Automatic refresh: yes`; khong phu thuoc access token tam.
 - [ ] Root folder Model, Scene va history archive da co ID va tai khoan Drive co quyen Editor.
+- [ ] Volume `/var/lib/3dipl/media/covers` duoc backend mount read-write, Nginx mount read-only va con it nhat 30 GB.
+- [ ] `MARKETPLACE_COVER_CACHE_ENABLED=true`; worker cover bat va Nginx tra `/media/covers/*` voi immutable cache.
 - [ ] `GOOGLE_CLIENT_ID`, callback `/api/auth/google/callback` va allowed origin khop staging/prod.
 - [ ] SePay environment, merchant, success/error/cancel URL va IPN `/api/payments/sepay/ipn` khop moi truong.
 - [ ] 3D66 cookie/proxy duoc nap tu secret store; khong dua gia tri vao ticket/checklist.
@@ -94,6 +96,7 @@ docker build --build-arg VITE_API_URL=https://api.example.com -t get-link-3d66-f
 - [ ] `npm run backup:databases` va `npm run backup:verify` thanh cong truoc migration/deploy.
 - [ ] Bat bon timer trong `ops/systemd`; web dat `HISTORY_RETENTION_JOB_ENABLED=false`.
 - [ ] `npm run storage:status` khong co alert critical; backup Core/VPS duoi 26 gio.
+- [ ] `npm run marketplace:covers:dry-run`, backfill va verify cover cache khong con file ready bi thieu/hong.
 - [ ] Restore drill gan nhat dung database tach biet va hoan tat duoi 24 gio.
 - [ ] Rut ket noi DB co kiem so: `/ready` tra 503; ket noi lai thi tra 200.
 - [ ] Gui SIGTERM tren Linux/container: instance ngung ready/nhan request, dong HTTP/browser/proxy/Mongo trong 30 giay.

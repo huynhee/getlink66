@@ -20,6 +20,7 @@ import {
 } from "./marketplaceMetadata.js";
 import { marketplaceAssetTypeFilter, normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { resolveMarketplaceCategory, validateMarketplaceTaxonomy } from "./marketplaceTaxonomy.js";
+import { queueMarketplaceCoverCache } from "./marketplaceCoverCache.js";
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
@@ -119,6 +120,8 @@ function pickPreviews(images = [], cover = null, assetType = "model") {
 function imageRef(file, alt = "") {
   return file ? {
     driveFileId: clean(file.id, 160),
+    driveVersion: clean(file.version, 80),
+    modifiedTime: file.modifiedTime ? new Date(file.modifiedTime) : null,
     fileName: clean(file.name, 240),
     width: Math.max(0, Math.round(Number(file.imageMediaMetadata?.width || 0))),
     height: Math.max(0, Math.round(Number(file.imageMediaMetadata?.height || 0))),
@@ -301,9 +304,10 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
   let existing = await findModelForFolder(folder, {}, normalizedType);
   assertMarketplaceAssetSyncable(existing);
   if (!force && existing?.driveSignature === signature) {
-    const model = await MarketplaceModel.findByIdAndUpdate(existing._id, {
+    let model = await MarketplaceModel.findByIdAndUpdate(existing._id, {
       $set: { lastDriveScanAt: new Date(), "source.syncedAt": new Date() },
     }, { new: true });
+    model = await queueMarketplaceCoverCache(model, model.coverImage);
     return { model, action: "unchanged", changed: false, scannedFiles: files.length, previewCount: model.previewImages?.length || 0 };
   }
 
@@ -440,13 +444,14 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     );
   }
   const query = existing?._id ? { _id: existing._id } : { assetType: normalizedType, "source.provider": "drive", "source.modelId": folderId };
-  const model = await MarketplaceModel.findOneAndUpdate(query, {
+  let model = await MarketplaceModel.findOneAndUpdate(query, {
     $set: payload,
     $unset: {
       "source.raw": "", "source.url": "", formats: "", format: "", version: "", polygons: "",
       fileName: "", mainMaxFile: "", description: "", tags: "", creditPrice: "", sizeText: "",
     },
   }, { upsert: true, new: true, setDefaultsOnInsert: true });
+  model = await queueMarketplaceCoverCache(model, model.coverImage);
   return {
     model,
     action: existing?._id ? "updated" : "created",

@@ -68,14 +68,14 @@ const FILTER_TITLES_VI = {
 };
 
 function cover(model = {}) {
-  const image = model.previewImages?.[0] || model.coverImage;
+  const image = model.coverImage || model.previewImages?.[0];
   const url = image?.cachedUrl || image?.url || "";
-  return url.startsWith("/api/") ? buildApiUrl(url) : url;
+  return url.startsWith("/") ? buildApiUrl(url) : url;
 }
 
 function previewImageSrc(image = {}) {
   const url = image.cachedUrl || image.url || "";
-  return url.startsWith("/api/") ? buildApiUrl(url) : url;
+  return url.startsWith("/") ? buildApiUrl(url) : url;
 }
 
 function formatBytes(value) {

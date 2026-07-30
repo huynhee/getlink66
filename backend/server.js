@@ -168,10 +168,13 @@ const { initializeMarketplaceCategories } = await import("./src/utils/marketplac
 const { ensureMarketplaceAssetMigration } = await import("./src/utils/marketplaceMigration.js");
 const { initializeMembershipPlans } = await import("./src/utils/membershipService.js");
 const { startMarketplaceDriveSyncJob, stopMarketplaceDriveSyncJob } = await import("./src/utils/marketplaceDriveSyncJob.js");
+const { startMarketplaceDriveReconcileJob, stopMarketplaceDriveReconcileJob } = await import("./src/utils/marketplaceDriveReconcileJob.js");
 const { startMarketplaceDiscoverySyncJob, stopMarketplaceDiscoverySyncJob } = await import("./src/utils/marketplaceDiscoverySyncJob.js");
 const { startMarketplaceSearchIndexJob, stopMarketplaceSearchIndexJob } = await import("./src/utils/marketplaceSearchIndexJob.js");
 const { startMarketplaceQuotaGrantJob, stopMarketplaceQuotaGrantJob } = await import("./src/utils/marketplaceQuotaGrantJob.js");
 const { startMarketplaceDeletionJob, stopMarketplaceDeletionJob } = await import("./src/utils/marketplaceDeletionJob.js");
+const { startMarketplaceCoverCacheJob, stopMarketplaceCoverCacheJob } = await import("./src/utils/marketplaceCoverCacheJob.js");
+const { marketplaceCoverCacheConfig } = await import("./src/utils/marketplaceCoverCache.js");
 const { startHistoryRetentionJob, stopHistoryRetentionJob } = await import("./src/utils/historyRetentionJob.js");
 const { startStorageHealthJob, stopStorageHealthJob } = await import("./src/utils/storageHealthJob.js");
 const { startGetlinkJobWorker, stopGetlinkJobWorker } = await import("./src/utils/getlinkJobService.js");
@@ -197,10 +200,12 @@ await initializeSettings();
 await initializeMarketplaceCategories();
 await initializeMembershipPlans();
 startMarketplaceDriveSyncJob();
+startMarketplaceDriveReconcileJob();
 startMarketplaceDiscoverySyncJob();
 startMarketplaceSearchIndexJob();
 startMarketplaceQuotaGrantJob();
 startMarketplaceDeletionJob();
+startMarketplaceCoverCacheJob();
 startHistoryRetentionJob();
 startStorageHealthJob();
 startGetlinkJobWorker();
@@ -214,6 +219,24 @@ app.use((_, res, next) => {
   res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
   next();
 });
+
+const coverCacheConfig = marketplaceCoverCacheConfig();
+if (coverCacheConfig.enabled) {
+  app.use(
+    coverCacheConfig.publicBaseUrl,
+    express.static(coverCacheConfig.root, {
+      dotfiles: "deny",
+      fallthrough: true,
+      immutable: true,
+      maxAge: "1y",
+      setHeaders(res) {
+        res.setHeader("cache-control", "public, max-age=31536000, immutable");
+        res.setHeader("cross-origin-resource-policy", "cross-origin");
+        res.setHeader("x-content-type-options", "nosniff");
+      },
+    }),
+  );
+}
 
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "1mb" }));
 app.use(
@@ -391,10 +414,12 @@ async function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   stopMarketplaceDriveSyncJob();
+  stopMarketplaceDriveReconcileJob();
   stopMarketplaceDiscoverySyncJob();
   stopMarketplaceSearchIndexJob();
   stopMarketplaceQuotaGrantJob();
   stopMarketplaceDeletionJob();
+  stopMarketplaceCoverCacheJob();
   stopHistoryRetentionJob();
   stopStorageHealthJob();
   const getlinkWorkerStop = stopGetlinkJobWorker({ timeoutMs: 25_000 });

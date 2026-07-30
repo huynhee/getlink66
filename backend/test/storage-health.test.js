@@ -89,3 +89,14 @@ test("storage alerts clear an older backup failure after a newer verified run", 
   });
   assert.ok(!evaluateStorageAlerts(snapshot).some((alert) => alert.code === "BACKUP_FAILED"));
 });
+
+test("storage alerts expose failed cover cache jobs without making storage unhealthy", () => {
+  const snapshot = healthySnapshot({
+    coverCache: {
+      counts: { ready: 120, queued: 4, error: 2 },
+      diskBytes: 8_000_000,
+    },
+  });
+  const alerts = evaluateStorageAlerts(snapshot);
+  assert.ok(alerts.some((alert) => alert.code === "COVER_CACHE_FAILED" && alert.severity === "warning"));
+});

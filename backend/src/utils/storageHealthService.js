@@ -13,6 +13,7 @@ import {
   getGoogleDriveAuthStatus,
   getGoogleDriveFileMetadata,
 } from "./storageProvider.js";
+import { marketplaceCoverCacheStats } from "./marketplaceCoverCache.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -211,6 +212,13 @@ export function evaluateStorageAlerts(snapshot, now = new Date()) {
   if (finiteNumber(snapshot.workers?.archiveErrors) > 0) {
     alerts.push({ code: "HISTORY_ARCHIVE_ERROR", severity: "error", message: `${snapshot.workers.archiveErrors} history archive batches failed.` });
   }
+  if (finiteNumber(snapshot.coverCache?.counts?.error) > 0) {
+    alerts.push({
+      code: "COVER_CACHE_FAILED",
+      severity: "warning",
+      message: `${snapshot.coverCache.counts.error} cover cache jobs failed.`,
+    });
+  }
   if (snapshot.workers?.queryError) {
     alerts.push({
       code: "STORAGE_MONITOR_QUERY_ERROR",
@@ -240,7 +248,7 @@ export async function buildStorageHealthSnapshot({ verifyDrive = true } = {}) {
       };
     }
   };
-  const [core, marketplace, disk, backups, drive, pending, processing, failed, archiveErrors, states] = await Promise.all([
+  const [core, marketplace, disk, backups, drive, coverCache, pending, processing, failed, archiveErrors, states] = await Promise.all([
     databaseSnapshot(coreDbConnection(), atlasLimit),
     databaseSnapshot(marketplaceDbConnection()),
     diskSnapshot(),
@@ -249,6 +257,11 @@ export async function buildStorageHealthSnapshot({ verifyDrive = true } = {}) {
       auth: { mode: "missing" },
       foldersConfigured: false,
       verified: false,
+    }),
+    safe(() => marketplaceCoverCacheStats(), {
+      config: { enabled: false, workerEnabled: false },
+      counts: {},
+      diskBytes: 0,
     }),
     safe(() => MarketplaceDriveChange.countDocuments({ status: "pending" }), { value: null }),
     safe(() => MarketplaceDriveChange.countDocuments({ status: "processing" }), { value: null }),
@@ -280,6 +293,7 @@ export async function buildStorageHealthSnapshot({ verifyDrive = true } = {}) {
     disk,
     backups,
     drive,
+    coverCache,
     workers: {
       drivePending: countValue(pending),
       driveProcessing: countValue(processing),

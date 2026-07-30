@@ -1707,6 +1707,24 @@ export default function Admin({ user, language = "vi" }) {
                 </div>
               </div>
               <div className="systemHealthItem">
+                <Package size={16} />
+                <div>
+                  <span>{l("Cache ảnh cover", "Cover cache")}</span>
+                  <strong>
+                    {Number(storageHealth?.coverCache?.counts?.ready || 0).toLocaleString()}
+                    {" / "}
+                    {Object.values(storageHealth?.coverCache?.counts || {}).reduce((sum, value) => sum + Number(value || 0), 0).toLocaleString()}
+                  </strong>
+                  <small>
+                    {formatBytes(storageHealth?.coverCache?.diskBytes)}
+                    {" · "}
+                    {Number(storageHealth?.coverCache?.counts?.queued || 0).toLocaleString()} {l("đang chờ", "queued")}
+                    {" · "}
+                    {Number(storageHealth?.coverCache?.counts?.error || 0).toLocaleString()} {l("lỗi", "errors")}
+                  </small>
+                </div>
+              </div>
+              <div className="systemHealthItem">
                 <RotateCcw size={16} />
                 <div>
                   <span>Restore drill</span>

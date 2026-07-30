@@ -152,7 +152,53 @@ Chi sau khi `drive:check`, metadata dry-run va backup deu dung moi bat:
 ```env
 MARKETPLACE_DRIVE_WRITE_ENABLED=true
 MARKETPLACE_DRIVE_CHANGES_ENABLED=true
+MARKETPLACE_DRIVE_RECONCILE_WORKER_ENABLED=true
+MARKETPLACE_DRIVE_RECONCILE_INTERVAL_MS=2000
 ```
+
+Full reconciliation duoc khoi dong tu Admin va tu dong noi cac batch 1-200
+folder. Checkpoint, tong so da quet va loi duoc luu trong Mongo, nen reload UI
+hoac restart backend khong lam mat tien do. Changes API tam dung trong khi full
+reconciliation dang `queued/running` va tiep tuc sau khi job hoan tat.
+
+### Cache cover tren VPS
+
+Drive van la nguon anh goc. Backend tao WebP 480x480 tai volume ben vung, Nginx
+doc cung volume de phuc vu catalog ma khong goi Drive cho moi cover:
+
+```env
+MARKETPLACE_COVER_CACHE_ENABLED=true
+MARKETPLACE_COVER_CACHE_DIR=/var/lib/3dipl/media/covers
+MARKETPLACE_COVER_PUBLIC_BASE_URL=/media/covers
+MARKETPLACE_COVER_SIZE=480
+MARKETPLACE_COVER_WEBP_QUALITY=80
+MARKETPLACE_COVER_WORKER_ENABLED=true
+MARKETPLACE_COVER_WORKER_CONCURRENCY=4
+```
+
+Backend mount volume voi quyen doc/ghi, Nginx mount cung thu muc read-only. Sau
+khi deploy, queue cover cu va theo doi den khi `ready`:
+
+```bash
+npm run marketplace:covers:dry-run
+npm run marketplace:covers:backfill
+npm run marketplace:covers:verify
+```
+
+Backfill co checkpoint va website van fallback sang Drive trong luc worker chay.
+Khong backup thu muc cache; khi thay VPS co the tao lai tu Drive.
+
+Nginx phai serve `/media/covers/` tu cung volume voi cache header immutable mot
+nam. Neu backend/frontend chay container rieng, mount volume read-write vao
+backend va read-only vao Nginx. Tren Cloudflare tao Cache Rule:
+
+```text
+(http.host in {"3dipl.org" "www.3dipl.org"}
+ and starts_with(http.request.uri.path, "/media/covers/"))
+```
+
+Dat `Cache eligibility = Eligible for cache`, `Edge TTL = 1 year` va de Browser
+TTL ton trong header origin. Khong dat Cache Everything cho `/api`.
 
 ## 6. Download va Turnstile
 

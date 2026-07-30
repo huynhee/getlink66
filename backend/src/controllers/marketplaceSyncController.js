@@ -5,6 +5,11 @@ import {
 } from "../utils/marketplaceDriveSyncJob.js";
 import MarketplaceDriveChange from "../models/MarketplaceDriveChange.js";
 import { rejectUnknownKeys } from "../utils/validators.js";
+import {
+  cancelMarketplaceDriveReconciliation,
+  queueMarketplaceDriveReconciliation,
+  runMarketplaceDriveReconcileTick,
+} from "../utils/marketplaceDriveReconcileJob.js";
 
 export async function adminMarketplaceDriveSyncState(req, res, next) {
   try {
@@ -51,5 +56,48 @@ export async function adminRunMarketplaceDriveSync(req, res, next) {
     });
   } catch (error) {
     next(error);
+  }
+}
+
+export async function adminStartMarketplaceDriveReconciliation(req, res, next) {
+  try {
+    const assetType = req.marketplaceAssetType === "scene" ? "scene" : "model";
+    const config = marketplaceDriveSyncConfig();
+    const configuredRoot = config.roots?.find((item) => item.assetType === assetType)?.rootFolderId || "";
+    const unknownKey = rejectUnknownKeys(req.body || {}, ["rootFolderId", "batchSize", "reset"]);
+    if (unknownKey) return res.status(400).json({ message: "Invalid reconciliation start request" });
+    const state = await queueMarketplaceDriveReconciliation({
+      assetType,
+      rootFolderId: String(req.body?.rootFolderId || configuredRoot).trim(),
+      batchSize: Number(req.body?.batchSize || 100),
+      reset: req.body?.reset !== false,
+    });
+    runMarketplaceDriveReconcileTick().catch(() => {});
+    return res.status(202).json({ state });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function adminCancelMarketplaceDriveReconciliation(req, res, next) {
+  try {
+    const assetType = req.marketplaceAssetType === "scene" ? "scene" : "model";
+    const config = marketplaceDriveSyncConfig();
+    const configuredRoot = config.roots?.find((item) => item.assetType === assetType)?.rootFolderId || "";
+    const unknownKey = rejectUnknownKeys(req.body || {}, ["rootFolderId"]);
+    if (unknownKey) return res.status(400).json({ message: "Invalid reconciliation cancel request" });
+    const state = await cancelMarketplaceDriveReconciliation({
+      assetType,
+      rootFolderId: String(req.body?.rootFolderId || configuredRoot).trim(),
+    });
+    if (!state) {
+      return res.status(409).json({
+        message: "No active full Drive reconciliation was found",
+        code: "MARKETPLACE_RECONCILIATION_NOT_ACTIVE",
+      });
+    }
+    return res.json({ state });
+  } catch (error) {
+    return next(error);
   }
 }

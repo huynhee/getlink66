@@ -6,11 +6,35 @@ import { normalizeMarketplaceTitle } from "../utils/marketplaceSort.js";
 const previewImageSchema = new mongoose.Schema(
   {
     driveFileId: { type: String, default: "", trim: true },
+    driveVersion: { type: String, default: "", trim: true },
+    modifiedTime: Date,
     fileName: { type: String, default: "", trim: true },
     width: { type: Number, default: 0, min: 0 },
     height: { type: Number, default: 0, min: 0 },
     size: { type: Number, default: 0, min: 0 },
     alt: { type: String, default: "" },
+  },
+  { _id: false },
+);
+
+const coverCacheSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ["missing", "queued", "processing", "ready", "error"],
+      default: "missing",
+    },
+    key: { type: String, default: "", trim: true },
+    sourceFingerprint: { type: String, default: "", trim: true },
+    width: { type: Number, default: 0, min: 0 },
+    height: { type: Number, default: 0, min: 0 },
+    size: { type: Number, default: 0, min: 0 },
+    mimeType: { type: String, default: "", trim: true },
+    generatedAt: Date,
+    error: { type: String, default: "" },
+    attempts: { type: Number, default: 0, min: 0 },
+    nextRetryAt: Date,
+    lockedAt: Date,
   },
   { _id: false },
 );
@@ -50,6 +74,7 @@ const marketplaceModelSchema = new mongoose.Schema(
     parentCategorySourceId: { type: String, default: "", trim: true },
     coverImage: { type: previewImageSchema, default: () => ({}) },
     previewImages: { type: [previewImageSchema], default: [] },
+    coverCache: { type: coverCacheSchema, default: () => ({ status: "missing" }) },
     driveFolderId: { type: String, default: "", trim: true, index: true },
     driveFolderName: { type: String, default: "", trim: true },
     driveSignature: { type: String, default: "", trim: true },
@@ -179,6 +204,7 @@ marketplaceModelSchema.index({ assetType: 1, syncStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, discoveryStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, searchStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ deletionStatus: 1, purgeAt: 1 });
+marketplaceModelSchema.index({ "coverCache.status": 1, "coverCache.nextRetryAt": 1, "coverCache.lockedAt": 1 });
 
 export default isMemoryDb()
   ? createMemoryModel("MarketplaceModel")

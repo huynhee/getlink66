@@ -126,6 +126,18 @@ if (has("GOOGLE_CLIENT_ID") || has("GOOGLE_CLIENT_SECRET")) {
 if (!has("MARKETPLACE_IMAGE_SEARCH_URL")) warnings.push("Image search provider is disabled");
 if (!has("MARKETPLACE_DISCOVERY_URL")) warnings.push("Semantic discovery uses the MongoDB fallback");
 
+if (process.env.MARKETPLACE_COVER_CACHE_ENABLED === "true") {
+  requireValue("MARKETPLACE_COVER_CACHE_DIR");
+  requireValue("MARKETPLACE_COVER_PUBLIC_BASE_URL");
+  if (process.env.MARKETPLACE_COVER_WORKER_ENABLED !== "true") {
+    warnings.push("Cover cache is enabled but MARKETPLACE_COVER_WORKER_ENABLED is not true");
+  }
+  const publicBase = String(process.env.MARKETPLACE_COVER_PUBLIC_BASE_URL || "").trim();
+  if (publicBase && !publicBase.startsWith("/")) {
+    errors.push("MARKETPLACE_COVER_PUBLIC_BASE_URL must be an absolute URL path starting with /");
+  }
+}
+
 const productionIssues = productionReadinessIssues(process.env);
 productionIssues.warnings.forEach((message) => {
   if (!warnings.includes(message)) warnings.push(message);

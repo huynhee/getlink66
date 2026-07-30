@@ -6,7 +6,6 @@ import zlib from "node:zlib";
 import {
   createGoogleDriveFile,
   getGoogleDriveFileMetadata,
-  listGoogleDriveFolderPage,
   openGoogleDriveFileStream,
 } from "../utils/storageProvider.js";
 import {
@@ -26,11 +25,13 @@ import {
   restoreMarketplaceAsset,
   trashMarketplaceAsset,
 } from "../utils/marketplaceDeletionService.js";
+import { openMarketplaceCoverCache } from "../utils/marketplaceCoverCache.js";
 import MarketplaceReport from "../models/MarketplaceReport.js";
 import {
   marketplaceReportCountsForAssets,
   marketplaceReportStats,
 } from "./marketplaceReportController.js";
+import { scanMarketplaceDriveFolderBatch } from "../utils/marketplaceDriveReconcileService.js";
 
 const ADMIN_MODEL_PAGE_SIZE = 20;
 
@@ -186,10 +187,6 @@ function fileExtension(name = "") {
 function archiveExtension(name = "") {
   const ext = fileExtension(name);
   return ["zip", "rar", "7z"].includes(ext) ? ext : "zip";
-}
-
-function isDriveFolder(file) {
-  return file?.mimeType === "application/vnd.google-apps.folder";
 }
 
 function adminModel(model) {
@@ -563,7 +560,7 @@ async function streamAdminMarketplaceImage(req, res, next, kind) {
     const assetType = adminAssetType(req);
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid marketplace asset id" });
     const model = await MarketplaceModel.findById(req.params.id)
-      .select("assetType title coverImage previewImages deletionStatus")
+      .select("assetType title coverImage previewImages coverCache deletionStatus")
       .lean();
     if (!model || normalizeAssetType(model.assetType) !== assetType || model.deletionStatus === "purged") {
       return res.status(404).json({ message: `${assetNoun(assetType)} image not found` });
@@ -573,6 +570,15 @@ async function streamAdminMarketplaceImage(req, res, next, kind) {
       ? (model.coverImage?.driveFileId ? model.coverImage : model.previewImages?.[0])
       : model.previewImages?.[index];
     if (!image?.driveFileId) return res.status(404).json({ message: "Preview image not found" });
+    const cached = kind === "cover" ? await openMarketplaceCoverCache(model) : null;
+    if (cached) {
+      res.setHeader("cache-control", "private, max-age=300");
+      res.setHeader("cross-origin-resource-policy", "same-site");
+      res.setHeader("content-type", cached.contentType);
+      if (cached.contentLength) res.setHeader("content-length", cached.contentLength);
+      cached.stream.on("error", next);
+      return cached.stream.pipe(res);
+    }
     const file = await openGoogleDriveFileStream(image.driveFileId, image.fileName || `${kind}.jpg`);
     res.setHeader("cache-control", "private, max-age=300");
     // Local development serves the admin UI and API on different ports.
@@ -845,62 +851,6 @@ export async function adminSyncMarketplaceDriveFolder(req, res, next) {
     if (error?.code === 11000) return res.status(409).json({ message: "Model slug or Drive folder already exists" });
     return next(error);
   }
-}
-
-export async function scanMarketplaceDriveFolderBatch({
-  rootFolderId,
-  assetType = "model",
-  pageToken = "",
-  limit = 20,
-  isPublished = true,
-} = {}) {
-  const page = await listGoogleDriveFolderPage(rootFolderId, { pageToken, pageSize: limit });
-  const folders = page.files.filter(isDriveFolder);
-  const imported = [];
-  const skipped = [];
-  let createdCount = 0;
-  let updatedCount = 0;
-  let unchangedCount = 0;
-  for (const folder of folders) {
-    try {
-      const result = await syncMarketplaceDriveFolder({ driveFolderId: folder.id, folderSnapshot: folder, force: false, assetType });
-      if (isPublished === false && result.model?.desiredPublished !== false) {
-        result.model = await MarketplaceModel.findByIdAndUpdate(result.model._id, {
-          $set: { desiredPublished: false, isPublished: false },
-        }, { new: true });
-      }
-      if (result.action === "created") createdCount += 1;
-      else if (result.action === "unchanged") unchangedCount += 1;
-      else updatedCount += 1;
-      imported.push({
-        id: result.model?._id,
-        action: result.action,
-        title: result.model?.title,
-        catalogKey: result.model?.slug,
-        fileStatus: result.model?.fileStatus,
-        coverFileName: result.model?.coverImage?.fileName || "",
-        previewCount: result.model?.previewImages?.length || 0,
-        metadataStatus: result.model?.metadataStatus,
-        missingFields: result.model?.metadataMissingFields || [],
-        metadataFileName: result.model?.metadataFileName || "",
-        metadataError: result.metadataError || "",
-      });
-    } catch (error) {
-      skipped.push({ folderId: folder.id, folderName: folder.name, reason: error?.message || "sync_failed" });
-    }
-  }
-  return {
-    rootFolderId,
-    nextPageToken: page.nextPageToken || "",
-    hasMore: Boolean(page.nextPageToken),
-    scannedFolders: folders.length,
-    importedCount: imported.length,
-    createdCount,
-    updatedCount,
-    unchangedCount,
-    skipped,
-    imported,
-  };
 }
 
 export async function adminImportDriveFolderModels(req, res, next) {

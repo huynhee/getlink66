@@ -334,6 +334,15 @@ export async function runMarketplaceDriveSyncOnce({ trigger = "interval", rootFo
     error.code = "MARKETPLACE_MIGRATION_LOCKED";
     throw error;
   }
+  const reconciliation = await MarketplaceDriveSyncState.findOne({ rootFolderId: rootId })
+    .select("reconciliationStatus")
+    .lean();
+  if (["queued", "running"].includes(reconciliation?.reconciliationStatus)) {
+    const error = new Error("Full Drive reconciliation is active; Changes sync will resume after it finishes.");
+    error.status = 423;
+    error.code = "MARKETPLACE_RECONCILIATION_ACTIVE";
+    throw error;
+  }
   syncRunning = true;
   try {
     await claimSyncState(rootId, assetType);

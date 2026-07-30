@@ -3,6 +3,7 @@ import MarketplaceModel from "../models/MarketplaceModel.js";
 import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { deleteGoogleDriveFile, setGoogleDriveFileTrashed } from "./storageProvider.js";
 import { syncMarketplaceDriveFolder } from "./marketplaceDriveService.js";
+import { removeMarketplaceCoverCache } from "./marketplaceCoverCache.js";
 
 const TRASH_STATUSES = ["deleting", "trashed", "delete_error", "purging", "purge_error"];
 
@@ -55,6 +56,7 @@ export async function trashMarketplaceAsset(model) {
     { modelId: model._id, status: "active" },
     { $set: { status: "revoked" } },
   );
+  await removeMarketplaceCoverCache(hidden);
 
   try {
     if (!hidden?.driveFolderId) {
@@ -137,6 +139,7 @@ export async function permanentlyDeleteMarketplaceAsset(model) {
     $set: { deletionStatus: "purging", deletionError: "", isPublished: false, desiredPublished: false },
   });
   try {
+    await removeMarketplaceCoverCache(model);
     if (model.driveFolderId) await deleteGoogleDriveFile(model.driveFolderId);
     const assetId = String(model.source?.assetId || model.metadataSourceModelId || model._id);
     return MarketplaceModel.findByIdAndUpdate(model._id, {
@@ -151,6 +154,7 @@ export async function permanentlyDeleteMarketplaceAsset(model) {
         fileSize: 0,
         coverImage: {},
         previewImages: [],
+        coverCache: { status: "missing" },
         source: {
           // Keep the original provider + assetId unique key reserved so a
           // reconciler cannot recreate a permanently deleted catalog item.

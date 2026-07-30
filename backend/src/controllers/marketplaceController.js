@@ -33,6 +33,10 @@ import {
   marketplaceSortSpec,
 } from "../utils/marketplaceSort.js";
 import {
+  marketplaceCoverCachePublicUrl,
+  openMarketplaceCoverCache,
+} from "../utils/marketplaceCoverCache.js";
+import {
   buildMarketplaceSearchDocument,
   marketplaceSearchCandidatePrefixes,
   marketplaceSearchMatches,
@@ -90,9 +94,18 @@ function publicImageRef(model, image, url) {
 }
 
 function publicCoverImage(model) {
-  const firstPreview = (model.previewImages || []).find((image) => image?.driveFileId);
-  if (firstPreview) return publicImageRef(model, firstPreview, coverUrl(model));
-  return model.coverImage?.driveFileId ? publicImageRef(model, model.coverImage, coverUrl(model)) : null;
+  const image = model.coverImage?.driveFileId
+    ? model.coverImage
+    : (model.previewImages || []).find((item) => item?.driveFileId);
+  if (!image) return null;
+  const cachedUrl = marketplaceCoverCachePublicUrl(model);
+  const result = publicImageRef(model, image, cachedUrl || coverUrl(model));
+  if (cachedUrl && result) {
+    result.width = Number(model.coverCache?.width || result.width || 0);
+    result.height = Number(model.coverCache?.height || result.height || 0);
+    result.size = Number(model.coverCache?.size || result.size || 0);
+  }
+  return result;
 }
 
 function publicPreviewImages(model) {
@@ -801,12 +814,24 @@ export async function streamMarketplaceCover(req, res, next) {
       return res.status(400).json({ message: `Invalid ${assetLabel(assetType).toLowerCase()} id` });
     }
     const model = await MarketplaceModel.findOne({ _id: req.params.id, assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() })
-      .select("title coverImage previewImages")
+      .select("title coverImage previewImages coverCache")
       .lean();
     if (!model) return res.status(404).json({ message: "Model not found" });
-    const cover = (model.previewImages || []).find((image) => image?.driveFileId)
-      || (model.coverImage?.driveFileId ? model.coverImage : null);
+    const cover = model.coverImage?.driveFileId
+      ? model.coverImage
+      : (model.previewImages || []).find((image) => image?.driveFileId);
     if (!cover?.driveFileId) return res.status(404).json({ message: "Cover not found" });
+    const cached = await openMarketplaceCoverCache(model);
+    if (cached) {
+      const etag = crypto.createHash("sha1").update(String(model.coverCache?.key || "")).digest("hex");
+      res.setHeader("cache-control", "public, max-age=31536000, immutable");
+      res.setHeader("etag", `"${etag}"`);
+      res.setHeader("cross-origin-resource-policy", "cross-origin");
+      res.setHeader("content-type", cached.contentType);
+      if (cached.contentLength) res.setHeader("content-length", cached.contentLength);
+      cached.stream.on("error", next);
+      return cached.stream.pipe(res);
+    }
     await streamImageRef(res, next, cover, "cover.jpg");
   } catch (error) {
     next(error);

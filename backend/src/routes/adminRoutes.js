@@ -69,8 +69,10 @@ import {
   adminVerifyMarketplaceFile,
 } from "../controllers/marketplaceAdminController.js";
 import {
+  adminCancelMarketplaceDriveReconciliation,
   adminMarketplaceDriveSyncState,
   adminRunMarketplaceDriveSync,
+  adminStartMarketplaceDriveReconciliation,
 } from "../controllers/marketplaceSyncController.js";
 import {
   adminCreateNotification,
@@ -193,6 +195,8 @@ router.post("/marketplace/models/:id/restore", adminWriteLimit, auditAdmin("REST
 router.delete("/marketplace/models/:id/permanent", adminWriteLimit, auditAdmin("PURGE_MARKETPLACE_MODEL"), adminPurgeMarketplaceAsset);
 router.post("/marketplace/drive/sync-folder", adminWriteLimit, auditAdmin("SYNC_MARKETPLACE_DRIVE_FOLDER"), adminSyncMarketplaceDriveFolder);
 router.post("/marketplace/drive/reconcile", adminWriteLimit, auditAdmin("RECONCILE_MARKETPLACE_DRIVE"), adminReconcileMarketplaceDrive);
+router.post("/marketplace/drive/reconcile/start", adminWriteLimit, auditAdmin("START_MARKETPLACE_DRIVE_RECONCILIATION"), adminStartMarketplaceDriveReconciliation);
+router.post("/marketplace/drive/reconcile/cancel", adminWriteLimit, auditAdmin("CANCEL_MARKETPLACE_DRIVE_RECONCILIATION"), adminCancelMarketplaceDriveReconciliation);
 router.post("/marketplace/drive/migrate-metadata", adminWriteLimit, auditAdmin("MIGRATE_MARKETPLACE_DRIVE_METADATA"), adminMigrateMarketplaceDriveMetadata);
 router.post("/marketplace/models/:id/attach-file", adminWriteLimit, auditAdmin("ATTACH_MARKETPLACE_FILE"), adminAttachMarketplaceFile);
 router.post("/marketplace/models/:id/attach-assets", adminWriteLimit, auditAdmin("ATTACH_MARKETPLACE_ASSETS"), adminAttachMarketplaceAssets);
@@ -206,6 +210,8 @@ router.get("/marketplace/scenes/sync-state", sceneAdmin, adminMarketplaceDriveSy
 router.post("/marketplace/scenes/sync-run", sceneAdmin, adminWriteLimit, auditAdmin("RUN_SCENES_DRIVE_SYNC"), adminRunMarketplaceDriveSync);
 router.post("/marketplace/scenes/drive/sync-folder", sceneAdmin, adminWriteLimit, auditAdmin("SYNC_SCENE_DRIVE_FOLDER"), adminSyncMarketplaceDriveFolder);
 router.post("/marketplace/scenes/drive/reconcile", sceneAdmin, adminWriteLimit, auditAdmin("RECONCILE_SCENES_DRIVE"), adminReconcileMarketplaceDrive);
+router.post("/marketplace/scenes/drive/reconcile/start", sceneAdmin, adminWriteLimit, auditAdmin("START_SCENE_DRIVE_RECONCILIATION"), adminStartMarketplaceDriveReconciliation);
+router.post("/marketplace/scenes/drive/reconcile/cancel", sceneAdmin, adminWriteLimit, auditAdmin("CANCEL_SCENE_DRIVE_RECONCILIATION"), adminCancelMarketplaceDriveReconciliation);
 router.post("/marketplace/scenes/drive/migrate-metadata", sceneAdmin, adminWriteLimit, auditAdmin("MIGRATE_SCENE_DRIVE_METADATA"), adminMigrateMarketplaceDriveMetadata);
 router.put("/marketplace/scenes/:id", sceneAdmin, adminWriteLimit, auditAdmin("UPDATE_MARKETPLACE_SCENE"), adminUpdateMarketplaceModel);
 router.put("/marketplace/scenes/:id/metadata", sceneAdmin, adminWriteLimit, auditAdmin("UPDATE_SCENE_DRIVE_METADATA"), adminUpdateMarketplaceMetadata);

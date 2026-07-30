@@ -44,3 +44,5 @@ coverage/
 # Playwright
 playwright-report/
 test-results/
+backend/.cache/
+backend/data/marketplace-covers/

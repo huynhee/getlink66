@@ -18,6 +18,7 @@ import {
   RotateCcw,
   Save,
   Search,
+  Square,
   Trash2,
   UploadCloud,
   X,
@@ -30,7 +31,7 @@ import { text } from "../i18n.js";
 const emptyDriveImportForm = {
   rootFolderId: "",
   pageToken: "",
-  limit: "20",
+  limit: "100",
   accessType: "member",
   isPublished: true,
 };
@@ -547,7 +548,7 @@ function ManagedAssetSummary({
 }
 
 export default function AdminMarketplace({ language = "vi", assetType = "model" }) {
-  const l = (vi, en) => text(language, vi, en);
+  const l = useCallback((vi, en) => text(language, vi, en), [language]);
   const isScene = assetType === "scene";
   const adminAssetBase = isScene ? "/api/admin/marketplace/scenes" : "/api/admin/marketplace/models";
   const adminOpsBase = isScene ? adminAssetBase : "/api/admin/marketplace";
@@ -571,8 +572,8 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
   const [stateById, setStateById] = useState({});
   const [metadataVersionById, setMetadataVersionById] = useState({});
   const [selectedModel, setSelectedModel] = useState(null);
-  const [lastScan, setLastScan] = useState(null);
-  const [reconcileReset, setReconcileReset] = useState(false);
+  const [reconcileStarting, setReconcileStarting] = useState(false);
+  const [reconcileCanceling, setReconcileCanceling] = useState(false);
   const [syncInfo, setSyncInfo] = useState(null);
   const [syncRootFolderId, setSyncRootFolderId] = useState("");
   const [syncRunning, setSyncRunning] = useState(false);
@@ -673,6 +674,12 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
     setStats(statsRes.stats || null);
     setSyncInfo(syncRes || null);
     setSyncRootFolderId((current) => current || syncRes?.config?.rootFolderId || "");
+    setDriveImportForm((current) => ({
+      ...current,
+      rootFolderId: current.rootFolderId || syncRes?.config?.rootFolderId || "",
+      pageToken: syncRes?.state?.reconciliationPageToken || current.pageToken || "",
+      limit: String(syncRes?.state?.reconciliationBatchSize || current.limit || 100),
+    }));
     setSelectedModelIds((current) => current.filter((id) => (modelRes.models || []).some((model) => model._id === id)));
   }, [accessType, adminAssetBase, catalogView, fileStatus, isScene, metadataStatus, published, reportedOnly, search]);
 
@@ -718,31 +725,90 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
     return () => window.clearTimeout(timer);
   }, [activeTab, loadReports]);
 
-  async function importDriveFolder(event) {
-    event.preventDefault();
+  useEffect(() => {
+    if (activeTab !== "import") return undefined;
+    const reconciliationStatus = syncInfo?.state?.reconciliationStatus;
+    if (!["queued", "running"].includes(reconciliationStatus)) return undefined;
+    let disposed = false;
+    const syncStateUrl = isScene ? `${adminAssetBase}/sync-state` : "/api/admin/marketplace/sync-state";
+    const statsUrl = isScene ? `${adminAssetBase}/stats` : "/api/admin/marketplace/stats";
+    const refreshProgress = async () => {
+      try {
+        const [syncRes, statsRes] = await Promise.all([
+          api(syncStateUrl),
+          api(statsUrl),
+        ]);
+        if (disposed) return;
+        setSyncInfo(syncRes);
+        setStats(statsRes.stats || null);
+        const state = syncRes?.state;
+        setDriveImportForm((current) => ({
+          ...current,
+          pageToken: state?.reconciliationPageToken || "",
+        }));
+        if (state?.reconciliationStatus === "complete") {
+          setMessage(l(
+            `Đã quét xong ${state.reconciliationScanned || 0} folder.`,
+            `Reconciliation completed after scanning ${state.reconciliationScanned || 0} folders.`,
+          ));
+          await loadModels(1);
+        } else if (state?.reconciliationStatus === "error") {
+          setError(state.reconciliationError || l("Đối soát Drive bị lỗi.", "Drive reconciliation failed."));
+        } else if (state?.reconciliationStatus === "canceled") {
+          setMessage(l("Đã dừng quét toàn bộ Drive.", "Full Drive reconciliation stopped."));
+        }
+      } catch (err) {
+        if (!disposed) setError(err.message);
+      }
+    };
+    const timer = window.setInterval(refreshProgress, 2000);
+    refreshProgress();
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [activeTab, adminAssetBase, isScene, l, loadModels, syncInfo?.state?.reconciliationStatus]);
+
+  async function startFullReconciliation(event, reset = true) {
+    event?.preventDefault?.();
     setMessage("");
     setError("");
+    setReconcileStarting(true);
     try {
-      const data = await api(`${adminOpsBase}/drive/reconcile`, {
+      const data = await api(`${adminOpsBase}/drive/reconcile/start`, {
         method: "POST",
         body: JSON.stringify({
           rootFolderId: driveImportForm.rootFolderId,
-          limit: Number(driveImportForm.limit || 20),
-          ...(driveImportForm.pageToken ? { pageToken: driveImportForm.pageToken } : {}),
-          ...(reconcileReset ? { reset: true } : {}),
+          batchSize: Number(driveImportForm.limit || 100),
+          reset,
         }),
       });
-      setLastScan(data);
-      setReconcileReset(false);
-      setDriveImportForm((current) => ({ ...current, pageToken: data.nextPageToken || "" }));
-      setMessage(
-        `Đã quét Drive: ${data.createdCount || 0} tạo mới, ` +
-        `${data.updatedCount || 0} cập nhật, ${data.unchangedCount || 0} không đổi` +
-        (data.hasMore ? ". Đã có token trang tiếp theo." : ". Đã hết dữ liệu."),
-      );
-      await loadModels(1);
+      setSyncInfo((current) => ({ ...(current || {}), state: data.state || null }));
+      setMessage(reset
+        ? l("Đã bắt đầu quét toàn bộ Drive. Có thể rời trang, tiến trình vẫn chạy.", "Full Drive reconciliation started. You can leave this page while it runs.")
+        : l("Đã tiếp tục tiến trình từ checkpoint gần nhất.", "Reconciliation resumed from its latest checkpoint."));
     } catch (err) {
       setError(err.message);
+    } finally {
+      setReconcileStarting(false);
+    }
+  }
+
+  async function cancelFullReconciliation() {
+    setMessage("");
+    setError("");
+    setReconcileCanceling(true);
+    try {
+      const data = await api(`${adminOpsBase}/drive/reconcile/cancel`, {
+        method: "POST",
+        body: JSON.stringify({ rootFolderId: driveImportForm.rootFolderId }),
+      });
+      setSyncInfo((current) => ({ ...(current || {}), state: data.state || current?.state || null }));
+      setMessage(l("Đã yêu cầu dừng. Batch đang chạy sẽ hoàn tất rồi tiến trình dừng.", "Stop requested. The current batch will finish before reconciliation stops."));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setReconcileCanceling(false);
     }
   }
 
@@ -1152,6 +1218,11 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
   const selectedMetadataForm = currentSelectedModel ? metadataForm(currentSelectedModel) : null;
   const selectedOperationalForm = currentSelectedModel ? stateForm(currentSelectedModel) : null;
   const allPageSelected = models.length > 0 && models.every((model) => selectedModelIds.includes(model._id));
+  const reconciliationState = syncInfo?.state || {};
+  const reconciliationStatus = reconciliationState.reconciliationStatus || "idle";
+  const reconciliationActive = ["queued", "running"].includes(reconciliationStatus);
+  const reconciliationCanResume = ["error", "canceled"].includes(reconciliationStatus) &&
+    Boolean(reconciliationState.reconciliationPageToken);
 
   return (
     <section className="panel adminMarketplace">
@@ -1200,10 +1271,16 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
 
       {activeTab === "import" && (
         <div className="marketAdminWorkbench single">
-          <form className="marketAdminForm marketAdminSyncPanel" onSubmit={importDriveFolder}>
+          <form className="marketAdminForm marketAdminSyncPanel" onSubmit={(event) => startFullReconciliation(event, true)}>
             <div className="marketAdminPanelTitle">
               <h3>{l("Đối soát toàn bộ Drive", "Full Drive reconciliation")}</h3>
-              <span className="badge pending">{l("Chỉ chạy thủ công", "Manual only")}</span>
+              <span className={`badge ${reconciliationStatus === "complete" ? "success" : reconciliationActive ? "pending" : ""}`}>
+                {reconciliationActive
+                  ? l("Đang tự chạy", "Running continuously")
+                  : reconciliationStatus === "complete"
+                    ? l("Đã hoàn tất", "Complete")
+                    : l("Chạy nền có checkpoint", "Background with checkpoint")}
+              </span>
             </div>
             <div className="marketAdminFieldGrid">
               <label>
@@ -1216,11 +1293,11 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
                 />
               </label>
               <label>
-                <span>{l("Token trang tiếp theo", "Next page token")}</span>
+                <span>{l("Checkpoint hiện tại", "Current checkpoint")}</span>
                 <input
                   value={driveImportForm.pageToken}
-                  onChange={(event) => updateDriveImport("pageToken", event.target.value)}
-                  placeholder={l("Tự điền sau mỗi batch", "Filled after each batch")}
+                  readOnly
+                  placeholder={l("Tự lưu sau mỗi batch", "Saved after every batch")}
                 />
               </label>
               <label>
@@ -1235,23 +1312,46 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
               </label>
             </div>
             <div className="marketAdminSyncActions">
-              <button type="button" className="smallButton" onClick={() => {
-                updateDriveImport("pageToken", "");
-                setReconcileReset(true);
-              }}>
-                {l("Đặt lại token", "Reset token")}
-              </button>
-              <button className="primaryButton">
-                <UploadCloud size={17} /> {driveImportForm.pageToken ? l("Quét batch tiếp theo", "Scan next batch") : l("Quét batch đầu tiên", "Scan first batch")}
-              </button>
+              {reconciliationCanResume && (
+                <button
+                  type="button"
+                  className="smallButton"
+                  disabled={reconcileStarting}
+                  onClick={(event) => startFullReconciliation(event, false)}
+                >
+                  <RefreshCw size={16} /> {l("Tiếp tục từ checkpoint", "Resume from checkpoint")}
+                </button>
+              )}
+              {reconciliationActive ? (
+                <button
+                  type="button"
+                  className="smallButton danger"
+                  disabled={reconcileCanceling}
+                  onClick={cancelFullReconciliation}
+                >
+                  <Square size={15} /> {reconcileCanceling ? l("Đang dừng...", "Stopping...") : l("Dừng quét", "Stop")}
+                </button>
+              ) : (
+                <button className="primaryButton" disabled={reconcileStarting}>
+                  <UploadCloud size={17} /> {reconcileStarting
+                    ? l("Đang khởi tạo...", "Starting...")
+                    : l("Quét toàn bộ từ đầu", "Scan everything from start")}
+                </button>
+              )}
             </div>
-            {lastScan && (
+            {reconciliationState._id && (
               <div className="marketAdminScanResult">
-                <span>{lastScan.scannedFolders || 0} {l("đã quét", "scanned")}</span>
-                <span>{lastScan.createdCount || 0} {l("tạo mới", "created")}</span>
-                <span>{lastScan.updatedCount || 0} {l("cập nhật", "updated")}</span>
-                <span>{lastScan.unchangedCount || 0} {l("không đổi", "unchanged")}</span>
-                <span>{lastScan.hasMore ? l("Còn batch tiếp", "More batches") : l("Đã hết", "Complete")}</span>
+                <span>{reconciliationState.reconciliationScanned || 0} {l("đã quét", "scanned")}</span>
+                <span>{reconciliationState.reconciliationCreated || 0} {l("tạo mới", "created")}</span>
+                <span>{reconciliationState.reconciliationUpdated || 0} {l("cập nhật", "updated")}</span>
+                <span>{reconciliationState.reconciliationUnchanged || 0} {l("không đổi", "unchanged")}</span>
+                <span>{reconciliationState.reconciliationFailed || 0} {l("lỗi", "failed")}</span>
+                <span>{reconciliationStatus}</span>
+              </div>
+            )}
+            {reconciliationState.reconciliationError && (
+              <div className="marketAdminQueueErrors">
+                <div><strong>{l("Lỗi đối soát", "Reconciliation error")}</strong><span>{reconciliationState.reconciliationError}</span></div>
               </div>
             )}
           </form>
