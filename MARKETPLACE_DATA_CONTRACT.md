@@ -247,13 +247,16 @@ Scene Drive root:
 /3dipl/scenes/{sourceAssetId}-{slug}/
   metadata.json.gz
   scene.zip | scene.rar | scene.7z
-  preview-1.jpg
-  preview-2.jpg
-  preview-3.png
+  cover.jpg
+  preview-01.jpg
+  preview-02.jpg
+  preview-03.png
 ```
 
-`preview-1` la cover va bat buoc. Archive, metadata va cover thieu se khoa tai va
-offline Scene. Preview tu so 2 tro di la optional.
+`cover.jpg` la cover vuong va bat buoc. `preview-01` giu anh preview nguon dau tien va
+khong bi crop thanh cover. Archive, metadata, cover hoac preview-01 thieu se khoa
+tai va offline Scene. Preview tu so 02 tro di la optional. Backend van doc duoc
+ten cu `preview-1`, nhung tool upload moi phai xuat ten co hai chu so.
 
 Scene category va filter source of truth:
 

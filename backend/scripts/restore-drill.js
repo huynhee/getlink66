@@ -10,6 +10,7 @@ import {
   restoreNamespaceArguments,
   runCommand,
   sha256File,
+  writeMongoToolConfig,
 } from "../src/utils/databaseBackupService.js";
 import { downloadGoogleDriveFileToPath } from "../src/utils/storageProvider.js";
 import { sendTelegramNotification } from "../src/utils/telegramNotifier.js";
@@ -82,13 +83,18 @@ async function drill(kind, tempDir) {
   if (await sha256File(archive) !== source.sourceSha256) {
     throw new Error(`Decrypted ${kind} backup checksum mismatch.`);
   }
-  await runCommand("mongorestore", [
-    `--uri=${uri}`,
-    `--archive=${archive}`,
-    "--gzip",
-    "--drop",
-    ...restoreNamespaceArguments(source.databaseName, uri),
-  ]);
+  const mongoConfigPath = await writeMongoToolConfig(tempDir, `${kind}-restore`, uri);
+  try {
+    await runCommand("mongorestore", [
+      `--config=${mongoConfigPath}`,
+      `--archive=${archive}`,
+      "--gzip",
+      "--drop",
+      ...restoreNamespaceArguments(source.databaseName, uri),
+    ], { redactValues: [uri] });
+  } finally {
+    await fs.promises.rm(mongoConfigPath, { force: true });
+  }
   const actual = await targetInventory(uri);
   verifyInventory(source.metadata?.collections || {}, actual.collections);
   return {

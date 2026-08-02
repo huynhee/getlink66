@@ -77,7 +77,7 @@ export async function queueMarketplaceDriveReconciliation({
   return MarketplaceDriveSyncState.findOneAndUpdate(
     { rootFolderId: rootId },
     {
-      $setOnInsert: { rootFolderId: rootId, assetType: normalizedType },
+      $setOnInsert: { rootFolderId: rootId },
       $set: {
         assetType: normalizedType,
         reconciliationStatus: "queued",

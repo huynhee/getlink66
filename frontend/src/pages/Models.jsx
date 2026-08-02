@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Download, Filter, Flag, HardDrive, Image as ImageIcon, ImagePlus, Loader2, LogIn, Package, Search, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
@@ -110,6 +110,14 @@ function detailSlugFromPath(path = "", assetType = "model") {
 function categoryFromPath(path = "", assetType = "model") {
   try {
     return new URL(String(path || `/${catalogSegment(assetType)}`), window.location.origin).searchParams.get("category") || "";
+  } catch {
+    return "";
+  }
+}
+
+function searchFromPath(path = "", assetType = "model") {
+  try {
+    return new URL(String(path || `/${catalogSegment(assetType)}`), window.location.origin).searchParams.get("q") || "";
   } catch {
     return "";
   }
@@ -306,35 +314,224 @@ function FacetSection({ id, title, options = [], values = [], onToggle, onClear,
   );
 }
 
-export function ModelCard({ model, onNavigate, language = "vi" }) {
+export function ModelCard({
+  model,
+  onNavigate,
+  language = "vi",
+  quickPreview = false,
+}) {
   const image = cover(model);
+  const firstPreviewImage = previewImageSrc(model.previewImages?.[0]);
+  const hasDistinctPreview = Boolean(firstPreviewImage && firstPreviewImage !== image);
   const href = modelPath(model);
   const sizeLabel = model.sizeText || formatBytes(model.fileSize);
   const rendererLabel = model.renderer || model.renderers?.[0] || "-";
   const downloadCount = Number(model.downloadCount || 0).toLocaleString(language === "vi" ? "vi-VN" : "en-US");
+  const cardRef = useRef(null);
+  const previewRef = useRef(null);
+  const openTimerRef = useRef(null);
+  const closeTimerRef = useRef(null);
+  const previewId = useId();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewImageStage, setPreviewImageStage] = useState("primary");
+  const [previewPosition, setPreviewPosition] = useState({
+    top: -9999,
+    left: -9999,
+    placement: "right",
+    ready: false,
+  });
+  const categoryTrail = [model.parentCategory, model.category]
+    .map((category) => labelForCategory(category, language))
+    .filter((label, index, labels) => label && labels.indexOf(label) === index);
+  const categoryLabel = categoryTrail.join(" / ") || textFor(
+    language,
+    model.assetType === "scene" ? "Thư viện scene" : "Thư viện model",
+    model.assetType === "scene" ? "Scene library" : "Model library",
+  );
+  const quickPreviewImage = previewImageStage === "missing"
+    ? ""
+    : previewImageStage === "fallback"
+      ? image
+      : firstPreviewImage || image;
+
+  const updatePreviewPosition = useCallback(() => {
+    if (!cardRef.current || !previewRef.current) return;
+    const anchor = cardRef.current.getBoundingClientRect();
+    const popup = previewRef.current.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    const edge = 12;
+    const gap = 12;
+    const leftSpace = anchor.left - edge - gap;
+    const rightSpace = viewportWidth - anchor.right - edge - gap;
+    const topSpace = anchor.top - edge - gap;
+    const bottomSpace = viewportHeight - anchor.bottom - edge - gap;
+    let placement;
+    let top;
+    let left;
+
+    if (leftSpace >= popup.width || rightSpace >= popup.width) {
+      placement = rightSpace >= leftSpace ? "right" : "left";
+      left = placement === "right"
+        ? anchor.right + gap
+        : anchor.left - popup.width - gap;
+      top = anchor.top + (anchor.height - popup.height) / 2;
+    } else {
+      placement = bottomSpace >= topSpace ? "bottom" : "top";
+      top = placement === "bottom"
+        ? anchor.bottom + gap
+        : anchor.top - popup.height - gap;
+      left = anchor.left + (anchor.width - popup.width) / 2;
+    }
+
+    left = Math.min(Math.max(edge, left), Math.max(edge, viewportWidth - popup.width - edge));
+    top = Math.min(Math.max(edge, top), Math.max(edge, viewportHeight - popup.height - edge));
+    setPreviewPosition({ top, left, placement, ready: true });
+  }, []);
+
+  const showPreview = useCallback(() => {
+    if (!quickPreview) return;
+    if (!window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) return;
+    window.clearTimeout(closeTimerRef.current);
+    if (previewOpen || openTimerRef.current) return;
+    openTimerRef.current = window.setTimeout(() => {
+      openTimerRef.current = null;
+      setPreviewOpen(true);
+    }, 650);
+  }, [previewOpen, quickPreview]);
+
+  const hidePreview = useCallback(() => {
+    window.clearTimeout(openTimerRef.current);
+    openTimerRef.current = null;
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = window.setTimeout(() => {
+      setPreviewOpen(false);
+      setPreviewPosition((current) => ({ ...current, ready: false }));
+    }, 90);
+  }, []);
+
+  useEffect(() => {
+    setPreviewImageStage("primary");
+  }, [firstPreviewImage, image, model._id]);
+
+  useEffect(() => {
+    if (!previewOpen) return undefined;
+    const frame = window.requestAnimationFrame(updatePreviewPosition);
+    const observer = typeof ResizeObserver === "function"
+      ? new ResizeObserver(updatePreviewPosition)
+      : null;
+    if (cardRef.current) observer?.observe(cardRef.current);
+    if (previewRef.current) observer?.observe(previewRef.current);
+    window.addEventListener("resize", updatePreviewPosition);
+    window.addEventListener("scroll", updatePreviewPosition, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("resize", updatePreviewPosition);
+      window.removeEventListener("scroll", updatePreviewPosition, true);
+    };
+  }, [previewOpen, updatePreviewPosition]);
+
+  useEffect(() => () => {
+    window.clearTimeout(openTimerRef.current);
+    window.clearTimeout(closeTimerRef.current);
+  }, []);
+
   return (
-    <a className="marketModelCard" href={href} onClick={(event) => navigateTo(href, onNavigate, event)}>
-      <div className="marketModelThumb">
-        {image ? (
-          <img src={image} alt={model.title} loading="lazy" referrerPolicy="no-referrer" />
-        ) : (
-          <Package size={32} />
-        )}
-        <span className={`badge ${accessBadgeClass(model.accessType)}`}>{accessLabel(model.accessType)}</span>
-        <span className="marketModelHoverMeta">
-          <span className="marketModelHoverSize">{sizeLabel}</span>
-          <span className="marketModelHoverRenderer">{rendererLabel}</span>
-          <span
-            className="marketModelHoverDownloads"
-            aria-label={`${downloadCount} ${textFor(language, "lượt tải", "downloads")}`}
-          >
-            <Download size={13} aria-hidden="true" />
-            <span>{downloadCount}</span>
+    <>
+      <a
+        ref={cardRef}
+        className="marketModelCard"
+        href={href}
+        aria-describedby={quickPreview && previewOpen ? previewId : undefined}
+        onMouseEnter={quickPreview ? showPreview : undefined}
+        onMouseLeave={quickPreview ? hidePreview : undefined}
+        onFocus={quickPreview ? showPreview : undefined}
+        onBlur={quickPreview ? hidePreview : undefined}
+        onClick={(event) => {
+          setPreviewOpen(false);
+          navigateTo(href, onNavigate, event);
+        }}
+      >
+        <div className="marketModelThumb">
+          {image ? (
+            <img src={image} alt={model.title} loading="lazy" referrerPolicy="no-referrer" />
+          ) : (
+            <Package size={32} />
+          )}
+          <span className={`badge ${accessBadgeClass(model.accessType)}`}>{accessLabel(model.accessType)}</span>
+          <span className="marketModelHoverMeta">
+            <span className="marketModelHoverSize">{sizeLabel}</span>
+            <span className="marketModelHoverRenderer">{rendererLabel}</span>
+            <span
+              className="marketModelHoverDownloads"
+              aria-label={`${downloadCount} ${textFor(language, "lượt tải", "downloads")}`}
+            >
+              <Download size={13} aria-hidden="true" />
+              <span>{downloadCount}</span>
+            </span>
           </span>
-        </span>
-      </div>
-      <strong>{model.title}</strong>
-    </a>
+        </div>
+        <strong>{model.title}</strong>
+      </a>
+      {quickPreview && previewOpen && createPortal(
+        <aside
+          ref={previewRef}
+          id={previewId}
+          role="tooltip"
+          className={`marketModelQuickPreview ${previewPosition.ready ? "ready" : ""}`}
+          data-placement={previewPosition.placement}
+          style={{ top: previewPosition.top, left: previewPosition.left }}
+        >
+          <div className="marketModelQuickPreviewImage">
+            {quickPreviewImage ? (
+              <img
+                src={quickPreviewImage}
+                alt=""
+                referrerPolicy="no-referrer"
+                onLoad={updatePreviewPosition}
+                onError={() => {
+                  setPreviewImageStage((current) => (
+                    current === "primary" && hasDistinctPreview ? "fallback" : "missing"
+                  ));
+                }}
+              />
+            ) : (
+              <span className="marketModelQuickPreviewPlaceholder" aria-hidden="true">
+                <Package size={48} />
+              </span>
+            )}
+          </div>
+          <div className="marketModelQuickPreviewBody">
+            <span className="marketModelQuickPreviewCategory">{categoryLabel}</span>
+            <div className="marketModelQuickPreviewHeading">
+              <strong>{model.title}</strong>
+              <span className={`badge ${accessBadgeClass(model.accessType)}`}>
+                {accessLabel(model.accessType)}
+              </span>
+            </div>
+            <div className="marketModelQuickPreviewMeta">
+              <span>
+                <HardDrive size={15} aria-hidden="true" />
+                <small>{textFor(language, "Dung lượng", "Size")}</small>
+                <strong>{sizeLabel}</strong>
+              </span>
+              <span>
+                <Sparkles size={15} aria-hidden="true" />
+                <small>Renderer</small>
+                <strong>{rendererLabel}</strong>
+              </span>
+              <span>
+                <Download size={15} aria-hidden="true" />
+                <small>{textFor(language, "Lượt tải", "Downloads")}</small>
+                <strong>{downloadCount}</strong>
+              </span>
+            </div>
+          </div>
+        </aside>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -345,25 +542,29 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
       .filter((image) => image?.url);
     const candidates = previews.length
       ? previews
-      : [model.coverImage ? { ...model.coverImage, url: cover(model) } : null].filter(Boolean);
+      : assetType === "scene"
+        ? []
+        : [model.coverImage ? { ...model.coverImage, url: cover(model) } : null].filter(Boolean);
     return candidates.filter((image, index) => candidates.findIndex((item) => item.url === image.url) === index);
-  }, [model]);
+  }, [assetType, model]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [naturalRatios, setNaturalRatios] = useState({});
+  const [imageStates, setImageStates] = useState({});
   const openerRef = useRef(null);
   const lightboxRef = useRef(null);
   const activeImage = images[activeIndex] || null;
   const activeImageUrl = activeImage?.url || "";
-  const metadataRatio = Number(activeImage?.width || 0) > 0 && Number(activeImage?.height || 0) > 0
-    ? Number(activeImage.width) / Number(activeImage.height)
-    : 0;
-  const sceneRatio = metadataRatio || naturalRatios[activeImageUrl] || (16 / 9);
 
   useEffect(() => {
     setActiveIndex(0);
     setLightboxOpen(false);
+    setImageStates({});
   }, [model._id]);
+
+  function setImageState(url, status) {
+    if (!url) return;
+    setImageStates((current) => current[url] === status ? current : { ...current, [url]: status });
+  }
 
   useEffect(() => {
     if (!lightboxOpen) return undefined;
@@ -401,16 +602,6 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
     setActiveIndex((current) => (current + direction + images.length) % images.length);
   }
 
-  function recordNaturalRatio(event) {
-    if (assetType !== "scene" || !activeImageUrl) return;
-    const width = Number(event.currentTarget.naturalWidth || 0);
-    const height = Number(event.currentTarget.naturalHeight || 0);
-    if (!width || !height) return;
-    setNaturalRatios((current) => (
-      current[activeImageUrl] ? current : { ...current, [activeImageUrl]: width / height }
-    ));
-  }
-
   const lightbox = lightboxOpen && activeImageUrl && typeof document !== "undefined"
     ? createPortal(
       <div
@@ -437,7 +628,6 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
           src={activeImageUrl}
           alt={activeImage.alt || model.title}
           referrerPolicy="no-referrer"
-          onLoad={recordNaturalRatio}
         />
         {images.length > 1 && (
           <>
@@ -468,11 +658,6 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
     <>
       <div
         className={`marketDetailMedia asset-${assetType} ${images.length > 1 ? "hasPreviews" : "single"}`}
-        style={assetType === "scene" ? {
-          "--market-preview-ratio": String(sceneRatio),
-          "--market-preview-max-width": `${Math.round(760 * sceneRatio)}px`,
-          "--market-preview-mobile-max-width": `${Math.round(70 * sceneRatio * 100) / 100}vh`,
-        } : undefined}
       >
         {images.length > 1 && (
           <div className="marketPreviewStrip">
@@ -483,11 +668,18 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
                 <button
                   type="button"
                   key={`${src}-${index}`}
-                  className={index === activeIndex ? "active" : ""}
+                  className={`${index === activeIndex ? "active" : ""} image-${imageStates[src] || "loading"}`}
                   onClick={() => setActiveIndex(index)}
                   aria-label={`${textFor(language, "Ảnh xem trước", "Preview")} ${index + 1}`}
                 >
-                  <img src={src} alt={image.alt || model.title} loading="lazy" referrerPolicy="no-referrer" />
+                  <img
+                    src={src}
+                    alt={image.alt || model.title}
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    onLoad={() => setImageState(src, "loaded")}
+                    onError={() => setImageState(src, "error")}
+                  />
                 </button>
               );
             })}
@@ -499,14 +691,23 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
               ref={openerRef}
               type="button"
               className="marketDetailImageButton"
+              style={assetType === "scene" ? {
+                backgroundImage: `url(${JSON.stringify(activeImageUrl)})`,
+              } : undefined}
               onClick={() => setLightboxOpen(true)}
               aria-label={textFor(language, "Mở ảnh đầy đủ", "Open full image")}
             >
+              {imageStates[activeImageUrl] !== "loaded" && (
+                <span className={`marketDetailImageStatus ${imageStates[activeImageUrl] === "error" ? "error" : "loading"}`} aria-hidden="true">
+                  {imageStates[activeImageUrl] === "error" ? <Package size={34} /> : <Loader2 className="spin" size={28} />}
+                </span>
+              )}
               <img
                 src={activeImageUrl}
                 alt={activeImage.alt || model.title}
                 referrerPolicy="no-referrer"
-                onLoad={recordNaturalRatio}
+                onLoad={() => setImageState(activeImageUrl, "loaded")}
+                onError={() => setImageState(activeImageUrl, "error")}
               />
             </button>
           ) : (
@@ -788,13 +989,13 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   const [filterOptions, setFilterOptions] = useState({});
   const [models, setModels] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => searchFromPath(path, assetType));
   const [category, setCategory] = useState(() => categoryFromPath(path, assetType));
   const [openCategory, setOpenCategory] = useState("");
   const [activeFilters, setActiveFilters] = useState(EMPTY_FILTERS);
   const [accessType, setAccessType] = useState("");
-  const [sortMode, setSortMode] = useState("");
-  const [effectiveSort, setEffectiveSort] = useState("newest");
+  const [sortMode, setSortMode] = useState(assetType === "model" ? "source_id_desc" : "");
+  const [effectiveSort, setEffectiveSort] = useState(assetType === "model" ? "source_id_desc" : "newest");
   const [imageSearchMeta, setImageSearchMeta] = useState(null);
   const [imageSearchPreview, setImageSearchPreview] = useState("");
   const [imageSearching, setImageSearching] = useState(false);
@@ -946,6 +1147,8 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   useEffect(() => {
     const nextCategory = categoryFromPath(path, assetType);
     setCategory((current) => current === nextCategory ? current : nextCategory);
+    const nextSearch = searchFromPath(path, assetType);
+    setSearch((current) => current === nextSearch ? current : nextSearch);
   }, [path, assetType]);
 
   useEffect(() => {
@@ -967,6 +1170,11 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   );
   const totalFilterCount = activeFilterCount + (category ? 1 : 0) + (accessType ? 1 : 0);
   const sortOptions = [
+    ...(assetType === "model" ? [{
+      value: "source_id_desc",
+      vi: search.trim() || imageSearchMeta ? "ID lớn nhất" : "Phù hợp nhất",
+      en: search.trim() || imageSearchMeta ? "Highest ID" : "Best match",
+    }] : []),
     { value: "relevance", vi: "Phù hợp nhất", en: "Relevance" },
     { value: "newest", vi: "Mới nhất", en: "Newest" },
     { value: "popular", vi: "Tải nhiều nhất", en: "Most downloaded" },
@@ -1145,11 +1353,13 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
                     setEffectiveSort(event.target.value);
                   }}
                 >
-                  {sortOptions.map((option) => (
+                  {sortOptions
+                    .filter((option) => option.value !== "relevance" || Boolean(search.trim() || imageSearchMeta))
+                    .map((option) => (
                     <option key={option.value} value={option.value}>
                       {language === "vi" ? option.vi : option.en}
                     </option>
-                  ))}
+                    ))}
                 </select>
                 <ChevronDown size={15} aria-hidden="true" />
               </label>
@@ -1182,7 +1392,15 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
         {error && <p className="error">{error}</p>}
         {loading && <p className="success">{language === "vi" ? "Đang tải..." : "Loading..."}</p>}
         <div className="marketGrid">
-            {models.map((model) => <ModelCard key={model._id} model={model} onNavigate={onNavigate} language={language} />)}
+            {models.map((model) => (
+              <ModelCard
+                key={model._id}
+                model={model}
+                onNavigate={onNavigate}
+                language={language}
+                quickPreview
+              />
+            ))}
         </div>
         {!loading && !models.length && (
           <section className="panel emptyState">
@@ -1595,7 +1813,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
     .filter((item, index, items) => items.findIndex((candidate) => candidate.slug === item.slug) === index);
 
   return (
-    <div className="marketDetailPage">
+    <div className={`marketDetailPage asset-${assetType}`}>
       <div className="marketDetailTopbar">
         <button type="button" className="marketBackButton" onClick={() => navigateTo(`/${segment}`, onNavigate)}>
           <ArrowLeft size={16} />
@@ -1651,47 +1869,58 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
                 onVerified={setTurnstileToken}
                 onExpired={() => setTurnstileToken("")}
               />
-            ) : isDemo ? (
-              <button className="primaryButton" type="button" disabled>
-                <Package size={18} />
-                {assetType === "scene" ? textFor(language, "Scene mẫu giao diện", "Interface demo scene") : textFor(language, "Model mẫu giao diện", "Interface demo model")}
-              </button>
-            ) : !user ? (
-              <a className="primaryButton" href={loginHref}>
-                <LogIn size={18} />
-                {textFor(language, "Đăng nhập để tải", "Sign in to download")}
-              </a>
-            ) : requiresPro ? (
-              <button className="primaryButton" type="button" onClick={() => navigateTo("/topup?mode=pro", onNavigate)}>
-                <ShieldCheck size={18} />
-                {textFor(language, "Nâng cấp Pro để tải", "Upgrade to Pro")}
-              </button>
             ) : (
-              <button className="primaryButton" type="button" disabled={downloading || !canDownload} onClick={downloadModel}>
-                <Download size={18} />
-                {downloading ? textFor(language, "Đang tạo phiên tải...", "Creating download...") : textFor(language, `Tải ${noun}`, `Download ${noun}`)}
-              </button>
-            )}
-            {!user ? (
-              <a className="smallButton marketReportButton" href={loginHref}>
-                <Flag size={17} />
-                {textFor(language, "Đăng nhập để báo lỗi", "Sign in to report")}
-              </a>
-            ) : (
-              <button
-                className={`smallButton marketReportButton ${reported ? "reported" : ""}`}
-                type="button"
-                disabled={reported}
-                onClick={() => {
-                  setReportError("");
-                  setReportOpen(true);
-                }}
-              >
-                {reported ? <CheckCircle2 size={17} /> : <Flag size={17} />}
-                {reported
-                  ? textFor(language, "Đã báo lỗi", "Issue reported")
-                  : textFor(language, "Báo lỗi", "Report issue")}
-              </button>
+              <div className="marketDetailDownloadRow">
+                {isDemo ? (
+                  <button className="primaryButton" type="button" disabled>
+                    <Package size={18} />
+                    {assetType === "scene" ? textFor(language, "Scene mẫu giao diện", "Interface demo scene") : textFor(language, "Model mẫu giao diện", "Interface demo model")}
+                  </button>
+                ) : !user ? (
+                  <a className="primaryButton" href={loginHref}>
+                    <LogIn size={18} />
+                    {textFor(language, "Đăng nhập để tải", "Sign in to download")}
+                  </a>
+                ) : requiresPro ? (
+                  <button className="primaryButton" type="button" onClick={() => navigateTo("/topup?mode=pro", onNavigate)}>
+                    <ShieldCheck size={18} />
+                    {textFor(language, "Nâng cấp Pro để tải", "Upgrade to Pro")}
+                  </button>
+                ) : (
+                  <button className="primaryButton" type="button" disabled={downloading || !canDownload} onClick={downloadModel}>
+                    <Download size={18} />
+                    {downloading ? textFor(language, "Đang tạo phiên tải...", "Creating download...") : textFor(language, `Tải ${noun}`, `Download ${noun}`)}
+                  </button>
+                )}
+                {!user ? (
+                  <a
+                    className="iconButton marketReportIconButton"
+                    href={loginHref}
+                    aria-label={textFor(language, "Đăng nhập để báo lỗi", "Sign in to report")}
+                    title={textFor(language, "Đăng nhập để báo lỗi", "Sign in to report")}
+                  >
+                    <Flag size={18} />
+                  </a>
+                ) : (
+                  <button
+                    className={`iconButton marketReportIconButton ${reported ? "reported" : ""}`}
+                    type="button"
+                    disabled={reported}
+                    aria-label={reported
+                      ? textFor(language, "Đã báo lỗi", "Issue reported")
+                      : textFor(language, "Báo lỗi", "Report issue")}
+                    title={reported
+                      ? textFor(language, "Đã báo lỗi", "Issue reported")
+                      : textFor(language, "Báo lỗi", "Report issue")}
+                    onClick={() => {
+                      setReportError("");
+                      setReportOpen(true);
+                    }}
+                  >
+                    {reported ? <CheckCircle2 size={18} /> : <Flag size={18} />}
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -1755,13 +1984,25 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
           <>
             <div className="marketRecommendationInitialGrid">
               {recommendedModels.slice(0, 6).map((item) => (
-                <ModelCard key={item._id} model={item} onNavigate={onNavigate} language={language} />
+                <ModelCard
+                  key={item._id}
+                  model={item}
+                  onNavigate={onNavigate}
+                  language={language}
+                  quickPreview
+                />
               ))}
             </div>
             {recommendationsExpanded && expandedRecommendations.length > 0 && (
               <div className="marketRecommendationExpandedGrid">
                 {expandedRecommendations.map((item) => (
-                  <ModelCard key={item._id} model={item} onNavigate={onNavigate} language={language} />
+                  <ModelCard
+                    key={item._id}
+                    model={item}
+                    onNavigate={onNavigate}
+                    language={language}
+                    quickPreview
+                  />
                 ))}
               </div>
             )}

@@ -6,17 +6,18 @@ useMemoryDb();
 
 const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
 const { listMarketplaceModels } = await import("../src/controllers/marketplaceController.js");
-const { normalizeMarketplaceTitle } = await import("../src/utils/marketplaceSort.js");
+const { marketplaceSourceIdNumber, normalizeMarketplaceTitle } = await import("../src/utils/marketplaceSort.js");
 const { initializeMarketplaceCategories } = await import("../src/utils/marketplaceSeed.js");
 
-async function createCatalogAsset({ title, slug, createdAt, downloadCount }) {
+async function createCatalogAsset({ title, slug, createdAt, downloadCount, assetId = slug }) {
   const model = await MarketplaceModel.create({
     assetType: "model",
     source: {
       provider: "sort-test",
       modelId: slug,
-      assetId: slug,
+      assetId,
     },
+    sourceAssetIdSort: marketplaceSourceIdNumber(assetId),
     title,
     titleSort: normalizeMarketplaceTitle(title),
     slug,
@@ -125,6 +126,38 @@ test("text search defaults to relevance while invalid sort falls back safely", a
 
   const invalid = await list({ sort: "not-a-sort", limit: "4" });
   assert.deepEqual(invalid.sort, { requested: null, effective: "newest" });
+});
+
+test("source ID ordering is numeric and applied before pagination", async () => {
+  await createCatalogAsset({
+    title: "ID Nine",
+    slug: "source-id-nine",
+    assetId: "9",
+    createdAt: "2025-01-01T00:00:00.000Z",
+    downloadCount: 0,
+  });
+  await createCatalogAsset({
+    title: "ID One Hundred",
+    slug: "source-id-hundred",
+    assetId: "100",
+    createdAt: "2025-01-01T00:00:00.000Z",
+    downloadCount: 0,
+  });
+  await createCatalogAsset({
+    title: "ID One Thousand",
+    slug: "source-id-thousand",
+    assetId: "1000",
+    createdAt: "2025-01-01T00:00:00.000Z",
+    downloadCount: 0,
+  });
+
+  const payload = await list({ sort: "source_id_desc", limit: "3" });
+  assert.deepEqual(payload.models.map((item) => item.title), [
+    "ID One Thousand",
+    "ID One Hundred",
+    "ID Nine",
+  ]);
+  assert.equal(payload.sort.effective, "source_id_desc");
 });
 
 test("taxonomy search accepts Vietnamese, unaccented Vietnamese and English", async () => {

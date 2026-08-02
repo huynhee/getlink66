@@ -8,8 +8,10 @@ import {
   backupRetentionSelection,
   databaseNameFromUri,
   restoreNamespaceArguments,
+  runCommand,
   safeDatabaseIdentity,
   sha256File,
+  writeMongoToolConfig,
 } from "../src/utils/databaseBackupService.js";
 
 test("database backup helpers require explicit database names and isolate restore targets", () => {
@@ -60,4 +62,31 @@ test("backup checksum detects a one-byte modification", async () => {
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
+});
+
+test("MongoDB tools read credentials from a private config file", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "3dipl-mongo-config-"));
+  const uri = "mongodb://backup-user:very-secret@example.test/core";
+  try {
+    const configPath = await writeMongoToolConfig(directory, "core-dump", uri);
+    assert.equal(await fs.readFile(configPath, "utf8"), `uri: ${JSON.stringify(uri)}\n`);
+    if (process.platform !== "win32") {
+      const stat = await fs.stat(configPath);
+      assert.equal(stat.mode & 0o077, 0);
+    }
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("command failures redact configured secrets", async () => {
+  const secret = "mongodb://user:password@example.test/core";
+  await assert.rejects(
+    runCommand(
+      process.execPath,
+      ["-e", "process.stderr.write(process.argv[1]); process.exit(1)", secret],
+      { redactValues: [secret] },
+    ),
+    (error) => !error.message.includes(secret) && error.message.includes("[REDACTED]"),
+  );
 });

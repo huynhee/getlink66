@@ -9,6 +9,16 @@ import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { openGoogleDriveFileStream } from "./storageProvider.js";
 
 const READY_MIME_TYPE = "image/webp";
+const SUPPORTED_SOURCE_EXTENSIONS = new Set(["jpg", "jpeg", "png"]);
+
+function assertSupportedCoverSource(fileName = "") {
+  const extension = String(fileName).trim().toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] || "";
+  if (!SUPPORTED_SOURCE_EXTENSIONS.has(extension)) {
+    const error = new Error("Marketplace cover source must be a JPEG or PNG image.");
+    error.code = "MARKETPLACE_COVER_FORMAT_UNSUPPORTED";
+    throw error;
+  }
+}
 
 function booleanEnv(name, fallback = false) {
   const value = String(process.env[name] ?? "").trim().toLowerCase();
@@ -195,6 +205,7 @@ async function generateCover(model) {
   const fingerprint = String(model.coverCache?.sourceFingerprint || "");
   const driveFileId = String(model.coverImage?.driveFileId || "");
   if (!fingerprint || !driveFileId) throw new Error("Marketplace cover source is missing.");
+  assertSupportedCoverSource(model.coverImage?.fileName);
   const key = coverCacheKey(model, fingerprint);
   const targetPath = marketplaceCoverCachePath(key);
   await fs.promises.mkdir(path.dirname(targetPath), { recursive: true, mode: 0o755 });

@@ -6,6 +6,7 @@ useMemoryDb();
 
 const { default: User } = await import("../src/models/User.js");
 const { default: DailyImageSearchQuota } = await import("../src/models/DailyImageSearchQuota.js");
+const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
 const { searchMarketplaceByImage } = await import("../src/controllers/marketplaceController.js");
 const {
   normalizeImageSearchMatches,
@@ -15,6 +16,23 @@ const {
 function restoreEnv(name, value) {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;
+}
+
+function responseCapture() {
+  const state = { statusCode: 200, body: null };
+  return {
+    state,
+    response: {
+      status(code) {
+        state.statusCode = code;
+        return this;
+      },
+      json(value) {
+        state.body = value;
+        return value;
+      },
+    },
+  };
 }
 
 test("image match normalization keeps provider order and removes duplicate IDs", () => {
@@ -88,6 +106,84 @@ test("unconfigured image search does not charge daily quota", async () => {
     assert.match(capturedError?.message || "", /not configured/);
     assert.equal(await DailyImageSearchQuota.countDocuments({ userId: user._id }), 0);
   } finally {
+    restoreEnv("MARKETPLACE_IMAGE_SEARCH_URL", previousUrl);
+  }
+});
+
+test("Model image search keeps the closest match and prioritizes Pro afterward", async () => {
+  const previousUrl = process.env.MARKETPLACE_IMAGE_SEARCH_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.MARKETPLACE_IMAGE_SEARCH_URL = "https://image-search.example.test/query";
+  await MarketplaceModel.deleteMany({});
+  const freeClosest = await MarketplaceModel.create({
+    assetType: "model",
+    source: { provider: "drive", modelId: "image-free-closest", assetId: "image-free-closest" },
+    title: "Closest Free",
+    slug: "closest-free",
+    accessType: "free",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+  });
+  const proModels = await MarketplaceModel.insertMany(
+    Array.from({ length: 12 }, (_, index) => ({
+      assetType: "model",
+      source: {
+        provider: "drive",
+        modelId: `image-pro-${index}`,
+        assetId: `image-pro-${index}`,
+      },
+      title: `Image Pro ${index}`,
+      slug: `image-pro-${index}`,
+      accessType: "member",
+      metadataStatus: "complete",
+      fileStatus: "ready",
+      isPublished: true,
+    })),
+  );
+  const otherFree = await MarketplaceModel.create({
+    assetType: "model",
+    source: { provider: "drive", modelId: "image-free-other", assetId: "image-free-other" },
+    title: "Other Free",
+    slug: "other-free",
+    accessType: "free",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+  });
+  const orderedIds = [
+    freeClosest.source.modelId,
+    otherFree.source.modelId,
+    ...proModels.map((model) => model.source.modelId),
+  ];
+  let providerLimit = 0;
+  globalThis.fetch = async (url, options) => {
+    const body = JSON.parse(options.body);
+    providerLimit = body.limit;
+    return new Response(JSON.stringify({
+      matches: orderedIds.map((modelId, index) => ({ modelId, score: 1 - index / 100 })),
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const capture = responseCapture();
+  try {
+    await searchMarketplaceByImage({
+      user: { _id: "aaaaaaaaaaaaaaaaaaaaaaaa", role: "admin" },
+      body: {
+        imageData: "data:image/png;base64,aW1hZ2U=",
+        limit: 10,
+      },
+    }, capture.response, (error) => { throw error; });
+
+    assert.equal(providerLimit, 30);
+    assert.equal(capture.state.body.models[0]._id, freeClosest._id);
+    assert.equal(capture.state.body.models.filter((model) => model.accessType === "free").length, 1);
+    assert.equal(capture.state.body.ranking.bypassed, false);
+  } finally {
+    globalThis.fetch = previousFetch;
     restoreEnv("MARKETPLACE_IMAGE_SEARCH_URL", previousUrl);
   }
 });

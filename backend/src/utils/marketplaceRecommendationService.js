@@ -3,6 +3,7 @@ import ModelDownload from "../models/ModelDownload.js";
 import { marketplaceAssetTypeFilter } from "../data/marketplaceCatalogs.js";
 import { hydrateMarketplaceCategoryRefs } from "./marketplaceTaxonomy.js";
 import { normalizeMarketplaceSearchText } from "./marketplaceSearch.js";
+import { marketplaceSourceIdNumber } from "./marketplaceSort.js";
 import { marketplacePublicDeletionQuery } from "./marketplaceDeletionService.js";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -155,17 +156,31 @@ function rankHomeCandidates(candidates, profile, hasHistory, limit) {
 async function candidatesFor(assetType, excludedIds) {
   const models = await MarketplaceModel.find({
     assetType: marketplaceAssetTypeFilter(assetType),
+    ...(assetType === "model" ? { accessType: "member" } : {}),
     isPublished: true,
     metadataStatus: "complete",
     fileStatus: "ready",
     ...marketplacePublicDeletionQuery(),
     ...(excludedIds.size ? { _id: { $nin: [...excludedIds] } } : {}),
   })
-    .sort({ downloadCount: -1, createdAt: -1 })
+    .sort(assetType === "model"
+      ? { sourceAssetIdSort: -1, createdAt: -1, _id: -1 }
+      : { downloadCount: -1, createdAt: -1 })
     .limit(720)
     .lean();
   await hydrateMarketplaceCategoryRefs(models);
   return models;
+}
+
+function latestSourceIdModels(candidates, limit) {
+  return [...candidates]
+    .sort((left, right) => (
+      Number(right.sourceAssetIdSort || marketplaceSourceIdNumber(right.source?.assetId || right.metadataSourceModelId))
+      - Number(left.sourceAssetIdSort || marketplaceSourceIdNumber(left.source?.assetId || left.metadataSourceModelId))
+      || new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()
+      || String(right._id).localeCompare(String(left._id))
+    ))
+    .slice(0, limit);
 }
 
 export async function marketplaceHomeRecommendations({ userId = null, limit = 6 } = {}) {
@@ -204,7 +219,7 @@ export async function marketplaceHomeRecommendations({ userId = null, limit = 6 
   const value = {
     engine: "catalog_behavior_v2",
     mode: hasHistory ? "personalized" : "trending",
-    models: rankHomeCandidates(modelCandidates, profile, hasHistory, safeLimit),
+    models: latestSourceIdModels(modelCandidates, safeLimit),
     scenes: rankHomeCandidates(sceneCandidates, profile, hasHistory, safeLimit),
   };
   cache.delete(key);

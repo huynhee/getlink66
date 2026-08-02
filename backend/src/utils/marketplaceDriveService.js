@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 import MarketplaceModel from "../models/MarketplaceModel.js";
-import { normalizeMarketplaceTitle } from "./marketplaceSort.js";
+import { marketplaceSourceIdNumber, normalizeMarketplaceTitle } from "./marketplaceSort.js";
 import {
   createGoogleDriveFile,
   getGoogleDriveFileMetadata,
@@ -51,7 +51,14 @@ function naturalName(a, b) {
 }
 
 function isImage(file) {
-  return String(file?.mimeType || "").startsWith("image/") || ["jpg", "jpeg", "png"].includes(extension(file?.name));
+  const ext = extension(file?.name);
+  const mime = String(file?.mimeType || "").trim().toLowerCase();
+  if (!["jpg", "jpeg", "png"].includes(ext)) return false;
+  return !mime ||
+    mime === "application/octet-stream" ||
+    mime === "image/jpg" ||
+    mime === "image/jpeg" ||
+    mime === "image/png";
 }
 
 function isArchive(file) {
@@ -90,7 +97,8 @@ function pickArchive(files = [], assetType = "model") {
 
 function pickCover(images = [], assetType = "model") {
   if (normalizeAssetType(assetType) === "scene") {
-    return images.find((file) => /^preview[-_ ]?0*1$/.test(baseName(file?.name)));
+    return images.find((file) => baseName(file?.name) === "cover")
+      || images.find((file) => /^preview[-_ ]?0*1$/.test(baseName(file?.name)));
   }
   return images.sort((a, b) => {
     const score = (file) => {
@@ -105,7 +113,11 @@ function pickCover(images = [], assetType = "model") {
 }
 
 function pickPreviews(images = [], cover = null, assetType = "model") {
-  const sorted = images.sort((a, b) => {
+  const normalizedType = normalizeAssetType(assetType);
+  const candidates = normalizedType === "scene"
+    ? images.filter((file) => /^preview[-_ ]?\d+$/.test(baseName(file?.name)))
+    : images;
+  const sorted = candidates.sort((a, b) => {
     const score = (file) => {
       const match = baseName(file?.name).match(/^preview[-_ ]?(\d+)/);
       if (match) return Number(match[1]);
@@ -114,7 +126,9 @@ function pickPreviews(images = [], cover = null, assetType = "model") {
     return score(a) - score(b) || naturalName(a, b);
   });
   const previews = sorted.filter((file) => file.id !== cover?.id);
-  return (normalizeAssetType(assetType) === "scene" ? [cover, ...previews] : previews).filter(Boolean).slice(0, 20);
+  const legacySceneCover = normalizedType === "scene"
+    && /^preview[-_ ]?0*1$/.test(baseName(cover?.name));
+  return (legacySceneCover ? [cover, ...previews] : previews).filter(Boolean).slice(0, 20);
 }
 
 function imageRef(file, alt = "") {
@@ -193,16 +207,41 @@ function stableMetadataDocument(raw, normalized) {
   };
 }
 
-export async function readMarketplaceDriveMetadata(file, fallback = {}, options = {}) {
-  if (!file?.id) return { document: null, metadata: null, hash: "", errors: [{ field: "metadataFile", code: "required" }] };
-  const buffer = await readGoogleDriveFileBuffer(file.id, { fileName: file.name, maxBytes: 1024 * 1024 });
+export function decodeMarketplaceMetadataBuffer(buffer, { compressed = false } = {}) {
   let body = buffer;
-  if (/\.gz$/i.test(String(file.name || ""))) body = zlib.gunzipSync(buffer);
+  if (compressed) {
+    try {
+      body = zlib.gunzipSync(buffer, {
+        maxOutputLength: MARKETPLACE_METADATA_MAX_BYTES + 1,
+      });
+    } catch (error) {
+      const exceededLimit = error?.code === "ERR_BUFFER_TOO_LARGE" ||
+        /maxOutputLength|Cannot create a Buffer larger/i.test(String(error?.message || ""));
+      const safeError = new Error(
+        exceededLimit
+          ? `Marketplace metadata exceeds ${MARKETPLACE_METADATA_MAX_BYTES} bytes.`
+          : "Marketplace metadata gzip is invalid.",
+      );
+      safeError.status = exceededLimit ? 413 : 400;
+      safeError.code = exceededLimit ? "MARKETPLACE_METADATA_TOO_LARGE" : "MARKETPLACE_METADATA_INVALID_GZIP";
+      throw safeError;
+    }
+  }
   if (body.length > MARKETPLACE_METADATA_MAX_BYTES) {
     const error = new Error(`Marketplace metadata exceeds ${MARKETPLACE_METADATA_MAX_BYTES} bytes.`);
     error.status = 413;
+    error.code = "MARKETPLACE_METADATA_TOO_LARGE";
     throw error;
   }
+  return body;
+}
+
+export async function readMarketplaceDriveMetadata(file, fallback = {}, options = {}) {
+  if (!file?.id) return { document: null, metadata: null, hash: "", errors: [{ field: "metadataFile", code: "required" }] };
+  const buffer = await readGoogleDriveFileBuffer(file.id, { fileName: file.name, maxBytes: 1024 * 1024 });
+  const body = decodeMarketplaceMetadataBuffer(buffer, {
+    compressed: /\.gz$/i.test(String(file.name || "")),
+  });
   const parsed = JSON.parse(body.toString("utf8"));
   const { metadata, errors } = normalizeMarketplaceMetadata(legacyMetadata(parsed, fallback));
   const taxonomy = await validateMarketplaceTaxonomy(metadata, { currentModel: options.currentModel || null });
@@ -236,11 +275,12 @@ async function categoryFields(sourceCategoryId, assetType = "model", { currentMo
   };
 }
 
-function publicationBlockers({ metadataFile, metadataErrors, categorySourceId, archive, cover }) {
+function publicationBlockers({ metadataFile, metadataErrors, categorySourceId, archive, cover, previews, assetType }) {
   const blockers = [];
   if (!metadataFile) blockers.push("metadata_file");
   if (!archive) blockers.push("archive");
   if (!cover) blockers.push("cover");
+  if (normalizeAssetType(assetType) === "scene" && !previews?.length) blockers.push("preview");
   if (!categorySourceId) blockers.push("category");
   for (const error of metadataErrors || []) {
     const key = error.field === "sourceCategoryId" ? "category" : error.field;
@@ -376,6 +416,8 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     categorySourceId: categories.categorySourceId,
     archive,
     cover,
+    previews,
+    assetType: normalizedType,
   });
   const desiredPublished = typeof existing?.desiredPublished === "boolean"
     ? existing.desiredPublished
@@ -392,6 +434,9 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
       categoryId: metadata.sourceCategoryId || "",
       syncedAt: now,
     },
+    sourceAssetIdSort: marketplaceSourceIdNumber(
+      metadata.sourceAssetId || metadata.sourceModelId || fallbackSourceId,
+    ),
     title: metadata.title || existing?.title || titleFromName(folderName, metadata.sourceAssetId || metadata.sourceModelId),
     ...categories,
     driveFolderId: folderId,
@@ -409,8 +454,8 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     desiredPublished,
     publicationBlockers: blockers,
     isPublished: desiredPublished && blockers.length === 0,
-    metadataStatus: blockers.some((item) => !["archive", "cover", "metadata_file"].includes(item)) || !metadataFile ? "incomplete" : "complete",
-    metadataMissingFields: blockers.filter((item) => !["archive", "cover", "metadata_file"].includes(item)),
+    metadataStatus: blockers.some((item) => !["archive", "cover", "preview", "metadata_file"].includes(item)) || !metadataFile ? "incomplete" : "complete",
+    metadataMissingFields: blockers.filter((item) => !["archive", "cover", "preview", "metadata_file"].includes(item)),
     fileStatus: archive ? "ready" : "missing",
     storageProvider: archive ? "google_drive" : "",
     driveFileId: archive?.id || "",
@@ -427,7 +472,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     metadataRevision: Math.max(0, Number(metadataResult.document?.revision || 0)),
     metadataDriveVersion: clean(metadataFile?.version, 80),
     metadataModifiedTime: metadataFile?.modifiedTime ? new Date(metadataFile.modifiedTime) : null,
-    syncStatus: syncError ? "error" : blockers.some((item) => ["archive", "cover", "metadata_file"].includes(item)) ? "missing" : "synced",
+    syncStatus: syncError ? "error" : blockers.some((item) => ["archive", "cover", "preview", "metadata_file"].includes(item)) ? "missing" : "synced",
     syncError,
     discoveryStatus: "pending",
     searchStatus: "pending",

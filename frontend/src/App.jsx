@@ -351,7 +351,7 @@ function App() {
     <div className={`appFrame page-${page || "getlink"}`}>
       <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
       <FacebookGroupBanner language={language} />
-      <main className={`shell shell-${page || "getlink"}`}>
+      <main className={`shell shell-${page || "getlink"}${page === "scenes" && path.startsWith("/scenes/") ? " shell-scene-detail" : ""}`}>
         {!user && !["guide", "privacy", "terms", "models", "scenes"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo={path || "/"} language={language} />}
         {page === "models" && <Models user={user} language={language} path={path} onNavigate={navigate} onUserChange={setUser} />}
         {page === "scenes" && <Scenes user={user} language={language} path={path} onNavigate={navigate} onUserChange={setUser} />}

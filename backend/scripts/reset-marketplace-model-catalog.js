@@ -10,12 +10,19 @@ import {
   marketplaceDbUsesCore,
 } from "../src/config/db.js";
 
-const CONFIRM_TOKEN = "RESET_MODEL_CATALOG";
+const requestedAssetType = process.argv
+  .find((value) => value.startsWith("--asset-type="))
+  ?.slice("--asset-type=".length) || "model";
+if (!new Set(["model", "scene"]).has(requestedAssetType)) {
+  throw new Error("--asset-type must be model or scene");
+}
+const isScene = requestedAssetType === "scene";
+const CONFIRM_TOKEN = isScene ? "RESET_SCENE_CATALOG" : "RESET_MODEL_CATALOG";
 const execute = process.argv.includes("--execute");
 const confirmation = process.argv
   .find((value) => value.startsWith("--confirm="))
   ?.slice("--confirm=".length);
-const modelQuery = { assetType: { $ne: "scene" } };
+const assetQuery = isScene ? { assetType: "scene" } : { assetType: { $ne: "scene" } };
 
 function jsonSafe(value) {
   return JSON.parse(JSON.stringify(value));
@@ -36,10 +43,10 @@ async function loadResetData(models) {
     import("../src/models/ModelDownload.js"),
   ]);
   const modelIds = models.map((model) => model._id);
-  const rootFolderId = String(process.env.MARKETPLACE_DRIVE_ROOT_FOLDER_ID || "").trim();
+  const rootFolderId = String(process.env[isScene ? "SCENES_DRIVE_ROOT_FOLDER_ID" : "MARKETPLACE_DRIVE_ROOT_FOLDER_ID"] || "").trim();
   const stateQuery = rootFolderId
-    ? { $or: [modelQuery, { rootFolderId }] }
-    : modelQuery;
+    ? { $or: [assetQuery, { rootFolderId }] }
+    : assetQuery;
   const [sessions, downloads, reports, driveChanges, syncStates] = await Promise.all([
     DownloadSession.find({ modelId: { $in: modelIds } }).lean(),
     ModelDownload.find({ modelId: { $in: modelIds } }).lean(),
@@ -70,14 +77,14 @@ async function writeBackup(data) {
   const backupDir = path.resolve(".cache/catalog-reset-backups");
   await fs.mkdir(backupDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const fileName = `model-catalog-${stamp}.json.gz`;
+  const fileName = `${requestedAssetType}-catalog-${stamp}.json.gz`;
   const outputPath = path.join(backupDir, fileName);
   const tempPath = `${outputPath}.tmp`;
   const payload = {
     schemaVersion: 1,
     createdAt: new Date().toISOString(),
     databaseTarget: marketplaceDbUsesCore() ? "atlas-core" : "marketplace-vps",
-    assetType: "model",
+    assetType: requestedAssetType,
     data: {
       models: jsonSafe(data.models),
       downloadSessions: jsonSafe(data.sessions),
@@ -98,14 +105,14 @@ async function writeBackup(data) {
 function summary(data) {
   return {
     databaseTarget: marketplaceDbUsesCore() ? "atlas-core" : "marketplace-vps",
-    models: data.models.length,
+    assets: data.models.length,
     downloadSessions: data.sessions.length,
     modelDownloads: data.downloads.length,
     marketplaceReports: data.reports.length,
     driveChanges: data.driveChanges.length,
     driveSyncStates: data.syncStates.length,
     googleDriveFiles: 0,
-    scenes: 0,
+    assetType: requestedAssetType,
     taxonomy: 0,
   };
 }
@@ -116,14 +123,14 @@ async function main() {
   }
   await connectDb();
   const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
-  const models = await MarketplaceModel.find(modelQuery).lean();
+  const models = await MarketplaceModel.find(assetQuery).lean();
   const data = await loadResetData(models);
   const before = summary(data);
   if (!execute) {
     console.log(JSON.stringify({
       mode: "dry-run",
       wouldDelete: before,
-      note: `Run with --execute --confirm=${CONFIRM_TOKEN} to create a local gzip backup and reset only the Model catalog.`,
+      note: `Run with --asset-type=${requestedAssetType} --execute --confirm=${CONFIRM_TOKEN} to create a local gzip backup and reset only the ${requestedAssetType} catalog.`,
     }, null, 2));
     return;
   }
@@ -154,15 +161,15 @@ async function main() {
   try {
     await session.withTransaction(async () => {
       const stateQuery = data.rootFolderId
-        ? { $or: [modelQuery, { rootFolderId: data.rootFolderId }] }
-        : modelQuery;
+        ? { $or: [assetQuery, { rootFolderId: data.rootFolderId }] }
+        : assetQuery;
       const results = await Promise.all([
         DownloadSession.deleteMany({ modelId: { $in: data.modelIds } }, { session }),
         ModelDownload.deleteMany({ modelId: { $in: data.modelIds } }, { session }),
         MarketplaceReport.deleteMany({ modelId: { $in: data.modelIds } }, { session }),
         MarketplaceDriveChange.deleteMany(stateQuery, { session }),
         MarketplaceDriveSyncState.deleteMany(stateQuery, { session }),
-        MarketplaceModel.deleteMany(modelQuery, { session }),
+        MarketplaceModel.deleteMany(assetQuery, { session }),
       ]);
       [
         deleted.downloadSessions,
@@ -177,16 +184,17 @@ async function main() {
     await session.endSession();
   }
 
-  const remaining = await MarketplaceModel.countDocuments(modelQuery);
+  const remaining = await MarketplaceModel.countDocuments(assetQuery);
   console.log(JSON.stringify({
     mode: "execute",
     backup,
     deleted,
     coverCache: { removed: cacheFilesRemoved, errors: cacheErrors },
-    remainingModels: remaining,
+    assetType: requestedAssetType,
+    remainingAssets: remaining,
     untouched: {
       googleDriveFiles: true,
-      scenes: true,
+      otherAssetType: true,
       taxonomy: true,
       usersAndPayments: true,
     },

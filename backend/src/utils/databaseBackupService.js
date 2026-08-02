@@ -51,8 +51,30 @@ export async function sha256File(filePath) {
   return digest.digest("hex");
 }
 
+function redactSensitiveOutput(value, sensitiveValues = []) {
+  let result = String(value || "");
+  for (const secret of sensitiveValues.map((item) => String(item || "")).filter(Boolean)) {
+    result = result.split(secret).join("[REDACTED]");
+  }
+  return result;
+}
+
+export async function writeMongoToolConfig(directory, label, uri) {
+  const safeLabel = String(label || "database").replace(/[^a-z0-9_-]+/gi, "-").slice(0, 80);
+  const filePath = path.join(directory, `${safeLabel}.mongo-tools.yml`);
+  const handle = await fs.promises.open(filePath, "wx", 0o600);
+  try {
+    await handle.writeFile(`uri: ${JSON.stringify(String(uri || ""))}\n`, "utf8");
+  } finally {
+    await handle.close();
+  }
+  await fs.promises.chmod(filePath, 0o600);
+  return filePath;
+}
+
 export function runCommand(command, args = [], options = {}) {
   return new Promise((resolve, reject) => {
+    const sensitiveValues = options.redactValues || [];
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env || process.env,
@@ -63,10 +85,16 @@ export function runCommand(command, args = [], options = {}) {
     let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("error", reject);
+    child.on("error", (spawnError) => {
+      const error = new Error(redactSensitiveOutput(spawnError.message, sensitiveValues));
+      error.code = spawnError.code;
+      reject(error);
+    });
     child.on("close", (code) => {
-      if (code === 0) return resolve({ code, stdout: stdout.trim(), stderr: stderr.trim() });
-      const error = new Error(`${command} failed with exit code ${code}: ${stderr.slice(-1000)}`);
+      const safeStdout = redactSensitiveOutput(stdout, sensitiveValues).trim();
+      const safeStderr = redactSensitiveOutput(stderr, sensitiveValues).trim();
+      if (code === 0) return resolve({ code, stdout: safeStdout, stderr: safeStderr });
+      const error = new Error(`${command} failed with exit code ${code}: ${safeStderr.slice(-1000)}`);
       error.code = "BACKUP_COMMAND_FAILED";
       error.exitCode = code;
       return reject(error);

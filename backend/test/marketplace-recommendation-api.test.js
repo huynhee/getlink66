@@ -47,7 +47,7 @@ test("model detail returns six recommendations and expansion returns the next 54
     fileStatus: "ready",
     isPublished: true,
   });
-  await MarketplaceModel.insertMany(Array.from({ length: 60 }, (_, index) => ({
+  await MarketplaceModel.insertMany(Array.from({ length: 75 }, (_, index) => ({
     source: { provider: "drive", modelId: `recommendation-${index}` },
     title: `Recommended chair ${index + 1}`,
     slug: `recommended-chair-${index + 1}`,
@@ -59,7 +59,7 @@ test("model detail returns six recommendations and expansion returns the next 54
     forms: ["organic"],
     colors: ["beige"],
     materials: ["fabric"],
-    accessType: index % 3 ? "member" : "free",
+    accessType: index % 5 ? "member" : "free",
     metadataStatus: "complete",
     fileStatus: "ready",
     isPublished: true,
@@ -74,6 +74,7 @@ test("model detail returns six recommendations and expansion returns the next 54
   );
   assert.equal(detail.state.statusCode, 200);
   assert.equal(detail.state.body.recommendedModels.length, 6);
+  assert.ok(detail.state.body.recommendedModels.every((item) => item.accessType === "member"));
   assert.equal(detail.state.body.recommendations.total, 60);
   assert.equal(detail.state.body.recommendations.hasMore, true);
 
@@ -85,11 +86,16 @@ test("model detail returns six recommendations and expansion returns the next 54
   );
   assert.equal(expanded.state.statusCode, 200);
   assert.equal(expanded.state.body.models.length, 54);
+  assert.ok(expanded.state.body.models.every((item) => item.accessType === "member"));
   assert.equal(expanded.state.body.pagination.total, 60);
   assert.equal(expanded.state.body.pagination.hasMore, false);
 });
 
 test("home recommendations personalize from downloads and keep asset types separate", async () => {
+  await Promise.all([
+    MarketplaceModel.deleteMany({}),
+    ModelDownload.deleteMany({}),
+  ]);
   const userId = "aaaaaaaaaaaaaaaaaaaaaaaa";
   const downloaded = await MarketplaceModel.create({
     assetType: "model",
@@ -123,7 +129,7 @@ test("home recommendations personalize from downloads and keep asset types separ
     styles: ["modern"],
     renderers: ["corona"],
     renderer: "Corona",
-    accessType: "free",
+    accessType: "member",
     metadataStatus: "complete",
     fileStatus: "ready",
     isPublished: true,
@@ -153,6 +159,7 @@ test("home recommendations personalize from downloads and keep asset types separ
   assert.equal(capture.state.body.mode, "personalized");
   assert.equal(capture.state.body.models[0]._id, preferred._id);
   assert.ok(capture.state.body.models.every((item) => item.assetType === "model"));
+  assert.ok(capture.state.body.models.every((item) => item.accessType === "member"));
   assert.ok(capture.state.body.scenes.every((item) => item.assetType === "scene"));
   assert.equal(capture.state.body.models.some((item) => item._id === downloaded._id), false);
 });

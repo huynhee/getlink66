@@ -5199,6 +5199,110 @@ label {
   padding: var(--space-40) 0;
 }
 
+.homeCatalogSearch {
+  width: 80%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 0;
+  margin: 0 auto 18px;
+  padding: 4px;
+  border: 1px solid var(--border-warm);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-sm);
+}
+
+.homeCatalogSearchTypes {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding-right: 8px;
+  border-right: 1px solid var(--border-warm);
+}
+
+.homeCatalogSearchTypes button {
+  height: 28px;
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: 700 12px/1 var(--font-mono);
+  cursor: pointer;
+}
+
+.homeCatalogSearchTypes button.active {
+  background: var(--text-primary);
+  color: var(--surface-raised);
+}
+
+.homeCatalogSearchField {
+  min-width: 0;
+  height: 34px;
+}
+
+.homeCatalogSearchField input {
+  width: 100%;
+  height: 100%;
+  padding: 0 16px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.homeCatalogSearchField input::placeholder {
+  color: var(--text-muted);
+}
+
+.homeCatalogSearchSubmit {
+  width: 42px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-left: 1px solid var(--border-warm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.homeCatalogSearchSubmit:hover,
+.homeCatalogSearchSubmit:focus-visible {
+  color: var(--neon-green);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .homeCatalogSearch {
+    grid-template-columns: 1fr 44px;
+  }
+
+  .homeCatalogSearchTypes {
+    grid-column: 1 / -1;
+    width: 100%;
+    padding: 0 0 6px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-warm);
+  }
+
+  .homeCatalogSearchTypes button {
+    flex: 1;
+  }
+}
+
 .heroSection::after,
 #pricing::before,
 .ctaSection::before,

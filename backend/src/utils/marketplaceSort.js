@@ -1,5 +1,6 @@
 export const MARKETPLACE_SORT_VALUES = Object.freeze([
   "relevance",
+  "source_id_desc",
   "newest",
   "popular",
   "oldest",
@@ -20,6 +21,13 @@ export function normalizeMarketplaceTitle(value = "") {
     .trim();
 }
 
+export function marketplaceSourceIdNumber(value = "") {
+  const chunks = String(value || "").match(/\d+/g);
+  if (!chunks?.length) return 0;
+  const numeric = Number(chunks.join(""));
+  return Number.isSafeInteger(numeric) ? numeric : 0;
+}
+
 export function marketplaceSortSelection(rawSort, hasSearch = false) {
   const requested = String(rawSort || "").trim().toLowerCase();
   const validRequested = MARKETPLACE_SORT_SET.has(requested) ? requested : "";
@@ -32,6 +40,9 @@ export function marketplaceSortSelection(rawSort, hasSearch = false) {
 }
 
 export function marketplaceSortSpec(effectiveSort = "newest") {
+  if (effectiveSort === "source_id_desc") {
+    return { sourceAssetIdSort: -1, createdAt: -1, _id: -1 };
+  }
   if (effectiveSort === "popular") {
     return { downloadCount: -1, createdAt: -1, _id: -1 };
   }

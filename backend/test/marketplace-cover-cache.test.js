@@ -132,6 +132,9 @@ test("cover cache generates a square WebP and public catalog uses its static URL
     assert.match(publicModel.coverImage.url, /^\/media\/covers\/model\//);
     assert.equal(publicModel.coverImage.width, 480);
     assert.equal(publicModel.coverImage.url.includes("drive"), false);
+    assert.equal(publicModel.previewImages.length, 1);
+    assert.match(publicModel.previewImages[0].url, new RegExp(`/api/marketplace/models/${model._id}/preview/0`));
+    assert.equal(JSON.stringify(publicModel.previewImages).includes("driveFileId"), false);
 
     const sameCover = await queueMarketplaceCoverCache({
       ...stored,

@@ -551,8 +551,10 @@ function adminImageContentType(fileName = "", fallback = "") {
   const extension = String(fileName).toLowerCase().split(".").pop();
   if (["jpg", "jpeg"].includes(extension)) return "image/jpeg";
   if (extension === "png") return "image/png";
-  if (extension === "webp") return "image/webp";
-  return fallback || "application/octet-stream";
+  const error = new Error(`Unsupported marketplace image format${fallback ? ` (${fallback})` : ""}.`);
+  error.status = 415;
+  error.code = "MARKETPLACE_IMAGE_FORMAT_UNSUPPORTED";
+  throw error;
 }
 
 async function streamAdminMarketplaceImage(req, res, next, kind) {
@@ -579,12 +581,13 @@ async function streamAdminMarketplaceImage(req, res, next, kind) {
       cached.stream.on("error", next);
       return cached.stream.pipe(res);
     }
+    const contentType = adminImageContentType(image.fileName);
     const file = await openGoogleDriveFileStream(image.driveFileId, image.fileName || `${kind}.jpg`);
     res.setHeader("cache-control", "private, max-age=300");
     // Local development serves the admin UI and API on different ports.
     // Authentication still protects the route; same-site only permits the browser to render it.
     res.setHeader("cross-origin-resource-policy", "same-site");
-    res.setHeader("content-type", adminImageContentType(image.fileName, file.contentType));
+    res.setHeader("content-type", contentType);
     if (file.contentLength || image.size) res.setHeader("content-length", file.contentLength || image.size);
     file.stream.on("error", next);
     return file.stream.pipe(res);

@@ -39,6 +39,8 @@
     "marketplace:covers:verify": "npm run marketplace:covers:verify --prefix backend",
     "marketplace:catalog:reset:dry-run": "npm run marketplace:catalog:reset:dry-run --prefix backend",
     "marketplace:catalog:reset": "npm run marketplace:catalog:reset --prefix backend",
+    "marketplace:scenes:reset:dry-run": "npm run marketplace:scenes:reset:dry-run --prefix backend",
+    "marketplace:scenes:reset": "npm run marketplace:scenes:reset --prefix backend",
     "lint": "eslint backend/server.js backend/src backend/scripts backend/test frontend/src scripts",
     "test": "npm test --prefix backend",
     "build": "npm run build --prefix frontend",

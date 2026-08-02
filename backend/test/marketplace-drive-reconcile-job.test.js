@@ -77,3 +77,20 @@ test("starting from the beginning resets the saved reconciliation counters", asy
   await cancelMarketplaceDriveReconciliation({ assetType: "model", rootFolderId });
   await runMarketplaceDriveReconcileTick();
 });
+
+test("queuing a new reconciliation state persists the requested asset type", async () => {
+  const rootFolderId = `reconcile-new-scene-${Date.now()}`;
+  const queued = await queueMarketplaceDriveReconciliation({
+    assetType: "scene",
+    rootFolderId,
+    batchSize: 25,
+  });
+
+  assert.equal(queued.assetType, "scene");
+  assert.equal(queued.rootFolderId, rootFolderId);
+  assert.equal(queued.reconciliationStatus, "queued");
+  assert.equal(queued.reconciliationBatchSize, 25);
+
+  await cancelMarketplaceDriveReconciliation({ assetType: "scene", rootFolderId });
+  await runMarketplaceDriveReconcileTick();
+});

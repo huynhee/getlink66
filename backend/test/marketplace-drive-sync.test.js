@@ -18,6 +18,7 @@ const {
   serializeMarketplaceMetadata,
 } = await import("../src/utils/marketplaceMetadata.js");
 const {
+  decodeMarketplaceMetadataBuffer,
   syncMarketplaceDriveFolder,
   writeMarketplaceModelMetadata,
 } = await import("../src/utils/marketplaceDriveService.js");
@@ -128,7 +129,7 @@ function createDriveFixture() {
       },
       {
         id: `preview-${suffix}`,
-        name: "preview-1.jpg",
+        name: "preview-01.jpg",
         mimeType: "image/jpeg",
         size: "240000",
         imageMediaMetadata: { width: 1200, height: 1200 },
@@ -216,6 +217,18 @@ test("metadata V2 rejects values outside the controlled vocabulary", () => {
   const { metadata, errors } = normalizeMarketplaceMetadata(metadataInput({ forms: ["rectangle", "made-up-shape"] }));
   assert.deepEqual(metadata.forms, ["rectangle"]);
   assert.ok(errors.some((item) => item.field === "form" && item.code === "unknown_value"));
+});
+
+test("compressed metadata is rejected before it can expand beyond the limit", () => {
+  const compressed = zlib.gzipSync(Buffer.alloc(256 * 1024 + 2, "a"));
+  assert.throws(
+    () => decodeMarketplaceMetadataBuffer(compressed, { compressed: true }),
+    (error) => error?.status === 413 && error?.code === "MARKETPLACE_METADATA_TOO_LARGE",
+  );
+  assert.throws(
+    () => decodeMarketplaceMetadataBuffer(Buffer.from("not-gzip"), { compressed: true }),
+    (error) => error?.status === 400 && error?.code === "MARKETPLACE_METADATA_INVALID_GZIP",
+  );
 });
 
 test("empty optional facets remain publishable and are excluded by facet filters", async () => {
@@ -380,7 +393,7 @@ test("missing archive blocks publication and restoring it honors desiredPublishe
   }
 });
 
-test("Scene requires preview-1 as its cover and ignores a standalone cover file", async () => {
+test("Scene uses cover.jpg for catalog and preview-01 as the first detail image", async () => {
   const fixture = createDriveFixture();
   const restoreFetch = fixture.install();
   try {
@@ -394,7 +407,6 @@ test("Scene requires preview-1 as its cover and ignores a standalone cover file"
       isActive: true,
     });
     fixture.files.find((file) => file.name === "model.zip").name = "scene.zip";
-    fixture.files = fixture.files.filter((file) => file.name !== "preview-1.jpg");
     fixture.setMetadata({
       assetType: "scene",
       sourceAssetId: `scene-${fixture.sourceModelId}`,
@@ -404,15 +416,72 @@ test("Scene requires preview-1 as its cover and ignores a standalone cover file"
       styles: ["modern"],
       sha256: "b".repeat(64),
     });
+    fixture.files.push({
+      id: `unrelated-scene-image-${fixture.sourceModelId}`,
+      name: "reference.jpg",
+      mimeType: "image/jpeg",
+      size: "180000",
+      imageMediaMetadata: { width: 1600, height: 900 },
+      modifiedTime: "2026-07-13T00:00:00.000Z",
+      version: "1",
+      parents: [fixture.folder.id],
+      driveId: fixture.folder.driveId,
+      trashed: false,
+    });
 
-    const missingCover = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id, assetType: "scene" });
-    assert.equal(missingCover.model.isPublished, false);
-    assert.ok(missingCover.model.publicationBlockers.includes("cover"));
-
-    fixture.files.find((file) => file.name === "cover.jpg").name = "preview-1.jpg";
     const ready = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id, assetType: "scene" });
     assert.equal(ready.model.isPublished, true);
-    assert.equal(ready.model.coverImage.fileName, "preview-1.jpg");
+    assert.equal(ready.model.coverImage.fileName, "cover.jpg");
+    assert.equal(ready.model.previewImages.length, 1);
+    assert.equal(ready.model.previewImages[0].fileName, "preview-01.jpg");
+
+    fixture.files = fixture.files.filter((file) => file.name !== "preview-01.jpg");
+    const missingPreview = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id, assetType: "scene" });
+    assert.equal(missingPreview.model.isPublished, false);
+    assert.ok(missingPreview.model.publicationBlockers.includes("preview"));
+
+    fixture.files.push({
+      id: `legacy-preview-${fixture.sourceModelId}`,
+      name: "preview-1.jpg",
+      mimeType: "image/jpeg",
+      size: "240000",
+      imageMediaMetadata: { width: 1200, height: 900 },
+      modifiedTime: "2026-07-13T00:00:00.000Z",
+      version: "1",
+      parents: [fixture.folder.id],
+      driveId: fixture.folder.driveId,
+      trashed: false,
+    });
+
+    fixture.files = fixture.files.filter((file) => file.name !== "cover.jpg");
+    const legacy = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id, assetType: "scene" });
+    assert.equal(legacy.model.coverImage.fileName, "preview-1.jpg");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("Drive sync rejects unsupported image formats as marketplace covers", async () => {
+  const fixture = createDriveFixture();
+  fixture.files = fixture.files
+    .filter((file) => !String(file.mimeType || "").startsWith("image/"))
+    .concat({
+      id: `cover-svg-${fixtureSequence}`,
+      name: "cover.svg",
+      mimeType: "image/svg+xml",
+      size: "1200",
+      modifiedTime: "2026-07-13T00:00:00.000Z",
+      version: "1",
+      parents: [fixture.folder.id],
+      driveId: fixture.root.driveId,
+      trashed: false,
+    });
+  const restoreFetch = fixture.install();
+  try {
+    const result = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id });
+    assert.equal(result.model.isPublished, false);
+    assert.equal(result.model.coverImage?.driveFileId || "", "");
+    assert.ok(result.model.publicationBlockers.includes("cover"));
   } finally {
     restoreFetch();
   }

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AlertCircle, ArrowRight, BookOpen, CheckCircle2, ChevronRight, Chrome, ClipboardPaste, ShieldCheck, Sparkles, UserPlus, Wallet } from "lucide-react";
+import { AlertCircle, ArrowRight, BookOpen, CheckCircle2, ChevronRight, Chrome, ClipboardPaste, Search, ShieldCheck, Sparkles, UserPlus, Wallet } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import GuideContent from "../components/GuideContent.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
@@ -115,6 +115,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const [featuredModelsLoading, setFeaturedModelsLoading] = useState(true);
   const [featuredScenes, setFeaturedScenes] = useState([]);
   const [featuredScenesLoading, setFeaturedScenesLoading] = useState(true);
+  const [catalogSearchType, setCatalogSearchType] = useState("model");
+  const [catalogSearch, setCatalogSearch] = useState("");
   const [homeTopupMode, setHomeTopupMode] = useState("credit");
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
   const [referral, setReferral] = useState(null);
@@ -361,8 +363,53 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
     return siteSettings.referralTitleBoth || referralTitle();
   }
 
+  function submitCatalogSearch(event) {
+    event.preventDefault();
+    const query = catalogSearch.trim();
+    const target = catalogSearchType === "scene" ? "/scenes" : "/models";
+    window.location.assign(query ? `${target}?q=${encodeURIComponent(query)}` : target);
+  }
+
   return (
     <div className="landing">
+      {!adminMode && (
+        <form className="homeCatalogSearch" onSubmit={submitCatalogSearch} role="search">
+          <div className="homeCatalogSearchTypes" role="tablist" aria-label={language === "vi" ? "Loại thư viện" : "Library type"}>
+            <button
+              type="button"
+              className={catalogSearchType === "model" ? "active" : ""}
+              onClick={() => setCatalogSearchType("model")}
+              role="tab"
+              aria-selected={catalogSearchType === "model"}
+            >
+              3D Models
+            </button>
+            <button
+              type="button"
+              className={catalogSearchType === "scene" ? "active" : ""}
+              onClick={() => setCatalogSearchType("scene")}
+              role="tab"
+              aria-selected={catalogSearchType === "scene"}
+            >
+              3D Scenes
+            </button>
+          </div>
+          <label className="homeCatalogSearchField">
+            <span className="srOnly">{language === "vi" ? "Tìm kiếm thư viện 3D" : "Search the 3D library"}</span>
+            <input
+              type="search"
+              value={catalogSearch}
+              onChange={(event) => setCatalogSearch(event.target.value)}
+              placeholder={catalogSearchType === "scene"
+                ? (language === "vi" ? "Tìm kiếm scene 3D..." : "Search 3D scenes...")
+                : (language === "vi" ? "Tìm kiếm 200.000+ model, vật liệu..." : "Search 200,000+ models, materials...")}
+            />
+          </label>
+          <button className="homeCatalogSearchSubmit" type="submit" aria-label={language === "vi" ? "Tìm kiếm" : "Search"}>
+            <Search size={18} />
+          </button>
+        </form>
+      )}
       {!adminMode && (
         <div className="signalRail">
           <div className="signalTrack">

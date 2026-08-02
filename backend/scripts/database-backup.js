@@ -9,6 +9,7 @@ import {
   databaseNameFromUri,
   runCommand,
   sha256File,
+  writeMongoToolConfig,
   writeJsonFile,
 } from "../src/utils/databaseBackupService.js";
 import {
@@ -161,7 +162,16 @@ async function backupDatabase(kind, tempDir) {
       runCommand("mongodump", ["--version"]),
       runCommand("age", ["--version"]),
     ]);
-    await runCommand("mongodump", [`--uri=${uri}`, `--archive=${source}`, "--gzip"]);
+    const mongoConfigPath = await writeMongoToolConfig(tempDir, `${kind}-dump`, uri);
+    try {
+      await runCommand("mongodump", [
+        `--config=${mongoConfigPath}`,
+        `--archive=${source}`,
+        "--gzip",
+      ], { redactValues: [uri] });
+    } finally {
+      await fs.promises.rm(mongoConfigPath, { force: true });
+    }
     const sourceSha256 = await sha256File(source);
     await runCommand("age", ["-r", ageRecipient, "-o", encrypted, source]);
     const encryptedSha256 = await sha256File(encrypted);

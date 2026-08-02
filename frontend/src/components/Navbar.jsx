@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Bell, CalendarClock, Chrome, Download, LogOut, Menu, Moon, Sun, UserCircle, Wallet, X } from "lucide-react";
+import { Bell, CalendarClock, Chrome, Download, History, LogOut, Menu, Moon, Sun, UserCircle, UserPlus, Wallet, X } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import CoinAmount from "./CoinAmount.jsx";
 import { translations } from "../i18n.js";
@@ -200,8 +200,6 @@ export default function Navbar({
     ["scenes", "Scenes"],
     ["getlink", t.getlink],
     ["topup", language === "vi" ? "Gói nạp" : "Top-up"],
-    ["invite", language === "vi" ? "Giới thiệu" : "Invite friends"],
-    ["history", t.history],
     ["guide", t.guide]
   ];
 
@@ -420,6 +418,29 @@ export default function Navbar({
                       {downloadQuotaHint(user, language) && <small>{downloadQuotaHint(user, language)}</small>}
                     </div>
                   </div>
+                  <nav
+                    className="accountMenuNavigation"
+                    aria-label={language === "vi" ? "Menu tài khoản" : "Account menu"}
+                  >
+                    <button
+                      type="button"
+                      className={page === "history" ? "active" : ""}
+                      onClick={() => goPage("history")}
+                      aria-current={page === "history" ? "page" : undefined}
+                    >
+                      <History size={16} />
+                      <span>{t.history}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={page === "invite" ? "active" : ""}
+                      onClick={() => goPage("invite")}
+                      aria-current={page === "invite" ? "page" : undefined}
+                    >
+                      <UserPlus size={16} />
+                      <span>{language === "vi" ? "Giới thiệu" : "Invite friends"}</span>
+                    </button>
+                  </nav>
                   <div className="accountMenuActions">
                     {user.role === "admin" && (
                       <button className="adminLink" onClick={() => goPath("/admin")}>

@@ -156,6 +156,7 @@ scene-000001-modern-living-room\
   metadata.json.gz
   scene.rar
   scene.sha256
+  cover.jpg
   preview-01.jpg
   preview-02.jpg
   preview-03.png
@@ -165,10 +166,12 @@ Bat buoc:
 
 - `metadata.json.gz`.
 - Dung mot archive `scene.zip`, `scene.rar` hoac `scene.7z`.
+- `cover.jpg|jpeg|png`.
 - `preview-01.jpg|jpeg|png`.
 - `scene.sha256`.
 
-`preview-01` luon la cover cua Scene. Scene khong tao `cover.jpg`.
+`cover` cua Scene duoc tao tu anh preview dau tien. Anh preview dau tien van duoc
+giu nguyen noi dung va ty le trong `preview-01`, khong bi thay bang anh cover.
 
 Optional:
 
@@ -300,6 +303,7 @@ preview-02.png
 Scene:
 
 ```text
+cover.jpg
 preview-01.jpg
 preview-02.jpg
 ```
@@ -885,7 +889,7 @@ mongodb
 
 - Metadata V3.
 - Archive dung ten `scene.*`.
-- `preview-01` la cover.
+- Co `cover.jpg` rieng; `preview-01` giu anh preview nguon dau tien.
 - Khong co Form/Color/Material trong metadata.
 
 ### Duplicate

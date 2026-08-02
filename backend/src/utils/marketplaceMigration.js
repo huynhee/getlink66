@@ -22,6 +22,21 @@ export async function ensureMarketplaceAssetMigration() {
     { $or: [{ "source.assetId": { $exists: false } }, { "source.assetId": "" }] },
     [{ $set: { "source.assetId": { $ifNull: ["$source.modelId", ""] } } }],
   );
+  await MarketplaceModel.updateMany(
+    { $or: [{ sourceAssetIdSort: { $exists: false } }, { sourceAssetIdSort: 0 }] },
+    [{
+      $set: {
+        sourceAssetIdSort: {
+          $convert: {
+            input: { $ifNull: ["$source.assetId", "$metadataSourceModelId"] },
+            to: "double",
+            onError: 0,
+            onNull: 0,
+          },
+        },
+      },
+    }],
+  );
   await MarketplaceCategory.updateMany({ assetType: { $exists: false } }, { $set: { assetType: "model" } });
   await DownloadSession.updateMany({ assetType: { $exists: false } }, { $set: { assetType: "model" } });
   await DownloadSession.updateMany(

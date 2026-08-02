@@ -7,7 +7,7 @@ import cors from "cors";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { closeDbConnections, connectDb, databaseHealth } from "./src/config/db.js";
-import { buildHelmetOptions } from "./src/config/httpSecurity.js";
+import { buildHelmetOptions, validatedJsonBodyLimit } from "./src/config/httpSecurity.js";
 import { assertProductionReadiness } from "./src/config/productionReadiness.js";
 import { cookieSignatureSecret } from "./src/config/secrets.js";
 import { isMemoryDb } from "./src/config/memoryStore.js";
@@ -238,7 +238,7 @@ if (coverCacheConfig.enabled) {
   );
 }
 
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "1mb" }));
+app.use(express.json({ limit: validatedJsonBodyLimit() }));
 app.use(
   cors({
     maxAge: 86400,

@@ -46,6 +46,13 @@ import {
   marketplaceSearchUsesFuzzyMatch,
 } from "../utils/marketplaceSearch.js";
 import { marketplacePublicDeletionQuery } from "../utils/marketplaceDeletionService.js";
+import {
+  isExactMarketplaceTitleOrSlug,
+  marketplaceAccessSlots,
+  marketplaceRankingMetadata,
+  mixMarketplaceAccessRankedModels,
+  shouldPrioritizeMarketplacePro,
+} from "../utils/marketplaceAccessRanking.js";
 
 const PAGE_SIZE = 60;
 const IMAGE_SEARCH_FREE_LIMIT = 10;
@@ -128,14 +135,13 @@ function publicCategoryRef(category) {
 }
 
 function imageContentType(fileName = "", fallback = "") {
-  const value = String(fallback || "").toLowerCase();
-  if (value.startsWith("image/")) return value;
   const name = String(fileName || "").toLowerCase();
   if (name.endsWith(".png")) return "image/png";
   if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
-  if (name.endsWith(".webp")) return "image/webp";
-  if (name.endsWith(".gif")) return "image/gif";
-  return "application/octet-stream";
+  const error = new Error(`Unsupported marketplace image format${fallback ? ` (${fallback})` : ""}.`);
+  error.status = 415;
+  error.code = "MARKETPLACE_IMAGE_FORMAT_UNSUPPORTED";
+  throw error;
 }
 
 function categorySort(a, b) {
@@ -164,6 +170,8 @@ function buildCategoryTree(categories = []) {
 function publicModel(model, options = {}) {
   if (!model) return null;
   const includePreviews = options.includePreviews !== false;
+  const previewLimit = Math.max(0, Number(options.previewLimit || 0));
+  const previewImages = includePreviews ? publicPreviewImages(model) : [];
   return {
     _id: model._id,
     assetType: normalizeAssetType(model.assetType),
@@ -177,7 +185,7 @@ function publicModel(model, options = {}) {
     categorySourceId: model.categorySourceId || "",
     parentCategorySourceId: model.parentCategorySourceId || "",
     coverImage: publicCoverImage(model),
-    previewImages: includePreviews ? publicPreviewImages(model) : [],
+    previewImages: previewLimit > 0 ? previewImages.slice(0, previewLimit) : previewImages,
     styles: model.styles || [],
     renderers: model.renderers || [],
     forms: model.forms || [],
@@ -203,6 +211,7 @@ async function recommendedModelsFor(model, options = {}) {
   const query = {
     assetType: marketplaceAssetTypeFilter(model.assetType),
     _id: { $ne: model._id },
+    ...(normalizeAssetType(model.assetType) === "model" ? { accessType: "member" } : {}),
     isPublished: true,
     metadataStatus: "complete",
     fileStatus: "ready",
@@ -218,7 +227,7 @@ async function recommendedModelsFor(model, options = {}) {
     limit: Math.max(desiredCount, 60),
   });
   return {
-    models: ranked.slice(offset, offset + limit).map((item) => publicModel(item, { includePreviews: false })),
+    models: ranked.slice(offset, offset + limit).map((item) => publicModel(item, { previewLimit: 1 })),
     total: Math.min(60, ranked.length),
     engine: "catalog_behavior_v2",
   };
@@ -428,7 +437,92 @@ function searchCandidateLimit() {
   return Math.min(5_000, Math.max(200, Number(process.env.MARKETPLACE_SEARCH_CANDIDATE_LIMIT || 2_000)));
 }
 
-async function fuzzyMarketplacePage({ query, search, sortSelection, page, limit }) {
+function marketplaceTierQuery(query, accessType, excludedIds = []) {
+  const tierQuery = { ...query, accessType };
+  if (excludedIds.length) addNestedFilter(tierQuery, { _id: { $nin: excludedIds } });
+  return tierQuery;
+}
+
+function marketplaceTierWindow(slots, accessType) {
+  const tierSlots = slots.filter((slot) => slot.accessType === accessType);
+  if (!tierSlots.length) return { first: 0, count: 0 };
+  return {
+    first: tierSlots[0].index,
+    count: tierSlots.length,
+  };
+}
+
+async function loadMarketplaceTierWindow(query, projection, sortSpec, window) {
+  if (!window.count) return [];
+  return MarketplaceModel.find(query, projection)
+    .sort(sortSpec)
+    .skip(window.first)
+    .limit(window.count)
+    .lean();
+}
+
+async function databaseMarketplaceAccessPage({
+  query,
+  projection,
+  sortSpec,
+  page,
+  limit,
+  pinnedModels = [],
+  engine,
+  mode,
+}) {
+  const pinnedIds = pinnedModels.map((model) => model._id).filter(Boolean);
+  const memberQuery = marketplaceTierQuery(query, "member", pinnedIds);
+  const freeQuery = marketplaceTierQuery(query, "free", pinnedIds);
+  const [memberTotal, freeTotal] = await Promise.all([
+    MarketplaceModel.countDocuments(memberQuery),
+    MarketplaceModel.countDocuments(freeQuery),
+  ]);
+  const total = pinnedModels.length + memberTotal + freeTotal;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const safePage = Math.min(page, totalPages);
+  const pageOffset = (safePage - 1) * limit;
+  const pinnedStart = Math.min(pageOffset, pinnedModels.length);
+  const pinnedEnd = Math.min(pinnedModels.length, pageOffset + limit);
+  const pagePinned = pinnedModels.slice(pinnedStart, pinnedEnd);
+  const remainderLimit = limit - pagePinned.length;
+  const remainderOffset = Math.max(0, pageOffset - pinnedModels.length);
+  const slots = marketplaceAccessSlots({
+    memberTotal,
+    freeTotal,
+    offset: remainderOffset,
+    limit: remainderLimit,
+  });
+  const memberWindow = marketplaceTierWindow(slots, "member");
+  const freeWindow = marketplaceTierWindow(slots, "free");
+  const [members, free] = await Promise.all([
+    loadMarketplaceTierWindow(memberQuery, projection, sortSpec, memberWindow),
+    loadMarketplaceTierWindow(freeQuery, projection, sortSpec, freeWindow),
+  ]);
+  const mixed = slots.map((slot) => {
+    if (slot.accessType === "free") return free[slot.index - freeWindow.first];
+    return members[slot.index - memberWindow.first];
+  }).filter(Boolean);
+
+  return {
+    models: [...pagePinned, ...mixed],
+    total,
+    totalPages,
+    safePage,
+    engine,
+    mode,
+    truncated: false,
+  };
+}
+
+async function fuzzyMarketplacePage({
+  query,
+  search,
+  sortSelection,
+  page,
+  limit,
+  prioritizePro = false,
+}) {
   const candidateLimit = searchCandidateLimit();
   const loadCandidates = async (broad = false) => {
     const candidateQuery = { ...query };
@@ -442,11 +536,18 @@ async function fuzzyMarketplacePage({ query, search, sortSelection, page, limit 
   if (!candidates.length) candidates = await loadCandidates(true);
   const matched = candidates.filter((candidate) => marketplaceSearchMatches(candidate, search, { fuzzy: true }));
   const sorted = sortMarketplaceDocuments(matched, sortSelection.effective, search);
-  const total = sorted.length;
+  const prioritized = prioritizePro
+    ? mixMarketplaceAccessRankedModels(sorted, {
+        pinnedPredicate: (candidate) => (
+          candidate.accessType === "free" && isExactMarketplaceTitleOrSlug(candidate, search)
+        ),
+      })
+    : sorted;
+  const total = prioritized.length;
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const safePage = Math.min(page, totalPages);
   return {
-    models: sorted.slice((safePage - 1) * limit, safePage * limit),
+    models: prioritized.slice((safePage - 1) * limit, safePage * limit),
     total,
     totalPages,
     safePage,
@@ -456,8 +557,25 @@ async function fuzzyMarketplacePage({ query, search, sortSelection, page, limit 
   };
 }
 
-async function bilingualMarketplacePage({ query, search, sortSelection, page, limit }) {
+async function bilingualMarketplacePage({
+  query,
+  search,
+  sortSelection,
+  page,
+  limit,
+  prioritizePro = false,
+}) {
   if (!search) {
+    if (prioritizePro) {
+      return databaseMarketplaceAccessPage({
+        query,
+        sortSpec: marketplaceSortSpec(sortSelection.effective),
+        page,
+        limit,
+        engine: "catalog",
+        mode: "browse",
+      });
+    }
     const total = await MarketplaceModel.countDocuments(query);
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const safePage = Math.min(page, totalPages);
@@ -481,11 +599,18 @@ async function bilingualMarketplacePage({ query, search, sortSelection, page, li
       ? exactMatches
       : candidates.filter((candidate) => marketplaceSearchMatches(candidate, search, { fuzzy: true }));
     const sorted = sortMarketplaceDocuments(matched, sortSelection.effective, search);
-    const total = sorted.length;
+    const prioritized = prioritizePro
+      ? mixMarketplaceAccessRankedModels(sorted, {
+          pinnedPredicate: (candidate) => (
+            candidate.accessType === "free" && isExactMarketplaceTitleOrSlug(candidate, search)
+          ),
+        })
+      : sorted;
+    const total = prioritized.length;
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const safePage = Math.min(page, totalPages);
     return {
-      models: sorted.slice((safePage - 1) * limit, safePage * limit),
+      models: prioritized.slice((safePage - 1) * limit, safePage * limit),
       total,
       totalPages,
       safePage,
@@ -502,16 +627,37 @@ async function bilingualMarketplacePage({ query, search, sortSelection, page, li
       addNestedFilter(textQuery, exactSearchTokenFilter(search));
       const total = await MarketplaceModel.countDocuments(textQuery);
       if (total > 0) {
+        const relevance = sortSelection.effective === "relevance";
+        const projection = relevance ? { relevance: { $meta: "textScore" } } : undefined;
+        const sortSpec = relevance
+          ? { relevance: { $meta: "textScore" }, downloadCount: -1, createdAt: -1, _id: 1 }
+          : marketplaceSortSpec(sortSelection.effective);
+        if (prioritizePro) {
+          const pinnedCandidates = await MarketplaceModel.find(
+            { ...textQuery, accessType: "free" },
+            projection,
+          )
+            .sort(sortSpec)
+            .limit(limit)
+            .lean();
+          const pinnedModels = pinnedCandidates.filter((candidate) => (
+            isExactMarketplaceTitleOrSlug(candidate, search)
+          ));
+          return databaseMarketplaceAccessPage({
+            query: textQuery,
+            projection,
+            sortSpec,
+            page,
+            limit,
+            pinnedModels,
+            engine: "mongo_hybrid_v3",
+            mode: "exact",
+          });
+        }
         const totalPages = Math.max(1, Math.ceil(total / limit));
         const safePage = Math.min(page, totalPages);
-        const relevance = sortSelection.effective === "relevance";
-        const models = await MarketplaceModel.find(
-          textQuery,
-          relevance ? { relevance: { $meta: "textScore" } } : undefined,
-        )
-          .sort(relevance
-            ? { relevance: { $meta: "textScore" }, downloadCount: -1, createdAt: -1, _id: 1 }
-            : marketplaceSortSpec(sortSelection.effective))
+        const models = await MarketplaceModel.find(textQuery, projection)
+          .sort(sortSpec)
           .skip((safePage - 1) * limit)
           .limit(limit)
           .lean();
@@ -530,7 +676,14 @@ async function bilingualMarketplacePage({ query, search, sortSelection, page, li
     }
   }
 
-  return fuzzyMarketplacePage({ query, search, sortSelection, page, limit });
+  return fuzzyMarketplacePage({
+    query,
+    search,
+    sortSelection,
+    page,
+    limit,
+    prioritizePro,
+  });
 }
 
 export async function listMarketplaceModels(req, res, next) {
@@ -542,6 +695,7 @@ export async function listMarketplaceModels(req, res, next) {
     const search = String(req.query.q || req.query.search || "").trim().slice(0, 120);
     const sortSelection = marketplaceSortSelection(req.query.sort, Boolean(search));
     const accessType = String(req.query.accessType || "").trim();
+    const prioritizePro = shouldPrioritizeMarketplacePro(assetType, accessType);
     const fileStatus = String(req.query.fileStatus || "").trim();
     const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() };
     Object.assign(query, accessTypeFilter(accessType));
@@ -555,9 +709,10 @@ export async function listMarketplaceModels(req, res, next) {
       sortSelection,
       page,
       limit,
+      prioritizePro,
     });
     await hydrateMarketplaceCategoryRefs(models);
-    const assets = models.map((model) => publicModel(model, { includePreviews: false }));
+    const assets = models.map((model) => publicModel(model, { previewLimit: 1 }));
     res.json({
       assetType,
       assets,
@@ -565,6 +720,7 @@ export async function listMarketplaceModels(req, res, next) {
       pagination: { page: safePage, pageSize: limit, total, totalPages },
       search: { engine, mode, truncated: Boolean(truncated) },
       sort: sortSelection,
+      ranking: marketplaceRankingMetadata({ applied: prioritizePro, accessType }),
     });
   } catch (error) {
     next(error);
@@ -673,17 +829,20 @@ export async function searchMarketplaceByImage(req, res, next) {
     const image = parseImageSearchPayload(req.body);
     const requestedLimit = Number(req.body.limit || PAGE_SIZE);
     const limit = Math.min(60, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : PAGE_SIZE));
+    const accessType = String(req.body.accessType || "").trim();
+    const prioritizePro = shouldPrioritizeMarketplacePro(assetType, accessType);
+    const providerLimit = prioritizePro ? Math.min(300, Math.max(limit, limit * 3)) : limit;
     await assertImageSearchQuotaAvailable(req, tier);
     const searchResult = await searchMarketplaceImage({
       imageData: image.imageData,
       imageHash: image.imageHash,
-      limit,
+      limit: providerLimit,
       assetType,
     });
     const matchedIds = searchResult.matches.map((match) => match.modelId);
     const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() };
 
-    Object.assign(query, accessTypeFilter(req.body.accessType));
+    Object.assign(query, accessTypeFilter(accessType));
     applyMarketplaceFacetFilters(query, req.body, assetType);
     addNestedFilter(query, await categoryFilter(req.body.category, assetType));
     if (matchedIds.length) {
@@ -699,7 +858,7 @@ export async function searchMarketplaceByImage(req, res, next) {
 
     const models = matchedIds.length
       ? await MarketplaceModel.find(query)
-          .limit(limit)
+          .limit(providerLimit)
           .lean()
       : [];
     await hydrateMarketplaceCategoryRefs(models);
@@ -712,17 +871,24 @@ export async function searchMarketplaceByImage(req, res, next) {
       return { index: Number.MAX_SAFE_INTEGER, score: 0 };
     }
     models.sort((left, right) => modelRank(left).index - modelRank(right).index);
+    const prioritizedModels = prioritizePro
+      ? mixMarketplaceAccessRankedModels(models, {
+          pinnedPredicate: (model, index) => index === 0 && model.accessType === "free",
+        })
+      : models;
+    const visibleModels = prioritizedModels.slice(0, limit);
     const quota = await chargeImageSearchQuota(req, tier, image.imageHash);
 
-    const assets = models.map((model) => ({
-        ...publicModel(model, { includePreviews: false }),
+    const assets = visibleModels.map((model) => ({
+        ...publicModel(model, { previewLimit: 1 }),
         imageSearchScore: modelRank(model).score,
       }));
     res.json({
       assetType,
       assets,
       ...(assetType === "scene" ? { scenes: assets } : { models: assets }),
-      pagination: { page: 1, pageSize: limit, total: models.length, totalPages: 1 },
+      pagination: { page: 1, pageSize: limit, total: visibleModels.length, totalPages: 1 },
+      ranking: marketplaceRankingMetadata({ applied: prioritizePro, accessType }),
       imageSearch: {
         tier: tier === "member" ? "pro" : tier,
         limit: quota.limit,
@@ -794,13 +960,19 @@ export async function listMarketplaceModelRecommendations(req, res, next) {
 }
 
 function streamImageRef(res, next, image, defaultFileName) {
+  let contentType;
+  try {
+    contentType = imageContentType(image.fileName || defaultFileName);
+  } catch (error) {
+    return Promise.reject(error).catch(next);
+  }
   const openStream = openGoogleDriveFileStream(image.driveFileId, image.fileName || defaultFileName);
   return openStream.then((file) => {
     const etag = crypto.createHash("sha1").update(String(image.driveFileId || "")).digest("hex");
     res.setHeader("cache-control", "public, max-age=31536000, immutable");
     res.setHeader("etag", `"${etag}"`);
     res.setHeader("cross-origin-resource-policy", "cross-origin");
-    res.setHeader("content-type", imageContentType(image.fileName, file.contentType));
+    res.setHeader("content-type", contentType);
     if (file.contentLength || image.size) res.setHeader("content-length", file.contentLength || image.size);
     file.stream.on("error", next);
     file.stream.pipe(res);

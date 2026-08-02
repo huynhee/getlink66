@@ -7,7 +7,7 @@
     "node": ">=20.18 <21"
   },
   "scripts": {
-    "dev": "nodemon server.js",
+    "dev": "node --watch server.js",
     "start": "node server.js",
     "env:check": "node scripts/env-check.js",
     "drive:auth": "node scripts/google-drive-auth.js",
@@ -37,6 +37,8 @@
     "marketplace:covers:verify": "node scripts/marketplace-cover-cache.js --verify",
     "marketplace:catalog:reset:dry-run": "node scripts/reset-marketplace-model-catalog.js",
     "marketplace:catalog:reset": "node scripts/reset-marketplace-model-catalog.js --execute --confirm=RESET_MODEL_CATALOG",
+    "marketplace:scenes:reset:dry-run": "node scripts/reset-marketplace-model-catalog.js --asset-type=scene",
+    "marketplace:scenes:reset": "node scripts/reset-marketplace-model-catalog.js --asset-type=scene --execute --confirm=RESET_SCENE_CATALOG",
     "qa:smoke": "node scripts/qa-smoke.js",
     "test": "node --test"
   },
@@ -57,10 +59,11 @@
     "playwright": "^1.61.1",
     "qrcode": "^1.5.4",
     "sepay-pg-node": "^1.0.0",
-    "sharp": "^0.34.3",
+    "sharp": "^0.35.3",
     "undici": "^7.28.0"
   },
-  "devDependencies": {
-    "nodemon": "^3.1.9"
+  "overrides": {
+    "axios": "1.18.0",
+    "body-parser": "1.20.6"
   }
 }

@@ -9,10 +9,36 @@ const FOOTPRINT_URL = "https://user.3d66.com/newUser/index/index/footprint";
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
-// Defense-in-depth SSRF guard: dam bao Playwright khong navigate ra ngoai 3d66.com,
-// ngay ca khi caller pass URL da bi redirect (response.url) ra external host.
-// Neu khong guard: cookie 3D66 admin co the bi gui den evil.com qua cookieOrigins -> credential leak.
-function assertSafe3D66Url(rawUrl) {
+function configuredBrowserAllowedHosts() {
+  return new Set(
+    String(process.env.THREED66_BROWSER_ALLOWED_HOSTS || "")
+      .split(",")
+      .map((host) => host.trim().toLowerCase().replace(/\.$/, ""))
+      .filter((host) => /^[a-z0-9.-]+$/.test(host)),
+  );
+}
+
+function isAllowed3D66Host(hostname = "") {
+  const host = String(hostname).trim().toLowerCase().replace(/\.$/, "");
+  return host === "3d66.com" ||
+    host.endsWith(".3d66.com") ||
+    configuredBrowserAllowedHosts().has(host);
+}
+
+export function isAllowed3D66BrowserRequestUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (["about:", "blob:", "data:"].includes(parsed.protocol)) return true;
+  if (!["http:", "https:"].includes(parsed.protocol)) return false;
+  return !parsed.username && !parsed.password && isAllowed3D66Host(parsed.hostname);
+}
+
+// Defense-in-depth SSRF guard for browser navigations and every subrequest.
+export function assertSafe3D66Url(rawUrl) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -26,10 +52,15 @@ function assertSafe3D66Url(rawUrl) {
     error.status = 400;
     throw error;
   }
+  if (parsed.username || parsed.password) {
+    const error = new Error("3D66 browser navigation: URL credentials are not allowed");
+    error.status = 400;
+    throw error;
+  }
   const host = parsed.hostname.toLowerCase();
-  if (host !== "3d66.com" && !host.endsWith(".3d66.com")) {
+  if (!isAllowed3D66Host(host)) {
     const error = new Error(
-      `3D66 browser navigation blocked for non-3d66 host: ${host}`,
+      `3D66 browser navigation blocked for non-allowlisted host: ${host}`,
     );
     error.status = 400;
     throw error;
@@ -289,6 +320,7 @@ async function withBrowserContext(url, cookieValue, callback) {
         userAgent: DEFAULT_USER_AGENT,
         locale: "zh-CN",
         viewport: { width: 1440, height: 900 },
+        serviceWorkers: "block",
         ...(currentProxy ? { proxy: currentProxy } : {}),
       });
 
@@ -332,12 +364,14 @@ export async function close3D66Browser() {
 }
 
 async function installFastRoutes(context) {
-  if (!shouldBlockAssets()) return;
-
   await context.route("**/*", async (route) => {
     const request = route.request();
-    if (["image", "font", "media"].includes(request.resourceType())) {
-      await route.abort();
+    if (!isAllowed3D66BrowserRequestUrl(request.url())) {
+      await route.abort("blockedbyclient");
+      return;
+    }
+    if (shouldBlockAssets() && ["image", "font", "media"].includes(request.resourceType())) {
+      await route.abort("blockedbyclient");
       return;
     }
 
@@ -398,6 +432,7 @@ async function goto3D66Page(page, url) {
         waitUntil: navigationWaitUntil(),
         timeout: timeoutMs(),
       });
+      assertSafe3D66Url(page.url());
       return;
     } catch (error) {
       lastError = error;

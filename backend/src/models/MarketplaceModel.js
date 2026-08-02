@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 import { marketplaceModel } from "../config/modelFactory.js";
-import { normalizeMarketplaceTitle } from "../utils/marketplaceSort.js";
+import { marketplaceSourceIdNumber, normalizeMarketplaceTitle } from "../utils/marketplaceSort.js";
 
 const previewImageSchema = new mongoose.Schema(
   {
@@ -50,6 +50,7 @@ const marketplaceModelSchema = new mongoose.Schema(
       categoryId: { type: String, default: "", trim: true },
       syncedAt: Date,
     },
+    sourceAssetIdSort: { type: Number, default: 0, min: 0 },
     title: { type: String, required: true, trim: true },
     titleSort: { type: String, default: "", trim: true },
     searchTitle: { type: String, default: "", trim: true },
@@ -157,6 +158,9 @@ const marketplaceModelSchema = new mongoose.Schema(
 
 marketplaceModelSchema.pre("validate", function normalizeTitleForSorting() {
   this.titleSort = normalizeMarketplaceTitle(this.title);
+  this.sourceAssetIdSort = marketplaceSourceIdNumber(
+    this.source?.assetId || this.metadataSourceModelId || this.source?.modelId,
+  );
   const searchFields = [
     "title",
     "slug",
@@ -189,6 +193,7 @@ marketplaceModelSchema.index(
   },
 );
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, createdAt: -1 });
+marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, sourceAssetIdSort: -1, _id: -1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, downloadCount: -1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, titleSort: 1, _id: 1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, searchTokens: 1 });
