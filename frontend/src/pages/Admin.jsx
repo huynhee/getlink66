@@ -3300,9 +3300,9 @@ export default function Admin({ user, language = "vi" }) {
                 <div className="adminUserIdentity">
                   <strong>{user.name}</strong>
                   <span>{user.email}</span>
-                  {user.proUntil && new Date(user.proUntil) > new Date() && (
-                    <span className="badge success">PRO · {new Date(user.proUntil).toLocaleDateString(locale)}</span>
-                  )}
+                  <span className={`badge ${user.isPro ? "success" : ""}`}>
+                    {user.isPro ? `PRO · ${new Date(user.proUntil).toLocaleDateString(locale)}` : "FREE"}
+                  </span>
                   {user.isBanned && (
                     <p className="error" style={{ margin: "4px 0 0", fontSize: 12 }}>
                       {l("Đang bị ban", "Banned")}: {user.banReason || l("Không có lý do", "No reason")}

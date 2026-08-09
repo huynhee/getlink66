@@ -38,6 +38,7 @@ const ADMIN_TOPUP_PAGE_SIZE = 10;
 export function serializeAdminUser(user) {
   if (!user) return null;
   const doc = typeof user.toObject === "function" ? user.toObject() : user;
+  const isPro = Boolean(doc.proUntil && new Date(doc.proUntil) > new Date());
   return {
     _id: doc._id,
     email: doc.email || "",
@@ -46,6 +47,7 @@ export function serializeAdminUser(user) {
     role: doc.role || "user",
     credit: Number(doc.credit || 0),
     proUntil: doc.proUntil || null,
+    isPro,
     proPlanId: doc.proPlanId || null,
     proActivatedAt: doc.proActivatedAt || null,
     proDailyDownloadLimit: Number(doc.proDailyDownloadLimit || 0),

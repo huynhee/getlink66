@@ -914,16 +914,20 @@ export async function getMarketplaceModel(req, res, next) {
     const model = await MarketplaceModel.findOne({ $or: lookup }).lean();
     if (!model) return res.status(404).json({ message: `${assetLabel(assetType)} not found` });
     await hydrateMarketplaceCategoryRefs(model);
-    const recommendations = await recommendedModelsFor(model, { limit: 6 });
+    const includeRecommendations = String(req.query?.includeRecommendations ?? "true").toLowerCase() !== "false";
+    const recommendations = includeRecommendations
+      ? await recommendedModelsFor(model, { limit: 6 })
+      : null;
     res.json({
       asset: publicModel(model),
       ...(assetType === "scene" ? { scene: publicModel(model) } : { model: publicModel(model) }),
       downloadProtection: marketplaceTurnstileConfig(),
-      recommendedModels: recommendations.models,
+      recommendedModels: recommendations?.models || [],
       recommendations: {
-        total: recommendations.total,
-        hasMore: recommendations.total > recommendations.models.length,
-        engine: recommendations.engine,
+        total: recommendations?.total || 0,
+        hasMore: recommendations ? recommendations.total > recommendations.models.length : false,
+        engine: recommendations?.engine || "catalog_behavior_v2",
+        deferred: !includeRecommendations,
       },
     });
   } catch (error) {

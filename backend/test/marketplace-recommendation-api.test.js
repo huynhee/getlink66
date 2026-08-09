@@ -94,6 +94,23 @@ test("model detail returns six recommendations and expansion returns the next 54
   assert.equal(expanded.state.body.pagination.hasMore, false);
 });
 
+test("model detail can defer recommendations for a faster first render", async () => {
+  const detail = responseCapture();
+  await getMarketplaceModel(
+    {
+      params: { slug: "source-chair" },
+      query: { includeRecommendations: "false" },
+    },
+    detail.response,
+    (error) => { throw error; },
+  );
+
+  assert.equal(detail.state.statusCode, 200);
+  assert.equal(detail.state.body.model.slug, "source-chair");
+  assert.deepEqual(detail.state.body.recommendedModels, []);
+  assert.equal(detail.state.body.recommendations.deferred, true);
+});
+
 test("home recommendations personalize from downloads and keep asset types separate", async () => {
   await Promise.all([
     MarketplaceModel.deleteMany({}),

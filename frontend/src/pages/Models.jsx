@@ -1619,6 +1619,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
   const [expandedRecommendations, setExpandedRecommendations] = useState([]);
   const [recommendationInfo, setRecommendationInfo] = useState({ total: 0, hasMore: false });
   const [recommendationsExpanded, setRecommendationsExpanded] = useState(false);
+  const [initialRecommendationsLoading, setInitialRecommendationsLoading] = useState(false);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [recommendationsError, setRecommendationsError] = useState("");
   const [filterOptions, setFilterOptions] = useState(EMPTY_FILTERS);
@@ -1640,29 +1641,57 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
     setLoading(true);
     setMessage("");
     setError("");
+    setModel(null);
+    setRecommendedModels([]);
     setExpandedRecommendations([]);
     setRecommendationInfo({ total: 0, hasMore: false });
     setRecommendationsExpanded(false);
+    setInitialRecommendationsLoading(true);
     setRecommendationsError("");
     setDownloadProtection({ enabled: false, siteKey: "", action: "" });
     setTurnstileToken("");
-    Promise.all([
-      api(`/api/marketplace/${segment}/${encodeURIComponent(slug)}`),
-      api(assetType === "scene" ? "/api/marketplace/scenes/filters" : "/api/marketplace/filters").catch(() => ({ filters: EMPTY_FILTERS })),
-    ])
-      .then(([data, filterData]) => {
+    const detailRequest = api(`/api/marketplace/${segment}/${encodeURIComponent(slug)}?includeRecommendations=false`);
+    detailRequest
+      .then((data) => {
         if (!active) return;
         setModel(data.asset || data.scene || data.model || null);
         setDownloadProtection(data.downloadProtection || { enabled: false, siteKey: "", action: "" });
-        setRecommendedModels(data.recommendedModels || []);
-        setRecommendationInfo(data.recommendations || { total: data.recommendedModels?.length || 0, hasMore: false });
-        setFilterOptions(filterData.filters || EMPTY_FILTERS);
       })
       .catch((err) => {
         if (active) setError(err.message);
       })
       .finally(() => {
         if (active) setLoading(false);
+      });
+
+    api(assetType === "scene" ? "/api/marketplace/scenes/filters" : "/api/marketplace/filters")
+      .then((filterData) => {
+        if (active) setFilterOptions(filterData.filters || EMPTY_FILTERS);
+      })
+      .catch(() => {
+        if (active) setFilterOptions(EMPTY_FILTERS);
+      });
+
+    detailRequest
+      .then(() => {
+        if (!active) return null;
+        return api(`/api/marketplace/${segment}/${encodeURIComponent(slug)}/recommendations?offset=0&limit=6`);
+      })
+      .then((data) => {
+        if (!active || !data) return;
+        const items = data.assets || data.scenes || data.models || [];
+        setRecommendedModels(items);
+        setRecommendationInfo({
+          total: data.pagination?.total ?? items.length,
+          hasMore: Boolean(data.pagination?.hasMore),
+          engine: data.discovery?.engine || "catalog_behavior_v2",
+        });
+      })
+      .catch((err) => {
+        if (active) setRecommendationsError(err.message);
+      })
+      .finally(() => {
+        if (active) setInitialRecommendationsLoading(false);
       });
     return () => {
       active = false;
@@ -1980,7 +2009,12 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
             <p>{textFor(language, `Các ${noun} có mức độ liên quan cao nhất.`, `The most relevant related ${catalogNoun(assetType, "en", true)}.`)}</p>
           </div>
         </div>
-        {recommendedModels.length > 0 ? (
+        {initialRecommendationsLoading ? (
+          <section className="panel emptyState">
+            <Loader2 className="spin" size={18} />
+            <p>{textFor(language, "Đang tải đề xuất...", "Loading recommendations...")}</p>
+          </section>
+        ) : recommendedModels.length > 0 ? (
           <>
             <div className="marketRecommendationInitialGrid">
               {recommendedModels.slice(0, 6).map((item) => (

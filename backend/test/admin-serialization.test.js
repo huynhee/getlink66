@@ -15,4 +15,16 @@ test("admin user serialization never includes the TOTP secret", () => {
 
   assert.equal(Object.hasOwn(serialized, "twoFactorSecret"), false);
   assert.equal(serialized.isTwoFactorEnabled, true);
+  assert.equal(serialized.isPro, false);
+});
+
+test("admin user serialization exposes the active Pro state", () => {
+  const serialized = serializeAdminUser({
+    _id: "user-pro",
+    email: "pro@example.test",
+    name: "Pro User",
+    proUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  });
+
+  assert.equal(serialized.isPro, true);
 });
