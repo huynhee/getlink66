@@ -14,6 +14,7 @@ RUN npm ci --omit=dev --ignore-scripts \
 
 COPY --chown=node:node server.js ./
 COPY --chown=node:node src ./src
+COPY --chown=node:node scripts ./scripts
 
 USER node
 EXPOSE 5000
