@@ -129,7 +129,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
     heroEyebrow: "+ api 3d sdk",
     heroText: language === "vi" ? "SIÊU RẺ\nTẢI 3D\nGETLINK" : "AFFORDABLE\n3D LIBRARY\nGETLINK",
     heroSubtitle: language === "vi"
-      ? "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp."
+      ? "Thư viện 3D 200,000+ models giá chỉ 66đ/1 model. Dịch vụ getlink trung gian mua trung quốc giá rẻ."
       : "An intermediary getlink service that helps you download 3D models with a faster credit workflow.",
     saleText: "",
     demoTitle: language === "vi" ? "Bắt đầu tải ngay" : "Start download",

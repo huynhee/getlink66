@@ -29,7 +29,7 @@ const HOME_TEXT_FIELDS = [
 ];
 const HOME_TEXT_DEFAULTS = {
   heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
-  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
+  heroSubtitle: "Thư viện 3D 200,000+ models giá chỉ 66đ/1 model. Dịch vụ getlink trung gian mua trung quốc giá rẻ.",
   heroEyebrow: "+ api 3d sdk",
   saleText: "Khuyến mãi gói PRO trong tháng này",
   demoTitle: "Bắt đầu tải ngay",
@@ -50,7 +50,7 @@ const HOME_TEXT_DEFAULTS = {
   ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn.",
   footerTagline: "Hỗ trợ 24/7",
 };
-const LEGACY_HERO_TEXT = "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ";
+const LEGACY_HERO_TEXT = "SIÊU RẺ\nTẢI 3D\nGETLINK";
 
 function normalizePublicBrandText(value) {
   if (typeof value !== "string") return value;

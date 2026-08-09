@@ -102,7 +102,7 @@ const defaultSiteSettings = {
   referralMode: "both",
   heroEyebrow: "+ api 3d sdk",
   heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
-  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
+  heroSubtitle: "Thư viện 3D 200,000+ models giá chỉ 66đ/1 model. Dịch vụ getlink trung gian mua trung quốc giá rẻ.",
   saleText: "",
   demoTitle: "Bắt đầu tải ngay",
   demoSubmitText: "GET LINK",

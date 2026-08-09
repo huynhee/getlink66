@@ -3,7 +3,7 @@ import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 
 const HOME_TEXT_DEFAULTS = {
   heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
-  heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
+  heroSubtitle: "Thư viện 3D 200,000+ models giá chỉ 66đ/1 model. Dịch vụ getlink trung gian mua trung quốc giá rẻ.",
   heroEyebrow: "+ api 3d sdk",
   saleText: "Khuyến mãi gói PRO trong tháng này",
   demoTitle: "Bắt đầu tải ngay",
@@ -35,7 +35,7 @@ const siteSettingSchema = new mongoose.Schema(
     heroSubtitle: {
       type: String,
       default:
-        "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp."
+        "Thư viện 3D 200,000+ models giá chỉ 66đ/1 model. Dịch vụ getlink trung gian mua trung quốc giá rẻ."
     },
     heroEyebrow: { type: String, default: "+ api 3d sdk" },
     saleText: {

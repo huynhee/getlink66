@@ -6,24 +6,20 @@ import { translations } from "../i18n.js";
 import { setFaviconNotificationCount } from "../utils/faviconProgress.js";
 
 function LanguageToggle({ language, onLanguageChange }) {
+  const nextLanguage = language === "vi" ? "en" : "vi";
+  const label = language === "vi" ? "Switch to English" : "Chuyển sang tiếng Việt";
+
   return (
-    <div
-      className="languageToggle"
-      role="group"
-      aria-label={language === "vi" ? "Chọn ngôn ngữ" : "Choose language"}
-    >
-      {["vi", "en"].map((value) => (
-        <button
-          type="button"
-          key={value}
-          className={language === value ? "active" : ""}
-          onClick={() => onLanguageChange?.(value)}
-          aria-pressed={language === value}
-          title={value === "vi" ? "Tiếng Việt" : "English"}
-        >
-          {value.toUpperCase()}
-        </button>
-      ))}
+    <div className="languageToggle languageToggleSingle">
+      <button
+        type="button"
+        className="active"
+        onClick={() => onLanguageChange?.(nextLanguage)}
+        title={label}
+        aria-label={label}
+      >
+        {language.toUpperCase()}
+      </button>
     </div>
   );
 }

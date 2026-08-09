@@ -95,7 +95,7 @@ function statusClass(status = "") {
 function eventAmount(event, language = "vi") {
   const amount = Number(event.amount || 0);
   if (!amount) return null;
-  if (event.type === "credit" || event.type === "referral") {
+  if (["credit", "referral", "getlink"].includes(event.type)) {
     return <CoinAmount value={Math.abs(amount)} prefix={amount > 0 ? "+" : "-"} />;
   }
   if (["model", "scene"].includes(event.type)) {
