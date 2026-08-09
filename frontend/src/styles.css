@@ -5200,15 +5200,16 @@ label {
 }
 
 .homeCatalogSearch {
-  width: 80%;
-  min-height: 44px;
+  width: min(70%, 1080px);
+  min-height: 38px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 48px;
+  grid-template-columns: auto minmax(0, 1fr) 42px;
   align-items: center;
   gap: 0;
   margin: 0 auto 18px;
-  padding: 4px;
+  padding: 3px;
   border: 1px solid var(--border-warm);
+  border-radius: 4px;
   background: var(--surface-raised);
   box-shadow: var(--shadow-sm);
 }
@@ -5216,29 +5217,30 @@ label {
 .homeCatalogSearchTypes {
   display: flex;
   align-items: center;
-  height: 34px;
-  padding-right: 8px;
+  height: 30px;
+  padding-right: 6px;
   border-right: 1px solid var(--border-warm);
 }
 
 .homeCatalogSearchTypes button {
-  height: 28px;
-  padding: 0 14px;
+  height: 26px;
+  padding: 0 12px;
   border: 0;
   background: transparent;
   color: var(--text-muted);
-  font: 700 12px/1 var(--font-mono);
+  font: 700 11px/1 var(--font-mono);
   cursor: pointer;
 }
 
 .homeCatalogSearchTypes button.active {
+  border-radius: 3px;
   background: var(--text-primary);
   color: var(--surface-raised);
 }
 
 .homeCatalogSearchField {
   min-width: 0;
-  height: 34px;
+  height: 30px;
 }
 
 .homeCatalogSearchField input {
@@ -5250,6 +5252,8 @@ label {
   background: transparent;
   color: var(--text-primary);
   font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
 }
 
 .homeCatalogSearchField input::placeholder {
@@ -5257,8 +5261,8 @@ label {
 }
 
 .homeCatalogSearchSubmit {
-  width: 42px;
-  height: 34px;
+  width: 36px;
+  height: 30px;
   display: grid;
   place-items: center;
   border: 0;
