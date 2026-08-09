@@ -18,6 +18,11 @@ export async function pluginDownloadChallenge(req, _res, next) {
     if (!shouldRequireChallenge(req)) return next();
 
     const assetId = String(req.params.id || "");
+    const idempotencyKey = String(req.get("idempotency-key") || "").trim();
+    if (!idempotencyKey) {
+      throw pluginError(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required.");
+    }
+    const idempotencyKeyHash = hash(idempotencyKey);
     const supplied = String(
       req.body?.challengeToken || req.get("x-3dipl-challenge-token") || "",
     );
@@ -28,6 +33,7 @@ export async function pluginDownloadChallenge(req, _res, next) {
           userId: req.user._id,
           sessionId: req.pluginSession._id,
           assetId,
+          idempotencyKeyHash,
           status: "approved",
           expiresAt: { $gt: new Date() },
         },
@@ -44,6 +50,16 @@ export async function pluginDownloadChallenge(req, _res, next) {
       return next();
     }
 
+    const approvedOperation = await PluginChallenge.exists({
+      userId: req.user._id,
+      sessionId: req.pluginSession._id,
+      assetId,
+      idempotencyKeyHash,
+      status: "consumed",
+      expiresAt: { $gt: new Date() },
+    });
+    if (approvedOperation) return next();
+
     const challengeCode = crypto.randomBytes(12).toString("base64url");
     const approvalToken = crypto.randomBytes(32).toString("base64url");
     await PluginChallenge.create({
@@ -52,6 +68,7 @@ export async function pluginDownloadChallenge(req, _res, next) {
       userId: req.user._id,
       sessionId: req.pluginSession._id,
       assetId,
+      idempotencyKeyHash,
       status: "pending",
       expiresAt: new Date(Date.now() + CHALLENGE_TTL_MS),
     });

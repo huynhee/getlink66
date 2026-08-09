@@ -16,6 +16,7 @@ import {
   marketplaceTurnstileConfig,
   verifyMarketplaceTurnstile,
 } from "../utils/turnstile.js";
+import { verifyPluginReleaseManifest } from "../utils/pluginReleaseManifest.js";
 
 export async function deviceStart(req, res, next) {
   try {
@@ -25,12 +26,11 @@ export async function deviceStart(req, res, next) {
   }
 }
 
-export function releaseManifest(_req, res) {
-  const version = String(process.env.PLUGIN_RELEASE_VERSION || "0.1.0").trim();
+export function releaseManifest(_req, res, next) {
+  const version = String(process.env.PLUGIN_RELEASE_VERSION || "0.2.1").trim();
   const downloadUrl = String(process.env.PLUGIN_RELEASE_URL || "").trim();
   const sha256 = String(process.env.PLUGIN_RELEASE_SHA256 || "").trim().toLowerCase();
-  res.setHeader("cache-control", "public, max-age=300");
-  return res.json({
+  const manifest = {
     channel: String(process.env.PLUGIN_RELEASE_CHANNEL || "beta"),
     version,
     minimumVersion: String(process.env.PLUGIN_MINIMUM_VERSION || version),
@@ -38,8 +38,21 @@ export function releaseManifest(_req, res) {
     downloadUrl,
     sha256,
     signature: String(process.env.PLUGIN_RELEASE_SIGNATURE || ""),
+    signatureAlgorithm: "ES256",
     publishedAt: process.env.PLUGIN_RELEASE_PUBLISHED_AT || null,
-  });
+  };
+  if (
+    process.env.NODE_ENV === "production"
+    && !verifyPluginReleaseManifest(manifest, process.env.PLUGIN_RELEASE_PUBLIC_KEY)
+  ) {
+    return next(pluginError(
+      503,
+      "PLUGIN_RELEASE_SIGNATURE_INVALID",
+      "Plugin release metadata is unavailable.",
+    ));
+  }
+  res.setHeader("cache-control", "public, max-age=300");
+  return res.json(manifest);
 }
 
 export async function deviceToken(req, res, next) {

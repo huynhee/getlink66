@@ -31,8 +31,8 @@ test("plugin download challenge is single-use and bound to user, device and asse
     pluginSession: session,
     params: { id: "asset-123" },
     body: {},
-    get() {
-      return "";
+    get(name) {
+      return String(name).toLowerCase() === "idempotency-key" ? "operation-1" : "";
     },
   };
 
@@ -57,9 +57,20 @@ test("plugin download challenge is single-use and bound to user, device and asse
   assert.equal(approved, null);
   assert.equal((await PluginChallenge.findById(challenge._id)).status, "consumed");
 
+  const sameOperationRetry = await runMiddleware(request);
+  assert.equal(sameOperationRetry, null);
+
   const replay = await runMiddleware({
     ...request,
     body: { challengeToken: required.publicDetails.challengeToken },
   });
   assert.equal(replay.code, "CHALLENGE_INVALID");
+
+  const otherOperation = await runMiddleware({
+    ...request,
+    get(name) {
+      return String(name).toLowerCase() === "idempotency-key" ? "operation-2" : "";
+    },
+  });
+  assert.equal(otherOperation.code, "CHALLENGE_REQUIRED");
 });

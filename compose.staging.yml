@@ -1,0 +1,54 @@
+name: 3dipl-staging
+
+services:
+  mongo-staging:
+    image: mongo:8.0
+    container_name: 3dipl-staging-mongo
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--setParameter", "diagnosticDataCollectionEnabled=false"]
+    restart: unless-stopped
+    volumes:
+      - /var/lib/3dipl-staging/mongo:/data/db
+    networks: [staging-private]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  backend-staging:
+    build:
+      context: ./backend
+    image: 3dipl-backend-staging:${APP_VERSION:-local}
+    container_name: 3dipl-staging-backend
+    env_file: [/etc/3dipl/staging/backend.env]
+    restart: unless-stopped
+    ports: ["127.0.0.1:15000:5000"]
+    volumes:
+      - /var/lib/3dipl-staging/media/covers:/var/lib/3dipl/media/covers
+      - /var/lib/3dipl-staging/backup-work:/var/lib/3dipl/backup-work
+      - /var/lib/3dipl-staging/plugin-releases:/var/lib/3dipl/plugin-releases:ro
+    networks: [staging-private]
+    depends_on:
+      mongo-staging:
+        condition: service_healthy
+    stop_grace_period: 45s
+
+  frontend-staging:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ""
+        VITE_3DSMAX_PLUGIN_DOWNLOAD_URL: ${PLUGIN_DOWNLOAD_URL:-}
+    image: 3dipl-frontend-staging:${APP_VERSION:-local}
+    container_name: 3dipl-staging-frontend
+    restart: unless-stopped
+    ports: ["127.0.0.1:18080:8080"]
+    volumes:
+      - /var/lib/3dipl-staging/media/covers:/var/lib/3dipl/media/covers:ro
+      - /var/lib/3dipl-staging/plugin-releases:/usr/share/nginx/html/plugin-releases:ro
+    networks: [staging-private]
+
+networks:
+  staging-private:
+    driver: bridge

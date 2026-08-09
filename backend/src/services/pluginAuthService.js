@@ -41,6 +41,18 @@ function ipHash(req) {
   return hash(req.ip || req.get?.("cf-connecting-ip") || "");
 }
 
+function qaRiskRequested(req) {
+  if (String(process.env.PLUGIN_DEPLOYMENT_ENV || "").toLowerCase() !== "staging") {
+    return false;
+  }
+  const expected = String(process.env.PLUGIN_QA_RISK_SECRET || "");
+  const supplied = String(req.get?.("x-3dipl-qa-risk-secret") || "");
+  if (!expected || !supplied) return false;
+  const left = Buffer.from(expected);
+  const right = Buffer.from(supplied);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
 export function pluginError(status, code, message, details) {
   const error = new Error(message);
   error.status = status;
@@ -166,6 +178,7 @@ export async function startDeviceAuthorization(req, input = {}) {
       expiresAt,
       purgeAt: new Date(expiresAt.getTime() + 24 * 60 * 60 * 1000),
       requestIpHash: ipHash(req),
+      qaRiskRequested: qaRiskRequested(req),
     });
     allocatedUserCode = code;
     break;
@@ -244,6 +257,9 @@ export async function pollDeviceAuthorization(req, deviceCode) {
     lastIpHash: currentIpHash,
     lastUsedAt: now,
     absoluteExpiresAt,
+    riskChallengeRequired:
+      Boolean(authorization.qaRiskRequested)
+      || Boolean(authorization.requestIpHash && authorization.requestIpHash !== currentIpHash),
   });
   const user = await User.findById(authorization.userId);
   if (!user) {
@@ -330,8 +346,15 @@ export async function refreshPluginSession(req, refreshToken) {
     await revokeSessionDocument(session, "refresh_race");
     throw pluginError(401, "REFRESH_REPLAY", "Refresh token replay revoked this device session.");
   }
+  const currentIpHash = ipHash(req);
   await PluginDeviceSession.findByIdAndUpdate(session._id, {
-    $set: { lastUsedAt: now, lastIpHash: ipHash(req) },
+    $set: {
+      lastUsedAt: now,
+      lastIpHash: currentIpHash,
+      ...(session.lastIpHash && session.lastIpHash !== currentIpHash
+        ? { riskChallengeRequired: true }
+        : {}),
+    },
   });
   const user = await User.findById(session.userId);
   if (!user) {

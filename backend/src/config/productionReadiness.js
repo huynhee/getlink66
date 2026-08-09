@@ -79,6 +79,7 @@ export function productionReadinessIssues(env = process.env) {
     const releaseUrl = text(env, "PLUGIN_RELEASE_URL");
     const releaseSha256 = text(env, "PLUGIN_RELEASE_SHA256");
     const releaseSignature = text(env, "PLUGIN_RELEASE_SIGNATURE");
+    const releasePublicKey = text(env, "PLUGIN_RELEASE_PUBLIC_KEY");
     const releasePublishedAt = text(env, "PLUGIN_RELEASE_PUBLISHED_AT");
     const challengeMode = text(env, "PLUGIN_DOWNLOAD_CHALLENGE_MODE").toLowerCase();
     if (pluginSecret.length < 32) {
@@ -102,9 +103,18 @@ export function productionReadinessIssues(env = process.env) {
     if (!text(env, "PLUGIN_MINIMUM_VERSION")) {
       errors.push("PLUGIN_MINIMUM_VERSION is required");
     }
-    if (challengeMode !== "always") {
-      errors.push("PLUGIN_DOWNLOAD_CHALLENGE_MODE must be always in production");
+    if (challengeMode !== "risk") {
+      errors.push("PLUGIN_DOWNLOAD_CHALLENGE_MODE must be risk in production");
     }
+    if (!/^[A-Za-z0-9+/=]{80,}$/.test(releasePublicKey)) {
+      errors.push("PLUGIN_RELEASE_PUBLIC_KEY must contain the pinned ES256 SPKI public key");
+    }
+  }
+  if (
+    text(env, "PLUGIN_DEPLOYMENT_ENV").toLowerCase() === "production"
+    && text(env, "PLUGIN_QA_RISK_SECRET")
+  ) {
+    errors.push("PLUGIN_QA_RISK_SECRET must not exist in Production");
   }
   if (text(env, "MARKETPLACE_DB_TARGET").toLowerCase() !== "vps") {
     errors.push("MARKETPLACE_DB_TARGET must be vps in production");

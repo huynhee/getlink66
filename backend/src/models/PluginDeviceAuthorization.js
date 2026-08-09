@@ -25,6 +25,7 @@ const pluginDeviceAuthorizationSchema = new mongoose.Schema(
     expiresAt: { type: Date, required: true, index: true },
     purgeAt: { type: Date, required: true },
     requestIpHash: { type: String, default: "" },
+    qaRiskRequested: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

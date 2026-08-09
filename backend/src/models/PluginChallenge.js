@@ -13,6 +13,7 @@ const schema = new mongoose.Schema(
       index: true,
     },
     assetId: { type: String, required: true, index: true },
+    idempotencyKeyHash: { type: String, required: true, index: true },
     status: {
       type: String,
       enum: ["pending", "approved", "consumed", "denied"],
@@ -27,6 +28,7 @@ const schema = new mongoose.Schema(
 );
 
 schema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+schema.index({ userId: 1, sessionId: 1, assetId: 1, idempotencyKeyHash: 1, status: 1 });
 
 export default isMemoryDb()
   ? createMemoryModel("PluginChallenge")

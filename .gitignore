@@ -4,6 +4,7 @@ node_modules/
 !.env.example
 !.env.production.example
 !backend/.env.production.example
+!backend/.env.staging.example
 !frontend/.env.production.example
 dist/
 build/

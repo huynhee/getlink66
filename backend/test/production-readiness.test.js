@@ -21,6 +21,7 @@ function readyEnvironment(overrides = {}) {
     THREED66_MOCK: "false",
     MARKETPLACE_STARTUP_MIGRATIONS_ENABLED: "false",
     PLUGIN_API_ENABLED: "false",
+    PLUGIN_DEPLOYMENT_ENV: "production",
     MARKETPLACE_DB_TARGET: "vps",
     MONGO_CORE_URI: "mongodb+srv://core.example.test/core",
     MONGO_MARKETPLACE_URI: "mongodb://marketplace.example.test/marketplace?replicaSet=rs0",
@@ -88,8 +89,9 @@ test("plugin API configuration and automatic production migration are fail-close
     PLUGIN_RELEASE_URL: "https://3dipl.org/downloads/3dipl-0.1.0.mzp",
     PLUGIN_RELEASE_SHA256: "a".repeat(64),
     PLUGIN_RELEASE_SIGNATURE: "A".repeat(88),
+    PLUGIN_RELEASE_PUBLIC_KEY: "A".repeat(124),
     PLUGIN_RELEASE_PUBLISHED_AT: "2026-07-26T00:00:00.000Z",
-    PLUGIN_DOWNLOAD_CHALLENGE_MODE: "always",
+    PLUGIN_DOWNLOAD_CHALLENGE_MODE: "risk",
   }));
   assert.equal(ready.errors.length, 0);
 });

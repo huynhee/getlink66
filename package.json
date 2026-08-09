@@ -44,9 +44,10 @@
     "lint": "eslint backend/server.js backend/src backend/scripts backend/test frontend/src scripts",
     "test": "npm test --prefix backend",
     "build": "npm run build --prefix frontend",
+    "build:check": "node scripts/build-frontend-check.js",
     "verify:frontend-build": "node scripts/verify-frontend-build.js",
     "build:release": "npm run build && npm run verify:frontend-build",
-    "check": "npm run lint && npm test && npm run build:release"
+    "check": "npm run lint && npm test && npm run build:check"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

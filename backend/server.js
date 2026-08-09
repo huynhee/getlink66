@@ -5,6 +5,7 @@ import compression from "compression";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import passport from "passport";
+import crypto from "node:crypto";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { closeDbConnections, connectDb, databaseHealth } from "./src/config/db.js";
 import { buildHelmetOptions, validatedJsonBodyLimit } from "./src/config/httpSecurity.js";
@@ -219,6 +220,15 @@ app.use((_, res, next) => {
   res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
   next();
 });
+app.use((req, res, next) => {
+  const supplied = String(req.get("x-correlation-id") || "").trim();
+  const correlationId = /^[A-Za-z0-9._:-]{8,96}$/.test(supplied)
+    ? supplied
+    : crypto.randomUUID();
+  req.correlationId = correlationId;
+  res.setHeader("x-correlation-id", correlationId);
+  next();
+});
 
 const coverCacheConfig = marketplaceCoverCacheConfig();
 if (coverCacheConfig.enabled) {
@@ -318,7 +328,24 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 app.use(passport.initialize());
 app.use(jwtAuth);
 app.use(requestGuard);
-app.use("/api/plugin", pluginApiEnabled, pluginRoutes);
+app.use("/api/plugin", pluginApiEnabled, (req, res, next) => {
+  const startedAt = process.hrtime.bigint();
+  res.once("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    logger.info({
+      type: "PLUGIN_API",
+      event: "plugin.request",
+      correlationId: req.correlationId,
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      durationMs: Math.round(durationMs * 10) / 10,
+      userId: req.user?._id ? String(req.user._id) : undefined,
+      sessionId: req.pluginSession?._id ? String(req.pluginSession._id) : undefined,
+    }, "Plugin API request");
+  });
+  next();
+}, pluginRoutes);
 app.use(csrfProtection);
 
 app.get("/health", (_req, res) => {
@@ -373,10 +400,16 @@ app.use((error, _req, res, _next) => {
     res.setHeader("retry-after", String(Math.max(1, explicitSeconds, resetSeconds)));
   }
   if (status >= 500) {
-    logger.error({ err: error, status }, "Unhandled server error");
+    logger.error({ err: error, status, correlationId: _req.correlationId }, "Unhandled server error");
     notifyServerError({ error, req: _req, status });
   } else {
-    logger.warn({ status, message: error.message }, "Client error");
+    logger.warn({
+      type: String(_req.originalUrl || "").startsWith("/api/plugin/") ? "PLUGIN_API" : "HTTP",
+      event: error.code || "client.error",
+      status,
+      correlationId: _req.correlationId,
+      message: error.message,
+    }, "Client error");
   }
   const isProduction = process.env.NODE_ENV === "production";
   res.status(status).json({
@@ -387,6 +420,7 @@ app.use((error, _req, res, _next) => {
     ...(status < 500 && error.publicDetails && typeof error.publicDetails === "object"
       ? { details: error.publicDetails }
       : {}),
+    correlationId: _req.correlationId,
   });
 });
 
