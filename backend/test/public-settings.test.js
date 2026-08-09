@@ -13,6 +13,8 @@ test("guest settings only expose landing-page fields and input mode", async () =
     heroText: "TAI MODEL 3D66",
     heroSubtitle: "Dich vu getlink 3D66",
     heroEyebrow: "+ api 3d66 sdk",
+    heroTextEn: "3D MODELS AND SCENES",
+    heroSubtitleEn: "Affordable 3D66 downloads",
   });
   let payload;
   await getSettings(
@@ -33,10 +35,30 @@ test("guest settings only expose landing-page fields and input mode", async () =
   assert.equal(payload.settings.heroText, "TAI MODEL 3D");
   assert.equal(payload.settings.heroSubtitle, "Dich vu getlink 3D");
   assert.equal(payload.settings.heroEyebrow, "+ api 3D sdk");
+  assert.equal(payload.settings.heroTextEn, "3D MODELS AND SCENES");
+  assert.equal(payload.settings.heroSubtitleEn, "Affordable 3D downloads");
 
   const stored = await SiteSetting.findOne({ key: "homepage" });
   assert.equal(stored.heroText, "TAI MODEL 3D");
   assert.equal(stored.heroSubtitle, "Dich vu getlink 3D");
+  assert.equal(stored.heroSubtitleEn, "Affordable 3D downloads");
+});
+
+test("admin can update Vietnamese and English homepage text together", async () => {
+  let payload;
+  await updateSettings(
+    {
+      body: {
+        heroText: "MODEL 3D\nSCENES\nGETLINK",
+        heroTextEn: "3D MODELS\nSCENES\nGETLINK",
+      },
+    },
+    { json(value) { payload = value; } },
+    (error) => { throw error; },
+  );
+
+  assert.equal(payload.settings.heroText, "MODEL 3D\nSCENES\nGETLINK");
+  assert.equal(payload.settings.heroTextEn, "3D MODELS\nSCENES\nGETLINK");
 });
 
 test("admin retention settings support forever and enforce safe active ranges", async () => {

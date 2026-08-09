@@ -103,13 +103,14 @@ const HOME_TEXT_FIELDS = [
   "ctaGuestText",
   "footerTagline",
 ];
+const HOME_TEXT_EN_FIELDS = HOME_TEXT_FIELDS.map((field) => `${field}En`);
 
 const defaultSiteSettings = {
   referralMode: "both",
   referralRewardCreditEnabled: true,
   referralRewardProEnabled: true,
   heroEyebrow: "+ api 3d sdk",
-  heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
+  heroText: "MODEL 3D\nSCENES\nGETLINK",
   heroSubtitle: "Thư viện 3D 200,000+ models giá chỉ 66đ/1 model. Dịch vụ getlink trung gian mua trung quốc giá rẻ.",
   saleText: "",
   demoTitle: "Bắt đầu tải ngay",
@@ -129,6 +130,27 @@ const defaultSiteSettings = {
   ctaUserText: "Vào trang getlink để tải model 3D và quản lý credit của bạn.",
   ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn.",
   footerTagline: "Hỗ trợ 24/7",
+  heroEyebrowEn: "+ api 3d sdk",
+  heroTextEn: "3D MODELS\nSCENES\nGETLINK",
+  heroSubtitleEn: "A library of 200,000+ 3D models from only 66 VND per model. Affordable intermediary getlink service for purchases from China.",
+  saleTextEn: "PRO package promotion this month",
+  demoTitleEn: "Start downloading now",
+  demoSubmitTextEn: "GET LINK",
+  systemStatusLabelEn: "System status",
+  pricePerDownloadLabelEn: "Download price from",
+  pricePerDownloadValueEn: "10K",
+  referralTitleBothEn: "Invite friends and both receive 1 Pro day + 28 credits.",
+  referralTitleReferrerOnlyEn: "Invite friends to receive 1 Pro day + 28 credits.",
+  pricingEyebrowEn: "Pricing",
+  pricingTitleEn: "Choose the right package",
+  pricingNoteEn: "Automatic credit top-up after selecting a package.",
+  guideEyebrowEn: "Guide",
+  guideTitleEn: "Guide articles",
+  guideIntroEn: "Read guides for Getlink, credit top-up, and redownloading purchased files.",
+  ctaTitleEn: "Ready to start?",
+  ctaUserTextEn: "Open Getlink to download 3D models and manage your credit.",
+  ctaGuestTextEn: "Sign in with Google to start using 3D Getlink and manage your credit.",
+  footerTaglineEn: "24/7 support",
   threed66GetlinkConcurrency: 1,
   threed66PreviewConcurrency: 1,
   threed66RefreshConcurrency: 1,
@@ -288,6 +310,7 @@ export default function Admin({ user, language = "vi" }) {
   const [referrals, setReferrals] = useState([]);
   const [siteSettings, setSiteSettings] = useState(defaultSiteSettings);
   const [homeTextMsg, setHomeTextMsg] = useState("");
+  const [homeTextLanguage, setHomeTextLanguage] = useState("vi");
   const [referralMsg, setReferralMsg] = useState("");
   const [runtimeSettingsMsg, setRuntimeSettingsMsg] = useState("");
   const [cookieRecords, setCookieRecords] = useState([]);
@@ -780,7 +803,7 @@ export default function Admin({ user, language = "vi" }) {
     try {
       setHomeTextMsg("");
       const payload = {};
-      HOME_TEXT_FIELDS.forEach((field) => {
+      [...HOME_TEXT_FIELDS, ...HOME_TEXT_EN_FIELDS].forEach((field) => {
         payload[field] = siteSettings[field] ?? "";
       });
       const data = await api("/api/settings", {
@@ -2480,24 +2503,40 @@ export default function Admin({ user, language = "vi" }) {
           <p className="muted" style={{ marginTop: 8 }}>
             {l("Các text này hiển thị ở trang chủ. Để trống dòng khuyến mại nếu không muốn hiện banner sale.", "These texts appear on the homepage. Leave promotion text empty to hide the sale banner.")}
           </p>
+          <div className="segmentedControl" style={{ marginTop: 16, justifySelf: "start" }}>
+            <button
+              type="button"
+              className={homeTextLanguage === "vi" ? "active" : ""}
+              onClick={() => setHomeTextLanguage("vi")}
+            >
+              Tiếng Việt
+            </button>
+            <button
+              type="button"
+              className={homeTextLanguage === "en" ? "active" : ""}
+              onClick={() => setHomeTextLanguage("en")}
+            >
+              English
+            </button>
+          </div>
           <form className="homeTextEditor" onSubmit={saveHomeTextSettings}>
             {homeTextGroups.map((group) => (
               <div className="runtimeSettingGroup" key={group.title}>
                 <h3>{group.title}</h3>
                 <div className="homeTextGrid">
                   {group.fields.map((item) => (
-                    <label className="homeTextField" key={item.field}>
+                    <label className="homeTextField" key={`${homeTextLanguage}-${item.field}`}>
                       <span>{item.label}</span>
                       {item.type === "textarea" ? (
                         <textarea
-                          value={siteSettings[item.field] || ""}
+                          value={siteSettings[homeTextLanguage === "en" ? `${item.field}En` : item.field] || ""}
                           rows={item.rows || 2}
-                          onChange={(event) => updateHomeText(item.field, event.target.value)}
+                          onChange={(event) => updateHomeText(homeTextLanguage === "en" ? `${item.field}En` : item.field, event.target.value)}
                         />
                       ) : (
                         <input
-                          value={siteSettings[item.field] || ""}
-                          onChange={(event) => updateHomeText(item.field, event.target.value)}
+                          value={siteSettings[homeTextLanguage === "en" ? `${item.field}En` : item.field] || ""}
+                          onChange={(event) => updateHomeText(homeTextLanguage === "en" ? `${item.field}En` : item.field, event.target.value)}
                         />
                       )}
                     </label>

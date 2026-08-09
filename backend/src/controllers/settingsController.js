@@ -27,8 +27,10 @@ const HOME_TEXT_FIELDS = [
   "ctaGuestText",
   "footerTagline",
 ];
+const HOME_TEXT_EN_FIELDS = HOME_TEXT_FIELDS.map((field) => `${field}En`);
+const ALL_HOME_TEXT_FIELDS = [...HOME_TEXT_FIELDS, ...HOME_TEXT_EN_FIELDS];
 const HOME_TEXT_DEFAULTS = {
-  heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
+  heroText: "MODEL 3D\nSCENES\nGETLINK",
   heroSubtitle: "Thư viện 3D 200,000+ models giá chỉ 66đ/1 model. Dịch vụ getlink trung gian mua trung quốc giá rẻ.",
   heroEyebrow: "+ api 3d sdk",
   saleText: "Khuyến mãi gói PRO trong tháng này",
@@ -49,6 +51,29 @@ const HOME_TEXT_DEFAULTS = {
   ctaUserText: "Vào trang getlink để tải model 3D và quản lý credit của bạn.",
   ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn.",
   footerTagline: "Hỗ trợ 24/7",
+};
+const HOME_TEXT_DEFAULTS_EN = {
+  heroTextEn: "3D MODELS\nSCENES\nGETLINK",
+  heroSubtitleEn: "A library of 200,000+ 3D models from only 66 VND per model. Affordable intermediary getlink service for purchases from China.",
+  heroEyebrowEn: "+ api 3d sdk",
+  saleTextEn: "PRO package promotion this month",
+  demoTitleEn: "Start downloading now",
+  demoSubmitTextEn: "GET LINK",
+  systemStatusLabelEn: "System status",
+  pricePerDownloadLabelEn: "Download price from",
+  pricePerDownloadValueEn: "10K",
+  referralTitleBothEn: "Invite friends and both receive 1 Pro day + 28 credits.",
+  referralTitleReferrerOnlyEn: "Invite friends to receive 1 Pro day + 28 credits.",
+  pricingEyebrowEn: "Pricing",
+  pricingTitleEn: "Choose the right package",
+  pricingNoteEn: "Automatic credit top-up after selecting a package.",
+  guideEyebrowEn: "Guide",
+  guideTitleEn: "Guide articles",
+  guideIntroEn: "Read guides for Getlink, credit top-up, and redownloading purchased files.",
+  ctaTitleEn: "Ready to start?",
+  ctaUserTextEn: "Open Getlink to download 3D models and manage your credit.",
+  ctaGuestTextEn: "Sign in with Google to start using 3D Getlink and manage your credit.",
+  footerTaglineEn: "24/7 support",
 };
 const LEGACY_HERO_TEXT = "SIÊU RẺ\nTẢI 3D\nGETLINK";
 
@@ -281,6 +306,7 @@ const defaultSettings = {
 };
 
 Object.assign(defaultSettings, HOME_TEXT_DEFAULTS);
+Object.assign(defaultSettings, HOME_TEXT_DEFAULTS_EN);
 
 let settingsCache = null;
 
@@ -331,13 +357,13 @@ function publicSettings(settings = {}, { includeRuntime = false } = {}) {
   if (snapshot.heroText === LEGACY_HERO_TEXT) {
     snapshot.heroText = HOME_TEXT_DEFAULTS.heroText;
   }
-  HOME_TEXT_FIELDS.forEach((field) => {
+  ALL_HOME_TEXT_FIELDS.forEach((field) => {
     snapshot[field] = normalizePublicBrandText(snapshot[field]);
   });
   if (!includeRuntime) {
     return Object.fromEntries(
       [
-        ...HOME_TEXT_FIELDS,
+        ...ALL_HOME_TEXT_FIELDS,
         "referralMode",
         "referralRewardCreditEnabled",
         "referralRewardProEnabled",
@@ -514,7 +540,7 @@ async function loadSettings() {
     );
   }
   const publicTextPatch = {};
-  HOME_TEXT_FIELDS.forEach((field) => {
+  ALL_HOME_TEXT_FIELDS.forEach((field) => {
     const normalized = normalizePublicBrandText(settings[field]);
     if (normalized !== settings[field]) publicTextPatch[field] = normalized;
   });
@@ -621,7 +647,7 @@ export async function getSettings(req, res, next) {
 export async function updateSettings(req, res, next) {
   try {
     const fields = [
-      ...HOME_TEXT_FIELDS,
+      ...ALL_HOME_TEXT_FIELDS,
       "referralMode",
       "referralRewardCreditEnabled",
       "referralRewardProEnabled",
@@ -706,7 +732,7 @@ export async function updateSettings(req, res, next) {
         return;
       }
       const sanitized = sanitizeHtml(limitedString(req.body[field], 1000));
-      update[field] = HOME_TEXT_FIELDS.includes(field)
+      update[field] = ALL_HOME_TEXT_FIELDS.includes(field)
         ? normalizePublicBrandText(sanitized)
         : sanitized;
     });

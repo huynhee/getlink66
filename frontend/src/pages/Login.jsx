@@ -10,9 +10,9 @@ import { membershipFeatureLabel } from "../utils/membershipPresentation.js";
 const HOME_TEXT_DEFAULTS = {
   vi: {
     heroEyebrow: "+ api 3d sdk",
-    heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
-    heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
-    saleText: "",
+    heroText: "MODEL 3D\nSCENES\nGETLINK",
+    heroSubtitle: "Thư viện 3D 200,000+ models giá chỉ 66đ/1 model. Dịch vụ getlink trung gian mua trung quốc giá rẻ.",
+    saleText: "Khuyến mãi gói PRO trong tháng này",
     demoTitle: "Bắt đầu tải ngay",
     demoSubmitText: "GET LINK",
     systemStatusLabel: "Trạng thái hệ thống",
@@ -55,6 +55,18 @@ const HOME_TEXT_DEFAULTS = {
     footerTagline: "24/7 support",
   },
 };
+
+const HOME_TEXT_FIELDS = Object.keys(HOME_TEXT_DEFAULTS.vi);
+
+function localizedHomeText(settings = {}, language = "vi") {
+  return Object.fromEntries(
+    HOME_TEXT_FIELDS.map((field) => {
+      const localizedField = language === "en" ? `${field}En` : field;
+      const value = settings[localizedField];
+      return [field, typeof value === "string" ? value : HOME_TEXT_DEFAULTS[language][field]];
+    }),
+  );
+}
 
 function isDailyMembershipPlan(plan) {
   return String(plan?.code || "").toUpperCase() === "DAILY" || Number(plan?.durationDays || 0) <= 1;
@@ -176,7 +188,10 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   }
 
   React.useEffect(() => {
-    setSiteSettings((current) => ({ ...current, ...HOME_TEXT_DEFAULTS[language] }));
+    setSiteSettings((current) => ({
+      ...current,
+      ...localizedHomeText(current, language),
+    }));
   }, [language]);
 
   React.useEffect(() => {
@@ -187,7 +202,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
             setSiteSettings((current) => ({
               ...current,
               ...data.settings,
-              ...(language === "en" ? HOME_TEXT_DEFAULTS.en : {}),
+              ...localizedHomeText(data.settings, language),
             }));
           }
         })

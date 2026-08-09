@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 
 const HOME_TEXT_DEFAULTS = {
-  heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
+  heroText: "MODEL 3D\nSCENES\nGETLINK",
   heroSubtitle: "Thư viện 3D 200,000+ models giá chỉ 66đ/1 model. Dịch vụ getlink trung gian mua trung quốc giá rẻ.",
   heroEyebrow: "+ api 3d sdk",
   saleText: "Khuyến mãi gói PRO trong tháng này",
@@ -23,6 +23,30 @@ const HOME_TEXT_DEFAULTS = {
   ctaUserText: "Vào trang getlink để tải model 3D và quản lý credit của bạn.",
   ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn.",
   footerTagline: "Hỗ trợ 24/7",
+};
+
+const HOME_TEXT_DEFAULTS_EN = {
+  heroTextEn: "3D MODELS\nSCENES\nGETLINK",
+  heroSubtitleEn: "A library of 200,000+ 3D models from only 66 VND per model. Affordable intermediary getlink service for purchases from China.",
+  heroEyebrowEn: "+ api 3d sdk",
+  saleTextEn: "PRO package promotion this month",
+  demoTitleEn: "Start downloading now",
+  demoSubmitTextEn: "GET LINK",
+  systemStatusLabelEn: "System status",
+  pricePerDownloadLabelEn: "Download price from",
+  pricePerDownloadValueEn: "10K",
+  referralTitleBothEn: "Invite friends and both receive 1 Pro day + 28 credits.",
+  referralTitleReferrerOnlyEn: "Invite friends to receive 1 Pro day + 28 credits.",
+  pricingEyebrowEn: "Pricing",
+  pricingTitleEn: "Choose the right package",
+  pricingNoteEn: "Automatic credit top-up after selecting a package.",
+  guideEyebrowEn: "Guide",
+  guideTitleEn: "Guide articles",
+  guideIntroEn: "Read guides for Getlink, credit top-up, and redownloading purchased files.",
+  ctaTitleEn: "Ready to start?",
+  ctaUserTextEn: "Open Getlink to download 3D models and manage your credit.",
+  ctaGuestTextEn: "Sign in with Google to start using 3D Getlink and manage your credit.",
+  footerTaglineEn: "24/7 support",
 };
 
 const siteSettingSchema = new mongoose.Schema(
@@ -128,5 +152,14 @@ const siteSettingSchema = new mongoose.Schema(
 Object.entries(HOME_TEXT_DEFAULTS).forEach(([field, value]) => {
   siteSettingSchema.path(field)?.default(value);
 });
+
+siteSettingSchema.add(
+  Object.fromEntries(
+    Object.entries(HOME_TEXT_DEFAULTS_EN).map(([field, value]) => [
+      field,
+      { type: String, default: value },
+    ]),
+  ),
+);
 
 export default isMemoryDb() ? createMemoryModel("SiteSetting") : mongoose.model("SiteSetting", siteSettingSchema);
