@@ -101,7 +101,7 @@ const HOME_TEXT_FIELDS = [
 const defaultSiteSettings = {
   referralMode: "both",
   heroEyebrow: "+ api 3d sdk",
-  heroText: "SIÊU RẺ\nTHƯ VIỆN 3D\nGETLINK",
+  heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
   heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
   saleText: "",
   demoTitle: "Bắt đầu tải ngay",
@@ -937,13 +937,13 @@ export default function Admin({ user, language = "vi" }) {
     const options = isBanned
       ? { method: "POST" }
       : {
-          method: "POST",
-          body: JSON.stringify({
-            reason:
-              banReasonByUser[targetUser._id] ||
-              "Tài khoản của bạn đã bị khóa quyền getlink.",
-          }),
-        };
+        method: "POST",
+        body: JSON.stringify({
+          reason:
+            banReasonByUser[targetUser._id] ||
+            "Tài khoản của bạn đã bị khóa quyền getlink.",
+        }),
+      };
     await api(endpoint, options);
     setBanReasonByUser((items) => ({ ...items, [targetUser._id]: "" }));
     await loadUsers();
@@ -1185,23 +1185,23 @@ export default function Admin({ user, language = "vi" }) {
   ];
   const subNavigation = activeSection === "general"
     ? {
-        title: l("Quản lý chung", "General management"),
-        description: l("Tài khoản, giao dịch, giới thiệu và nhật ký vận hành toàn hệ thống.", "Accounts, transactions, referrals, and system-wide operations."),
-        icon: Database,
-        items: generalSections,
-        activeKey: generalSection,
-        onChange: setGeneralSection,
-      }
+      title: l("Quản lý chung", "General management"),
+      description: l("Tài khoản, giao dịch, giới thiệu và nhật ký vận hành toàn hệ thống.", "Accounts, transactions, referrals, and system-wide operations."),
+      icon: Database,
+      items: generalSections,
+      activeKey: generalSection,
+      onChange: setGeneralSection,
+    }
     : activeSection === "website"
-        ? {
-            title: l("Nội dung Website", "Website content"),
-            description: l("Quản lý sản phẩm thanh toán và toàn bộ nội dung hiển thị trên website.", "Manage payment products and all content displayed on the website."),
-            icon: Globe2,
-            items: websiteSections,
-            activeKey: websiteSection,
-            onChange: setWebsiteSection,
-          }
-        : null;
+      ? {
+        title: l("Nội dung Website", "Website content"),
+        description: l("Quản lý sản phẩm thanh toán và toàn bộ nội dung hiển thị trên website.", "Manage payment products and all content displayed on the website."),
+        icon: Globe2,
+        items: websiteSections,
+        activeKey: websiteSection,
+        onChange: setWebsiteSection,
+      }
+      : null;
   const homeTextGroups = [
     {
       title: l("Hero đầu trang", "Hero section"),
@@ -1482,8 +1482,8 @@ export default function Admin({ user, language = "vi" }) {
   const currentPlaywrightMode = siteSettings.threed66BrowserAlways
     ? "always"
     : siteSettings.threed66DisableBrowserPageFallback &&
-        siteSettings.threed66DisableBrowserDownloadFallback &&
-        !siteSettings.threed66DownloadHandleBrowserFallback
+      siteSettings.threed66DisableBrowserDownloadFallback &&
+      !siteSettings.threed66DownloadHandleBrowserFallback
       ? "off"
       : "fallback";
   const playwrightModes = [
@@ -1876,136 +1876,136 @@ export default function Admin({ user, language = "vi" }) {
 
           {packageMode === "credit" ? (
             <>
-          <form onSubmit={savePackage} style={{ display: "grid", gap: 10, marginTop: 14 }}>
-            <div className="inputRow">
-              <select
-                value={editingPackageId}
-                onChange={(event) => {
-                  const selected = packages.find((item) => item._id === event.target.value);
-                  fillPackageForm(selected);
-                }}
-              >
-                <option value="">{l("Tạo gói mới", "Create new package")}</option>
-                {packages.map((pkg) => (
-                  <option key={pkg._id} value={pkg._id}>{pkg.name || t.defaultPackageName}</option>
-                ))}
-              </select>
-              {editingPackageId && (
-                <button type="button" className="smallButton" onClick={() => fillPackageForm(null)}>
-                  <RotateCcw size={14} /> {l("Hủy sửa", "Cancel edit")}
-                </button>
-              )}
-            </div>
-            <div className="inputRow">
-              <input value={packageForm.name} onChange={(e) => setPackageForm({ ...packageForm, name: e.target.value })} placeholder={l("Tên gói, ví dụ: GÓI STARTER", "Package name, e.g. STARTER PACKAGE")} />
-              <input type="number" value={packageForm.price} onChange={(e) => setPackageForm({ ...packageForm, price: e.target.value })} placeholder={t.price} />
-              <input type="number" value={packageForm.credit} onChange={(e) => setPackageForm({ ...packageForm, credit: e.target.value })} placeholder="Credit" />
-            </div>
-            <div className="inputRow">
-              <input type="number" value={packageForm.salePercent} onChange={(e) => setPackageForm({ ...packageForm, salePercent: e.target.value })} placeholder={l("Sale %, ví dụ 20", "Sale %, e.g. 20")} />
-              <input
-                type="number"
-                min="0"
-                value={packageForm.salePrice}
-                onChange={(e) => setPackageForm({ ...packageForm, salePrice: e.target.value })}
-                placeholder={l("Giá thực sau sale, bỏ trống = tự tính", "Final price after sale, blank = auto")}
-              />
-              <input
-                type="number"
-                min="0"
-                value={packageForm.maxTopupsPerUser}
-                onChange={(e) => setPackageForm({ ...packageForm, maxTopupsPerUser: e.target.value })}
-                placeholder={l("Giới hạn mỗi tài khoản, bỏ trống = không giới hạn", "Per-account limit, blank = unlimited")}
-              />
-            </div>
-            <div className="inputRow">
-              <input value={packageForm.badge} onChange={(e) => setPackageForm({ ...packageForm, badge: e.target.value })} placeholder={l("Nhãn: SALE, POPULAR...", "Badge: SALE, POPULAR...")} />
-            </div>
-            <textarea
-              value={packageForm.features}
-              onChange={(e) => setPackageForm({ ...packageForm, features: e.target.value })}
-              rows={4}
-              style={{ height: "auto", minHeight: 110 }}
-              placeholder={l("Mỗi dòng là một quyền lợi của gói", "Each line is one package benefit")}
-            />
-            <button className="smallButton" disabled={!packageForm.name || !packageForm.price || !packageForm.credit} style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}>
-              {editingPackageId ? <Save size={16} /> : <Plus size={16} />}
-              {editingPackageId ? l("Lưu chỉnh sửa", "Save changes") : l("Thêm gói", "Add package")}
-            </button>
-          </form>
-
-          <p className="muted" style={{ marginTop: 14, marginBottom: 0, fontSize: 13 }}>
-            {l("Kéo thả gói để đổi thứ tự hiển thị ngoài trang nạp.", "Drag packages to change their order on the top-up page.")}
-          </p>
-          <div className="packageGrid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
-            {packages.map((pkg) => (
-              <div
-                className={`package draggablePackage ${dragPackageId === pkg._id ? "dragging" : ""}`}
-                key={pkg._id}
-                draggable
-                onDragStart={() => setDragPackageId(pkg._id)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => movePackage(dragPackageId, pkg._id)}
-                onDragEnd={() => setDragPackageId("")}
-                style={{ alignItems: "stretch", padding: 16, position: "relative", textAlign: "left" }}
-              >
-                <div className="packageActions">
-                  <span title={l("Kéo để sắp xếp", "Drag to sort")}>
-                    <GripVertical size={16} />
-                  </span>
-                  <button type="button" onClick={() => fillPackageForm(pkg)} title={l("Sửa gói", "Edit package")}>
-                    <Pencil size={15} />
-                  </button>
-                  <button type="button" onClick={() => deletePackage(pkg._id)} title={l("Xóa gói", "Delete package")} style={{ color: "var(--error)" }}>
-                    <X size={16} />
-                  </button>
-                </div>
-                <button onClick={() => deletePackage(pkg._id)} title={l("Xóa gói", "Delete package")} style={{ position: "absolute", top: 8, right: 8, color: "var(--error)" }}>
-                  <X size={16} />
-                </button>
-                {pkg.badge && <span className="badge success" style={{ alignSelf: "start" }}>{pkg.badge}</span>}
-                <h3 style={{ marginTop: 8 }}>{pkg.name || t.defaultPackageName}</h3>
-                <div className="priceBlock compact" style={{ alignItems: "flex-start" }}>
-                  {(Number(pkg.salePercent || 0) > 0 || (Number(pkg.salePrice || 0) > 0 && Number(pkg.salePrice || 0) < Number(pkg.price || 0))) && (
-                    <div className="priceOriginal">
-                      {Number(pkg.price).toLocaleString(locale)}<span>đ</span>
-                    </div>
+              <form onSubmit={savePackage} style={{ display: "grid", gap: 10, marginTop: 14 }}>
+                <div className="inputRow">
+                  <select
+                    value={editingPackageId}
+                    onChange={(event) => {
+                      const selected = packages.find((item) => item._id === event.target.value);
+                      fillPackageForm(selected);
+                    }}
+                  >
+                    <option value="">{l("Tạo gói mới", "Create new package")}</option>
+                    {packages.map((pkg) => (
+                      <option key={pkg._id} value={pkg._id}>{pkg.name || t.defaultPackageName}</option>
+                    ))}
+                  </select>
+                  {editingPackageId && (
+                    <button type="button" className="smallButton" onClick={() => fillPackageForm(null)}>
+                      <RotateCcw size={14} /> {l("Hủy sửa", "Cancel edit")}
+                    </button>
                   )}
-                  <strong>{Number(discountedPrice(pkg)).toLocaleString(locale)}đ</strong>
                 </div>
-                {(Number(pkg.salePercent || 0) > 0 || (Number(pkg.salePrice || 0) > 0 && Number(pkg.salePrice || 0) < Number(pkg.price || 0))) && (
-                  <span className="topupPackageSale">
-                    {Number(pkg.salePercent || 0) > 0
-                      ? (language === "vi"
-                        ? `Sale ${pkg.salePercent}% từ ${Number(pkg.price).toLocaleString(locale)}đ`
-                        : `Sale ${pkg.salePercent}% from ${Number(pkg.price).toLocaleString(locale)}đ`)
-                      : (language === "vi"
-                        ? `Giá sale từ ${Number(pkg.price).toLocaleString(locale)}đ`
-                        : `Sale price from ${Number(pkg.price).toLocaleString(locale)}đ`)}
-                  </span>
-                )}
-                {Number(pkg.salePrice || 0) > 0 && (
-                  <span className="muted">
-                    {l("Giá nhập tay sau sale", "Manual final sale price")}: {Number(pkg.salePrice).toLocaleString(locale)}đ
-                  </span>
-                )}
-                <span>{pkg.credit} CREDIT</span>
-                <span className="muted">
-                  {Number(pkg.maxTopupsPerUser || 0) > 0
-                    ? l(`Giới hạn ${pkg.maxTopupsPerUser} lần/tài khoản`, `Limit ${pkg.maxTopupsPerUser} times/account`)
-                    : l("Không giới hạn số lần nạp/tài khoản", "Unlimited per account")}
-                </span>
-                <ul style={{ marginTop: 10, paddingLeft: 18 }}>
-                  {((pkg.features && pkg.features.length > 0)
-                    ? pkg.features
-                    : t.defaultPackageFeatures
-                  ).map((feature, index) => (
-                    <li key={index}>{feature}</li>
-                  ))}
-                </ul>
+                <div className="inputRow">
+                  <input value={packageForm.name} onChange={(e) => setPackageForm({ ...packageForm, name: e.target.value })} placeholder={l("Tên gói, ví dụ: GÓI STARTER", "Package name, e.g. STARTER PACKAGE")} />
+                  <input type="number" value={packageForm.price} onChange={(e) => setPackageForm({ ...packageForm, price: e.target.value })} placeholder={t.price} />
+                  <input type="number" value={packageForm.credit} onChange={(e) => setPackageForm({ ...packageForm, credit: e.target.value })} placeholder="Credit" />
+                </div>
+                <div className="inputRow">
+                  <input type="number" value={packageForm.salePercent} onChange={(e) => setPackageForm({ ...packageForm, salePercent: e.target.value })} placeholder={l("Sale %, ví dụ 20", "Sale %, e.g. 20")} />
+                  <input
+                    type="number"
+                    min="0"
+                    value={packageForm.salePrice}
+                    onChange={(e) => setPackageForm({ ...packageForm, salePrice: e.target.value })}
+                    placeholder={l("Giá thực sau sale, bỏ trống = tự tính", "Final price after sale, blank = auto")}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    value={packageForm.maxTopupsPerUser}
+                    onChange={(e) => setPackageForm({ ...packageForm, maxTopupsPerUser: e.target.value })}
+                    placeholder={l("Giới hạn mỗi tài khoản, bỏ trống = không giới hạn", "Per-account limit, blank = unlimited")}
+                  />
+                </div>
+                <div className="inputRow">
+                  <input value={packageForm.badge} onChange={(e) => setPackageForm({ ...packageForm, badge: e.target.value })} placeholder={l("Nhãn: SALE, POPULAR...", "Badge: SALE, POPULAR...")} />
+                </div>
+                <textarea
+                  value={packageForm.features}
+                  onChange={(e) => setPackageForm({ ...packageForm, features: e.target.value })}
+                  rows={4}
+                  style={{ height: "auto", minHeight: 110 }}
+                  placeholder={l("Mỗi dòng là một quyền lợi của gói", "Each line is one package benefit")}
+                />
+                <button className="smallButton" disabled={!packageForm.name || !packageForm.price || !packageForm.credit} style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}>
+                  {editingPackageId ? <Save size={16} /> : <Plus size={16} />}
+                  {editingPackageId ? l("Lưu chỉnh sửa", "Save changes") : l("Thêm gói", "Add package")}
+                </button>
+              </form>
+
+              <p className="muted" style={{ marginTop: 14, marginBottom: 0, fontSize: 13 }}>
+                {l("Kéo thả gói để đổi thứ tự hiển thị ngoài trang nạp.", "Drag packages to change their order on the top-up page.")}
+              </p>
+              <div className="packageGrid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+                {packages.map((pkg) => (
+                  <div
+                    className={`package draggablePackage ${dragPackageId === pkg._id ? "dragging" : ""}`}
+                    key={pkg._id}
+                    draggable
+                    onDragStart={() => setDragPackageId(pkg._id)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => movePackage(dragPackageId, pkg._id)}
+                    onDragEnd={() => setDragPackageId("")}
+                    style={{ alignItems: "stretch", padding: 16, position: "relative", textAlign: "left" }}
+                  >
+                    <div className="packageActions">
+                      <span title={l("Kéo để sắp xếp", "Drag to sort")}>
+                        <GripVertical size={16} />
+                      </span>
+                      <button type="button" onClick={() => fillPackageForm(pkg)} title={l("Sửa gói", "Edit package")}>
+                        <Pencil size={15} />
+                      </button>
+                      <button type="button" onClick={() => deletePackage(pkg._id)} title={l("Xóa gói", "Delete package")} style={{ color: "var(--error)" }}>
+                        <X size={16} />
+                      </button>
+                    </div>
+                    <button onClick={() => deletePackage(pkg._id)} title={l("Xóa gói", "Delete package")} style={{ position: "absolute", top: 8, right: 8, color: "var(--error)" }}>
+                      <X size={16} />
+                    </button>
+                    {pkg.badge && <span className="badge success" style={{ alignSelf: "start" }}>{pkg.badge}</span>}
+                    <h3 style={{ marginTop: 8 }}>{pkg.name || t.defaultPackageName}</h3>
+                    <div className="priceBlock compact" style={{ alignItems: "flex-start" }}>
+                      {(Number(pkg.salePercent || 0) > 0 || (Number(pkg.salePrice || 0) > 0 && Number(pkg.salePrice || 0) < Number(pkg.price || 0))) && (
+                        <div className="priceOriginal">
+                          {Number(pkg.price).toLocaleString(locale)}<span>đ</span>
+                        </div>
+                      )}
+                      <strong>{Number(discountedPrice(pkg)).toLocaleString(locale)}đ</strong>
+                    </div>
+                    {(Number(pkg.salePercent || 0) > 0 || (Number(pkg.salePrice || 0) > 0 && Number(pkg.salePrice || 0) < Number(pkg.price || 0))) && (
+                      <span className="topupPackageSale">
+                        {Number(pkg.salePercent || 0) > 0
+                          ? (language === "vi"
+                            ? `Sale ${pkg.salePercent}% từ ${Number(pkg.price).toLocaleString(locale)}đ`
+                            : `Sale ${pkg.salePercent}% from ${Number(pkg.price).toLocaleString(locale)}đ`)
+                          : (language === "vi"
+                            ? `Giá sale từ ${Number(pkg.price).toLocaleString(locale)}đ`
+                            : `Sale price from ${Number(pkg.price).toLocaleString(locale)}đ`)}
+                      </span>
+                    )}
+                    {Number(pkg.salePrice || 0) > 0 && (
+                      <span className="muted">
+                        {l("Giá nhập tay sau sale", "Manual final sale price")}: {Number(pkg.salePrice).toLocaleString(locale)}đ
+                      </span>
+                    )}
+                    <span>{pkg.credit} CREDIT</span>
+                    <span className="muted">
+                      {Number(pkg.maxTopupsPerUser || 0) > 0
+                        ? l(`Giới hạn ${pkg.maxTopupsPerUser} lần/tài khoản`, `Limit ${pkg.maxTopupsPerUser} times/account`)
+                        : l("Không giới hạn số lần nạp/tài khoản", "Unlimited per account")}
+                    </span>
+                    <ul style={{ marginTop: 10, paddingLeft: 18 }}>
+                      {((pkg.features && pkg.features.length > 0)
+                        ? pkg.features
+                        : t.defaultPackageFeatures
+                      ).map((feature, index) => (
+                        <li key={index}>{feature}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
             </>
           ) : (
             <>
@@ -2159,8 +2159,8 @@ export default function Admin({ user, language = "vi" }) {
                 {vouchers
                   .filter((voucher) => voucherMatchesMode(voucher, voucherMode))
                   .map((voucher) => (
-                  <option key={voucher._id} value={voucher._id}>{voucher.code}</option>
-                ))}
+                    <option key={voucher._id} value={voucher._id}>{voucher.code}</option>
+                  ))}
               </select>
               {editingVoucherId && (
                 <button type="button" className="smallButton" onClick={() => fillVoucherForm(null)}>
@@ -2248,8 +2248,8 @@ export default function Admin({ user, language = "vi" }) {
                 (voucherMode === "pro"
                   ? !voucherForm.discountPercent
                   : voucherMode === "all"
-                  ? !voucherForm.discountPercent
-                  : (!voucherForm.discountPercent && !voucherForm.creditBonus))
+                    ? !voucherForm.discountPercent
+                    : (!voucherForm.discountPercent && !voucherForm.creditBonus))
               }
               style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}
             >
@@ -2261,81 +2261,81 @@ export default function Admin({ user, language = "vi" }) {
 
           <div className="voucherList">
             {visibleVouchers.map((voucher) => {
-                const kind = voucherTargetKind(voucher);
-                const proVoucher = kind === "pro";
-                const sharedVoucher = kind === "all";
-                const operationalState = voucherOperationalState(voucher);
-                const statusConfig = {
-                  active: [l("Đang hoạt động", "Active"), "success"],
-                  exhausted: [l("Hết lượt", "Exhausted"), "error"],
-                  expired: [l("Hết hạn", "Expired"), "error"],
-                  archived: [l("Đã lưu trữ", "Archived"), "pending"],
-                }[operationalState];
-                return (
-              <div className="voucherCard" key={voucher._id}>
-                <div className="voucherCardHeader">
-                  <div>
-                    <strong>{voucher.code} <span className={`badge ${proVoucher ? "pending" : sharedVoucher ? "" : "success"}`}>{voucherKindLabel(kind, l)}</span></strong>
-                    <p>{voucher.description || t.noDescription}</p>
-                  </div>
-                  <span className={`badge ${statusConfig[1]}`}>
-                    {statusConfig[0]}
-                  </span>
-                </div>
-                <div className="voucherValue">
-                  {Number(voucher.discountPercent || 0) > 0 && (
+              const kind = voucherTargetKind(voucher);
+              const proVoucher = kind === "pro";
+              const sharedVoucher = kind === "all";
+              const operationalState = voucherOperationalState(voucher);
+              const statusConfig = {
+                active: [l("Đang hoạt động", "Active"), "success"],
+                exhausted: [l("Hết lượt", "Exhausted"), "error"],
+                expired: [l("Hết hạn", "Expired"), "error"],
+                archived: [l("Đã lưu trữ", "Archived"), "pending"],
+              }[operationalState];
+              return (
+                <div className="voucherCard" key={voucher._id}>
+                  <div className="voucherCardHeader">
                     <div>
-                      <span>{t.discount}</span>
-                      <strong>-{voucher.discountPercent}%</strong>
+                      <strong>{voucher.code} <span className={`badge ${proVoucher ? "pending" : sharedVoucher ? "" : "success"}`}>{voucherKindLabel(kind, l)}</span></strong>
+                      <p>{voucher.description || t.noDescription}</p>
                     </div>
-                  )}
-                  {Number(voucher.creditBonus || 0) > 0 && (
+                    <span className={`badge ${statusConfig[1]}`}>
+                      {statusConfig[0]}
+                    </span>
+                  </div>
+                  <div className="voucherValue">
+                    {Number(voucher.discountPercent || 0) > 0 && (
+                      <div>
+                        <span>{t.discount}</span>
+                        <strong>-{voucher.discountPercent}%</strong>
+                      </div>
+                    )}
+                    {Number(voucher.creditBonus || 0) > 0 && (
+                      <div>
+                        <span>{t.creditBonus}</span>
+                        <strong>+{voucher.creditBonus} credit</strong>
+                      </div>
+                    )}
+                  </div>
+                  <div className="voucherMetaGrid">
                     <div>
-                      <span>{t.creditBonus}</span>
-                      <strong>+{voucher.creditBonus} credit</strong>
+                      <span>{t.used}</span>
+                      <strong>{voucher.usedCount}/{voucher.usageLimit}</strong>
                     </div>
-                  )}
-                </div>
-                <div className="voucherMetaGrid">
-                  <div>
-                    <span>{t.used}</span>
-                    <strong>{voucher.usedCount}/{voucher.usageLimit}</strong>
+                    <div>
+                      <span>{t.perAccount}</span>
+                      <strong>{Number(voucher.perUserLimit ?? 1) === 0 ? t.unlimited : `${voucher.perUserLimit || 1} ${l("lượt", "uses")}`}</strong>
+                    </div>
+                    <div>
+                      <span>{t.expires}</span>
+                      <strong>{new Date(voucher.expireAt).toLocaleDateString(locale)}</strong>
+                    </div>
                   </div>
-                  <div>
-                    <span>{t.perAccount}</span>
-                    <strong>{Number(voucher.perUserLimit ?? 1) === 0 ? t.unlimited : `${voucher.perUserLimit || 1} ${l("lượt", "uses")}`}</strong>
+                  <div className="voucherApplies">
+                    <span>{t.appliesTo}</span>
+                    <strong>
+                      {proVoucher
+                        ? l("Gói Pro / Membership", "Pro / Membership plans")
+                        : sharedVoucher
+                          ? l("Credit và Pro", "Credit and Pro")
+                          : Array.isArray(voucher.applicablePackageIds) && voucher.applicablePackageIds.length > 0
+                            ? voucher.applicablePackageIds.map((pkg) => pkg?.name || t.defaultPackageName).join(", ")
+                            : t.allTopupPackages}
+                    </strong>
                   </div>
-                  <div>
-                    <span>{t.expires}</span>
-                    <strong>{new Date(voucher.expireAt).toLocaleDateString(locale)}</strong>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button className="smallButton" type="button" onClick={() => fillVoucherForm(voucher)}>
+                      <Pencil size={14} /> {l("Sửa voucher", "Edit voucher")}
+                    </button>
+                    <button className="smallButton voucherDeleteButton" type="button" onClick={() => deleteVoucher(voucher._id)}>
+                      {voucher.hasTransactions || Number(voucher.usedCount || 0) > 0 ? <Archive size={14} /> : <X size={14} />}
+                      {voucher.hasTransactions || Number(voucher.usedCount || 0) > 0
+                        ? l("Lưu trữ", "Archive")
+                        : l("Xóa", "Delete")}
+                    </button>
                   </div>
                 </div>
-                <div className="voucherApplies">
-                  <span>{t.appliesTo}</span>
-                  <strong>
-                    {proVoucher
-                      ? l("Gói Pro / Membership", "Pro / Membership plans")
-                      : sharedVoucher
-                      ? l("Credit và Pro", "Credit and Pro")
-                      : Array.isArray(voucher.applicablePackageIds) && voucher.applicablePackageIds.length > 0
-                      ? voucher.applicablePackageIds.map((pkg) => pkg?.name || t.defaultPackageName).join(", ")
-                      : t.allTopupPackages}
-                  </strong>
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button className="smallButton" type="button" onClick={() => fillVoucherForm(voucher)}>
-                    <Pencil size={14} /> {l("Sửa voucher", "Edit voucher")}
-                  </button>
-                  <button className="smallButton voucherDeleteButton" type="button" onClick={() => deleteVoucher(voucher._id)}>
-                    {voucher.hasTransactions || Number(voucher.usedCount || 0) > 0 ? <Archive size={14} /> : <X size={14} />}
-                    {voucher.hasTransactions || Number(voucher.usedCount || 0) > 0
-                      ? l("Lưu trữ", "Archive")
-                      : l("Xóa", "Delete")}
-                  </button>
-                </div>
-              </div>
-                );
-              })}
+              );
+            })}
             {!visibleVouchers.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Không có voucher phù hợp.", "No matching vouchers.")}</p>}
           </div>
         </section>
@@ -2584,166 +2584,166 @@ export default function Admin({ user, language = "vi" }) {
             })}
           </div>
           {threed66SettingsTab !== "status" && (
-          <form className="stack" onSubmit={saveRuntimeSettings} style={{ marginTop: 14 }}>
-            {threed66SettingsTab === "tasks" && (
-            <div className="runtimeSettingGroup">
-              <h3>{l("Tác vụ sang 3D66", "3D66 task settings")}</h3>
-              <div className="runtimeModeGrid" style={{ marginBottom: 12 }}>
-                {modelResolveModes.map((mode) => (
-                  <button
-                    key={mode.value}
-                    type="button"
-                    className={`runtimeModeButton ${siteSettings.threed66ModelResolveMode === mode.value ? "active" : ""}`}
-                    aria-pressed={siteSettings.threed66ModelResolveMode === mode.value}
-                    onClick={() => updateRuntimeSetting("threed66ModelResolveMode", mode.value)}
-                  >
-                    <strong>{mode.label}</strong>
-                    <small>{mode.help}</small>
-                  </button>
-                ))}
-              </div>
-              <div className="runtimeSettingList">
-                {threed66RuntimeSettings.map((setting) => (
-                  <label className="runtimeSettingRow" key={setting.field}>
-                    <span className="runtimeSettingText">
-                      <strong>{setting.label}</strong>
-                      <small>{setting.help}</small>
-                    </span>
-                    <input
-                      type={setting.type}
-                      min={setting.min}
-                      max={setting.max}
-                      value={siteSettings[setting.field] ?? setting.fallback}
-                      placeholder={setting.placeholder}
-                      onChange={(event) => updateRuntimeSetting(setting.field, event.target.value)}
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
-            )}
-            {threed66SettingsTab === "downloads" && (
-            <div className="runtimeSettingGroup">
-              <h3>{l("User và tải file", "User and download settings")}</h3>
-              <div className="runtimeSettingList">
-                {userRuntimeSettings.map((setting) => (
-                  <label className="runtimeSettingRow" key={setting.field}>
-                    <span className="runtimeSettingText">
-                      <strong>{setting.label}</strong>
-                      <small>{setting.help}</small>
-                    </span>
-                    <input
-                      type={setting.type}
-                      min={setting.min}
-                      max={setting.max}
-                      value={siteSettings[setting.field] ?? setting.fallback}
-                      onChange={(event) => updateRuntimeSetting(setting.field, event.target.value)}
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
-            )}
-            {threed66SettingsTab === "proxy" && (
-            <div className="runtimeSettingGroup">
-              <h3>{l("Proxy Hong Kong", "Hong Kong proxy")}</h3>
-              <div className="runtimeSettingList">
-                <label className="runtimeSettingRow">
-                  <span className="runtimeSettingText">
-                    <strong>{l("Proxy URL", "Proxy URL")}</strong>
-                    <small>
-                      {siteSettings.threed66ProxyUrlConfigured
-                        ? l("Đã cấu hình proxy URL. Nhập URL mới nếu muốn thay thế; để trống sẽ giữ nguyên.", "Proxy URL is configured. Enter a new URL to replace it; leave blank to keep it.")
-                        : l("Chưa cấu hình proxy. Nhập dạng http://user:pass@host:port sau khi mua proxy.", "No proxy configured. Enter http://user:pass@host:port after buying a proxy.")}
-                    </small>
-                  </span>
-                  <input
-                    type="password"
-                    value={siteSettings.threed66ProxyUrl || ""}
-                    placeholder="http://user:pass@host:port"
-                    autoComplete="off"
-                    onChange={(event) =>
-                      setSiteSettings((settings) => ({
-                        ...settings,
-                        threed66ProxyUrl: event.target.value,
-                        threed66ProxyUrlClear: false,
-                      }))
-                    }
-                  />
-                </label>
-                {siteSettings.threed66ProxyUrlConfigured && (
-                  <button
-                    type="button"
-                    className="smallButton dangerButton"
-                    style={{ alignSelf: "flex-start" }}
-                    onClick={() =>
-                      setSiteSettings((settings) => ({
-                        ...settings,
-                        threed66ProxyUrl: "",
-                        threed66ProxyUrlConfigured: false,
-                        threed66ProxyUrlClear: true,
-                      }))
-                    }
-                  >
-                    <X size={14} /> {l("Xóa proxy URL", "Clear proxy URL")}
-                  </button>
-                )}
-                {proxyRuntimeSettings.map((setting) => (
-                  <label className="runtimeSettingRow" key={setting.field}>
-                    <span className="runtimeSettingText">
-                      <strong>{setting.label}</strong>
-                      <small>{setting.help}</small>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(siteSettings[setting.field])}
-                      onChange={(event) => updateRuntimeSetting(setting.field, event.target.checked)}
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
-            )}
-            {threed66SettingsTab === "playwright" && (
-            <div className="runtimeSettingGroup">
-              <h3>{l("Chế độ Playwright", "Playwright mode")}</h3>
-              <div className="runtimeModeGrid">
-                {playwrightModes.map((mode) => (
-                  <button
-                    key={mode.value}
-                    type="button"
-                    className={`runtimeModeButton ${currentPlaywrightMode === mode.value ? "active" : ""}`}
-                    aria-pressed={currentPlaywrightMode === mode.value}
-                    onClick={() => setPlaywrightMode(mode.value)}
-                  >
-                    <strong>{mode.label}</strong>
-                    <small>{mode.help}</small>
-                  </button>
-                ))}
-              </div>
+            <form className="stack" onSubmit={saveRuntimeSettings} style={{ marginTop: 14 }}>
+              {threed66SettingsTab === "tasks" && (
+                <div className="runtimeSettingGroup">
+                  <h3>{l("Tác vụ sang 3D66", "3D66 task settings")}</h3>
+                  <div className="runtimeModeGrid" style={{ marginBottom: 12 }}>
+                    {modelResolveModes.map((mode) => (
+                      <button
+                        key={mode.value}
+                        type="button"
+                        className={`runtimeModeButton ${siteSettings.threed66ModelResolveMode === mode.value ? "active" : ""}`}
+                        aria-pressed={siteSettings.threed66ModelResolveMode === mode.value}
+                        onClick={() => updateRuntimeSetting("threed66ModelResolveMode", mode.value)}
+                      >
+                        <strong>{mode.label}</strong>
+                        <small>{mode.help}</small>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="runtimeSettingList">
+                    {threed66RuntimeSettings.map((setting) => (
+                      <label className="runtimeSettingRow" key={setting.field}>
+                        <span className="runtimeSettingText">
+                          <strong>{setting.label}</strong>
+                          <small>{setting.help}</small>
+                        </span>
+                        <input
+                          type={setting.type}
+                          min={setting.min}
+                          max={setting.max}
+                          value={siteSettings[setting.field] ?? setting.fallback}
+                          placeholder={setting.placeholder}
+                          onChange={(event) => updateRuntimeSetting(setting.field, event.target.value)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {threed66SettingsTab === "downloads" && (
+                <div className="runtimeSettingGroup">
+                  <h3>{l("User và tải file", "User and download settings")}</h3>
+                  <div className="runtimeSettingList">
+                    {userRuntimeSettings.map((setting) => (
+                      <label className="runtimeSettingRow" key={setting.field}>
+                        <span className="runtimeSettingText">
+                          <strong>{setting.label}</strong>
+                          <small>{setting.help}</small>
+                        </span>
+                        <input
+                          type={setting.type}
+                          min={setting.min}
+                          max={setting.max}
+                          value={siteSettings[setting.field] ?? setting.fallback}
+                          onChange={(event) => updateRuntimeSetting(setting.field, event.target.value)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {threed66SettingsTab === "proxy" && (
+                <div className="runtimeSettingGroup">
+                  <h3>{l("Proxy Hong Kong", "Hong Kong proxy")}</h3>
+                  <div className="runtimeSettingList">
+                    <label className="runtimeSettingRow">
+                      <span className="runtimeSettingText">
+                        <strong>{l("Proxy URL", "Proxy URL")}</strong>
+                        <small>
+                          {siteSettings.threed66ProxyUrlConfigured
+                            ? l("Đã cấu hình proxy URL. Nhập URL mới nếu muốn thay thế; để trống sẽ giữ nguyên.", "Proxy URL is configured. Enter a new URL to replace it; leave blank to keep it.")
+                            : l("Chưa cấu hình proxy. Nhập dạng http://user:pass@host:port sau khi mua proxy.", "No proxy configured. Enter http://user:pass@host:port after buying a proxy.")}
+                        </small>
+                      </span>
+                      <input
+                        type="password"
+                        value={siteSettings.threed66ProxyUrl || ""}
+                        placeholder="http://user:pass@host:port"
+                        autoComplete="off"
+                        onChange={(event) =>
+                          setSiteSettings((settings) => ({
+                            ...settings,
+                            threed66ProxyUrl: event.target.value,
+                            threed66ProxyUrlClear: false,
+                          }))
+                        }
+                      />
+                    </label>
+                    {siteSettings.threed66ProxyUrlConfigured && (
+                      <button
+                        type="button"
+                        className="smallButton dangerButton"
+                        style={{ alignSelf: "flex-start" }}
+                        onClick={() =>
+                          setSiteSettings((settings) => ({
+                            ...settings,
+                            threed66ProxyUrl: "",
+                            threed66ProxyUrlConfigured: false,
+                            threed66ProxyUrlClear: true,
+                          }))
+                        }
+                      >
+                        <X size={14} /> {l("Xóa proxy URL", "Clear proxy URL")}
+                      </button>
+                    )}
+                    {proxyRuntimeSettings.map((setting) => (
+                      <label className="runtimeSettingRow" key={setting.field}>
+                        <span className="runtimeSettingText">
+                          <strong>{setting.label}</strong>
+                          <small>{setting.help}</small>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(siteSettings[setting.field])}
+                          onChange={(event) => updateRuntimeSetting(setting.field, event.target.checked)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {threed66SettingsTab === "playwright" && (
+                <div className="runtimeSettingGroup">
+                  <h3>{l("Chế độ Playwright", "Playwright mode")}</h3>
+                  <div className="runtimeModeGrid">
+                    {playwrightModes.map((mode) => (
+                      <button
+                        key={mode.value}
+                        type="button"
+                        className={`runtimeModeButton ${currentPlaywrightMode === mode.value ? "active" : ""}`}
+                        aria-pressed={currentPlaywrightMode === mode.value}
+                        onClick={() => setPlaywrightMode(mode.value)}
+                      >
+                        <strong>{mode.label}</strong>
+                        <small>{mode.help}</small>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="muted" style={{ margin: 0 }}>
+                    {l(
+                      "Muốn dùng Playwright thì VPS vẫn phải cài package playwright và Chromium.",
+                      "Using Playwright still requires the VPS to have the playwright package and Chromium installed."
+                    )}
+                  </p>
+                </div>
+              )}
               <p className="muted" style={{ margin: 0 }}>
                 {l(
-                  "Muốn dùng Playwright thì VPS vẫn phải cài package playwright và Chromium.",
-                  "Using Playwright still requires the VPS to have the playwright package and Chromium installed."
+                  "Các giá trị này áp dụng ngay sau khi lưu. Paytype value dùng để chọn ví thanh toán 3D66, ví dụ value=\"4\" là 赠点. Tăng concurrency quá cao có thể làm cookie bị chặn hoặc VPS quá tải.",
+                  "These values apply immediately after saving. Paytype value selects the 3D66 payment wallet, for example value=\"4\" is 赠点. Raising concurrency too high can trigger cookie blocks or overload the VPS."
                 )}
               </p>
-            </div>
-            )}
-            <p className="muted" style={{ margin: 0 }}>
-              {l(
-                "Các giá trị này áp dụng ngay sau khi lưu. Paytype value dùng để chọn ví thanh toán 3D66, ví dụ value=\"4\" là 赠点. Tăng concurrency quá cao có thể làm cookie bị chặn hoặc VPS quá tải.",
-                "These values apply immediately after saving. Paytype value selects the 3D66 payment wallet, for example value=\"4\" is 赠点. Raising concurrency too high can trigger cookie blocks or overload the VPS."
+              {runtimeSettingsMsg && (
+                <p className={runtimeSettingsMsg.includes("cập nhật") || runtimeSettingsMsg.includes("updated") ? "success" : "error"}>
+                  {runtimeSettingsMsg}
+                </p>
               )}
-            </p>
-            {runtimeSettingsMsg && (
-              <p className={runtimeSettingsMsg.includes("cập nhật") || runtimeSettingsMsg.includes("updated") ? "success" : "error"}>
-                {runtimeSettingsMsg}
-              </p>
-            )}
-            <button className="smallButton" type="submit" style={{ alignSelf: "flex-start" }}>
-              <Save size={14} /> {l("Lưu cài đặt Getlink", "Save Getlink settings")}
-            </button>
-          </form>
+              <button className="smallButton" type="submit" style={{ alignSelf: "flex-start" }}>
+                <Save size={14} /> {l("Lưu cài đặt Getlink", "Save Getlink settings")}
+              </button>
+            </form>
           )}
           {threed66SettingsTab === "status" && cookiePool && (
             <div className="cookiePoolGrid">

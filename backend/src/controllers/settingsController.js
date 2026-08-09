@@ -28,7 +28,7 @@ const HOME_TEXT_FIELDS = [
   "footerTagline",
 ];
 const HOME_TEXT_DEFAULTS = {
-  heroText: "SIÊU RẺ\nTHƯ VIỆN 3D\nGETLINK",
+  heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
   heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
   heroEyebrow: "+ api 3d sdk",
   saleText: "Khuyến mãi gói PRO trong tháng này",
@@ -319,8 +319,8 @@ function isVerifiedAdminRequest(req) {
   const email = String(req?.user?.email || "").toLowerCase();
   return Boolean(
     req?.user?.role === "admin" &&
-      adminEmails.has(email) &&
-      (!req.user.isTwoFactorEnabled || req.jwtPayload?.is2FAVerified),
+    adminEmails.has(email) &&
+    (!req.user.isTwoFactorEnabled || req.jwtPayload?.is2FAVerified),
   );
 }
 

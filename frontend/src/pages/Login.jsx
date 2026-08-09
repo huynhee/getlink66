@@ -10,7 +10,7 @@ import { membershipFeatureLabel } from "../utils/membershipPresentation.js";
 const HOME_TEXT_DEFAULTS = {
   vi: {
     heroEyebrow: "+ api 3d sdk",
-    heroText: "SIÊU RẺ\nTHƯ VIỆN 3D\nGETLINK",
+    heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
     heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
     saleText: "",
     demoTitle: "Bắt đầu tải ngay",
@@ -127,7 +127,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const [guideError, setGuideError] = useState("");
   const [siteSettings, setSiteSettings] = useState({
     heroEyebrow: "+ api 3d sdk",
-    heroText: language === "vi" ? "SIÊU RẺ\nTHƯ VIỆN 3D\nGETLINK" : "AFFORDABLE\n3D LIBRARY\nGETLINK",
+    heroText: language === "vi" ? "SIÊU RẺ\nTẢI 3D\nGETLINK" : "AFFORDABLE\n3D LIBRARY\nGETLINK",
     heroSubtitle: language === "vi"
       ? "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp."
       : "An intermediary getlink service that helps you download 3D models with a faster credit workflow.",
