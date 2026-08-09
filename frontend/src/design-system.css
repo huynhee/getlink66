@@ -2960,6 +2960,7 @@ label,
   grid-template-columns: 18px minmax(0, 1fr) 42px;
   align-items: center;
   gap: 8px;
+  margin-bottom: 0;
   padding: 0 0 0 12px;
   border-radius: 4px;
 }
@@ -2985,7 +2986,7 @@ label,
 
 .marketResultControls {
   display: grid;
-  grid-template-columns: 150px 236px;
+  grid-template-columns: 156px 236px;
   height: 42px;
   min-height: 42px;
   align-self: center;
@@ -2994,11 +2995,11 @@ label,
 }
 
 .marketResultControls .marketAccessToggle {
-  width: 150px;
+  width: 156px;
   height: 42px;
   align-items: stretch;
   grid-template-columns: repeat(2, 72px);
-  gap: 0;
+  gap: 6px;
 }
 
 .marketResultControls .marketAccessToggle button {
