@@ -11,7 +11,9 @@ const MAX_CACHE_USERS = 2_000;
 const HISTORY_DAYS = 180;
 const HISTORY_LIMIT = 30;
 const HALF_LIFE_DAYS = 30;
+const DAILY_POPULAR_CACHE_TTL_MS = 60 * 1000;
 const cache = new Map();
+let dailyPopularCache = null;
 
 function cacheKey(userId) {
   return String(userId || "guest");
@@ -27,6 +29,8 @@ function pruneCache() {
 
 export function invalidateMarketplaceHomeRecommendations(userId) {
   cache.delete(cacheKey(userId));
+  cache.delete("guest");
+  dailyPopularCache = null;
 }
 
 function values(value) {
@@ -183,6 +187,80 @@ function latestSourceIdModels(candidates, limit) {
     .slice(0, limit);
 }
 
+function vietnamDayRange(now = new Date()) {
+  const offsetMs = 7 * 60 * 60 * 1000;
+  const local = new Date(now.getTime() + offsetMs);
+  const start = new Date(Date.UTC(
+    local.getUTCFullYear(),
+    local.getUTCMonth(),
+    local.getUTCDate(),
+  ) - offsetMs);
+  return { start, end: new Date(start.getTime() + 86_400_000) };
+}
+
+async function popularModelsToday(excludedIds, limit) {
+  const { start, end } = vietnamDayRange();
+  const dayKey = start.toISOString();
+  if (
+    !dailyPopularCache
+    || dailyPopularCache.dayKey !== dayKey
+    || dailyPopularCache.expiresAt <= Date.now()
+  ) {
+    const downloads = await ModelDownload.find({
+      assetType: marketplaceAssetTypeFilter("model"),
+      status: "downloaded",
+      downloadedAt: { $gte: start, $lt: end },
+    })
+      .select("modelId")
+      .lean();
+    const counts = new Map();
+    downloads.forEach((download) => {
+      const modelId = String(download.modelId?._id || download.modelId || "");
+      if (!modelId) return;
+      counts.set(modelId, (counts.get(modelId) || 0) + 1);
+    });
+    dailyPopularCache = {
+      dayKey,
+      expiresAt: Date.now() + DAILY_POPULAR_CACHE_TTL_MS,
+      ranking: [...counts]
+        .sort((left, right) => right[1] - left[1] || right[0].localeCompare(left[0])),
+    };
+  }
+  const ranking = dailyPopularCache.ranking
+    .filter(([modelId]) => !excludedIds.has(modelId));
+  const counts = new Map(ranking);
+  const rankedIds = ranking
+    .slice(0, Math.max(limit * 20, 120))
+    .map(([modelId]) => modelId);
+  if (!rankedIds.length) return [];
+
+  const models = await MarketplaceModel.find({
+    _id: { $in: rankedIds },
+    assetType: marketplaceAssetTypeFilter("model"),
+    accessType: "member",
+    isPublished: true,
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    ...marketplacePublicDeletionQuery(),
+  }).lean();
+  await hydrateMarketplaceCategoryRefs(models);
+  return models.sort((left, right) => (
+    (counts.get(String(right._id)) || 0) - (counts.get(String(left._id)) || 0)
+    || Number(right.sourceAssetIdSort || 0) - Number(left.sourceAssetIdSort || 0)
+    || String(right._id).localeCompare(String(left._id))
+  ));
+}
+
+function mergeHomeModels(popular, latest, limit) {
+  const seen = new Set();
+  return [...popular, ...latest].filter((model) => {
+    const id = String(model._id);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).slice(0, limit);
+}
+
 export async function marketplaceHomeRecommendations({ userId = null, limit = 6 } = {}) {
   const safeLimit = Math.min(12, Math.max(1, Number(limit || 6)));
   const key = cacheKey(userId);
@@ -212,14 +290,20 @@ export async function marketplaceHomeRecommendations({ userId = null, limit = 6 
     : [];
   const profile = preferenceProfile(historyModels, downloads);
   const hasHistory = historyModels.length > 0;
-  const [modelCandidates, sceneCandidates] = await Promise.all([
-    candidatesFor("model", downloadedIds),
+  const noModelExclusions = new Set();
+  const [modelCandidates, sceneCandidates, popularModels] = await Promise.all([
+    candidatesFor("model", noModelExclusions),
     candidatesFor("scene", downloadedIds),
+    popularModelsToday(noModelExclusions, safeLimit),
   ]);
   const value = {
     engine: "catalog_behavior_v2",
     mode: hasHistory ? "personalized" : "trending",
-    models: latestSourceIdModels(modelCandidates, safeLimit),
+    models: mergeHomeModels(
+      popularModels,
+      latestSourceIdModels(modelCandidates, safeLimit),
+      safeLimit,
+    ),
     scenes: rankHomeCandidates(sceneCandidates, profile, hasHistory, safeLimit),
   };
   cache.delete(key);

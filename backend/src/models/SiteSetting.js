@@ -82,6 +82,8 @@ const siteSettingSchema = new mongoose.Schema(
       enum: ["both", "referrer_only", "off"],
       default: "both"
     },
+    referralRewardCreditEnabled: { type: Boolean, default: true },
+    referralRewardProEnabled: { type: Boolean, default: true },
     threed66GetlinkConcurrency: { type: Number, default: 1 },
     threed66PreviewConcurrency: { type: Number, default: 1 },
     threed66RefreshConcurrency: { type: Number, default: 1 },

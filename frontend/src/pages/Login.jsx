@@ -126,6 +126,9 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const [guideLoading, setGuideLoading] = useState(true);
   const [guideError, setGuideError] = useState("");
   const [siteSettings, setSiteSettings] = useState({
+    referralMode: "both",
+    referralRewardCreditEnabled: true,
+    referralRewardProEnabled: true,
     heroEyebrow: "+ api 3d sdk",
     heroText: language === "vi" ? "SIÊU RẺ\nTẢI 3D\nGETLINK" : "AFFORDABLE\n3D LIBRARY\nGETLINK",
     heroSubtitle: language === "vi"
@@ -344,17 +347,27 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   }
 
   function referralTitle() {
-    if ((referral?.mode || siteSettings.referralMode) === "referrer_only") {
+    const mode = referral?.mode || siteSettings.referralMode;
+    const proDays = Number(referral?.rewardProDays ?? (siteSettings.referralRewardProEnabled === false ? 0 : 1));
+    const credits = Number(referral?.rewardCredit ?? (siteSettings.referralRewardCreditEnabled === false ? 0 : 28));
+    const rewards = [
+      proDays > 0 ? (language === "vi" ? `${proDays} ngày Pro` : `${proDays} Pro day`) : "",
+      credits > 0 ? (language === "vi" ? `${credits} credit` : `${credits} credits`) : "",
+    ].filter(Boolean).join(" + ");
+    if (mode === "referrer_only") {
       return language === "vi"
-        ? "Mời bạn bè để nhận 1 ngày Pro + 28 credit."
-        : "Invite friends to receive 1 Pro day + 28 credits.";
+        ? `Mời bạn bè để nhận ${rewards}.`
+        : `Invite friends to receive ${rewards}.`;
     }
-    return t.referralTitle || (language === "vi"
-      ? "Mời bạn bè, cả hai nhận 1 ngày Pro + 28 credit"
-      : "Invite friends and both receive 1 Pro day + 28 credits");
+    return language === "vi"
+      ? `Mời bạn bè, cả hai nhận ${rewards}.`
+      : `Invite friends and both receive ${rewards}.`;
   }
 
   function homepageReferralTitle() {
+    if (siteSettings.referralRewardCreditEnabled === false || siteSettings.referralRewardProEnabled === false) {
+      return referralTitle();
+    }
     if ((referral?.mode || siteSettings.referralMode) === "referrer_only") {
       return siteSettings.referralTitleReferrerOnly || referralTitle();
     }

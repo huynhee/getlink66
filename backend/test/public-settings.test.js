@@ -23,6 +23,8 @@ test("guest settings only expose landing-page fields and input mode", async () =
 
   assert.equal(typeof payload.settings.heroText, "string");
   assert.equal(typeof payload.settings.threed66ModelResolveMode, "string");
+  assert.equal(payload.settings.referralRewardCreditEnabled, true);
+  assert.equal(payload.settings.referralRewardProEnabled, true);
   assert.equal(Object.hasOwn(payload.settings, "threed66TimeoutMs"), false);
   assert.equal(Object.hasOwn(payload.settings, "threed66ProxyEnabled"), false);
   assert.equal(Object.hasOwn(payload.settings, "getlinkHistoryRetentionDaysAfterExpiry"), false);
@@ -101,4 +103,33 @@ test("admin can update browser navigation retry settings at runtime", async () =
       process.env.THREED66_BROWSER_RETRY_DELAY_MS = previousDelay;
     }
   }
+});
+
+test("admin cannot disable every referral reward", async () => {
+  let payload;
+  let statusCode = 200;
+  await updateSettings(
+    {
+      body: {
+        referralRewardCreditEnabled: false,
+        referralRewardProEnabled: false,
+      },
+      user: { role: "admin", email: "admin@example.test" },
+      jwtPayload: { is2FAVerified: true },
+    },
+    {
+      status(code) {
+        statusCode = code;
+        return this;
+      },
+      json(value) {
+        payload = value;
+        return value;
+      },
+    },
+    (error) => { throw error; },
+  );
+
+  assert.equal(statusCode, 400);
+  assert.equal(payload.code, "REFERRAL_REWARD_REQUIRED");
 });

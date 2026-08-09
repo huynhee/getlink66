@@ -30,6 +30,7 @@ const modelDownloadSchema = new mongoose.Schema(
 modelDownloadSchema.index({ createdAt: -1 });
 modelDownloadSchema.index({ userId: 1, downloadedAt: -1 });
 modelDownloadSchema.index({ modelId: 1, downloadedAt: -1 });
+modelDownloadSchema.index({ assetType: 1, status: 1, downloadedAt: -1, modelId: 1 });
 
 export default isMemoryDb()
   ? createMemoryModel("ModelDownload")

@@ -2908,10 +2908,9 @@ label,
 
 /* Final layout alignment: homepage, catalog toolbar, and mobile navigation. */
 .homeCatalogSearch {
-  width: calc(100% - clamp(24px, 4vw, 64px));
-  max-width: none;
-  margin-right: 0;
-  margin-left: clamp(16px, 4vw, 64px);
+  width: min(90%, 1280px);
+  max-width: 1280px;
+  margin-inline: auto;
 }
 
 .heroLeft .glitchTitle {
@@ -2938,7 +2937,7 @@ label,
 .marketResultBar {
   grid-template-columns: 72px minmax(280px, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 0;
   min-height: 42px;
 }
 
@@ -2991,7 +2990,7 @@ label,
   min-height: 42px;
   align-self: center;
   align-items: stretch;
-  gap: 8px;
+  gap: 0;
 }
 
 .marketResultControls .marketAccessToggle {
@@ -2999,7 +2998,7 @@ label,
   height: 42px;
   align-items: stretch;
   grid-template-columns: repeat(2, 72px);
-  gap: 6px;
+  gap: 0;
 }
 
 .marketResultControls .marketAccessToggle button {

@@ -59,19 +59,25 @@ const emptyNotification = {
 const referralModeOptions = [
   {
     value: "both",
-    vi: "Cả hai nhận 1 ngày Pro + 28 credit",
-    en: "Both receive 1 Pro day + 28 credits",
+    vi: "Thưởng cả hai người",
+    en: "Reward both users",
   },
   {
     value: "referrer_only",
-    vi: "Chỉ người giới thiệu nhận Pro + credit",
-    en: "Only referrer receives Pro + credits",
+    vi: "Chỉ thưởng người giới thiệu",
+    en: "Reward referrer only",
   },
   {
     value: "off",
     vi: "Tắt giới thiệu",
     en: "Disable referral",
   },
+];
+
+const referralRewardOptions = [
+  { value: "both", credit: true, pro: true, vi: "1 ngày Pro + 28 credit", en: "1 Pro day + 28 credits" },
+  { value: "credit", credit: true, pro: false, vi: "Chỉ 28 credit", en: "28 credits only" },
+  { value: "pro", credit: false, pro: true, vi: "Chỉ 1 ngày Pro", en: "1 Pro day only" },
 ];
 
 const HOME_TEXT_FIELDS = [
@@ -100,6 +106,8 @@ const HOME_TEXT_FIELDS = [
 
 const defaultSiteSettings = {
   referralMode: "both",
+  referralRewardCreditEnabled: true,
+  referralRewardProEnabled: true,
   heroEyebrow: "+ api 3d sdk",
   heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
   heroSubtitle: "Thư viện 3D 200,000+ models giá chỉ 66đ/1 model. Dịch vụ getlink trung gian mua trung quốc giá rẻ.",
@@ -748,15 +756,20 @@ export default function Admin({ user, language = "vi" }) {
     await loadData();
   }
 
-  async function saveReferralMode(mode) {
+  async function saveReferralSettings(patch) {
     try {
       setReferralMsg("");
+      const next = { ...siteSettings, ...patch };
       const data = await api("/api/settings", {
         method: "POST",
-        body: JSON.stringify({ referralMode: mode })
+        body: JSON.stringify({
+          referralMode: next.referralMode,
+          referralRewardCreditEnabled: Boolean(next.referralRewardCreditEnabled),
+          referralRewardProEnabled: Boolean(next.referralRewardProEnabled),
+        })
       });
-      setSiteSettings({ ...defaultSiteSettings, ...(data.settings || { ...siteSettings, referralMode: mode }) });
-      setReferralMsg(l("Đã cập nhật chế độ giới thiệu.", "Referral mode updated."));
+      setSiteSettings({ ...defaultSiteSettings, ...(data.settings || next) });
+      setReferralMsg(l("Đã cập nhật chế độ giới thiệu.", "Referral settings updated."));
     } catch (err) {
       setReferralMsg(err.message);
     }
@@ -2516,17 +2529,37 @@ export default function Admin({ user, language = "vi" }) {
                 key={option.value}
                 type="button"
                 className={siteSettings.referralMode === option.value ? "active" : ""}
-                onClick={() => saveReferralMode(option.value)}
+                onClick={() => saveReferralSettings({ referralMode: option.value })}
               >
                 {l(option.vi, option.en)}
               </button>
             ))}
           </div>
+          <h3 style={{ marginTop: 18 }}>{l("Loại phần thưởng", "Reward type")}</h3>
+          <div className="segmentedControl" style={{ marginTop: 10 }}>
+            {referralRewardOptions.map((option) => {
+              const active = Boolean(siteSettings.referralRewardCreditEnabled) === option.credit
+                && Boolean(siteSettings.referralRewardProEnabled) === option.pro;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={active ? "active" : ""}
+                  onClick={() => saveReferralSettings({
+                    referralRewardCreditEnabled: option.credit,
+                    referralRewardProEnabled: option.pro,
+                  })}
+                >
+                  {l(option.vi, option.en)}
+                </button>
+              );
+            })}
+          </div>
           <p className="muted" style={{ marginTop: 10 }}>
             {siteSettings.referralMode === "both"
-              ? l("Người mời và người được mời đều nhận 1 ngày Pro + 28 credit.", "Both referrer and invited user receive 1 Pro day + 28 credits.")
+              ? l("Người mời và người được mời đều nhận loại phần thưởng đã chọn.", "Both referrer and invited user receive the selected reward.")
               : siteSettings.referralMode === "referrer_only"
-                ? l("Chỉ người giới thiệu nhận 1 ngày Pro + 28 credit; trang chủ đổi nội dung lời mời.", "Only the referrer receives 1 Pro day + 28 credits; homepage invite text changes.")
+                ? l("Chỉ người giới thiệu nhận loại phần thưởng đã chọn.", "Only the referrer receives the selected reward.")
                 : l("Ẩn thanh giới thiệu trên trang chủ và không thưởng referral mới.", "Referral invite is hidden and new referral rewards are disabled.")}
           </p>
           {referralMsg && (

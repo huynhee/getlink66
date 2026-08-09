@@ -6,6 +6,9 @@ useMemoryDb();
 
 const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
 const { default: ModelDownload } = await import("../src/models/ModelDownload.js");
+const { invalidateMarketplaceHomeRecommendations } = await import(
+  "../src/utils/marketplaceRecommendationService.js"
+);
 const {
   getMarketplaceModel,
   listMarketplaceHomeRecommendations,
@@ -119,6 +122,7 @@ test("home recommendations personalize from downloads and keep asset types separ
     status: "downloaded",
     downloadedAt: new Date(),
   });
+  invalidateMarketplaceHomeRecommendations(userId);
   const preferred = await MarketplaceModel.create({
     assetType: "model",
     source: { provider: "drive", modelId: "home-preferred", assetId: "home-preferred" },
@@ -162,4 +166,55 @@ test("home recommendations personalize from downloads and keep asset types separ
   assert.ok(capture.state.body.models.every((item) => item.accessType === "member"));
   assert.ok(capture.state.body.scenes.every((item) => item.assetType === "scene"));
   assert.equal(capture.state.body.models.some((item) => item._id === downloaded._id), false);
+});
+
+test("home model recommendations rank today's downloads before larger source IDs", async () => {
+  await Promise.all([
+    MarketplaceModel.deleteMany({}),
+    ModelDownload.deleteMany({}),
+  ]);
+  const createModel = (assetId, title) => MarketplaceModel.create({
+    assetType: "model",
+    source: { provider: "drive", modelId: assetId, assetId },
+    title,
+    slug: `home-rank-${assetId}`,
+    accessType: "member",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+  });
+  const [popularToday, latest, secondLatest] = await Promise.all([
+    createModel("100", "Popular today"),
+    createModel("900", "Newest model"),
+    createModel("800", "Second newest model"),
+  ]);
+  await ModelDownload.insertMany([
+    {
+      assetType: "model",
+      modelId: popularToday._id,
+      userId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+      status: "downloaded",
+      downloadedAt: new Date(),
+    },
+    {
+      assetType: "model",
+      modelId: popularToday._id,
+      userId: "bbbbbbbbbbbbbbbbbbbbbbbb",
+      status: "downloaded",
+      downloadedAt: new Date(),
+    },
+  ]);
+  invalidateMarketplaceHomeRecommendations("bbbbbbbbbbbbbbbbbbbbbbbb");
+
+  const capture = responseCapture();
+  await listMarketplaceHomeRecommendations(
+    { query: { limit: "3" }, user: { _id: "bbbbbbbbbbbbbbbbbbbbbbbb" } },
+    capture.response,
+    (error) => { throw error; },
+  );
+
+  assert.deepEqual(
+    capture.state.body.models.map((model) => model._id),
+    [popularToday._id, latest._id, secondLatest._id],
+  );
 });

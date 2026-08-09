@@ -235,6 +235,8 @@ const defaultSettings = {
   ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn.",
   footerTagline: "Hỗ trợ 24/7",
   referralMode: "both",
+  referralRewardCreditEnabled: true,
+  referralRewardProEnabled: true,
   threed66GetlinkConcurrency: Number(process.env.THREED66_GETLINK_CONCURRENCY || 1),
   threed66PreviewConcurrency: Number(process.env.THREED66_PREVIEW_CONCURRENCY || 1),
   threed66RefreshConcurrency: Number(process.env.THREED66_REFRESH_CONCURRENCY || 1),
@@ -337,6 +339,8 @@ function publicSettings(settings = {}, { includeRuntime = false } = {}) {
       [
         ...HOME_TEXT_FIELDS,
         "referralMode",
+        "referralRewardCreditEnabled",
+        "referralRewardProEnabled",
         "threed66ModelResolveMode",
       ].map((field) => [field, snapshot[field]]),
     );
@@ -619,6 +623,8 @@ export async function updateSettings(req, res, next) {
     const fields = [
       ...HOME_TEXT_FIELDS,
       "referralMode",
+      "referralRewardCreditEnabled",
+      "referralRewardProEnabled",
       "threed66GetlinkConcurrency",
       "threed66PreviewConcurrency",
       "threed66RefreshConcurrency",
@@ -666,6 +672,10 @@ export async function updateSettings(req, res, next) {
         if (REFERRAL_MODES.includes(req.body[field])) update[field] = req.body[field];
         return;
       }
+      if (field === "referralRewardCreditEnabled" || field === "referralRewardProEnabled") {
+        update[field] = normalizeBoolean(req.body[field], true);
+        return;
+      }
       if (RUNTIME_NUMBER_FIELDS[field]) {
         update[field] = clampInteger(req.body[field], RUNTIME_NUMBER_FIELDS[field]);
         return;
@@ -701,7 +711,19 @@ export async function updateSettings(req, res, next) {
         : sanitized;
     });
 
-    await loadSettingsWithRetry();
+    const currentSettings = await loadSettingsWithRetry();
+    const creditRewardEnabled = update.referralRewardCreditEnabled
+      ?? currentSettings.referralRewardCreditEnabled
+      ?? true;
+    const proRewardEnabled = update.referralRewardProEnabled
+      ?? currentSettings.referralRewardProEnabled
+      ?? true;
+    if (!creditRewardEnabled && !proRewardEnabled) {
+      return res.status(400).json({
+        code: "REFERRAL_REWARD_REQUIRED",
+        message: "Referral must grant credit, Pro, or both.",
+      });
+    }
     const settings = await SiteSetting.findOneAndUpdate(
       { key: "homepage" },
       { $set: update },

@@ -111,14 +111,23 @@ export default function Invite({ language = "vi" }) {
     );
   }
 
+  const rewardParts = [
+    Number(summary.rewardProDays || 0) > 0
+      ? `${summary.rewardProDays} ${isVi ? "ngày Pro" : "Pro day"}`
+      : "",
+    Number(summary.rewardCredit || 0) > 0
+      ? `${summary.rewardCredit} credit`
+      : "",
+  ].filter(Boolean);
+  const rewardLabel = rewardParts.join(" + ");
   const rewardText =
     summary.mode === "referrer_only"
       ? isVi
-        ? <>Mỗi người đăng ký thành công giúp bạn nhận <strong>1 ngày Pro + 28 credit</strong>.</>
-        : <>Each successful signup gives you <strong>1 Pro day + 28 credits</strong>.</>
+        ? <>Mỗi người đăng ký thành công giúp bạn nhận <strong>{rewardLabel}</strong>.</>
+        : <>Each successful signup gives you <strong>{rewardLabel}</strong>.</>
       : isVi
-        ? <>Mỗi lượt đăng ký thành công: cả hai nhận <strong>1 ngày Pro + 28 credit</strong>.</>
-        : <>Each successful signup gives both users <strong>1 Pro day + 28 credits</strong>.</>;
+        ? <>Mỗi lượt đăng ký thành công: cả hai nhận <strong>{rewardLabel}</strong>.</>
+        : <>Each successful signup gives both users <strong>{rewardLabel}</strong>.</>;
 
   return (
     <div className="stack invitePage">
@@ -129,7 +138,7 @@ export default function Invite({ language = "vi" }) {
           </span>
           <h1>
             <span>{isVi ? "Giới thiệu" : "Invite"}</span>
-            <strong>{isVi ? "Nhận Pro" : "Earn Pro"} <ShieldCheck size={28} /></strong>
+            <strong>{isVi ? "Nhận thưởng" : "Earn rewards"} <ShieldCheck size={28} /></strong>
           </h1>
           <p>{rewardText}</p>
           <div className="inviteTerminalStatus">
@@ -150,7 +159,7 @@ export default function Invite({ language = "vi" }) {
           <div>
             <CalendarDays size={18} />
             <span>{isVi ? "Thưởng mỗi lượt" : "Reward per invite"}</span>
-            <strong>1 {isVi ? "ngày Pro" : "Pro day"} + 28 credit</strong>
+            <strong>{rewardLabel}</strong>
           </div>
         </div>
       </section>
@@ -187,8 +196,8 @@ export default function Invite({ language = "vi" }) {
           <p className="inviteLinkHint">
             <span>&gt;</span>{" "}
             {isVi
-              ? "Gửi link này cho bạn bè. 1 ngày Pro và 28 credit được cộng tự động khi đăng ký thành công."
-              : "Send this link to friends. One Pro day and 28 credits are added automatically after successful signup."}
+              ? `Gửi link này cho bạn bè. ${rewardLabel} được cộng tự động khi đăng ký thành công.`
+              : `Send this link to friends. ${rewardLabel} is added automatically after successful signup.`}
           </p>
         </div>
       </section>

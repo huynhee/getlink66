@@ -108,3 +108,79 @@ test("referrer-only mode does not grant Pro to the invited user", async () => {
   assert.equal(reward.referredRewardCredit, 0);
   assert.equal(reward.referredRewardProDays, 0);
 });
+
+test("credit-only referral does not activate Pro", async () => {
+  await SiteSetting.findOneAndUpdate(
+    { key: "homepage" },
+    {
+      $set: {
+        referralMode: "both",
+        referralRewardCreditEnabled: true,
+        referralRewardProEnabled: false,
+      },
+    },
+    { new: true, upsert: true },
+  );
+  const referrer = await User.create({
+    email: "credit-only-referrer@example.test",
+    referralCode: "CREDITONLY1",
+    credit: 2,
+  });
+  const referred = await User.create({
+    email: "credit-only-referred@example.test",
+    credit: 3,
+  });
+
+  const result = await awardReferralSignup(referred, "CREDITONLY1");
+  const updatedReferrer = await User.findById(referrer._id);
+  const updatedReferred = await User.findById(referred._id);
+  const reward = await Referral.findOne({ referredUserId: referred._id });
+
+  assert.equal(result.rewardType, "credit");
+  assert.equal(result.referrerCredit, 28);
+  assert.equal(result.referrerProDays, 0);
+  assert.equal(updatedReferrer.credit, 30);
+  assert.equal(updatedReferred.credit, 31);
+  assert.equal(updatedReferrer.proUntil, undefined);
+  assert.equal(updatedReferred.proUntil, undefined);
+  assert.equal(reward.referrerRewardProDays, 0);
+  assert.equal(reward.referrerRewardCredit, 28);
+});
+
+test("Pro-only referral does not add credit", async () => {
+  await SiteSetting.findOneAndUpdate(
+    { key: "homepage" },
+    {
+      $set: {
+        referralMode: "both",
+        referralRewardCreditEnabled: false,
+        referralRewardProEnabled: true,
+      },
+    },
+    { new: true, upsert: true },
+  );
+  const referrer = await User.create({
+    email: "pro-only-referrer@example.test",
+    referralCode: "PROONLY01",
+    credit: 4,
+  });
+  const referred = await User.create({
+    email: "pro-only-referred@example.test",
+    credit: 5,
+  });
+
+  const result = await awardReferralSignup(referred, "PROONLY01");
+  const updatedReferrer = await User.findById(referrer._id);
+  const updatedReferred = await User.findById(referred._id);
+  const reward = await Referral.findOne({ referredUserId: referred._id });
+
+  assert.equal(result.rewardType, "pro");
+  assert.equal(result.referrerCredit, 0);
+  assert.equal(result.referrerProDays, 1);
+  assert.equal(updatedReferrer.credit, 4);
+  assert.equal(updatedReferred.credit, 5);
+  assert.ok(new Date(updatedReferrer.proUntil).getTime() > Date.now());
+  assert.ok(new Date(updatedReferred.proUntil).getTime() > Date.now());
+  assert.equal(reward.referrerRewardCredit, 0);
+  assert.equal(reward.referrerRewardProDays, 1);
+});
