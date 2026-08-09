@@ -479,7 +479,6 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
         <h2>{t.getlinkTitle}</h2>
         <div className="inputRow">
           <div className="linkInputWrap terminalInput">
-            <span className="terminalInputMirror" aria-hidden="true">{modeText.placeholder}</span>
             <input
               id="modelUrl"
               value={url}

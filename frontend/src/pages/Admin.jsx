@@ -101,7 +101,7 @@ const HOME_TEXT_FIELDS = [
 const defaultSiteSettings = {
   referralMode: "both",
   heroEyebrow: "+ api 3d sdk",
-  heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
+  heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
   heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
   saleText: "",
   demoTitle: "Bắt đầu tải ngay",

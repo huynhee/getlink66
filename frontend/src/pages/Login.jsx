@@ -10,7 +10,7 @@ import { membershipFeatureLabel } from "../utils/membershipPresentation.js";
 const HOME_TEXT_DEFAULTS = {
   vi: {
     heroEyebrow: "+ api 3d sdk",
-    heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
+    heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
     heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
     saleText: "",
     demoTitle: "Bắt đầu tải ngay",
@@ -484,7 +484,6 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
               </h2>
               <form onSubmit={handleDemoGetlink} className="inputWrapper">
                 <div className="linkInputWrap terminalInput">
-                  <span className="terminalInputMirror" aria-hidden="true">{modeText.placeholder}</span>
                   <input
                     type="text"
                     inputMode="text"

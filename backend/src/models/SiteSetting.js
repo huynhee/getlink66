@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 
 const HOME_TEXT_DEFAULTS = {
-  heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
+  heroText: "SIÊU RẺ\nTẢI 3D\nGETLINK",
   heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
   heroEyebrow: "+ api 3d sdk",
   saleText: "Khuyến mãi gói PRO trong tháng này",
@@ -30,7 +30,7 @@ const siteSettingSchema = new mongoose.Schema(
     key: { type: String, required: true, unique: true, default: "homepage" },
     heroText: {
       type: String,
-      default: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ"
+      default: "SIÊU RẺ\nTẢI 3D\nGETLINK"
     },
     heroSubtitle: {
       type: String,

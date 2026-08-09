@@ -2908,7 +2908,10 @@ label,
 
 /* Final layout alignment: homepage, catalog toolbar, and mobile navigation. */
 .homeCatalogSearch {
-  width: min(90%, 1280px);
+  width: calc(100% - clamp(24px, 4vw, 64px));
+  max-width: none;
+  margin-right: 0;
+  margin-left: clamp(16px, 4vw, 64px);
 }
 
 .heroLeft .glitchTitle {
@@ -2921,43 +2924,7 @@ label,
 }
 
 .terminalInputMirror {
-  position: absolute;
-  top: 50%;
-  left: 16px;
-  z-index: 2;
-  display: inline-flex;
-  width: max-content;
-  max-width: calc(100% - 100px);
-  height: auto;
-  overflow: hidden;
-  align-items: center;
-  color: transparent;
-  visibility: visible;
-  white-space: pre;
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.35;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.terminalInputMirror::after {
-  content: "";
-  width: 1px;
-  height: 1.15em;
-  margin-left: 1px;
-  flex: 0 0 1px;
-  background: var(--text-primary);
-  animation: terminalBlink 0.85s steps(1, end) infinite;
-}
-
-.terminalInput:has(input:not(:placeholder-shown)) .terminalInputMirror {
   display: none;
-}
-
-.terminalInput:has(input:placeholder-shown) .terminalInputMirror {
-  color: transparent;
 }
 
 .marketSearchPanel {
@@ -2965,7 +2932,7 @@ label,
 }
 
 .marketResultBar {
-  grid-template-columns: 64px minmax(280px, 1fr) auto;
+  grid-template-columns: 72px minmax(280px, 1fr) auto;
   gap: 8px;
   min-height: 42px;
 }
@@ -2979,6 +2946,7 @@ label,
 .marketResultSearch,
 .marketResultControls .marketAccessToggle button,
 .marketSortControl {
+  box-sizing: border-box;
   min-height: 42px;
   height: 42px;
 }
@@ -2995,14 +2963,22 @@ label,
 .marketImageSearchButton {
   width: 42px;
   min-width: 42px;
-  height: 40px;
+  height: 100%;
+  min-height: 40px;
+  align-self: stretch;
 }
 
 .marketResultControls {
+  height: 42px;
+  min-height: 42px;
+  align-self: center;
+  align-items: stretch;
   gap: 8px;
 }
 
 .marketResultControls .marketAccessToggle {
+  height: 42px;
+  align-items: stretch;
   grid-template-columns: repeat(2, 72px);
   gap: 6px;
 }
@@ -3111,6 +3087,7 @@ label,
 @media (max-width: 767px) {
   .homeCatalogSearch {
     width: 100%;
+    margin-inline: 0;
   }
 
   .topbarMenu {
