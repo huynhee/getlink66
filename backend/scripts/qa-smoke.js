@@ -192,6 +192,8 @@ async function main() {
       ALLOW_MEMORY_DB: "true",
       ALLOW_DEV_LOGIN: "true",
       ALLOW_DEV_ADMIN_LOGIN: "true",
+      ADMIN_EMAILS: "dev@local.test",
+      ADMIN_2FA_REQUIRED: "false",
       DEV_LOGIN_ROLE: "user",
       DEV_LOGIN_PRO: "false",
       THREED66_MOCK: "true",
