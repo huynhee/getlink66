@@ -59,6 +59,17 @@ const IMAGE_SEARCH_FREE_LIMIT = 10;
 const IMAGE_SEARCH_PRO_LIMIT = 150;
 const MAX_IMAGE_SEARCH_BYTES = 512 * 1024;
 
+export function sendMarketplaceJsonWithEtag(req, res, payload) {
+  const digest = crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  const etag = `"sha256:${digest}"`;
+  if (String(req.headers?.["if-none-match"] || "") === etag) {
+    return res.status(304).end();
+  }
+  res.setHeader?.("ETag", etag);
+  res.setHeader?.("Cache-Control", "public, max-age=60, must-revalidate");
+  return res.json(payload);
+}
+
 function requestAssetType(req) {
   return normalizeAssetType(req?.marketplaceAssetType || "model");
 }
@@ -713,7 +724,7 @@ export async function listMarketplaceModels(req, res, next) {
     });
     await hydrateMarketplaceCategoryRefs(models);
     const assets = models.map((model) => publicModel(model, { previewLimit: 1 }));
-    res.json({
+    return sendMarketplaceJsonWithEtag(req, res, {
       assetType,
       assets,
       ...(assetType === "scene" ? { scenes: assets } : { models: assets }),
@@ -918,7 +929,7 @@ export async function getMarketplaceModel(req, res, next) {
     const recommendations = includeRecommendations
       ? await recommendedModelsFor(model, { limit: 6 })
       : null;
-    res.json({
+    return sendMarketplaceJsonWithEtag(req, res, {
       asset: publicModel(model),
       ...(assetType === "scene" ? { scene: publicModel(model) } : { model: publicModel(model) }),
       downloadProtection: marketplaceTurnstileConfig(),
@@ -947,7 +958,7 @@ export async function listMarketplaceModelRecommendations(req, res, next) {
     const offset = Math.min(59, Math.max(0, Number(req.query.offset || 6)));
     const limit = Math.min(54, Math.max(1, Number(req.query.limit || 54)));
     const recommendations = await recommendedModelsFor(model, { offset, limit });
-    res.json({
+    return sendMarketplaceJsonWithEtag(req, res, {
       assets: recommendations.models,
       ...(assetType === "scene" ? { scenes: recommendations.models } : { models: recommendations.models }),
       pagination: {

@@ -56,8 +56,15 @@ export function createRateLimit({
 
     if (bucket.count > max) {
       securityEvent("RATE_LIMIT_HIT", { ip: req.ip, key, path: req.path, count: bucket.count });
-      res.setHeader("retry-after", String(Math.ceil((bucket.resetAt - now) / 1000)));
-      return res.status(429).json({ message: "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút." });
+      const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+      res.setHeader("retry-after", String(retryAfter));
+      const isPluginRequest = String(req.originalUrl || req.path || "").startsWith("/api/plugin/");
+      return res.status(429).json({
+        message: "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.",
+        ...(isPluginRequest
+          ? { code: "RATE_LIMITED", details: { retryAfter } }
+          : {}),
+      });
     }
 
     return next();

@@ -27,6 +27,78 @@ const THEME_META_COLORS = {
   dark: "#0a0a0a",
   light: "#faf8f5"
 };
+const SEO_ORIGIN = "https://3dipl.org";
+const PRIVATE_SEO_PATHS = new Set([
+  "/admin",
+  "/getlink",
+  "/history",
+  "/invite",
+  "/membership",
+  "/plugin/activate",
+  "/plugin/sessions",
+  "/plugin/challenge",
+  "/topup",
+]);
+
+function seoMetadata(pathname = "/", language = "vi") {
+  const isVi = language === "vi";
+  const canonicalPath = pathname === "/chinh-sach-bao-mat"
+    ? "/privacy"
+    : pathname === "/dieu-khoan-su-dung"
+      ? "/terms"
+      : pathname;
+  const pageKey = canonicalPath.startsWith("/models/")
+    ? "/models"
+    : canonicalPath.startsWith("/scenes/")
+      ? "/scenes"
+      : canonicalPath;
+  const pages = {
+    "/": {
+      vi: ["3DIPL - Thư viện Model 3D và Getlink", "Thư viện Model, Scene 3D và dịch vụ Getlink dành cho người dùng Việt Nam."],
+      en: ["3DIPL - 3D Model Library and Getlink", "A library of 3D Models, Scenes, and Getlink services."],
+    },
+    "/models": {
+      vi: ["Thư viện Model 3D | 3DIPL", "Tìm kiếm và tải Model 3D Free hoặc Pro theo danh mục, renderer và phong cách."],
+      en: ["3D Model Library | 3DIPL", "Search and download Free or Pro 3D Models by category, renderer, and style."],
+    },
+    "/scenes": {
+      vi: ["Thư viện Scene 3D | 3DIPL", "Tìm kiếm và tải Scene 3D Free hoặc Pro theo không gian, renderer và phong cách."],
+      en: ["3D Scene Library | 3DIPL", "Search and download Free or Pro 3D Scenes by space, renderer, and style."],
+    },
+    "/guide": {
+      vi: ["Hướng dẫn sử dụng | 3DIPL", "Hướng dẫn sử dụng Model, Scene, Getlink, Credit và gói Pro trên 3DIPL."],
+      en: ["User Guides | 3DIPL", "Guides for Models, Scenes, Getlink, Credit, and Pro plans on 3DIPL."],
+    },
+    "/privacy": {
+      vi: ["Chính sách bảo mật | 3DIPL", "Chính sách bảo mật và xử lý dữ liệu của 3DIPL."],
+      en: ["Privacy Policy | 3DIPL", "The 3DIPL privacy and data processing policy."],
+    },
+    "/terms": {
+      vi: ["Điều khoản sử dụng | 3DIPL", "Điều khoản sử dụng dịch vụ 3DIPL."],
+      en: ["Terms of Use | 3DIPL", "Terms governing the use of 3DIPL services."],
+    },
+  };
+  const fallback = isVi
+    ? ["3DIPL - Thư viện 3D", "Thư viện Model và Scene 3D trên 3DIPL."]
+    : ["3DIPL - 3D Library", "A library of 3D Models and Scenes on 3DIPL."];
+  const [title, description] = pages[pageKey]?.[isVi ? "vi" : "en"] || fallback;
+  return {
+    canonicalUrl: `${SEO_ORIGIN}${canonicalPath === "/" ? "/" : canonicalPath}`,
+    description,
+    noIndex: PRIVATE_SEO_PATHS.has(canonicalPath),
+    title,
+  };
+}
+
+function upsertMeta(selector, attributes) {
+  let element = document.head.querySelector(selector);
+  if (!element) {
+    element = document.createElement("meta");
+    document.head.appendChild(element);
+  }
+  Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, value));
+  return element;
+}
 
 function isValidTheme(value) {
   return value === "light" || value === "dark";
@@ -250,6 +322,29 @@ function App() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    const pathname = window.location.pathname || "/";
+    const metadata = seoMetadata(pathname, language);
+    document.title = metadata.title;
+
+    let canonical = document.head.querySelector('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.setAttribute("rel", "canonical");
+      document.head.appendChild(canonical);
+    }
+    canonical.setAttribute("href", metadata.canonicalUrl);
+
+    upsertMeta('meta[name="description"]', { name: "description", content: metadata.description });
+    upsertMeta('meta[name="robots"]', {
+      name: "robots",
+      content: metadata.noIndex ? "noindex, nofollow" : "index, follow",
+    });
+    upsertMeta('meta[property="og:title"]', { property: "og:title", content: metadata.title });
+    upsertMeta('meta[property="og:description"]', { property: "og:description", content: metadata.description });
+    upsertMeta('meta[property="og:url"]', { property: "og:url", content: metadata.canonicalUrl });
+  }, [language, path]);
 
   useEffect(() => {
     if (getStoredTheme() || typeof window === "undefined" || !window.matchMedia) {
