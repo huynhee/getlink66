@@ -55,14 +55,14 @@ function inputModeText(resolveMode = "search", language = "vi") {
   const isVi = language === "vi";
   if (resolveMode === "footprint") {
     return {
-      placeholder: isVi ? "Nhập link model" : "Paste the full 3D model link",
-      invalid: isVi ? "Vui lòng dán link model 3D có mã hợp lệ." : "Paste a 3D model link containing a valid model ID.",
+      placeholder: isVi ? "Nhập link model 3D66" : "Paste the full 3D model 3D66 link",
+      invalid: isVi ? "Vui lòng dán link model 3D66 có mã hợp lệ." : "Paste a 3D model 3D66 link containing a valid model ID.",
     };
   }
   if (resolveMode === "direct") {
     return {
-      placeholder: isVi ? "Dán link model" : "Paste the full 3D model link",
-      invalid: isVi ? "Vui lòng dán link model 3D có mã hợp lệ." : "Paste a 3D model link containing a valid model ID.",
+      placeholder: isVi ? "Dán link model 3D66" : "Paste the full 3D model 3D66 link",
+      invalid: isVi ? "Vui lòng dán link model 3D66 có mã hợp lệ." : "Paste a 3D model 3D66 link containing a valid model ID.",
     };
   }
   return {
@@ -125,8 +125,6 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
     ? getlinkJobStageLabel(job.stage, language)
     : progressLabel;
   const modeText = inputModeText(modelResolveMode, language);
-  const cursorText = url || modeText.placeholder;
-  const cursorX = Math.min(cursorText.length * 8.4, 520);
   const pendingFormatOptions = Array.isArray(pendingFormatSelection?.formatOptions)
     ? pendingFormatSelection.formatOptions.filter(isUsableFormatOption)
     : [];
@@ -296,7 +294,7 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
     if (!job || !["completed", "failed", "canceled"].includes(job.status) || acknowledgeInFlightRef.current) return;
     acknowledgeInFlightRef.current = true;
     acknowledgeJob(job.id)
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => {
         acknowledgeInFlightRef.current = false;
       });
@@ -480,8 +478,8 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
       <form className="getlinkForm" onSubmit={submit}>
         <h2>{t.getlinkTitle}</h2>
         <div className="inputRow">
-          <div className="linkInputWrap terminalInput" style={{ "--cursor-x": `${cursorX}px` }}>
-            <span className="terminalInputMirror" aria-hidden="true">{url || modeText.placeholder}</span>
+          <div className="linkInputWrap terminalInput">
+            <span className="terminalInputMirror" aria-hidden="true">{modeText.placeholder}</span>
             <input
               id="modelUrl"
               value={url}

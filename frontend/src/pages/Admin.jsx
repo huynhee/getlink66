@@ -101,7 +101,7 @@ const HOME_TEXT_FIELDS = [
 const defaultSiteSettings = {
   referralMode: "both",
   heroEyebrow: "+ api 3d sdk",
-  heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
+  heroText: "SIÊU RẺ\nTHƯ VIỆN 3D\nGETLINK",
   heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
   saleText: "",
   demoTitle: "Bắt đầu tải ngay",
@@ -266,7 +266,6 @@ export default function Admin({ user, language = "vi" }) {
   const [activeSection, setActiveSection] = useState("overview");
   const [generalSection, setGeneralSection] = useState("users");
   const [websiteSection, setWebsiteSection] = useState("packages");
-  const [marketplaceAssetType, setMarketplaceAssetType] = useState("model");
   const [threed66SettingsTab, setThreed66SettingsTab] = useState("tasks");
   const [revenuePeriod, setRevenuePeriod] = useState("day");
   const [overview, setOverview] = useState(null);
@@ -1163,7 +1162,8 @@ export default function Admin({ user, language = "vi" }) {
     { key: "overview", label: t.adminOverview, icon: BarChart3 },
     { key: "general", label: l("Chung", "General"), icon: Database },
     { key: "getlink", label: "Getlink", icon: FileDown },
-    { key: "marketplace", label: "Model", icon: Package },
+    { key: "models", label: "Model", icon: Package },
+    { key: "scenes", label: "Scene", icon: Box },
     { key: "website", label: "Website", icon: Globe2 },
   ];
   const generalSections = [
@@ -1849,18 +1849,12 @@ export default function Admin({ user, language = "vi" }) {
         </section>
       )}
 
-      {activeSection === "marketplace" && (
-        <>
-          <div className="adminSubTabs adminMarketplaceTypeTabs" role="tablist" aria-label={l("Loại tài nguyên", "Asset type")}>
-            <button type="button" className={marketplaceAssetType === "model" ? "active" : ""} onClick={() => setMarketplaceAssetType("model")}>
-              <Package size={15} /> Models
-            </button>
-            <button type="button" className={marketplaceAssetType === "scene" ? "active" : ""} onClick={() => setMarketplaceAssetType("scene")}>
-              <Box size={15} /> Scenes
-            </button>
-          </div>
-          <AdminMarketplace key={marketplaceAssetType} language={language} assetType={marketplaceAssetType} />
-        </>
+      {(activeSection === "models" || activeSection === "scenes") && (
+        <AdminMarketplace
+          key={activeSection}
+          language={language}
+          assetType={activeSection === "scenes" ? "scene" : "model"}
+        />
       )}
 
       {activeSection === "website" && websiteSection === "packages" && (

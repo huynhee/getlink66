@@ -28,7 +28,7 @@ const HOME_TEXT_FIELDS = [
   "footerTagline",
 ];
 const HOME_TEXT_DEFAULTS = {
-  heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
+  heroText: "SIÊU RẺ\nTHƯ VIỆN 3D\nGETLINK",
   heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
   heroEyebrow: "+ api 3d sdk",
   saleText: "Khuyến mãi gói PRO trong tháng này",
@@ -50,6 +50,7 @@ const HOME_TEXT_DEFAULTS = {
   ctaGuestText: "Đăng nhập Google để bắt đầu getlink 3D và quản lý credit của bạn.",
   footerTagline: "Hỗ trợ 24/7",
 };
+const LEGACY_HERO_TEXT = "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ";
 
 function normalizePublicBrandText(value) {
   if (typeof value !== "string") return value;
@@ -325,6 +326,9 @@ function isVerifiedAdminRequest(req) {
 
 function publicSettings(settings = {}, { includeRuntime = false } = {}) {
   const snapshot = settingsSnapshot(settings);
+  if (snapshot.heroText === LEGACY_HERO_TEXT) {
+    snapshot.heroText = HOME_TEXT_DEFAULTS.heroText;
+  }
   HOME_TEXT_FIELDS.forEach((field) => {
     snapshot[field] = normalizePublicBrandText(snapshot[field]);
   });

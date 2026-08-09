@@ -2905,3 +2905,268 @@ label,
     width: 100%;
   }
 }
+
+/* Final layout alignment: homepage, catalog toolbar, and mobile navigation. */
+.homeCatalogSearch {
+  width: min(90%, 1280px);
+}
+
+.heroLeft .glitchTitle {
+  font-weight: 950;
+  -webkit-text-stroke: 0.25px currentColor;
+}
+
+.terminalInput::after {
+  display: none;
+}
+
+.terminalInputMirror {
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  z-index: 2;
+  display: inline-flex;
+  width: max-content;
+  max-width: calc(100% - 100px);
+  height: auto;
+  overflow: hidden;
+  align-items: center;
+  color: transparent;
+  visibility: visible;
+  white-space: pre;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.35;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.terminalInputMirror::after {
+  content: "";
+  width: 1px;
+  height: 1.15em;
+  margin-left: 1px;
+  flex: 0 0 1px;
+  background: var(--text-primary);
+  animation: terminalBlink 0.85s steps(1, end) infinite;
+}
+
+.terminalInput:has(input:not(:placeholder-shown)) .terminalInputMirror {
+  display: none;
+}
+
+.terminalInput:has(input:placeholder-shown) .terminalInputMirror {
+  color: transparent;
+}
+
+.marketSearchPanel {
+  padding: 12px 14px;
+}
+
+.marketResultBar {
+  grid-template-columns: 64px minmax(280px, 1fr) auto;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.marketResultSummary {
+  min-height: 42px;
+  justify-content: flex-start;
+  font-size: 11px;
+}
+
+.marketResultSearch,
+.marketResultControls .marketAccessToggle button,
+.marketSortControl {
+  min-height: 42px;
+  height: 42px;
+}
+
+.marketResultSearch {
+  border-radius: 4px;
+}
+
+.marketResultSearch input {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.marketImageSearchButton {
+  width: 42px;
+  min-width: 42px;
+  height: 40px;
+}
+
+.marketResultControls {
+  gap: 8px;
+}
+
+.marketResultControls .marketAccessToggle {
+  grid-template-columns: repeat(2, 72px);
+  gap: 6px;
+}
+
+.marketResultControls .marketAccessToggle button {
+  padding-inline: 12px;
+  font-size: 11px;
+}
+
+.marketSortControl {
+  width: 236px;
+  grid-template-columns: auto minmax(0, 1fr) 16px;
+  padding-inline: 11px;
+}
+
+.marketSortControl > span {
+  font-size: 9px;
+}
+
+.marketSortControl select {
+  min-height: 40px;
+  font-size: 11px;
+}
+
+@media (max-width: 1300px) {
+  .topbarMenu {
+    max-height: calc(100vh - 76px);
+    overflow-y: auto;
+  }
+
+  .topbarMenu .account {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .account > .pluginDownloadButton,
+  .account > .headerLoginButton {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .account > .notificationMenu {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .account > .notificationMenu .notificationButton {
+    width: 42px;
+    height: 42px;
+  }
+
+  .account > .themeToggle {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .account > .languageToggle,
+  .account > .accountCreditPill {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .account > .accountProfile {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .accountProfile .accountTrigger {
+    width: 100%;
+    min-height: 48px;
+    justify-content: flex-start;
+  }
+
+  .accountProfile .accountMenuContent {
+    width: 100%;
+    margin-top: 8px;
+    padding: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+}
+
+@media (max-width: 900px) {
+  .marketResultBar {
+    grid-template-columns: 56px minmax(0, 1fr);
+    grid-template-areas:
+      "summary search"
+      "controls controls"
+      "chips chips";
+  }
+
+  .marketResultControls {
+    display: grid;
+    grid-template-columns: auto minmax(210px, 1fr);
+  }
+
+  .marketSortControl {
+    width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  .homeCatalogSearch {
+    width: 100%;
+  }
+
+  .topbarMenu {
+    right: 10px;
+    left: 10px;
+    padding: 12px;
+  }
+
+  .topbarMenu .tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .topbarMenu .tabs button:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .topbarMenu .tabs button,
+  .topbarMenu .tabs button span {
+    min-height: 42px;
+    height: 42px;
+  }
+
+  .marketSearchPanel {
+    padding: 10px;
+  }
+
+  .marketResultBar {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "summary"
+      "search"
+      "controls"
+      "chips";
+  }
+
+  .marketResultSummary {
+    min-height: 24px;
+  }
+
+  .marketResultControls {
+    grid-template-columns: 150px minmax(0, 1fr);
+  }
+
+  .marketResultControls .marketAccessToggle {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 479px) {
+  .marketResultControls {
+    grid-template-columns: 1fr;
+  }
+
+  .marketResultControls .marketAccessToggle,
+  .marketSortControl {
+    width: 100%;
+  }
+}

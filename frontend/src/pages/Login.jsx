@@ -10,7 +10,7 @@ import { membershipFeatureLabel } from "../utils/membershipPresentation.js";
 const HOME_TEXT_DEFAULTS = {
   vi: {
     heroEyebrow: "+ api 3d sdk",
-    heroText: "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ",
+    heroText: "SIÊU RẺ\nTHƯ VIỆN 3D\nGETLINK",
     heroSubtitle: "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp.",
     saleText: "",
     demoTitle: "Bắt đầu tải ngay",
@@ -33,7 +33,7 @@ const HOME_TEXT_DEFAULTS = {
   },
   en: {
     heroEyebrow: "+ api 3d sdk",
-    heroText: "FAST 3D\nGETLINK\nSERVICE",
+    heroText: "AFFORDABLE\n3D LIBRARY\nGETLINK",
     heroSubtitle: "An intermediary getlink service that helps you download 3D models with a faster credit workflow.",
     saleText: "",
     demoTitle: "Start download",
@@ -88,14 +88,14 @@ function inputModeText(resolveMode = "search", language = "vi") {
   const isVi = language === "vi";
   if (resolveMode === "footprint") {
     return {
-      placeholder: isVi ? "Nhập link model" : "Paste the full 3D model link",
-      invalid: isVi ? "Vui lòng dán link model." : "Paste a 3D model link containing a valid model ID.",
+      placeholder: isVi ? "Nhập link model 3D66" : "Paste the full 3D model 3D66 link",
+      invalid: isVi ? "Vui lòng dán link model 3D66." : "Paste a 3D model 3D66 link containing a valid model ID.",
     };
   }
   if (resolveMode === "direct") {
     return {
-      placeholder: isVi ? "Nhập link model" : "Paste the full 3D model link",
-      invalid: isVi ? "Vui lòng dán link model." : "Paste a 3D model link containing a valid model ID.",
+      placeholder: isVi ? "Nhập link model 3D66" : "Paste the full 3D model 3D66 link",
+      invalid: isVi ? "Vui lòng dán link model 3D66." : "Paste a 3D model 3D66 link containing a valid model ID.",
     };
   }
   return {
@@ -127,7 +127,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const [guideError, setGuideError] = useState("");
   const [siteSettings, setSiteSettings] = useState({
     heroEyebrow: "+ api 3d sdk",
-    heroText: language === "vi" ? "SIÊU RẺ\nTẢI 3D\nTỐC ĐỘ" : "FAST 3D\nGETLINK\nSERVICE",
+    heroText: language === "vi" ? "SIÊU RẺ\nTHƯ VIỆN 3D\nGETLINK" : "AFFORDABLE\n3D LIBRARY\nGETLINK",
     heroSubtitle: language === "vi"
       ? "Dịch vụ getlink trung gian giúp bạn tải model 3D với giá rẻ hơn mua trực tiếp."
       : "An intermediary getlink service that helps you download 3D models with a faster credit workflow.",
@@ -166,8 +166,6 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   });
   const modelResolveMode = siteSettings.threed66ModelResolveMode || "search";
   const modeText = inputModeText(modelResolveMode, language);
-  const demoCursorText = demoLink || modeText.placeholder;
-  const demoCursorX = Math.min(demoCursorText.length * 8.4, 520);
   if (referral?.mode === "referrer_only") {
     t.referralTitle = language === "vi"
       ? "Mời bạn bè để nhận 1 ngày Pro + 28 credit."
@@ -428,7 +426,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
         <section className="heroSection">
           <div className="heroLeft">
             <h3 className="eyebrowSignal" style={{ marginBottom: 16 }}>
-                {siteSettings.heroEyebrow || "+ api 3d sdk"}
+              {siteSettings.heroEyebrow || "+ api 3d sdk"}
             </h3>
             {siteSettings.saleText && (
               <div
@@ -485,8 +483,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 {siteSettings.demoTitle || t.startDownload}
               </h2>
               <form onSubmit={handleDemoGetlink} className="inputWrapper">
-                <div className="linkInputWrap terminalInput" style={{ "--cursor-x": `${demoCursorX}px` }}>
-                  <span className="terminalInputMirror" aria-hidden="true">{demoLink || modeText.placeholder}</span>
+                <div className="linkInputWrap terminalInput">
+                  <span className="terminalInputMirror" aria-hidden="true">{modeText.placeholder}</span>
                   <input
                     type="text"
                     inputMode="text"
@@ -723,69 +721,69 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 className="pricingGrid"
                 style={{ "--package-count": Math.min(pricingPackages.length || 1, 5) }}
               >
-              {pricingPackages.map((pkg, index) => (
-                <div
-                  className="pricingCard"
-                  key={pkg._id || pkg.name || index}
-                  style={pkg.badge ? { borderColor: "var(--neon-green)", zIndex: 10 } : undefined}
-                >
-                  {pkg.badge && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: -12,
-                        left: "50%",
-                        transform: "translateX(-50%)",
-                        background: "var(--neon-green)",
-                        color: "#000",
-                        padding: "2px 12px",
-                        fontSize: 11,
-                        fontWeight: "bold",
-                        fontFamily: "var(--font-mono)"
-                      }}
-                    >
-                      {pkg.badge}
-                    </div>
-                  )}
-                  <h3>{pkg.name || t.defaultPackageName}</h3>
-                  <div className="priceBlock">
-                    {hasSale(pkg) && (
-                      <div className="priceOriginal">
-                        {Number(pkg.price).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span>đ</span>
+                {pricingPackages.map((pkg, index) => (
+                  <div
+                    className="pricingCard"
+                    key={pkg._id || pkg.name || index}
+                    style={pkg.badge ? { borderColor: "var(--neon-green)", zIndex: 10 } : undefined}
+                  >
+                    {pkg.badge && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: -12,
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          background: "var(--neon-green)",
+                          color: "#000",
+                          padding: "2px 12px",
+                          fontSize: 11,
+                          fontWeight: "bold",
+                          fontFamily: "var(--font-mono)"
+                        }}
+                      >
+                        {pkg.badge}
                       </div>
                     )}
-                    <div className="price hl-green">
-                      {finalPrice(pkg).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span style={{ fontSize: 16 }}>đ</span>
+                    <h3>{pkg.name || t.defaultPackageName}</h3>
+                    <div className="priceBlock">
+                      {hasSale(pkg) && (
+                        <div className="priceOriginal">
+                          {Number(pkg.price).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span>đ</span>
+                        </div>
+                      )}
+                      <div className="price hl-green">
+                        {finalPrice(pkg).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span style={{ fontSize: 16 }}>đ</span>
+                      </div>
                     </div>
+                    {hasSale(pkg) && (
+                      <div className="credits pricingSaleLine">
+                        {language === "vi"
+                          ? `SALE ${pkg.salePercent}% từ ${Number(pkg.price).toLocaleString("vi-VN")}đ`
+                          : `SALE ${pkg.salePercent}% from ${Number(pkg.price).toLocaleString("en-US")}đ`}
+                      </div>
+                    )}
+                    <div className="credits">{pkg.credit} CREDIT</div>
+                    {Number(pkg.maxTopupsPerUser || 0) > 0 && (
+                      <div className="credits" style={{ color: "var(--text-muted)", fontWeight: 500 }}>
+                        {language === "vi"
+                          ? `Mỗi tài khoản nạp tối đa ${pkg.maxTopupsPerUser} lần`
+                          : `Max ${pkg.maxTopupsPerUser} times/account`}
+                      </div>
+                    )}
+                    <ul>
+                      {((pkg.features && pkg.features.length > 0)
+                        ? pkg.features
+                        : t.defaultPackageFeatures
+                      ).map((feature, featureIndex) => (
+                        <li key={featureIndex}>{feature}</li>
+                      ))}
+                    </ul>
+                    <a className={pkg.badge ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("credit", pkg._id))}>
+                      {user ? t.topupNow : t.buyNow}
+                    </a>
                   </div>
-                  {hasSale(pkg) && (
-                    <div className="credits pricingSaleLine">
-                      {language === "vi"
-                        ? `SALE ${pkg.salePercent}% từ ${Number(pkg.price).toLocaleString("vi-VN")}đ`
-                        : `SALE ${pkg.salePercent}% from ${Number(pkg.price).toLocaleString("en-US")}đ`}
-                    </div>
-                  )}
-                  <div className="credits">{pkg.credit} CREDIT</div>
-                  {Number(pkg.maxTopupsPerUser || 0) > 0 && (
-                    <div className="credits" style={{ color: "var(--text-muted)", fontWeight: 500 }}>
-                      {language === "vi"
-                        ? `Mỗi tài khoản nạp tối đa ${pkg.maxTopupsPerUser} lần`
-                        : `Max ${pkg.maxTopupsPerUser} times/account`}
-                    </div>
-                  )}
-                  <ul>
-                    {((pkg.features && pkg.features.length > 0)
-                      ? pkg.features
-                      : t.defaultPackageFeatures
-                    ).map((feature, featureIndex) => (
-                      <li key={featureIndex}>{feature}</li>
-                    ))}
-                  </ul>
-                  <a className={pkg.badge ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("credit", pkg._id))}>
-                    {user ? t.topupNow : t.buyNow}
-                  </a>
-                </div>
-              ))}
+                ))}
               </div>
             ) : (
               <div
