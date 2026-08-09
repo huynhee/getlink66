@@ -30,6 +30,40 @@ function requireValue(name, options = {}) {
   return false;
 }
 
+function requireDriveFolderId(name, options = {}) {
+  const value = String(process.env[name] || "").trim();
+  if (!value) {
+    const message = `${name} is not configured`;
+    if (options.productionOnly && !production) warnings.push(message);
+    else errors.push(message);
+    return false;
+  }
+  if (!/^[A-Za-z0-9_-]{10,}$/.test(value)) {
+    errors.push(`${name} must be a plain Google Drive folder ID without comments or spaces`);
+    return false;
+  }
+  pass(name);
+  return true;
+}
+
+function validateOptional3D66Origin() {
+  const value = String(process.env.THREED66_ORIGIN || "").trim();
+  if (!value) return;
+  try {
+    const parsed = new URL(value);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      throw new Error("unsupported protocol");
+    }
+    if (parsed.hostname !== "3d66.com" && !parsed.hostname.endsWith(".3d66.com")) {
+      errors.push("THREED66_ORIGIN must use the 3d66.com domain");
+      return;
+    }
+    pass("THREED66_ORIGIN");
+  } catch {
+    errors.push("THREED66_ORIGIN must be empty or a valid absolute 3d66.com URL");
+  }
+}
+
 function duplicateKeys() {
   const counts = new Map();
   raw.split(/\r?\n/).forEach((line) => {
@@ -73,8 +107,9 @@ else if (has("GOOGLE_DRIVE_ACCESS_TOKEN") || has("GOOGLE_DRIVE_BEARER_TOKEN")) {
   "SCENES_DRIVE_ROOT_FOLDER_ID",
   "HISTORY_ARCHIVE_DRIVE_FOLDER_ID",
   "DATABASE_BACKUP_DRIVE_FOLDER_ID",
-].forEach((name) => requireValue(name, { productionOnly: true }));
+].forEach((name) => requireDriveFolderId(name, { productionOnly: true }));
 requireValue("BACKUP_AGE_RECIPIENT", { productionOnly: true });
+validateOptional3D66Origin();
 
 if (production) {
   [

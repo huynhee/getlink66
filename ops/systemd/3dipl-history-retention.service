@@ -1,17 +1,14 @@
 [Unit]
 Description=3DIPL verified history archive and retention
-After=network-online.target
-Wants=network-online.target
+After=network-online.target docker.service
+Wants=network-online.target docker.service
 
 [Service]
 Type=oneshot
-User=3dipl
-Group=3dipl
-WorkingDirectory=/opt/3dipl
-EnvironmentFile=/etc/3dipl/backend.env
-ExecStart=/usr/bin/npm run history:retention
+WorkingDirectory=/opt/3dipl/app
+ExecStart=/usr/bin/docker compose -f compose.production.yml run --rm backend npm run history:retention
+TimeoutStartSec=6h
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 PrivateTmp=true
-NoNewPrivileges=true

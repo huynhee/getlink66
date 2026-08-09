@@ -1,3 +1,5 @@
+FROM mongo:8.0 AS mongo-tools
+
 FROM node:20.20.1-bookworm-slim
 
 ENV NODE_ENV=production \
@@ -5,6 +7,13 @@ ENV NODE_ENV=production \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 WORKDIR /app
+
+COPY --from=mongo-tools /usr/bin/mongodump /usr/local/bin/mongodump
+COPY --from=mongo-tools /usr/bin/mongorestore /usr/local/bin/mongorestore
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends age \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts \

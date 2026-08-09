@@ -773,9 +773,34 @@ function parseJsonCookie(cookies, key) {
   }
 }
 
+export function resolve3D66ContextUrl(candidate, fallback) {
+  const values = [candidate, fallback, "https://3d.3d66.com/"];
+
+  for (const value of values) {
+    const normalized = String(value || "").trim();
+    if (!normalized || normalized.startsWith("#")) continue;
+
+    try {
+      const parsed = new URL(stripInternalUrlHash(normalized));
+      if (
+        ["http:", "https:"].includes(parsed.protocol)
+        && isAllowed3D66Host(parsed.hostname)
+      ) {
+        return parsed.toString();
+      }
+    } catch {
+      // Ignore malformed optional configuration and continue with the request URL.
+    }
+  }
+
+  return "https://3d.3d66.com/";
+}
+
 function siteContext(pageUrl, cookies) {
   const parsed = new URL(stripInternalUrlHash(pageUrl));
-  const origin = process.env.THREED66_ORIGIN || parsed.origin;
+  const origin = new URL(
+    resolve3D66ContextUrl(process.env.THREED66_ORIGIN, parsed.origin),
+  ).origin;
   const originHost = new URL(origin).hostname;
   const configured = configuredSiteContexts()[originHost] || {};
   const referrerContext = parseJsonCookie(cookies, "resUrlreferrer") || {};
@@ -2314,8 +2339,9 @@ export async function request3D66File(fileUrl, cookieValue, options = {}) {
     throw httpError("Only 3d66.com download links are supported", 400);
   }
   const parsedFileUrl = new URL(fileUrl);
-  const sourceUrl = stripInternalUrlHash(
-    options.sourceUrl || process.env.THREED66_ORIGIN || "https://3d.3d66.com/",
+  const sourceUrl = resolve3D66ContextUrl(
+    options.sourceUrl || process.env.THREED66_ORIGIN,
+    "https://3d.3d66.com/",
   );
   const origin = new URL(sourceUrl).origin;
   const headers = {

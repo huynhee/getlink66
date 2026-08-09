@@ -1,13 +1,19 @@
 # Deploy 3DIPL On OVH
 
-Target: Ubuntu VPS `51.79.158.33`, domain `3dipl.org`. Atlas remains the Core
+Target: Ubuntu 24.04 LTS VPS `51.79.158.33`, domain `3dipl.org`. Atlas remains the Core
 database; the private Mongo container stores marketplace data; Google Drive
 remains the asset source.
+
+Do not deploy MongoDB on Ubuntu 26.04 with Linux kernel 6.19 through 7.0.13.
+MongoDB currently refuses to start on those kernels. Reinstall a new VPS with
+Ubuntu 24.04 LTS before continuing.
 
 ## 1. Prepare The VPS
 
 ```bash
 ssh ubuntu@51.79.158.33
+uname -r
+cat /etc/os-release
 sudo apt update
 sudo apt install -y ca-certificates curl git nginx certbot python3-certbot-nginx ufw fail2ban docker.io docker-compose-v2
 sudo systemctl enable --now docker nginx fail2ban
@@ -42,6 +48,16 @@ rm /tmp/backend.env
 
 The file must use `MONGO_MARKETPLACE_URI=mongodb://3dipl-mongo:27017/marketplace?replicaSet=rs0`, production HTTPS URLs, real Turnstile keys, and
 `ALLOW_DEV_LOGIN=false`.
+
+Keep comments on their own lines. Docker Compose treats inline text as part of
+some `env_file` values. In particular, use plain values such as:
+
+```dotenv
+THREED66_ORIGIN=
+DATABASE_BACKUP_DRIVE_FOLDER_ID=1AbCdEfGhIjKlMnOp
+```
+
+Run `npm run env:check` in the backend image after every environment change.
 
 ## 3. Start MongoDB Replica Set
 
@@ -104,7 +120,27 @@ After HTTPS works, enable Cloudflare proxy and set SSL/TLS to **Full (strict)**.
 Update Google OAuth redirect URI, Turnstile hostnames, and SePay webhook to the
 production domain.
 
-## 7. Future Deployments
+## 7. Enable Verified Backups
+
+The backend image contains `mongodump`, `mongorestore`, and `age`. Run and verify
+the first backup before enabling the timers:
+
+```bash
+cd /opt/3dipl/app
+sudo docker compose -f compose.production.yml run --rm backend sh -lc 'mongodump --version && age --version'
+sudo docker compose -f compose.production.yml run --rm backend npm run backup:core
+sudo docker compose -f compose.production.yml run --rm backend npm run backup:marketplace
+sudo docker compose -f compose.production.yml run --rm backend npm run backup:verify
+sudo docker compose -f compose.production.yml run --rm backend npm run storage:status
+sudo install -m 644 ops/systemd/*.service ops/systemd/*.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now 3dipl-backup-core.timer 3dipl-backup-marketplace.timer 3dipl-backup-verify.timer 3dipl-history-retention.timer
+systemctl list-timers --all | grep 3dipl
+```
+
+`storage:status` must no longer report `BACKUP_STALE_*` or `DRIVE_UNAVAILABLE`.
+
+## 8. Future Deployments
 
 ```bash
 cd /opt/3dipl/app
