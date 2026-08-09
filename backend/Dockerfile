@@ -12,7 +12,8 @@ COPY --from=mongo-tools /usr/bin/mongodump /usr/local/bin/mongodump
 COPY --from=mongo-tools /usr/bin/mongorestore /usr/local/bin/mongorestore
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends age \
+  && apt-get install -y --no-install-recommends age ca-certificates \
+  && update-ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./

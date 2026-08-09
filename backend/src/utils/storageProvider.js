@@ -201,6 +201,15 @@ export async function readGoogleDriveFileBuffer(fileId, options = {}) {
   return Buffer.concat(chunks, total);
 }
 
+function normalizeGoogleDriveListFields(value) {
+  const fields = String(value || "").trim();
+  if (!fields) {
+    return "nextPageToken,files(id,name,mimeType,size,imageMediaMetadata(width,height),modifiedTime,version,parents,trashed,driveId)";
+  }
+  if (/(?:^|,)\s*files\s*\(/.test(fields)) return fields;
+  return `nextPageToken,files(${fields})`;
+}
+
 export async function listGoogleDriveFolderPage(folderId, options = {}) {
   const normalizedFolderId = String(folderId || "").trim();
   if (!normalizedFolderId) {
@@ -210,8 +219,7 @@ export async function listGoogleDriveFolderPage(folderId, options = {}) {
   }
 
   const pageSize = Math.min(1000, Math.max(1, Number(options.pageSize || 200)));
-  const fields = options.fields ||
-    "nextPageToken,files(id,name,mimeType,size,imageMediaMetadata(width,height),modifiedTime,version,parents,trashed,driveId)";
+  const fields = normalizeGoogleDriveListFields(options.fields);
   const url = new URL("https://www.googleapis.com/drive/v3/files");
   url.searchParams.set("q", `'${escapeDriveQueryValue(normalizedFolderId)}' in parents and trashed=false`);
   url.searchParams.set("fields", fields);
