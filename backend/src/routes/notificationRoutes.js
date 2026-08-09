@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   listNotifications,
+  markAllNotificationsRead,
   markNotificationRead,
 } from "../controllers/notificationController.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
@@ -14,6 +15,12 @@ const notificationLimit = createRateLimit({
 });
 
 router.get("/notifications", requireAuth, notificationLimit, listNotifications);
+router.post(
+  "/notifications/read-all",
+  requireAuth,
+  notificationLimit,
+  markAllNotificationsRead,
+);
 router.post(
   "/notifications/:id/read",
   requireAuth,

@@ -2935,9 +2935,9 @@ label,
 }
 
 .marketResultBar {
-  grid-template-columns: 72px minmax(280px, 1fr) auto;
+  grid-template-columns: 82px minmax(280px, 1fr) auto;
   align-items: center;
-  gap: 0;
+  gap: 8px;
   min-height: 42px;
 }
 
@@ -2945,6 +2945,7 @@ label,
   min-height: 42px;
   justify-content: flex-start;
   font-size: 11px;
+  overflow: visible;
 }
 
 .marketResultSearch,
@@ -2991,7 +2992,7 @@ label,
   min-height: 42px;
   align-self: center;
   align-items: stretch;
-  gap: 0;
+  gap: 8px;
 }
 
 .marketResultControls .marketAccessToggle {

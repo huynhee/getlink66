@@ -119,6 +119,28 @@ export async function markNotificationRead(req, res, next) {
   }
 }
 
+export async function markAllNotificationsRead(req, res, next) {
+  try {
+    const notifications = await Notification.find(
+      activeNotificationQuery(req.user._id),
+    )
+      .select("_id")
+      .limit(50)
+      .lean();
+    const readAt = new Date();
+    await Promise.all(
+      notifications.map((notification) => NotificationReceipt.findOneAndUpdate(
+        { notificationId: notification._id, userId: req.user._id },
+        { $set: { readAt } },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      )),
+    );
+    res.json({ ok: true, markedCount: notifications.length });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function adminListNotifications(_req, res, next) {
   try {
     const notifications = await Notification.find()

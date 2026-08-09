@@ -120,6 +120,7 @@ export default function Navbar({
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const notificationRef = useRef(null);
   const [notifications, setNotifications] = useState([]);
   const [sessionHiddenFullscreenIds, setSessionHiddenFullscreenIds] = useState(() => new Set());
   const userId = user?._id;
@@ -176,6 +177,27 @@ export default function Navbar({
       document.removeEventListener("keydown", closeAccountOnEscape);
     };
   }, [accountOpen]);
+
+  useEffect(() => {
+    if (!notificationOpen) return undefined;
+
+    function closeNotificationsOnOutsidePointer(event) {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setNotificationOpen(false);
+      }
+    }
+
+    function closeNotificationsOnEscape(event) {
+      if (event.key === "Escape") setNotificationOpen(false);
+    }
+
+    document.addEventListener("pointerdown", closeNotificationsOnOutsidePointer);
+    document.addEventListener("keydown", closeNotificationsOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeNotificationsOnOutsidePointer);
+      document.removeEventListener("keydown", closeNotificationsOnEscape);
+    };
+  }, [notificationOpen]);
 
   async function logout() {
     await api("/api/auth/logout", { method: "POST" });
@@ -234,6 +256,23 @@ export default function Navbar({
     } catch {
       // UI can stay read locally; next poll will correct it if the request failed.
     }
+  }
+
+  async function markAllNotificationsRead() {
+    if (!notifications.some((item) => !item.isRead)) return;
+    setNotifications((items) => items.map((item) => ({ ...item, isRead: true })));
+    try {
+      await api("/api/notifications/read-all", { method: "POST" });
+    } catch {
+      // The next notification poll restores server state if persistence failed.
+    }
+  }
+
+  function toggleNotificationMenu() {
+    const opening = !notificationOpen;
+    setNotificationOpen(opening);
+    setAccountOpen(false);
+    if (opening) markAllNotificationsRead();
   }
 
   function goNotificationAction(item) {
@@ -317,14 +356,11 @@ export default function Navbar({
           {user ? (
             <div className={`account ${accountOpen ? "open" : ""}`}>
               <PluginDownloadButton language={language} />
-              <div className={`notificationMenu ${notificationOpen ? "open" : ""}`}>
+              <div ref={notificationRef} className={`notificationMenu ${notificationOpen ? "open" : ""}`}>
                 <button
                   type="button"
                   className="notificationButton"
-                  onClick={() => {
-                    setNotificationOpen((current) => !current);
-                    setAccountOpen(false);
-                  }}
+                  onClick={toggleNotificationMenu}
                   aria-label={t.notifications}
                   aria-expanded={notificationOpen}
                 >
