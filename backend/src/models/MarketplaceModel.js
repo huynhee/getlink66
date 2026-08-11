@@ -196,6 +196,12 @@ marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, 
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, sourceAssetIdSort: -1, _id: -1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, downloadCount: -1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, titleSort: 1, _id: 1 });
+marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, accessType: -1, createdAt: -1, _id: -1 });
+marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, accessType: -1, createdAt: 1, _id: 1 });
+marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, accessType: -1, sourceAssetIdSort: -1, createdAt: -1, _id: -1 });
+marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, accessType: -1, downloadCount: -1, createdAt: -1, _id: -1 });
+marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, accessType: -1, titleSort: 1, _id: 1 });
+marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, accessType: -1, titleSort: -1, _id: -1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, searchTokens: 1 });
 marketplaceModelSchema.index({ assetType: 1, categorySourceId: 1, isPublished: 1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, parentCategorySourceId: 1, isPublished: 1, createdAt: -1 });
