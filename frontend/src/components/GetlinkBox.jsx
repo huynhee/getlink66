@@ -477,6 +477,11 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
     <section className="panel">
       <form className="getlinkForm" onSubmit={submit}>
         <h2>{t.getlinkTitle}</h2>
+        <p className="muted getlinkCreditNote">
+          {language === "vi"
+            ? "Credit tỉ lệ 1:1 với 3d66, giá model là giá của 3d66, trung bình 28 credit/model."
+            : "Credit follows 3d66 at a 1:1 rate. Each model costs the same credit amount shown on 3d66, averaging 28 credits/model."}
+        </p>
         <div className="inputRow">
           <div className="linkInputWrap terminalInput">
             <input
