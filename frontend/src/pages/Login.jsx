@@ -129,7 +129,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const [featuredScenesLoading, setFeaturedScenesLoading] = useState(true);
   const [catalogSearchType, setCatalogSearchType] = useState("model");
   const [catalogSearch, setCatalogSearch] = useState("");
-  const [homeTopupMode, setHomeTopupMode] = useState("credit");
+  const [homeTopupMode, setHomeTopupMode] = useState("pro");
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
   const [referral, setReferral] = useState(null);
   const [referralCopied, setReferralCopied] = useState(false);

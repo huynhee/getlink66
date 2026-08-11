@@ -55,7 +55,7 @@ async function list(query = {}, assetType = "model") {
   return capture.state.body;
 }
 
-test("unfiltered Model pages use a stable 9 Pro to 1 Free mix", async () => {
+test("unfiltered Model pages only return Pro models", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
     ...Array.from({ length: 18 }, (_, index) => catalogAsset(index, "member")),
@@ -65,12 +65,12 @@ test("unfiltered Model pages use a stable 9 Pro to 1 Free mix", async () => {
   const first = await list({ page: "1", limit: "10", sort: "popular" });
   const second = await list({ page: "2", limit: "10", sort: "popular" });
 
-  assert.equal(first.models.filter((item) => item.accessType === "free").length, 1);
-  assert.equal(second.models.filter((item) => item.accessType === "free").length, 1);
-  assert.equal(first.ranking.policy, "model_pro_priority_v1");
-  assert.equal(first.ranking.freeInterval, 10);
+  assert.ok(first.models.every((item) => item.accessType === "member"));
+  assert.ok(second.models.every((item) => item.accessType === "member"));
+  assert.equal(first.ranking.policy, "model_pro_only_v2");
+  assert.equal(first.ranking.defaultAccessType, "member");
   assert.equal(first.ranking.bypassed, false);
-  assert.equal(first.pagination.total, 22);
+  assert.equal(first.pagination.total, 18);
   assert.equal(
     new Set([...first.models, ...second.models].map((item) => item._id)).size,
     first.models.length + second.models.length,
@@ -95,7 +95,7 @@ test("explicit Free and Pro filters bypass the access mix", async () => {
   assert.ok(pro.models.every((item) => item.accessType === "member"));
 });
 
-test("an exact Free title stays ahead of related Pro text matches", async () => {
+test("an exact Free title remains hidden until the Free filter is selected", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
     catalogAsset(1, "free", "model", "Ghe banh"),
@@ -105,8 +105,9 @@ test("an exact Free title stays ahead of related Pro text matches", async () => 
 
   const result = await list({ q: "ghế bành", sort: "relevance", limit: "10" });
 
-  assert.equal(result.models[0].title, "Ghe banh");
-  assert.equal(result.models[0].accessType, "free");
+  assert.ok(result.models.length > 0);
+  assert.ok(result.models.every((item) => item.accessType === "member"));
+  assert.equal(result.models.some((item) => item.title === "Ghe banh"), false);
   assert.equal(result.search.engine, "mongo_hybrid_v3");
 });
 

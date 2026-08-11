@@ -27,7 +27,7 @@ async function createCatalogAsset({ title, slug, createdAt, downloadCount, asset
     colors: ["white"],
     materials: ["wood"],
     renderer: "Corona",
-    accessType: "free",
+    accessType: "member",
     metadataStatus: "complete",
     fileStatus: "ready",
     isPublished: true,

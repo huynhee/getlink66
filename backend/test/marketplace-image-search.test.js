@@ -110,7 +110,7 @@ test("unconfigured image search does not charge daily quota", async () => {
   }
 });
 
-test("Model image search keeps the closest match and prioritizes Pro afterward", async () => {
+test("Model image search only returns Pro models by default", async () => {
   const previousUrl = process.env.MARKETPLACE_IMAGE_SEARCH_URL;
   const previousFetch = globalThis.fetch;
   process.env.MARKETPLACE_IMAGE_SEARCH_URL = "https://image-search.example.test/query";
@@ -179,8 +179,8 @@ test("Model image search keeps the closest match and prioritizes Pro afterward",
     }, capture.response, (error) => { throw error; });
 
     assert.equal(providerLimit, 30);
-    assert.equal(capture.state.body.models[0]._id, freeClosest._id);
-    assert.equal(capture.state.body.models.filter((model) => model.accessType === "free").length, 1);
+    assert.notEqual(capture.state.body.models[0]._id, freeClosest._id);
+    assert.ok(capture.state.body.models.every((model) => model.accessType === "member"));
     assert.equal(capture.state.body.ranking.bypassed, false);
   } finally {
     globalThis.fetch = previousFetch;

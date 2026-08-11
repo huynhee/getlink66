@@ -54,8 +54,8 @@ function seoMetadata(pathname = "/", language = "vi") {
       : canonicalPath;
   const pages = {
     "/": {
-      vi: ["3DIPL - Thư viện Model 3D và Getlink", "Thư viện Model, Scene 3D và dịch vụ Getlink dành cho người dùng Việt Nam."],
-      en: ["3DIPL - 3D Model Library and Getlink", "A library of 3D Models, Scenes, and Getlink services."],
+      vi: ["3DIPL - Model 3D & Getlink", "Thư viện Model, Scene 3D và dịch vụ Getlink."],
+      en: ["3DIPL - 3D Model & Getlink", "3D Model, Scene and Getlink."],
     },
     "/models": {
       vi: ["Thư viện Model 3D | 3DIPL", "Tìm kiếm và tải Model 3D Free hoặc Pro theo danh mục, renderer và phong cách."],

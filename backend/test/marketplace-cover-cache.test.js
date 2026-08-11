@@ -88,6 +88,7 @@ test("cover cache generates a square WebP and public catalog uses its static URL
       }],
       metadataStatus: "complete",
       fileStatus: "ready",
+      accessType: "member",
       desiredPublished: true,
       isPublished: true,
       deletionStatus: "active",

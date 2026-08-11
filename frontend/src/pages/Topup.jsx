@@ -149,7 +149,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     }
     api("/api/membership/me")
       .then((data) => setMembership(data.membership || null))
-      .catch(() => {});
+      .catch(() => { });
   }, [user?._id, user?.proUntil]);
 
   useEffect(() => {
@@ -217,7 +217,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
             ? `Nạp thành công: +${latestApproved.credit} credit.`
             : `Top-up successful: +${latestApproved.credit} credit.`);
         })
-        .catch(() => {});
+        .catch(() => { });
       return undefined;
     }
 
@@ -572,245 +572,245 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
       </div>
 
       {topupMode === "pro" && (
-      <section className="panel topupUnifiedSection topupProSection">
-        <div className="topupSectionHeader">
-          <div>
-            <span className="eyebrowSignal">3DIPL MEMBER</span>
-            <h2><Sparkles size={20} /> {language === "vi" ? "Mua Pro" : "Buy Pro"}</h2>
-            <p className="muted">
-              {language === "vi"
-                ? "Pro kích hoạt quyền tải model Pro, 100 lượt mỗi ngày, tải nhanh và không cộng credit."
-                : "Pro unlocks Pro models, 100 downloads per day, fast download, and does not add credits."}
-            </p>
-          </div>
-          {membership?.active && (
-            <span className="badge success">
-              {language === "vi" ? "Đang Pro đến" : "Pro until"} {new Date(membership.proUntil).toLocaleString(locale)}
-            </span>
-          )}
-        </div>
-        <div className="membershipPlans topupMembershipPlans">
-          {membershipPlans.map((plan) => (
-            <button
-              key={plan._id}
-              type="button"
-              className={`membershipPlanCard panel ${selectedMembershipPlanId === plan._id ? "selectedPackage" : ""}`}
-              onClick={() => {
-                updateTopupSelectionQuery({ mode: "pro", planId: plan._id }, ["packageId"]);
-                setSelectedMembershipPlanId(plan._id);
-                setProMessage("");
-                setProError("");
-              }}
-            >
-              {plan.badge && <span className="badge success">{plan.badge}</span>}
-              <h3>{plan.name}</h3>
-              <strong>{money(membershipFinalPrice(plan), locale)}</strong>
-              {voucherTargetsMembership && (
-                <span>{language === "vi" ? `Voucher ${appliedVoucher.code}: giảm ${appliedVoucher.discountPercent}%` : `Voucher ${appliedVoucher.code}: ${appliedVoucher.discountPercent}% off`}</span>
-              )}
-              <span>
-                {membership?.active && isDailyMembershipPlan(plan)
-                  ? (language === "vi"
-                    ? `Thêm ${plan.dailyDownloadLimit} lượt hôm nay`
-                    : `Add ${plan.dailyDownloadLimit} downloads today`)
-                  : (language === "vi"
-                    ? `${plan.durationDays} ngày · ${plan.dailyDownloadLimit}/ngày`
-                    : `${plan.durationDays} days · ${plan.dailyDownloadLimit}/day`)}
+        <section className="panel topupUnifiedSection topupProSection">
+          <div className="topupSectionHeader">
+            <div>
+              <span className="eyebrowSignal">3DIPL MEMBER</span>
+              <h2><Sparkles size={20} /> {language === "vi" ? "Mua Pro" : "Buy Pro"}</h2>
+              <p className="muted">
+                {language === "vi"
+                  ? "Pro kích hoạt quyền tải model Pro, 100 lượt mỗi ngày, tải nhanh và không cộng credit."
+                  : "Pro unlocks Pro models, 100 downloads per day, fast download, and does not add credits."}
+              </p>
+            </div>
+            {membership?.active && (
+              <span className="badge success">
+                {language === "vi" ? "Đang Pro đến" : "Pro until"} {new Date(membership.proUntil).toLocaleString(locale)}
               </span>
-              <ul>
-                {(plan.features || []).map((feature) => (
-                  <li key={feature}><Check size={14} /> {membershipFeatureLabel(feature, language)}</li>
-                ))}
-              </ul>
-            </button>
-          ))}
-        </div>
-        <div className="topupCheckoutBox">
-          <div>
-            <span>{language === "vi" ? "Gói Pro đang chọn" : "Selected Pro plan"}</span>
-            <strong>{selectedMembershipPlan?.name || "-"}</strong>
-            <p>
-              {selectedMembershipPlan
-                ? (language === "vi"
-                  ? (selectedPlanIsDailyAddon
-                    ? `Thanh toán ${money(membershipFinalPrice(selectedMembershipPlan), locale)} để thêm ${selectedMembershipPlan.dailyDownloadLimit} lượt tải hôm nay; hạn Pro hiện tại vẫn giữ nguyên.`
-                    : `Thanh toán ${money(membershipFinalPrice(selectedMembershipPlan), locale)} để kích hoạt ${selectedMembershipPlan.durationDays} ngày Pro đến cuối ngày hết hạn.`)
-                  : (selectedPlanIsDailyAddon
-                    ? `Pay ${money(membershipFinalPrice(selectedMembershipPlan), locale)} to add ${selectedMembershipPlan.dailyDownloadLimit} downloads today; your current Pro expiry stays unchanged.`
-                    : `Pay ${money(membershipFinalPrice(selectedMembershipPlan), locale)} for ${selectedMembershipPlan.durationDays} days of Pro ending at the end of the final day.`))
-                : (language === "vi" ? "Chọn một gói Pro để tiếp tục." : "Select a Pro plan to continue.")}
-            </p>
+            )}
           </div>
-          <button className="primaryButton" type="button" disabled={proLoading || !selectedMembershipPlan} onClick={checkoutMembership}>
-            <CreditCard size={18} />
-            {language === "vi" ? "Mua Pro" : "Buy Pro"}
-          </button>
-        </div>
-        {proMessage && <p className="success" style={{ marginTop: 14 }}>{proMessage}</p>}
-        {proError && <p className="error" style={{ marginTop: 14 }}>{proError}</p>}
-      </section>
+          <div className="membershipPlans topupMembershipPlans">
+            {membershipPlans.map((plan) => (
+              <button
+                key={plan._id}
+                type="button"
+                className={`membershipPlanCard panel ${selectedMembershipPlanId === plan._id ? "selectedPackage" : ""}`}
+                onClick={() => {
+                  updateTopupSelectionQuery({ mode: "pro", planId: plan._id }, ["packageId"]);
+                  setSelectedMembershipPlanId(plan._id);
+                  setProMessage("");
+                  setProError("");
+                }}
+              >
+                {plan.badge && <span className="badge success">{plan.badge}</span>}
+                <h3>{plan.name}</h3>
+                <strong>{money(membershipFinalPrice(plan), locale)}</strong>
+                {voucherTargetsMembership && (
+                  <span>{language === "vi" ? `Voucher ${appliedVoucher.code}: giảm ${appliedVoucher.discountPercent}%` : `Voucher ${appliedVoucher.code}: ${appliedVoucher.discountPercent}% off`}</span>
+                )}
+                <span>
+                  {membership?.active && isDailyMembershipPlan(plan)
+                    ? (language === "vi"
+                      ? `Thêm ${plan.dailyDownloadLimit} lượt hôm nay`
+                      : `Add ${plan.dailyDownloadLimit} downloads today`)
+                    : (language === "vi"
+                      ? `${plan.durationDays} ngày · ${plan.dailyDownloadLimit}/ngày`
+                      : `${plan.durationDays} days · ${plan.dailyDownloadLimit}/day`)}
+                </span>
+                <ul>
+                  {(plan.features || []).map((feature) => (
+                    <li key={feature}><Check size={14} /> {membershipFeatureLabel(feature, language)}</li>
+                  ))}
+                </ul>
+              </button>
+            ))}
+          </div>
+          <div className="topupCheckoutBox">
+            <div>
+              <span>{language === "vi" ? "Gói Pro đang chọn" : "Selected Pro plan"}</span>
+              <strong>{selectedMembershipPlan?.name || "-"}</strong>
+              <p>
+                {selectedMembershipPlan
+                  ? (language === "vi"
+                    ? (selectedPlanIsDailyAddon
+                      ? `Thanh toán ${money(membershipFinalPrice(selectedMembershipPlan), locale)} để thêm ${selectedMembershipPlan.dailyDownloadLimit} lượt tải hôm nay; hạn Pro hiện tại vẫn giữ nguyên.`
+                      : `Thanh toán ${money(membershipFinalPrice(selectedMembershipPlan), locale)} để kích hoạt ${selectedMembershipPlan.durationDays} ngày Pro đến cuối ngày hết hạn.`)
+                    : (selectedPlanIsDailyAddon
+                      ? `Pay ${money(membershipFinalPrice(selectedMembershipPlan), locale)} to add ${selectedMembershipPlan.dailyDownloadLimit} downloads today; your current Pro expiry stays unchanged.`
+                      : `Pay ${money(membershipFinalPrice(selectedMembershipPlan), locale)} for ${selectedMembershipPlan.durationDays} days of Pro ending at the end of the final day.`))
+                  : (language === "vi" ? "Chọn một gói Pro để tiếp tục." : "Select a Pro plan to continue.")}
+              </p>
+            </div>
+            <button className="primaryButton" type="button" disabled={proLoading || !selectedMembershipPlan} onClick={checkoutMembership}>
+              <CreditCard size={18} />
+              {language === "vi" ? "Mua Pro" : "Buy Pro"}
+            </button>
+          </div>
+          {proMessage && <p className="success" style={{ marginTop: 14 }}>{proMessage}</p>}
+          {proError && <p className="error" style={{ marginTop: 14 }}>{proError}</p>}
+        </section>
       )}
 
       {topupMode === "credit" && (
-      <section className="panel topupUnifiedSection topupCreditSection">
-        <div className="topupSectionHeader">
-          <div>
-            <span className="eyebrowSignal">CREDIT BALANCE</span>
-            <h2><Wallet size={20} /> {language === "vi" ? "Nạp Credit" : "Top up Credit"}</h2>
-            <p className="muted">
-              {language === "vi"
-                ? "Bạn đang nạp số dư dùng riêng cho Getlink. 28 credit tương đương 1 lượt tải Getlink model theo mức quy đổi hiện tại; không kích hoạt Pro và không cộng quota thư viện Model/Scene."
-                : "You are adding balance used only for Getlink. At the current rate, 28 credits equal one Getlink model download; this does not activate Pro or add Model/Scene library quota."}
-            </p>
-          </div>
-          <span className="badge success">{language === "vi" ? "ĐANG NẠP CREDIT" : "CREDIT TOP-UP"}</span>
-        </div>
-        <div className="packageGrid topupPackageGrid" style={{ "--topup-package-count": Math.max(packages.length, 1) }}>
-          {packages.map((item) => (
-            <button
-              className={`membershipPlanCard panel topupPackageCard ${selectedPackageId === item._id ? "selectedPackage" : ""}`}
-              key={item._id || item.price}
-              onClick={() => selectPackage(item)}
-              style={{ alignItems: "stretch", textAlign: "left" }}
-            >
-              {item.badge && <span className="badge success topupPackageBadge">{item.badge}</span>}
-              <h3 className="topupPackageName">{item.name || t.defaultPackageName}</h3>
-              <div className="priceBlock compact topupPackagePrice">
-                {hasSale(item) && (
-                  <div className="priceOriginal">
-                    {Number(item.price).toLocaleString(locale)}<span>{CURRENCY}</span>
-                  </div>
-                )}
-                <strong className="topupPackageFinalPrice">{finalPrice(item).toLocaleString(locale)}{CURRENCY}</strong>
-              </div>
-              {Number(appliedVoucher?.discountPercent || 0) > 0 && voucherAppliesToPackage(appliedVoucher, item) && (
-                <span>
-                  {language === "vi"
-                    ? `Sau voucher ${appliedVoucher.code}: giảm ${appliedVoucher.discountPercent}% từ ${priceBeforeVoucher(item).toLocaleString(locale)}${CURRENCY}`
-                    : `After voucher ${appliedVoucher.code}: ${appliedVoucher.discountPercent}% off from ${priceBeforeVoucher(item).toLocaleString(locale)}${CURRENCY}`}
-                </span>
-              )}
-              {appliedVoucher && !voucherAppliesToPackage(appliedVoucher, item) && (
-                <span className="muted">Voucher {appliedVoucher.code} {t.voucherNotApplicable}</span>
-              )}
-              {hasSale(item) && (
-                <span className="topupPackageSale">
-                  {Number(item.salePercent || 0) > 0
-                    ? (language === "vi"
-                      ? `Sale ${item.salePercent}% từ ${Number(item.price).toLocaleString(locale)}${CURRENCY}`
-                      : `Sale ${item.salePercent}% from ${Number(item.price).toLocaleString(locale)}${CURRENCY}`)
-                    : (language === "vi"
-                      ? `Giá sale từ ${Number(item.price).toLocaleString(locale)}${CURRENCY}`
-                      : `Sale price from ${Number(item.price).toLocaleString(locale)}${CURRENCY}`)}
-                </span>
-              )}
-              <strong className="topupPackageCredit">{finalCredit(item)} credit</strong>
-              {Number(item.maxTopupsPerUser || 0) > 0 && (
-                <span className="muted">
-                  {language === "vi"
-                    ? `Mỗi tài khoản nạp tối đa ${item.maxTopupsPerUser} lần`
-                    : `Max ${item.maxTopupsPerUser} top-ups per account`}
-                </span>
-              )}
-              {Number(appliedVoucher?.creditBonus || 0) > 0 && voucherAppliesToPackage(appliedVoucher, item) && (
-                <span>Bonus voucher {appliedVoucher.code}: +{appliedVoucher.creditBonus} credit</span>
-              )}
-              <ul className="topupPackageFeatures">
-                {((item.features && item.features.length > 0)
-                  ? item.features
-                  : t.defaultPackageFeatures
-                ).map((feature, index) => (
-                  <li key={index}>{feature}</li>
-                ))}
-              </ul>
-            </button>
-          ))}
-        </div>
-        <div className="topupCheckoutBox">
-          {selectedPackage ? (
+        <section className="panel topupUnifiedSection topupCreditSection">
+          <div className="topupSectionHeader">
             <div>
-              <span>{language === "vi" ? "Gói Credit đang chọn" : "Selected Credit package"}</span>
-              <strong>{selectedPackage.name || t.defaultPackageName}</strong>
-              <p>
+              <span className="eyebrowSignal">CREDIT BALANCE</span>
+              <h2><Wallet size={20} /> {language === "vi" ? "Nạp Credit" : "Top up Credit"}</h2>
+              <p className="muted">
                 {language === "vi"
-                  ? `Thanh toán ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} để nhận ${finalCredit(selectedPackage)} credit dùng cho Getlink`
-                  : `Pay ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} to receive ${finalCredit(selectedPackage)} Getlink credits`}
-                {appliedVoucher && voucherAppliesToPackage(appliedVoucher, selectedPackage)
-                  ? (language === "vi" ? `, đã áp dụng voucher ${appliedVoucher.code}` : `, voucher ${appliedVoucher.code} applied`)
-                  : ""}.
+                  ? "Credit dùng riêng cho Getlink. Tỉ lệ 1:1 với 3d66, 28 credit là giá của 1 lượt tải Getlink model 3d66 trung bình."
+                  : "Credits are used exclusively for Getlink. Standard rate is 1:1 with 3d66; a 3d66 model download costs an average of 28 credits."}
               </p>
             </div>
-          ) : (
-            <div>
-              <span>{t.noPackageSelected}</span>
-              <strong>{t.selectTopupPackage}</strong>
-              <p>{t.selectPackageHelp}</p>
+            <span className="badge success">{language === "vi" ? "ĐANG NẠP CREDIT" : "CREDIT TOP-UP"}</span>
+          </div>
+          <div className="packageGrid topupPackageGrid" style={{ "--topup-package-count": Math.max(packages.length, 1) }}>
+            {packages.map((item) => (
+              <button
+                className={`membershipPlanCard panel topupPackageCard ${selectedPackageId === item._id ? "selectedPackage" : ""}`}
+                key={item._id || item.price}
+                onClick={() => selectPackage(item)}
+                style={{ alignItems: "stretch", textAlign: "left" }}
+              >
+                {item.badge && <span className="badge success topupPackageBadge">{item.badge}</span>}
+                <h3 className="topupPackageName">{item.name || t.defaultPackageName}</h3>
+                <div className="priceBlock compact topupPackagePrice">
+                  {hasSale(item) && (
+                    <div className="priceOriginal">
+                      {Number(item.price).toLocaleString(locale)}<span>{CURRENCY}</span>
+                    </div>
+                  )}
+                  <strong className="topupPackageFinalPrice">{finalPrice(item).toLocaleString(locale)}{CURRENCY}</strong>
+                </div>
+                {Number(appliedVoucher?.discountPercent || 0) > 0 && voucherAppliesToPackage(appliedVoucher, item) && (
+                  <span>
+                    {language === "vi"
+                      ? `Sau voucher ${appliedVoucher.code}: giảm ${appliedVoucher.discountPercent}% từ ${priceBeforeVoucher(item).toLocaleString(locale)}${CURRENCY}`
+                      : `After voucher ${appliedVoucher.code}: ${appliedVoucher.discountPercent}% off from ${priceBeforeVoucher(item).toLocaleString(locale)}${CURRENCY}`}
+                  </span>
+                )}
+                {appliedVoucher && !voucherAppliesToPackage(appliedVoucher, item) && (
+                  <span className="muted">Voucher {appliedVoucher.code} {t.voucherNotApplicable}</span>
+                )}
+                {hasSale(item) && (
+                  <span className="topupPackageSale">
+                    {Number(item.salePercent || 0) > 0
+                      ? (language === "vi"
+                        ? `Sale ${item.salePercent}% từ ${Number(item.price).toLocaleString(locale)}${CURRENCY}`
+                        : `Sale ${item.salePercent}% from ${Number(item.price).toLocaleString(locale)}${CURRENCY}`)
+                      : (language === "vi"
+                        ? `Giá sale từ ${Number(item.price).toLocaleString(locale)}${CURRENCY}`
+                        : `Sale price from ${Number(item.price).toLocaleString(locale)}${CURRENCY}`)}
+                  </span>
+                )}
+                <strong className="topupPackageCredit">{finalCredit(item)} credit</strong>
+                {Number(item.maxTopupsPerUser || 0) > 0 && (
+                  <span className="muted">
+                    {language === "vi"
+                      ? `Mỗi tài khoản nạp tối đa ${item.maxTopupsPerUser} lần`
+                      : `Max ${item.maxTopupsPerUser} top-ups per account`}
+                  </span>
+                )}
+                {Number(appliedVoucher?.creditBonus || 0) > 0 && voucherAppliesToPackage(appliedVoucher, item) && (
+                  <span>Bonus voucher {appliedVoucher.code}: +{appliedVoucher.creditBonus} credit</span>
+                )}
+                <ul className="topupPackageFeatures">
+                  {((item.features && item.features.length > 0)
+                    ? item.features
+                    : t.defaultPackageFeatures
+                  ).map((feature, index) => (
+                    <li key={index}>{feature}</li>
+                  ))}
+                </ul>
+              </button>
+            ))}
+          </div>
+          <div className="topupCheckoutBox">
+            {selectedPackage ? (
+              <div>
+                <span>{language === "vi" ? "Gói Credit đang chọn" : "Selected Credit package"}</span>
+                <strong>{selectedPackage.name || t.defaultPackageName}</strong>
+                <p>
+                  {language === "vi"
+                    ? `Thanh toán ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} để nhận ${finalCredit(selectedPackage)} credit dùng cho Getlink`
+                    : `Pay ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} to receive ${finalCredit(selectedPackage)} Getlink credits`}
+                  {appliedVoucher && voucherAppliesToPackage(appliedVoucher, selectedPackage)
+                    ? (language === "vi" ? `, đã áp dụng voucher ${appliedVoucher.code}` : `, voucher ${appliedVoucher.code} applied`)
+                    : ""}.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <span>{t.noPackageSelected}</span>
+                <strong>{t.selectTopupPackage}</strong>
+                <p>{t.selectPackageHelp}</p>
+              </div>
+            )}
+            <button className="primaryButton" type="button" disabled={!selectedPackage || submitting} onClick={topup}>
+              <CreditCard size={18} />
+              {submitting ? t.redirectingPayment : (language === "vi" ? "Nạp Credit" : "Top up Credit")}
+            </button>
+          </div>
+          {message && <p className="success" style={{ marginTop: 14 }}>{message}</p>}
+          {error && <p className="error" style={{ marginTop: 14 }}>{error}</p>}
+          {lastPaidPayment && (
+            <div className="result" style={{ marginTop: 16, borderColor: "rgba(0, 255, 136, 0.45)" }}>
+              <span>{t.paymentDone}</span>
+              <strong>+{lastPaidPayment.credit} credit</strong>
+              <p>
+                {language === "vi"
+                  ? `Mã nạp ${lastPaidPayment.paymentCode} đã xác nhận. Bạn có thể tạo lượt nạp mới.`
+                  : `Top-up code ${lastPaidPayment.paymentCode} has been confirmed. You can create a new top-up.`}
+              </p>
             </div>
           )}
-          <button className="primaryButton" type="button" disabled={!selectedPackage || submitting} onClick={topup}>
-            <CreditCard size={18} />
-            {submitting ? t.redirectingPayment : (language === "vi" ? "Nạp Credit" : "Top up Credit")}
-          </button>
-        </div>
-        {message && <p className="success" style={{ marginTop: 14 }}>{message}</p>}
-        {error && <p className="error" style={{ marginTop: 14 }}>{error}</p>}
-        {lastPaidPayment && (
-          <div className="result" style={{ marginTop: 16, borderColor: "rgba(0, 255, 136, 0.45)" }}>
-            <span>{t.paymentDone}</span>
-            <strong>+{lastPaidPayment.credit} credit</strong>
-            <p>
-              {language === "vi"
-                ? `Mã nạp ${lastPaidPayment.paymentCode} đã xác nhận. Bạn có thể tạo lượt nạp mới.`
-                : `Top-up code ${lastPaidPayment.paymentCode} has been confirmed. You can create a new top-up.`}
-            </p>
-          </div>
-        )}
-        {payment && (
-          <div className="result" style={{ marginTop: 16 }}>
-            <span>{t.paymentInfo}</span>
-            <div className="table">
-              <div className="tableRow">
-                <span>{t.amount}</span>
-                <strong>{Number(payment.amount).toLocaleString(locale)}{CURRENCY}</strong>
-                <button className="smallButton" type="button" onClick={() => copyText(payment.amount, "amount")}>
-                  {copied === "amount" ? <Check size={14} /> : <Copy size={14} />}
-                  {t.copy}
-                </button>
-              </div>
-              {Number(payment.discountAmount || 0) > 0 && (
+          {payment && (
+            <div className="result" style={{ marginTop: 16 }}>
+              <span>{t.paymentInfo}</span>
+              <div className="table">
                 <div className="tableRow">
-                  <span>Voucher</span>
-                  <strong>{payment.voucherCode}</strong>
-                  <span>-{Number(payment.discountAmount).toLocaleString(locale)}{CURRENCY}</span>
+                  <span>{t.amount}</span>
+                  <strong>{Number(payment.amount).toLocaleString(locale)}{CURRENCY}</strong>
+                  <button className="smallButton" type="button" onClick={() => copyText(payment.amount, "amount")}>
+                    {copied === "amount" ? <Check size={14} /> : <Copy size={14} />}
+                    {t.copy}
+                  </button>
                 </div>
-              )}
-              {payment.voucherCode && Number(payment.discountAmount || 0) <= 0 && (
+                {Number(payment.discountAmount || 0) > 0 && (
+                  <div className="tableRow">
+                    <span>Voucher</span>
+                    <strong>{payment.voucherCode}</strong>
+                    <span>-{Number(payment.discountAmount).toLocaleString(locale)}{CURRENCY}</span>
+                  </div>
+                )}
+                {payment.voucherCode && Number(payment.discountAmount || 0) <= 0 && (
+                  <div className="tableRow">
+                    <span>Voucher</span>
+                    <strong>{payment.voucherCode}</strong>
+                    <span>+{Number(payment.voucherCreditBonus || 0)} credit</span>
+                  </div>
+                )}
                 <div className="tableRow">
-                  <span>Voucher</span>
-                  <strong>{payment.voucherCode}</strong>
-                  <span>+{Number(payment.voucherCreditBonus || 0)} credit</span>
+                  <span>{t.orderCode}</span>
+                  <strong>{payment.paymentCode}</strong>
+                  <button className="smallButton" type="button" onClick={() => copyText(payment.paymentCode, "code")}>
+                    {copied === "code" ? <Check size={14} /> : <Copy size={14} />}
+                    {t.copy}
+                  </button>
                 </div>
-              )}
-              <div className="tableRow">
-                <span>{t.orderCode}</span>
-                <strong>{payment.paymentCode}</strong>
-                <button className="smallButton" type="button" onClick={() => copyText(payment.paymentCode, "code")}>
-                  {copied === "code" ? <Check size={14} /> : <Copy size={14} />}
-                  {t.copy}
-                </button>
+                <div className="tableRow">
+                  <span>{t.status}</span>
+                  <strong>{t.paymentLabel}</strong>
+                  <span>{payment.status === "approved" ? t.credited : t.waitingPayment}</span>
+                </div>
               </div>
-              <div className="tableRow">
-                <span>{t.status}</span>
-                <strong>{t.paymentLabel}</strong>
-                <span>{payment.status === "approved" ? t.credited : t.waitingPayment}</span>
-              </div>
+              <p className="muted" style={{ marginTop: 12 }}>
+                {t.creditAutoAfterConfirm}
+              </p>
             </div>
-            <p className="muted" style={{ marginTop: 12 }}>
-              {t.creditAutoAfterConfirm}
-            </p>
-          </div>
-        )}
-      </section>
+          )}
+        </section>
       )}
 
       <section className="panel topupVoucherPanel">
