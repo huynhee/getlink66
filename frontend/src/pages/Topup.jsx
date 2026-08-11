@@ -50,13 +50,13 @@ function money(value, locale) {
 }
 
 function modeFromLocation() {
-  if (typeof window === "undefined") return "pro";
+  if (typeof window === "undefined") return "";
   const params = new URLSearchParams(window.location.search);
   const mode = params.get("mode");
   if (mode === "pro") return "pro";
   if (params.get("packageId")) return "credit";
   if (params.get("planId")) return "pro";
-  return mode === "credit" ? "credit" : "pro";
+  return mode === "credit" ? "credit" : "";
 }
 
 function queryParam(name) {
@@ -376,6 +376,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
 
   const selectedPackage = packages.find((item) => String(item._id) === String(selectedPackageId));
   const selectedMembershipPlan = membershipPlans.find((item) => String(item._id) === String(selectedMembershipPlanId));
+  const hasSelectedTopupMode = topupMode === "credit" || topupMode === "pro";
   const voucherTargetsMembership =
     appliedVoucher &&
     topupMode === "pro" &&
@@ -561,15 +562,17 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         </button>
       </section>
 
-      <div className={`topupCurrentModeNotice ${topupMode}`} role="status">
-        <Check size={15} />
-        <span>{language === "vi" ? "Hình thức đang chọn:" : "Selected top-up type:"}</span>
-        <strong>
-          {topupMode === "credit"
-            ? (language === "vi" ? "Nạp Credit dùng cho Getlink" : "Credit for Getlink")
-            : (language === "vi" ? "Mua Pro để tải Model/Scene" : "Pro for Model/Scene downloads")}
-        </strong>
-      </div>
+      {hasSelectedTopupMode && (
+        <div className={`topupCurrentModeNotice ${topupMode}`} role="status">
+          <Check size={15} />
+          <span>{language === "vi" ? "Hình thức đang chọn:" : "Selected top-up type:"}</span>
+          <strong>
+            {topupMode === "credit"
+              ? (language === "vi" ? "Nạp Credit dùng cho Getlink" : "Credit for Getlink")
+              : (language === "vi" ? "Mua Pro để tải Model/Scene" : "Pro for Model/Scene downloads")}
+          </strong>
+        </div>
+      )}
 
       {topupMode === "pro" && (
         <section className="panel topupUnifiedSection topupProSection">
@@ -813,7 +816,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         </section>
       )}
 
-      <section className="panel topupVoucherPanel">
+      {hasSelectedTopupMode && <section className="panel topupVoucherPanel">
         <div>
           <h2><Gift size={18} /> Voucher</h2>
           <p className="muted">
@@ -851,7 +854,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
             </p>
           </div>
         )}
-      </section>
+      </section>}
     </div>
   );
 }
