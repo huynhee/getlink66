@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Download, Filter, Flag, HardDrive, Image as ImageIcon, ImagePlus, Loader2, LogIn, Package, Search, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
-import { api, buildApiUrl } from "../api.js";
+import { api, apiCached, buildApiUrl, prefetchApi } from "../api.js";
 import Pagination from "../components/Pagination.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
 
@@ -324,6 +324,7 @@ export function ModelCard({
   const firstPreviewImage = previewImageSrc(model.previewImages?.[0]);
   const hasDistinctPreview = Boolean(firstPreviewImage && firstPreviewImage !== image);
   const href = modelPath(model);
+  const detailApiPath = `/api/marketplace/${catalogSegment(model.assetType)}/${encodeURIComponent(model.slug)}?includeRecommendations=false`;
   const sizeLabel = model.sizeText || formatBytes(model.fileSize);
   const rendererLabel = model.renderer || model.renderers?.[0] || "-";
   const downloadCount = Number(model.downloadCount || 0).toLocaleString(language === "vi" ? "vi-VN" : "en-US");
@@ -353,6 +354,10 @@ export function ModelCard({
     : previewImageStage === "fallback"
       ? image
       : firstPreviewImage || image;
+
+  const warmDetail = useCallback(() => {
+    prefetchApi(detailApiPath);
+  }, [detailApiPath]);
 
   const updatePreviewPosition = useCallback(() => {
     if (!cardRef.current || !previewRef.current) return;
@@ -390,6 +395,7 @@ export function ModelCard({
   }, []);
 
   const showPreview = useCallback(() => {
+    warmDetail();
     if (!quickPreview) return;
     if (!window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) return;
     window.clearTimeout(closeTimerRef.current);
@@ -398,7 +404,7 @@ export function ModelCard({
       openTimerRef.current = null;
       setPreviewOpen(true);
     }, 650);
-  }, [previewOpen, quickPreview]);
+  }, [previewOpen, quickPreview, warmDetail]);
 
   const hidePreview = useCallback(() => {
     window.clearTimeout(openTimerRef.current);
@@ -448,6 +454,7 @@ export function ModelCard({
         onMouseLeave={quickPreview ? hidePreview : undefined}
         onFocus={quickPreview ? showPreview : undefined}
         onBlur={quickPreview ? hidePreview : undefined}
+        onPointerDown={warmDetail}
         onClick={(event) => {
           setPreviewOpen(false);
           navigateTo(href, onNavigate, event);
@@ -1010,12 +1017,12 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   const initializedCatalogRef = useRef("");
 
   const loadCategories = useCallback(async () => {
-    const data = await api(assetType === "scene" ? "/api/marketplace/scenes/categories" : "/api/marketplace/categories");
+    const data = await apiCached(assetType === "scene" ? "/api/marketplace/scenes/categories" : "/api/marketplace/categories");
     setCategories(data.categories || []);
   }, [assetType]);
 
   const loadFilterOptions = useCallback(async () => {
-    const data = await api(assetType === "scene" ? "/api/marketplace/scenes/filters" : "/api/marketplace/filters");
+    const data = await apiCached(assetType === "scene" ? "/api/marketplace/scenes/filters" : "/api/marketplace/filters");
     setFilterOptions(data.filters || {});
   }, [assetType]);
 
@@ -1064,7 +1071,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
       setImageSearchPreview("");
     }
     try {
-      const data = await api(`/api/marketplace/${segment}?${query.toString()}`);
+      const data = await apiCached(`/api/marketplace/${segment}?${query.toString()}`);
       if (requestId !== listRequestIdRef.current) return;
       setModels(data.assets || data.scenes || data.models || []);
       setPagination(data.pagination || { page: 1, totalPages: 1, total: 0 });
@@ -1657,7 +1664,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
     setRecommendationsError("");
     setDownloadProtection({ enabled: false, siteKey: "", action: "" });
     setTurnstileToken("");
-    const detailRequest = api(`/api/marketplace/${segment}/${encodeURIComponent(slug)}?includeRecommendations=false`);
+    const detailRequest = apiCached(`/api/marketplace/${segment}/${encodeURIComponent(slug)}?includeRecommendations=false`);
     detailRequest
       .then((data) => {
         if (!active) return;
@@ -1671,7 +1678,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
         if (active) setLoading(false);
       });
 
-    api(assetType === "scene" ? "/api/marketplace/scenes/filters" : "/api/marketplace/filters")
+    apiCached(assetType === "scene" ? "/api/marketplace/scenes/filters" : "/api/marketplace/filters")
       .then((filterData) => {
         if (active) setFilterOptions(filterData.filters || EMPTY_FILTERS);
       })

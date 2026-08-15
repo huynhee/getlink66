@@ -1,9 +1,27 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Bell, CalendarClock, Chrome, Download, History, LogOut, Menu, Moon, Sun, UserCircle, UserPlus, Wallet, X } from "lucide-react";
-import { API_URL, api } from "../api.js";
+import { API_URL, api, prefetchApi } from "../api.js";
 import CoinAmount from "./CoinAmount.jsx";
 import { translations } from "../i18n.js";
 import { setFaviconNotificationCount } from "../utils/faviconProgress.js";
+
+const DEFAULT_MODEL_CATALOG_PATH = "/api/marketplace/models?page=1&limit=60&sort=source_id_desc";
+
+function warmModelCatalog() {
+  return Promise.all([
+    prefetchApi(DEFAULT_MODEL_CATALOG_PATH),
+    prefetchApi("/api/marketplace/categories"),
+    prefetchApi("/api/marketplace/filters"),
+  ]);
+}
+
+function warmSceneCatalog() {
+  return Promise.all([
+    prefetchApi("/api/marketplace/scenes?page=1&limit=60"),
+    prefetchApi("/api/marketplace/scenes/categories"),
+    prefetchApi("/api/marketplace/scenes/filters"),
+  ]);
+}
 
 function LanguageToggle({ language, onLanguageChange }) {
   const nextLanguage = language === "vi" ? "en" : "vi";
@@ -130,6 +148,17 @@ export default function Navbar({
   const fullscreenNotification = notifications.find(
     (item) => item.displayType === "fullscreen" && !sessionHiddenFullscreenIds.has(item._id)
   );
+
+  useEffect(() => {
+    if (adminMode) return undefined;
+    const warm = () => { warmModelCatalog(); };
+    if (typeof window.requestIdleCallback === "function") {
+      const idleId = window.requestIdleCallback(warm, { timeout: 1_500 });
+      return () => window.cancelIdleCallback?.(idleId);
+    }
+    const timer = window.setTimeout(warm, 500);
+    return () => window.clearTimeout(timer);
+  }, [adminMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -333,6 +362,8 @@ export default function Navbar({
                   <button
                     key={key}
                     className={page === key ? "active" : ""}
+                    onMouseEnter={key === "models" ? warmModelCatalog : key === "scenes" ? warmSceneCatalog : undefined}
+                    onFocus={key === "models" ? warmModelCatalog : key === "scenes" ? warmSceneCatalog : undefined}
                     onClick={() => {
                       if (!user && !["guide", "models"].includes(key)) {
                         window.location.href = googleHref("/");

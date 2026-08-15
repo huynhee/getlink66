@@ -1,6 +1,8 @@
 const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 export const API_URL = configuredApiUrl || (import.meta.env.PROD ? "" : "http://localhost:5000");
 let csrfToken = "";
+const publicGetCache = new Map();
+const PUBLIC_GET_CACHE_MAX_ENTRIES = 100;
 
 export function buildApiUrl(path) {
   return `${API_URL}${path}`;
@@ -116,4 +118,51 @@ export async function apiBinary(path, body, options = {}) {
     throw error;
   }
   return data;
+}
+
+function trimPublicGetCache() {
+  while (publicGetCache.size > PUBLIC_GET_CACHE_MAX_ENTRIES) {
+    const oldestKey = publicGetCache.keys().next().value;
+    publicGetCache.delete(oldestKey);
+  }
+}
+
+export function apiCached(path, { ttlMs = 60_000, force = false } = {}) {
+  const key = String(path || "");
+  const now = Date.now();
+  const current = publicGetCache.get(key);
+  if (!force && current?.data && current.expiresAt > now) {
+    return Promise.resolve(current.data);
+  }
+  if (!force && current?.promise) return current.promise;
+
+  const promise = api(key)
+    .then((data) => {
+      publicGetCache.delete(key);
+      publicGetCache.set(key, {
+        data,
+        expiresAt: Date.now() + Math.max(1_000, Number(ttlMs) || 60_000),
+      });
+      trimPublicGetCache();
+      return data;
+    })
+    .catch((error) => {
+      if (publicGetCache.get(key)?.promise === promise) publicGetCache.delete(key);
+      throw error;
+    });
+
+  publicGetCache.set(key, { promise, expiresAt: 0 });
+  trimPublicGetCache();
+  return promise;
+}
+
+export function prefetchApi(path, options) {
+  return apiCached(path, options).catch(() => null);
+}
+
+export function invalidateApiCache(prefix = "") {
+  const normalizedPrefix = String(prefix || "");
+  for (const key of publicGetCache.keys()) {
+    if (!normalizedPrefix || key.startsWith(normalizedPrefix)) publicGetCache.delete(key);
+  }
 }
