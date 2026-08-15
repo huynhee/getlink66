@@ -1004,8 +1004,10 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   const [imageSearchDraftPreview, setImageSearchDraftPreview] = useState("");
   const [imageSearchDialogError, setImageSearchDialogError] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const listRequestIdRef = useRef(0);
+  const initializedCatalogRef = useRef("");
 
   const loadCategories = useCallback(async () => {
     const data = await api(assetType === "scene" ? "/api/marketplace/scenes/categories" : "/api/marketplace/categories");
@@ -1046,6 +1048,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   }
 
   const loadModels = useCallback(async (page = 1, options = {}) => {
+    const requestId = ++listRequestIdRef.current;
     const query = new URLSearchParams({ page: String(page), limit: "60" });
     if (search.trim()) query.set("q", search.trim());
     if (category) query.set("category", category);
@@ -1062,13 +1065,14 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
     }
     try {
       const data = await api(`/api/marketplace/${segment}?${query.toString()}`);
+      if (requestId !== listRequestIdRef.current) return;
       setModels(data.assets || data.scenes || data.models || []);
       setPagination(data.pagination || { page: 1, totalPages: 1, total: 0 });
       setEffectiveSort(data.sort?.effective || (search.trim() ? "relevance" : "newest"));
     } catch (err) {
-      setError(err.message);
+      if (requestId === listRequestIdRef.current) setError(err.message);
     } finally {
-      setLoading(false);
+      if (requestId === listRequestIdRef.current) setLoading(false);
     }
   }, [accessType, activeFilters, category, search, segment, sortMode]);
 
@@ -1077,6 +1081,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
       setImageSearchDialogError(language === "vi" ? "Cần đăng nhập để tìm kiếm bằng hình ảnh." : "Login is required for image search.");
       return false;
     }
+    listRequestIdRef.current += 1;
     setImageSearching(true);
     setError("");
     setImageSearchDialogError("");
@@ -1158,11 +1163,13 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   }, [categories, category, openCategory]);
 
   useEffect(() => {
+    const isInitialCatalogLoad = initializedCatalogRef.current !== segment;
+    initializedCatalogRef.current = segment;
     const timer = window.setTimeout(() => {
       loadModels(1);
-    }, 200);
+    }, isInitialCatalogLoad ? 0 : 200);
     return () => window.clearTimeout(timer);
-  }, [loadModels]);
+  }, [loadModels, segment]);
 
   const activeFilterCount = useMemo(
     () => Object.values(activeFilters).reduce((total, values) => total + (values?.length || 0), 0),
@@ -1307,7 +1314,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
         <div className="panel marketSearchPanel">
           <div className="marketResultBar">
             <div className="marketResultSummary">
-              <span>{pagination.total || 0} {textFor(language, noun, `${noun} found`)}</span>
+              <span>{loading && !models.length ? "..." : (pagination.total || 0)} {textFor(language, noun, `${noun} found`)}</span>
             </div>
             <label className="marketSearchField marketResultSearch">
               <Search size={18} />
@@ -1390,7 +1397,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
           )}
         </div>
         {error && <p className="error">{error}</p>}
-        {loading && <p className="success">{language === "vi" ? "Đang tải..." : "Loading..."}</p>}
+        {loading && <p className="success marketLoadingStatus"><Loader2 size={15} className="spin" />{language === "vi" ? "Đang tải..." : "Loading..."}</p>}
         <div className="marketGrid">
             {models.map((model) => (
               <ModelCard

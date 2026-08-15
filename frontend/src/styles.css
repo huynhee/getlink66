@@ -2249,6 +2249,14 @@ button:disabled {
   gap: var(--space-8);
 }
 
+.marketLoadingStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  margin: 8px 0;
+}
+
 .marketPagination {
   display: flex;
   justify-content: center;

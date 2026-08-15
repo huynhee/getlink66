@@ -55,6 +55,30 @@ const PAGE_SIZE = 60;
 const IMAGE_SEARCH_FREE_LIMIT = 10;
 const IMAGE_SEARCH_PRO_LIMIT = 150;
 const MAX_IMAGE_SEARCH_BYTES = 512 * 1024;
+const MARKETPLACE_PUBLIC_LIST_FIELDS = [
+  "_id",
+  "assetType",
+  "title",
+  "slug",
+  "categorySourceId",
+  "parentCategorySourceId",
+  "coverImage",
+  "previewImages",
+  "coverCache",
+  "styles",
+  "renderers",
+  "forms",
+  "colors",
+  "materials",
+  "renderer",
+  "accessType",
+  "fileStatus",
+  "isPublished",
+  "fileSize",
+  "downloadCount",
+  "createdAt",
+  "updatedAt",
+].join(" ");
 
 export function sendMarketplaceJsonWithEtag(req, res, payload) {
   const digest = crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
@@ -490,6 +514,49 @@ async function fuzzyMarketplacePage({
   };
 }
 
+async function prioritizedMarketplaceBrowsePage({ query, sortSelection, page, limit }) {
+  const memberQuery = { ...query, accessType: "member" };
+  const freeQuery = { ...query, accessType: "free" };
+  const [memberTotal, freeTotal] = await Promise.all([
+    MarketplaceModel.countDocuments(memberQuery),
+    MarketplaceModel.countDocuments(freeQuery),
+  ]);
+  const total = memberTotal + freeTotal;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const safePage = Math.min(page, totalPages);
+  const offset = (safePage - 1) * limit;
+  const sortSpec = marketplaceSortSpec(sortSelection.effective);
+  const memberTake = offset < memberTotal ? Math.min(limit, memberTotal - offset) : 0;
+  const freeOffset = Math.max(0, offset - memberTotal);
+  const freeTake = Math.min(limit - memberTake, Math.max(0, freeTotal - freeOffset));
+  const memberPromise = memberTake
+    ? MarketplaceModel.find(memberQuery)
+      .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
+      .sort(sortSpec)
+      .skip(offset)
+      .limit(memberTake)
+      .lean()
+    : Promise.resolve([]);
+  const freePromise = freeTake
+    ? MarketplaceModel.find(freeQuery)
+      .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
+      .sort(sortSpec)
+      .skip(freeOffset)
+      .limit(freeTake)
+      .lean()
+    : Promise.resolve([]);
+  const [members, free] = await Promise.all([memberPromise, freePromise]);
+  return {
+    models: [...members, ...free],
+    total,
+    totalPages,
+    safePage,
+    engine: "catalog",
+    mode: "browse",
+    truncated: false,
+  };
+}
+
 async function bilingualMarketplacePage({
   query,
   search,
@@ -499,14 +566,27 @@ async function bilingualMarketplacePage({
   prioritizePro = false,
 }) {
   if (!search) {
-    const total = await MarketplaceModel.countDocuments(query);
-    const totalPages = Math.max(1, Math.ceil(total / limit));
-    const safePage = Math.min(page, totalPages);
-    const models = await MarketplaceModel.find(query)
-      .sort({ ...(prioritizePro ? { accessType: -1 } : {}), ...marketplaceSortSpec(sortSelection.effective) })
-      .skip((safePage - 1) * limit)
+    if (prioritizePro) {
+      return prioritizedMarketplaceBrowsePage({ query, sortSelection, page, limit });
+    }
+    const totalPromise = MarketplaceModel.countDocuments(query);
+    const requestedModelsPromise = MarketplaceModel.find(query)
+      .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
+      .sort(marketplaceSortSpec(sortSelection.effective))
+      .skip((page - 1) * limit)
       .limit(limit)
       .lean();
+    const [total, requestedModels] = await Promise.all([totalPromise, requestedModelsPromise]);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    const models = safePage === page
+      ? requestedModels
+      : await MarketplaceModel.find(query)
+        .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
+        .sort(marketplaceSortSpec(sortSelection.effective))
+        .skip((safePage - 1) * limit)
+        .limit(limit)
+        .lean();
     return { models, total, totalPages, safePage, engine: "catalog", mode: "browse", truncated: false };
   }
 
