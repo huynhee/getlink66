@@ -1911,6 +1911,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
   }, [slug, assetType, segment]);
 
   useEffect(() => {
+    if (loading) return undefined;
     const target = recommendationSectionRef.current;
     if (!target || shouldLoadRecommendations) return undefined;
     if (typeof IntersectionObserver !== "function") {
@@ -1924,7 +1925,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
     }, { rootMargin: "700px 0px" });
     observer.observe(target);
     return () => observer.disconnect();
-  }, [model?._id, slug, shouldLoadRecommendations]);
+  }, [loading, model?._id, slug, shouldLoadRecommendations]);
 
   useEffect(() => {
     if (!model?._id || !shouldLoadRecommendations) return undefined;
