@@ -29,6 +29,13 @@ function browserLaunchOptions() {
   return { headless: true, executablePath };
 }
 
+function isExpectedClientAbort(request) {
+  const errorText = String(request.failure()?.errorText || "");
+  return !request.isNavigationRequest()
+    && ["fetch", "xhr"].includes(request.resourceType())
+    && errorText.includes("net::ERR_ABORTED");
+}
+
 function contentType(file) {
   const extension = path.extname(file).toLowerCase();
   return {
@@ -313,6 +320,7 @@ async function main() {
       });
       page.on("pageerror", (error) => errors.push(`${viewport.name}: ${error.message}`));
       page.on("requestfailed", (request) => {
+        if (isExpectedClientAbort(request)) return;
         const url = request.url();
         const item = `${viewport.name}: ${request.failure()?.errorText || "request failed"} ${url}`;
         if (url.startsWith(frontendOrigin) || url.startsWith(backendOrigin)) {
