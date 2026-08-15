@@ -61,13 +61,15 @@ async function request(pathname, options = {}) {
   return data;
 }
 
-async function waitTask(taskUid) {
+async function waitTask(taskUid, options = {}) {
   if (taskUid == null) return;
+  const ignoredErrorCodes = new Set(options.ignoredErrorCodes || []);
   const deadline = Date.now() + 10 * 60_000;
   while (Date.now() < deadline) {
     const task = await request(`/tasks/${taskUid}`);
     if (task.status === "succeeded") return;
     if (["failed", "canceled"].includes(task.status)) {
+      if (ignoredErrorCodes.has(String(task.error?.code || ""))) return;
       throw new Error(task.error?.message || `Meilisearch task ${taskUid} failed`);
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -78,7 +80,7 @@ async function waitTask(taskUid) {
 async function deleteIndex(uid) {
   try {
     const task = await request(`/indexes/${encodeURIComponent(uid)}`, { method: "DELETE" });
-    await waitTask(task.taskUid);
+    await waitTask(task.taskUid, { ignoredErrorCodes: ["index_not_found"] });
   } catch (error) {
     if (error.status !== 404) throw error;
   }
