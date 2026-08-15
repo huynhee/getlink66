@@ -12,6 +12,25 @@ const EMPTY_FILTERS = {
   color: [],
   material: [],
 };
+const IMAGE_SEARCH_ENABLED = String(import.meta.env.VITE_MARKETPLACE_IMAGE_SEARCH_ENABLED || "false").toLowerCase() === "true";
+
+function marketplaceRecentSearches(assetType) {
+  if (typeof window === "undefined") return [];
+  try {
+    const values = JSON.parse(window.localStorage.getItem(`3dipl.marketplace.recent.${assetType}`) || "[]");
+    return Array.isArray(values) ? values.filter((value) => typeof value === "string").slice(0, 8) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberMarketplaceSearch(assetType, value) {
+  if (typeof window === "undefined") return;
+  const query = String(value || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  if (query.length < 2) return;
+  const values = [query, ...marketplaceRecentSearches(assetType).filter((item) => item.toLowerCase() !== query.toLowerCase())].slice(0, 8);
+  window.localStorage.setItem(`3dipl.marketplace.recent.${assetType}`, JSON.stringify(values));
+}
 
 const MARKETPLACE_REPORT_REASONS = [
   ["download_failed", "Không tải được", "Download failed"],
@@ -319,6 +338,9 @@ export function ModelCard({
   onNavigate,
   language = "vi",
   quickPreview = false,
+  queryId = "",
+  position = 0,
+  behaviorSource = "other",
 }) {
   const image = cover(model);
   const firstPreviewImage = previewImageSrc(model.previewImages?.[0]);
@@ -332,6 +354,7 @@ export function ModelCard({
   const previewRef = useRef(null);
   const openTimerRef = useRef(null);
   const closeTimerRef = useRef(null);
+  const impressionKeyRef = useRef("");
   const previewId = useId();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewImageStage, setPreviewImageStage] = useState("primary");
@@ -354,6 +377,7 @@ export function ModelCard({
     : previewImageStage === "fallback"
       ? image
       : firstPreviewImage || image;
+  const prioritizeCover = position > 0 && position <= 6;
 
   const warmDetail = useCallback(() => {
     prefetchApi(detailApiPath);
@@ -443,6 +467,40 @@ export function ModelCard({
     window.clearTimeout(closeTimerRef.current);
   }, []);
 
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card || typeof IntersectionObserver !== "function") return undefined;
+    const impressionKey = [model._id, queryId || "browse", behaviorSource, position].join(":");
+    if (impressionKeyRef.current === impressionKey) return undefined;
+    let visibleTimer = null;
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.some((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.5);
+      window.clearTimeout(visibleTimer);
+      visibleTimer = null;
+      if (!visible || impressionKeyRef.current === impressionKey) return;
+      visibleTimer = window.setTimeout(() => {
+        impressionKeyRef.current = impressionKey;
+        observer.disconnect();
+        api("/api/marketplace/behavior", {
+          method: "POST",
+          body: JSON.stringify({
+            modelId: model._id,
+            assetType: model.assetType,
+            eventType: "impression",
+            queryId,
+            position,
+            source: behaviorSource,
+          }),
+        }).catch(() => {});
+      }, 600);
+    }, { threshold: [0.5] });
+    observer.observe(card);
+    return () => {
+      window.clearTimeout(visibleTimer);
+      observer.disconnect();
+    };
+  }, [behaviorSource, model._id, model.assetType, position, queryId]);
+
   return (
     <>
       <a
@@ -457,12 +515,31 @@ export function ModelCard({
         onPointerDown={warmDetail}
         onClick={(event) => {
           setPreviewOpen(false);
+          if (!event.defaultPrevented && event.button === 0) {
+            api("/api/marketplace/behavior", {
+              method: "POST",
+              body: JSON.stringify({
+                modelId: model._id,
+                assetType: model.assetType,
+                eventType: "click",
+                queryId,
+                position,
+                source: behaviorSource,
+              }),
+            }).catch(() => {});
+          }
           navigateTo(href, onNavigate, event);
         }}
       >
         <div className="marketModelThumb">
           {image ? (
-            <img src={image} alt={model.title} loading="lazy" referrerPolicy="no-referrer" />
+            <img
+              src={image}
+              alt={model.title}
+              loading={prioritizeCover ? "eager" : "lazy"}
+              fetchPriority={prioritizeCover ? "high" : "auto"}
+              referrerPolicy="no-referrer"
+            />
           ) : (
             <Package size={32} />
           )}
@@ -1012,9 +1089,15 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   const [imageSearchDialogError, setImageSearchDialogError] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [searchMeta, setSearchMeta] = useState({ queryId: "", correctedQuery: "", engine: "" });
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const listRequestIdRef = useRef(0);
+  const listAbortRef = useRef(null);
+  const suggestionAbortRef = useRef(null);
   const initializedCatalogRef = useRef("");
+  const searchActiveRef = useRef(Boolean(search.trim()));
 
   const loadCategories = useCallback(async () => {
     const data = await apiCached(assetType === "scene" ? "/api/marketplace/scenes/categories" : "/api/marketplace/categories");
@@ -1054,8 +1137,26 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
     setAccessType("");
   }
 
+  const applySearchSuggestion = useCallback((suggestion) => {
+    if (suggestion.type === "category" && suggestion.categoryKey) {
+      const matchedCategory = categories.find((categoryItem) => (
+        String(categoryItem.sourceCategoryId || "") === String(suggestion.categoryKey)
+        || String(categoryItem.slug || "") === String(suggestion.categoryKey)
+      ));
+      setSearch("");
+      selectCategory(matchedCategory?.slug || suggestion.categoryKey);
+    } else {
+      setSearch(suggestion.value);
+      rememberMarketplaceSearch(assetType, suggestion.value);
+    }
+    setSuggestionsOpen(false);
+  }, [assetType, categories, selectCategory]);
+
   const loadModels = useCallback(async (page = 1, options = {}) => {
     const requestId = ++listRequestIdRef.current;
+    listAbortRef.current?.abort();
+    const controller = new AbortController();
+    listAbortRef.current = controller;
     const query = new URLSearchParams({ page: String(page), limit: "60" });
     if (search.trim()) query.set("q", search.trim());
     if (category) query.set("category", category);
@@ -1071,17 +1172,29 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
       setImageSearchPreview("");
     }
     try {
-      const data = await apiCached(`/api/marketplace/${segment}?${query.toString()}`);
+      const data = await api(`/api/marketplace/${segment}?${query.toString()}`, {
+        signal: controller.signal,
+      });
       if (requestId !== listRequestIdRef.current) return;
       setModels(data.assets || data.scenes || data.models || []);
       setPagination(data.pagination || { page: 1, totalPages: 1, total: 0 });
       setEffectiveSort(data.sort?.effective || (search.trim() ? "relevance" : "newest"));
+      setSearchMeta({
+        queryId: data.search?.queryId || "",
+        correctedQuery: data.search?.correctedQuery || "",
+        engine: data.search?.engine || "",
+      });
     } catch (err) {
-      if (requestId === listRequestIdRef.current) setError(err.message);
+      if (err.name !== "AbortError" && requestId === listRequestIdRef.current) setError(err.message);
     } finally {
       if (requestId === listRequestIdRef.current) setLoading(false);
     }
   }, [accessType, activeFilters, category, search, segment, sortMode]);
+
+  useEffect(() => () => {
+    listAbortRef.current?.abort();
+    suggestionAbortRef.current?.abort();
+  }, []);
 
   async function searchByImage(file) {
     if (!user) {
@@ -1164,6 +1277,22 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   }, [path, assetType]);
 
   useEffect(() => {
+    const active = search.trim().length >= 2;
+    if (active === searchActiveRef.current) return;
+    searchActiveRef.current = active;
+    if (active) {
+      setSortMode("relevance");
+      setEffectiveSort("relevance");
+    } else if (assetType === "model") {
+      setSortMode("source_id_desc");
+      setEffectiveSort("source_id_desc");
+    } else {
+      setSortMode("");
+      setEffectiveSort("newest");
+    }
+  }, [assetType, search]);
+
+  useEffect(() => {
     if (!category || openCategory) return;
     const parentSlug = parentSlugForCategory(categories, category);
     if (parentSlug) setOpenCategory(parentSlug);
@@ -1172,11 +1301,45 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   useEffect(() => {
     const isInitialCatalogLoad = initializedCatalogRef.current !== segment;
     initializedCatalogRef.current = segment;
+    if (search.trim().length === 1) return undefined;
     const timer = window.setTimeout(() => {
       loadModels(1);
-    }, isInitialCatalogLoad ? 0 : 200);
+    }, isInitialCatalogLoad ? 0 : 150);
     return () => window.clearTimeout(timer);
-  }, [loadModels, segment]);
+  }, [loadModels, search, segment]);
+
+  useEffect(() => {
+    const q = search.trim();
+    suggestionAbortRef.current?.abort();
+    if (q.length < 2 || imageSearchMeta) {
+      setSuggestions([]);
+      return undefined;
+    }
+    const controller = new AbortController();
+    suggestionAbortRef.current = controller;
+    const timer = window.setTimeout(() => {
+      const recent = marketplaceRecentSearches(assetType)
+        .filter((value) => value.toLowerCase().includes(q.toLowerCase()))
+        .slice(0, 3)
+        .map((value) => ({ type: "recent_query", value, label: value, assetType }));
+      api(`/api/marketplace/search/suggestions?assetType=${assetType}&q=${encodeURIComponent(q)}&limit=8`, {
+        signal: controller.signal,
+      })
+        .then((data) => {
+          const combined = [...recent, ...(data.suggestions || [])]
+            .filter((item, index, items) => items.findIndex((entry) => entry.value.toLowerCase() === item.value.toLowerCase()) === index)
+            .slice(0, 8);
+          setSuggestions(combined);
+        })
+        .catch((err) => {
+          if (err.name !== "AbortError") setSuggestions([]);
+        });
+    }, 150);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [assetType, imageSearchMeta, search]);
 
   const activeFilterCount = useMemo(
     () => Object.values(activeFilters).reduce((total, values) => total + (values?.length || 0), 0),
@@ -1328,9 +1491,17 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
+                onFocus={() => setSuggestionsOpen(true)}
+                onBlur={() => window.setTimeout(() => setSuggestionsOpen(false), 120)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    rememberMarketplaceSearch(assetType, search);
+                    setSuggestionsOpen(false);
+                  }
+                }}
                 placeholder={textFor(language, `Tìm kiếm ${noun}...`, `Search ${noun}...`)}
               />
-              <button
+              {IMAGE_SEARCH_ENABLED && <button
                 type="button"
                 className="marketImageSearchButton"
                 disabled={imageSearching}
@@ -1342,7 +1513,23 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
                 title={language === "vi" ? "Tìm bằng hình ảnh" : "Search by image"}
               >
                 <ImagePlus size={17} />
-              </button>
+              </button>}
+              {suggestionsOpen && suggestions.length > 0 && (
+                <div className="marketSearchSuggestions" role="listbox">
+                  {suggestions.map((suggestion) => (
+                    <button
+                      type="button"
+                      role="option"
+                      key={`${suggestion.type}:${suggestion.value}:${suggestion.slug}`}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => applySearchSuggestion(suggestion)}
+                    >
+                      <Search size={14} />
+                      <span>{suggestion.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </label>
             <div className="marketResultControls">
               <div className="marketAccessToggle" role="group" aria-label={textFor(language, "Lọc quyền tải", "Access filter")}>
@@ -1406,19 +1593,48 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
         {error && <p className="error">{error}</p>}
         {loading && <p className="success marketLoadingStatus"><Loader2 size={15} className="spin" />{language === "vi" ? "Đang tải..." : "Loading..."}</p>}
         <div className="marketGrid">
-            {models.map((model) => (
+            {models.map((model, index) => (
               <ModelCard
                 key={model._id}
                 model={model}
                 onNavigate={onNavigate}
                 language={language}
                 quickPreview
+                queryId={searchMeta.queryId}
+                position={(pagination.page - 1) * 60 + index + 1}
+                behaviorSource="search"
               />
             ))}
         </div>
         {!loading && !models.length && (
           <section className="panel emptyState">
             <p>{textFor(language, `Chưa có ${noun} phù hợp.`, `No matching ${noun} yet.`)}</p>
+            {searchMeta.correctedQuery && (
+              <button type="button" className="smallButton" onClick={() => setSearch(searchMeta.correctedQuery)}>
+                {textFor(language, `Tìm “${searchMeta.correctedQuery}”`, `Search “${searchMeta.correctedQuery}”`)}
+              </button>
+            )}
+            {suggestions.length > 0 && (
+              <div className="marketEmptySuggestions" aria-label={textFor(language, "Gợi ý liên quan", "Related suggestions")}>
+                {suggestions.slice(0, 3).map((suggestion) => (
+                  <button
+                    type="button"
+                    className="smallButton"
+                    key={`empty:${suggestion.type}:${suggestion.value}:${suggestion.slug}`}
+                    onClick={() => applySearchSuggestion(suggestion)}
+                  >
+                    <Search size={14} />
+                    {suggestion.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {totalFilterCount > 0 && (
+              <button type="button" className="smallButton" onClick={clearAllFilters}>
+                <X size={15} />
+                {textFor(language, "Xóa bộ lọc", "Clear filters")}
+              </button>
+            )}
           </section>
         )}
         <Pagination
@@ -1649,6 +1865,8 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [reported, setReported] = useState(false);
   const [reportError, setReportError] = useState("");
+  const [shouldLoadRecommendations, setShouldLoadRecommendations] = useState(false);
+  const recommendationSectionRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -1660,7 +1878,8 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
     setExpandedRecommendations([]);
     setRecommendationInfo({ total: 0, hasMore: false });
     setRecommendationsExpanded(false);
-    setInitialRecommendationsLoading(true);
+    setInitialRecommendationsLoading(false);
+    setShouldLoadRecommendations(false);
     setRecommendationsError("");
     setDownloadProtection({ enabled: false, siteKey: "", action: "" });
     setTurnstileToken("");
@@ -1686,31 +1905,73 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
         if (active) setFilterOptions(EMPTY_FILTERS);
       });
 
-    detailRequest
-      .then(() => {
-        if (!active) return null;
-        return api(`/api/marketplace/${segment}/${encodeURIComponent(slug)}/recommendations?offset=0&limit=6`);
-      })
+    return () => {
+      active = false;
+    };
+  }, [slug, assetType, segment]);
+
+  useEffect(() => {
+    const target = recommendationSectionRef.current;
+    if (!target || shouldLoadRecommendations) return undefined;
+    if (typeof IntersectionObserver !== "function") {
+      setShouldLoadRecommendations(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      setShouldLoadRecommendations(true);
+      observer.disconnect();
+    }, { rootMargin: "700px 0px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [model?._id, slug, shouldLoadRecommendations]);
+
+  useEffect(() => {
+    if (!model?._id || !shouldLoadRecommendations) return undefined;
+    const controller = new AbortController();
+    let active = true;
+    setInitialRecommendationsLoading(true);
+    setRecommendationsError("");
+    api(`/api/marketplace/${segment}/${encodeURIComponent(model.slug || slug)}/recommendations?offset=0&limit=6`, {
+      signal: controller.signal,
+    })
       .then((data) => {
-        if (!active || !data) return;
+        if (!active) return;
         const items = data.assets || data.scenes || data.models || [];
         setRecommendedModels(items);
         setRecommendationInfo({
           total: data.pagination?.total ?? items.length,
           hasMore: Boolean(data.pagination?.hasMore),
-          engine: data.discovery?.engine || "catalog_behavior_v2",
+          engine: data.discovery?.engine || "catalog_behavior_v3",
         });
       })
       .catch((err) => {
-        if (active) setRecommendationsError(err.message);
+        if (active && err.name !== "AbortError") setRecommendationsError(err.message);
       })
       .finally(() => {
         if (active) setInitialRecommendationsLoading(false);
       });
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [slug, assetType, segment]);
+  }, [model?._id, model?.slug, segment, shouldLoadRecommendations, slug]);
+
+  useEffect(() => {
+    if (!model?._id) return undefined;
+    const timer = window.setTimeout(() => {
+      api("/api/marketplace/behavior", {
+        method: "POST",
+        body: JSON.stringify({
+          assetId: model._id,
+          assetType,
+          eventType: "detail_view",
+          source: "detail",
+        }),
+      }).catch(() => {});
+    }, 1_000);
+    return () => window.clearTimeout(timer);
+  }, [assetType, model?._id]);
 
   useEffect(() => {
     let active = true;
@@ -2016,14 +2277,16 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
         />
       )}
 
-      <section className="marketRecommendations">
+      <section ref={recommendationSectionRef} className="marketRecommendations">
         <div className="marketSectionHeader">
           <div>
             <h2>{assetType === "scene" ? textFor(language, "Scene đề xuất", "Recommended scenes") : textFor(language, "Model đề xuất", "Recommended models")}</h2>
             <p>{textFor(language, `Các ${noun} có mức độ liên quan cao nhất.`, `The most relevant related ${catalogNoun(assetType, "en", true)}.`)}</p>
           </div>
         </div>
-        {initialRecommendationsLoading ? (
+        {!shouldLoadRecommendations ? (
+          <div className="marketRecommendationDeferred" aria-hidden="true" />
+        ) : initialRecommendationsLoading ? (
           <section className="panel emptyState">
             <Loader2 className="spin" size={18} />
             <p>{textFor(language, "Đang tải đề xuất...", "Loading recommendations...")}</p>
@@ -2038,6 +2301,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
                   onNavigate={onNavigate}
                   language={language}
                   quickPreview
+                  behaviorSource="detail"
                 />
               ))}
             </div>
@@ -2050,6 +2314,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
                     onNavigate={onNavigate}
                     language={language}
                     quickPreview
+                    behaviorSource="detail"
                   />
                 ))}
               </div>

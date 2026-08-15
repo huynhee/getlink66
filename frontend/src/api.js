@@ -4,6 +4,19 @@ let csrfToken = "";
 const publicGetCache = new Map();
 const PUBLIC_GET_CACHE_MAX_ENTRIES = 100;
 
+export function marketplaceSessionId() {
+  if (typeof window === "undefined") return "";
+  const storageKey = "3dipl.marketplace.session";
+  let value = window.localStorage.getItem(storageKey) || "";
+  if (!/^[A-Za-z0-9_-]{20,160}$/.test(value)) {
+    value = typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID().replace(/-/g, "")
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+    window.localStorage.setItem(storageKey, value);
+  }
+  return value;
+}
+
 export function buildApiUrl(path) {
   return `${API_URL}${path}`;
 }
@@ -54,6 +67,9 @@ export async function api(path, options = {}) {
   async function send() {
     const headers = {
       "Content-Type": "application/json",
+      ...(String(path || "").startsWith("/api/marketplace")
+        ? { "x-marketplace-session-id": marketplaceSessionId() }
+        : {}),
       ...(options.headers || {})
     };
 

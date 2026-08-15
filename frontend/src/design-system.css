@@ -1187,6 +1187,11 @@ input[type="radio"] {
   box-shadow: none;
 }
 
+.marketGrid .marketModelCard:nth-child(n + 7) {
+  content-visibility: auto;
+  contain-intrinsic-size: 260px 300px;
+}
+
 .marketModelThumb {
   overflow: hidden;
   aspect-ratio: 1 / 1;
@@ -2941,6 +2946,10 @@ label,
   min-height: 42px;
 }
 
+.marketRecommendationDeferred {
+  min-height: 1px;
+}
+
 .marketResultSummary {
   min-height: 42px;
   justify-content: flex-start;
@@ -2993,6 +3002,58 @@ label,
   align-self: center;
   align-items: stretch;
   gap: 8px;
+}
+
+.marketResultSearch {
+  position: relative;
+  grid-template-columns: 18px minmax(0, 1fr);
+}
+
+.marketResultSearch:has(.marketImageSearchButton) {
+  grid-template-columns: 18px minmax(0, 1fr) 42px;
+}
+
+.marketSearchSuggestions {
+  position: absolute;
+  z-index: 120;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-lg);
+}
+
+.marketEmptySuggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.marketSearchSuggestions button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 9px;
+  color: var(--text-primary);
+  text-align: left;
+  border: 0;
+  background: transparent;
+}
+
+.marketSearchSuggestions button:hover,
+.marketSearchSuggestions button:focus-visible {
+  color: var(--brand-primary);
+  background: var(--surface-hover);
 }
 
 .marketResultControls .marketAccessToggle {

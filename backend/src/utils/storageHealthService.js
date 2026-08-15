@@ -4,6 +4,7 @@ import BackupRun from "../models/BackupRun.js";
 import HistoryArchiveManifest from "../models/HistoryArchiveManifest.js";
 import MarketplaceDriveChange from "../models/MarketplaceDriveChange.js";
 import MarketplaceDriveSyncState from "../models/MarketplaceDriveSyncState.js";
+import MarketplaceModel from "../models/MarketplaceModel.js";
 import {
   coreDbConnection,
   databaseHealth,
@@ -14,6 +15,9 @@ import {
   getGoogleDriveFileMetadata,
 } from "./storageProvider.js";
 import { marketplaceCoverCacheStats } from "./marketplaceCoverCache.js";
+import { marketplaceMeilisearchHealth } from "./marketplaceMeilisearch.js";
+import { marketplaceRecommendationCacheStats } from "./marketplaceRecommendationV3.js";
+import { marketplaceSearchAnalyticsSnapshot } from "./marketplaceSearchAnalytics.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -226,6 +230,20 @@ export function evaluateStorageAlerts(snapshot, now = new Date()) {
       message: `Storage monitor queries failed: ${snapshot.workers.queryError}`,
     });
   }
+  if (snapshot.search?.configured && !snapshot.search?.healthy) {
+    alerts.push({
+      code: "MARKETPLACE_SEARCH_UNAVAILABLE",
+      severity: "warning",
+      message: `Meilisearch is unavailable; MongoDB fallback is active${snapshot.search.error ? `: ${snapshot.search.error}` : "."}`,
+    });
+  }
+  if (finiteNumber(snapshot.search?.backlog?.errors) > 0) {
+    alerts.push({
+      code: "MARKETPLACE_SEARCH_INDEX_ERRORS",
+      severity: "warning",
+      message: `${snapshot.search.backlog.errors} marketplace search documents failed to index.`,
+    });
+  }
   if (snapshot.workers?.lastDrivePollAt) {
     const ageMs = now - new Date(snapshot.workers.lastDrivePollAt);
     if (ageMs > 15 * 60 * 1000 && process.env.MARKETPLACE_DRIVE_CHANGES_ENABLED === "true") {
@@ -248,7 +266,24 @@ export async function buildStorageHealthSnapshot({ verifyDrive = true } = {}) {
       };
     }
   };
-  const [core, marketplace, disk, backups, drive, coverCache, pending, processing, failed, archiveErrors, states] = await Promise.all([
+  const [
+    core,
+    marketplace,
+    disk,
+    backups,
+    drive,
+    coverCache,
+    pending,
+    processing,
+    failed,
+    archiveErrors,
+    states,
+    search,
+    searchPending,
+    searchErrors,
+    recommendationCache,
+    searchAnalytics,
+  ] = await Promise.all([
     databaseSnapshot(coreDbConnection(), atlasLimit),
     databaseSnapshot(marketplaceDbConnection()),
     diskSnapshot(),
@@ -271,6 +306,18 @@ export async function buildStorageHealthSnapshot({ verifyDrive = true } = {}) {
       () => MarketplaceDriveSyncState.find().select("lastChangesPollAt status lastChangesError").lean(),
       { value: [] },
     ),
+    safe(() => marketplaceMeilisearchHealth(), { configured: false, healthy: false }),
+    safe(() => MarketplaceModel.countDocuments({ searchEngineStatus: { $in: ["pending", "disabled"] } }), { value: null }),
+    safe(() => MarketplaceModel.countDocuments({ searchEngineStatus: "error" }), { value: null }),
+    safe(() => marketplaceRecommendationCacheStats(), { ready: 0, stale: 0, queued: 0, running: false }),
+    safe(() => marketplaceSearchAnalyticsSnapshot({ hours: 24 }), {
+      hours: 24,
+      requests: 0,
+      zeroResultRate: 0,
+      averageLatencyMs: 0,
+      clickThroughRate: 0,
+      downloads: 0,
+    }),
   ]);
   const countValue = (value) => (typeof value === "number" ? value : value?.value);
   const stateRows = Array.isArray(states) ? states : states.value || [];
@@ -294,6 +341,15 @@ export async function buildStorageHealthSnapshot({ verifyDrive = true } = {}) {
     backups,
     drive,
     coverCache,
+    search: {
+      ...search,
+      backlog: {
+        pending: countValue(searchPending),
+        errors: countValue(searchErrors),
+      },
+      recommendationCache,
+      analytics: searchAnalytics,
+    },
     workers: {
       drivePending: countValue(pending),
       driveProcessing: countValue(processing),

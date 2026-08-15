@@ -176,7 +176,7 @@ test("home recommendations personalize from downloads and keep asset types separ
     capture.response,
     (error) => { throw error; },
   );
-  assert.equal(capture.state.body.engine, "catalog_behavior_v2");
+  assert.equal(capture.state.body.engine, "catalog_behavior_v3");
   assert.equal(capture.state.body.mode, "personalized");
   assert.equal(capture.state.body.models[0]._id, preferred._id);
   assert.ok(capture.state.body.models.every((item) => item.assetType === "model"));

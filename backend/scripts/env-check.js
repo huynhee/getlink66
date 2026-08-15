@@ -161,6 +161,36 @@ if (has("GOOGLE_CLIENT_ID") || has("GOOGLE_CLIENT_SECRET")) {
 if (!has("MARKETPLACE_IMAGE_SEARCH_URL")) warnings.push("Image search provider is disabled");
 if (!has("MARKETPLACE_DISCOVERY_URL")) warnings.push("Semantic discovery uses the MongoDB fallback");
 
+const marketplaceSearchEngine = String(process.env.MARKETPLACE_SEARCH_ENGINE || "mongo").trim().toLowerCase();
+if (marketplaceSearchEngine === "meilisearch") {
+  requireValue("MEILISEARCH_URL");
+  requireValue("MEILI_MASTER_KEY");
+  try {
+    const url = new URL(String(process.env.MEILISEARCH_URL || ""));
+    if (!["http:", "https:"].includes(url.protocol)) throw new Error("unsupported protocol");
+    pass("Meilisearch URL");
+  } catch {
+    errors.push("MEILISEARCH_URL must be a valid HTTP(S) URL");
+  }
+  if (String(process.env.MEILI_MASTER_KEY || "").length < 16) {
+    errors.push("MEILI_MASTER_KEY must contain at least 16 characters");
+  }
+  const rolloutPercent = Number(process.env.MARKETPLACE_MEILI_ROLLOUT_PERCENT ?? 100);
+  if (!Number.isFinite(rolloutPercent) || rolloutPercent < 0 || rolloutPercent > 100) {
+    errors.push("MARKETPLACE_MEILI_ROLLOUT_PERCENT must be between 0 and 100");
+  }
+  if (rolloutPercent === 100 && process.env.MARKETPLACE_MEILI_SHADOW_ENABLED === "true") {
+    warnings.push("Meilisearch shadow mode has no effect at 100% rollout");
+  }
+  if (process.env.MARKETPLACE_SEARCH_SEMANTIC_ENABLED !== "true") {
+    warnings.push("Meilisearch semantic search is disabled; lexical typo search remains active");
+  }
+} else if (marketplaceSearchEngine === "mongo") {
+  warnings.push("Marketplace search uses the bounded MongoDB fallback");
+} else {
+  errors.push("MARKETPLACE_SEARCH_ENGINE must be mongo or meilisearch");
+}
+
 if (process.env.MARKETPLACE_COVER_CACHE_ENABLED === "true") {
   requireValue("MARKETPLACE_COVER_CACHE_DIR");
   requireValue("MARKETPLACE_COVER_PUBLIC_BASE_URL");

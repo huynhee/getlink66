@@ -107,7 +107,10 @@ import {
   adminListMarketplaceReports,
   adminUpdateMarketplaceReport,
 } from "../controllers/marketplaceReportController.js";
-import { adminStorageHealth } from "../controllers/storageController.js";
+import {
+  adminRebuildMarketplaceSearch,
+  adminStorageHealth,
+} from "../controllers/storageController.js";
 
 const router = Router();
 const adminWriteLimit = createRateLimit({ keyPrefix: "admin-write", windowMs: 60_000, max: 30, keyGenerator: (req) => req.user?._id || req.ip });
@@ -122,6 +125,7 @@ function sceneAdmin(req, _res, next) {
 router.use(requireAuth, requireNotBanned, adminOnly);
 router.get("/dashboard", adminDashboard);
 router.get("/storage-health", adminStorageHealth);
+router.post("/marketplace/search/rebuild", adminWriteLimit, auditAdmin("REBUILD_MARKETPLACE_SEARCH"), adminRebuildMarketplaceSearch);
 router.get("/overview", getOverview);
 router.get("/users", listUsers);
 router.get("/users/:id/profile", adminUserProfile);

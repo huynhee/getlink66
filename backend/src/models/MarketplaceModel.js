@@ -66,6 +66,14 @@ const marketplaceModelSchema = new mongoose.Schema(
     },
     searchIndexedAt: Date,
     searchError: { type: String, default: "" },
+    searchEngineStatus: {
+      type: String,
+      enum: ["pending", "indexed", "error", "disabled"],
+      default: "pending",
+      index: true,
+    },
+    searchEngineIndexedAt: Date,
+    searchEngineError: { type: String, default: "" },
     slug: { type: String, required: true, trim: true, lowercase: true },
     // Legacy ObjectIds stay readable during migration. New writes use stable
     // Atlas taxonomy keys below so no cross-database populate is required.
@@ -144,6 +152,14 @@ const marketplaceModelSchema = new mongoose.Schema(
     deletionError: { type: String, default: "" },
     restoreDesiredPublished: Boolean,
     downloadCount: { type: Number, default: 0, min: 0 },
+    popularity24h: { type: Number, default: 0, min: 0 },
+    popularity24hUpdatedAt: { type: Date },
+    behaviorMetrics: {
+      clicks: { type: Number, default: 0, min: 0 },
+      detailViews: { type: Number, default: 0, min: 0 },
+      downloads: { type: Number, default: 0, min: 0 },
+      updatedAt: { type: Date },
+    },
     discoveryStatus: {
       type: String,
       enum: ["pending", "indexed", "error"],
@@ -176,6 +192,8 @@ marketplaceModelSchema.pre("validate", function normalizeTitleForSorting() {
   if (!this.isNew && searchFields.some((field) => this.isModified(field))) {
     this.searchStatus = "pending";
     this.searchError = "";
+    this.searchEngineStatus = "pending";
+    this.searchEngineError = "";
   }
 });
 
@@ -195,6 +213,7 @@ marketplaceModelSchema.index(
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, sourceAssetIdSort: -1, _id: -1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, downloadCount: -1, createdAt: -1 });
+marketplaceModelSchema.index({ popularity24h: 1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, titleSort: 1, _id: 1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, accessType: -1, createdAt: -1, _id: -1 });
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, accessType: -1, createdAt: 1, _id: 1 });
@@ -214,6 +233,7 @@ marketplaceModelSchema.index({ assetType: 1, materials: 1, isPublished: 1 });
 marketplaceModelSchema.index({ assetType: 1, syncStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, discoveryStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, searchStatus: 1, updatedAt: 1 });
+marketplaceModelSchema.index({ assetType: 1, searchEngineStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ deletionStatus: 1, purgeAt: 1 });
 marketplaceModelSchema.index({ "coverCache.status": 1, "coverCache.nextRetryAt": 1, "coverCache.lockedAt": 1 });
 

@@ -4,6 +4,11 @@ import { isMemoryDb } from "../config/memoryStore.js";
 import { marketplaceAssetTypeFilter, normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { marketplaceCategoryLabelVi } from "../data/marketplaceCategoryLabelsVi.js";
 import { marketplaceCategorySnapshot, marketplaceFilterSnapshot } from "./marketplaceTaxonomy.js";
+import {
+  marketplaceMeilisearchConfigured,
+  syncMarketplaceSearchDocuments,
+} from "./marketplaceMeilisearch.js";
+import { enqueueMarketplaceRecommendationRefresh } from "./marketplaceRecommendationV3.js";
 
 export const MARKETPLACE_SEARCH_DOCUMENT_VERSION = 3;
 
@@ -71,12 +76,17 @@ function categoryParentKey(category, categories) {
   return String(categories.find((item) => String(item._id) === String(category.parentId))?.sourceCategoryId || "");
 }
 
-export async function buildMarketplaceSearchDocument(model = {}) {
-  const assetType = normalizeAssetType(model.assetType);
+async function marketplaceSearchTaxonomyContext(assetType) {
   const [categories, filters] = await Promise.all([
     marketplaceCategorySnapshot(assetType, { includeInactive: true }),
     marketplaceFilterSnapshot(assetType, { includeInactive: true }),
   ]);
+  return { categories, filters };
+}
+
+export async function buildMarketplaceSearchDocument(model = {}, suppliedContext = null) {
+  const assetType = normalizeAssetType(model.assetType);
+  const { categories, filters } = suppliedContext || await marketplaceSearchTaxonomyContext(assetType);
   const categoryByKey = new Map(categories.map((item) => [String(item.sourceCategoryId), item]));
   const titleTerms = new Set();
   const taxonomyTerms = new Set();
@@ -134,6 +144,17 @@ export async function buildMarketplaceSearchDocument(model = {}) {
     searchTokens,
     searchDocumentHash,
   };
+}
+
+export async function buildMarketplaceSearchDocuments(models = []) {
+  const assetTypes = [...new Set(models.map((model) => normalizeAssetType(model.assetType)))];
+  const contexts = new Map(await Promise.all(assetTypes.map(async (assetType) => (
+    [assetType, await marketplaceSearchTaxonomyContext(assetType)]
+  ))));
+  return Promise.all(models.map((model) => buildMarketplaceSearchDocument(
+    model,
+    contexts.get(normalizeAssetType(model.assetType)),
+  )));
 }
 
 export function marketplaceSearchQuery(value = "") {
@@ -271,6 +292,30 @@ export async function indexMarketplaceSearchDocument(modelOrId) {
         searchError: "",
       },
     });
+    if (marketplaceMeilisearchConfigured()) {
+      try {
+        await syncMarketplaceSearchDocuments([{ model: { ...model, ...document }, searchDocument: document }]);
+        await MarketplaceModel.findByIdAndUpdate(model._id, {
+          $set: {
+            searchEngineStatus: "indexed",
+            searchEngineIndexedAt: new Date(),
+            searchEngineError: "",
+          },
+        });
+      } catch (error) {
+        await MarketplaceModel.findByIdAndUpdate(model._id, {
+          $set: {
+            searchEngineStatus: "error",
+            searchEngineError: String(error?.message || "Meilisearch indexing failed").slice(0, 500),
+          },
+        });
+      }
+    } else {
+      await MarketplaceModel.findByIdAndUpdate(model._id, {
+        $set: { searchEngineStatus: "disabled", searchEngineError: "" },
+      });
+    }
+    enqueueMarketplaceRecommendationRefresh(model._id);
     return document;
   } catch (error) {
     await MarketplaceModel.findByIdAndUpdate(model._id, {
@@ -313,26 +358,80 @@ export async function markMarketplaceSearchPendingForTaxonomy({ assetType, type,
 
 export async function runMarketplaceSearchIndexBatch(limit = 100) {
   const safeLimit = Math.min(500, Math.max(1, Number(limit || 100)));
+  const pendingConditions = [
+    { searchStatus: { $in: ["pending", "error"] } },
+    { searchStatus: { $exists: false } },
+    { searchTokens: { $exists: false } },
+    { searchVersion: { $ne: MARKETPLACE_SEARCH_DOCUMENT_VERSION } },
+  ];
+  if (marketplaceMeilisearchConfigured()) {
+    pendingConditions.push(
+      { searchEngineStatus: { $in: ["pending", "error", "disabled"] } },
+      { searchEngineStatus: { $exists: false } },
+    );
+  }
   const models = await MarketplaceModel.find({
-    $or: [
-      { searchStatus: { $in: ["pending", "error"] } },
-      { searchStatus: { $exists: false } },
-      { searchTokens: { $exists: false } },
-      { searchVersion: { $ne: MARKETPLACE_SEARCH_DOCUMENT_VERSION } },
-    ],
+    $or: pendingConditions,
   })
     .sort({ updatedAt: 1 })
     .limit(safeLimit)
     .lean();
-  let indexed = 0;
+  const records = [];
   let failed = 0;
   for (const model of models) {
     try {
-      await indexMarketplaceSearchDocument(model);
-      indexed += 1;
-    } catch {
+      const searchDocument = await buildMarketplaceSearchDocument(model);
+      records.push({ model: { ...model, ...searchDocument }, searchDocument });
+      await MarketplaceModel.findByIdAndUpdate(model._id, {
+        $set: {
+          ...searchDocument,
+          searchStatus: "indexed",
+          searchIndexedAt: new Date(),
+          searchError: "",
+        },
+      });
+    } catch (error) {
       failed += 1;
+      await MarketplaceModel.findByIdAndUpdate(model._id, {
+        $set: {
+          searchStatus: "error",
+          searchError: String(error?.message || "Search indexing failed").slice(0, 500),
+          searchEngineStatus: marketplaceMeilisearchConfigured() ? "error" : "disabled",
+        },
+      });
     }
   }
-  return { processed: models.length, indexed, failed };
+  if (records.length && marketplaceMeilisearchConfigured()) {
+    try {
+      await syncMarketplaceSearchDocuments(records);
+      await MarketplaceModel.updateMany(
+        { _id: { $in: records.map((item) => item.model._id) } },
+        {
+          $set: {
+            searchEngineStatus: "indexed",
+            searchEngineIndexedAt: new Date(),
+            searchEngineError: "",
+          },
+        },
+      );
+    } catch (error) {
+      failed += records.length;
+      await MarketplaceModel.updateMany(
+        { _id: { $in: records.map((item) => item.model._id) } },
+        {
+          $set: {
+            searchEngineStatus: "error",
+            searchEngineError: String(error?.message || "Meilisearch indexing failed").slice(0, 500),
+          },
+        },
+      );
+    }
+  } else if (records.length) {
+    await MarketplaceModel.updateMany(
+      { _id: { $in: records.map((item) => item.model._id) } },
+      { $set: { searchEngineStatus: "disabled", searchEngineError: "" } },
+    );
+  }
+  records.forEach((item) => enqueueMarketplaceRecommendationRefresh(item.model._id));
+  return { processed: models.length, indexed: records.length, failed };
 }

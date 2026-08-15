@@ -128,6 +128,25 @@ export function productionReadinessIssues(env = process.env) {
   if (!isTrue(env, "MONGO_MARKETPLACE_TRANSACTIONS_REQUIRED")) {
     errors.push("MONGO_MARKETPLACE_TRANSACTIONS_REQUIRED must be true in production");
   }
+  const searchEngine = text(env, "MARKETPLACE_SEARCH_ENGINE").toLowerCase() || "mongo";
+  if (searchEngine === "meilisearch") {
+    const searchUrl = text(env, "MEILISEARCH_URL");
+    const searchKey = text(env, "MEILI_MASTER_KEY");
+    if (!/^https?:\/\//i.test(searchUrl)) {
+      errors.push("MEILISEARCH_URL must be an HTTP(S) URL");
+    }
+    if (searchKey.length < 16) {
+      errors.push("MEILI_MASTER_KEY must contain at least 16 characters");
+    }
+    const rolloutPercent = Number(text(env, "MARKETPLACE_MEILI_ROLLOUT_PERCENT") || 100);
+    if (!Number.isFinite(rolloutPercent) || rolloutPercent < 0 || rolloutPercent > 100) {
+      errors.push("MARKETPLACE_MEILI_ROLLOUT_PERCENT must be between 0 and 100");
+    }
+  } else if (searchEngine !== "mongo") {
+    errors.push("MARKETPLACE_SEARCH_ENGINE must be mongo or meilisearch");
+  } else {
+    warnings.push("Marketplace Search V3 is not enabled; bounded MongoDB fallback is active");
+  }
   if (!text(env, "DATABASE_BACKUP_DRIVE_FOLDER_ID")) {
     errors.push("DATABASE_BACKUP_DRIVE_FOLDER_ID is required in production");
   }

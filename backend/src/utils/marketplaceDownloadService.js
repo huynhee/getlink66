@@ -13,6 +13,7 @@ import { marketplaceDownloadCost, normalizeAssetType } from "../data/marketplace
 import { isMemoryDb } from "../config/memoryStore.js";
 import { marketplaceDbConnection } from "../config/db.js";
 import { invalidateMarketplaceHomeRecommendations } from "./marketplaceRecommendationService.js";
+import { recordMarketplaceDownloadBehavior } from "./marketplaceBehaviorService.js";
 import { downloadTokenSecret } from "../config/secrets.js";
 
 const SESSION_TTL_MS = 15 * 60 * 1000;
@@ -348,7 +349,14 @@ async function markRedeemedWithSession(session, databaseSession = null) {
   );
   await MarketplaceModel.findByIdAndUpdate(
     session.modelId,
-    { $inc: { downloadCount: 1 } },
+    {
+      $inc: { downloadCount: 1, popularity24h: 1 },
+      $set: {
+        popularity24hUpdatedAt: now,
+        searchEngineStatus: "pending",
+        searchEngineError: "",
+      },
+    },
     databaseSession ? { session: databaseSession } : undefined,
   );
   return { counted: true, session: claimed };
@@ -362,7 +370,10 @@ export async function markMarketplaceDownloadRedeemed(session) {
   }
   if (isMemoryDb()) {
     const result = await markRedeemedWithSession(session);
-    if (result.counted) invalidateMarketplaceHomeRecommendations(session.userId);
+    if (result.counted) {
+      invalidateMarketplaceHomeRecommendations(session.userId);
+      recordMarketplaceDownloadBehavior(session).catch(() => {});
+    }
     return result;
   }
   const databaseSession = await marketplaceDbConnection().startSession();
@@ -371,7 +382,10 @@ export async function markMarketplaceDownloadRedeemed(session) {
     await databaseSession.withTransaction(async () => {
       result = await markRedeemedWithSession(session, databaseSession);
     });
-    if (result?.counted) invalidateMarketplaceHomeRecommendations(session.userId);
+    if (result?.counted) {
+      invalidateMarketplaceHomeRecommendations(session.userId);
+      recordMarketplaceDownloadBehavior(session).catch(() => {});
+    }
     return result;
   } finally {
     await databaseSession.endSession();

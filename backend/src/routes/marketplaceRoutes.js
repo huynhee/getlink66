@@ -8,6 +8,7 @@ import {
   listMarketplaceCategories,
   listMarketplaceFilters,
   listMarketplaceModels,
+  listMarketplaceSearchSuggestions,
   searchMarketplaceByImage,
   streamMarketplaceCover,
   streamMarketplacePreview,
@@ -20,6 +21,7 @@ import {
   createMarketplaceReport,
   getMarketplaceReportStatus,
 } from "../controllers/marketplaceReportController.js";
+import { createMarketplaceBehavior } from "../controllers/marketplaceBehaviorController.js";
 
 const router = Router();
 const downloadSessionLimit = createRateLimit({
@@ -38,6 +40,12 @@ const marketplaceReportLimit = createRateLimit({
   max: 10,
   keyGenerator: (req) => req.user?._id || req.ip,
 });
+const marketplaceBehaviorLimit = createRateLimit({
+  keyPrefix: "marketplace-behavior",
+  windowMs: 60_000,
+  max: 120,
+  keyGenerator: (req) => req.user?._id || req.ip,
+});
 
 function sceneCatalog(req, _res, next) {
   req.marketplaceAssetType = "scene";
@@ -47,12 +55,15 @@ function sceneCatalog(req, _res, next) {
 router.get("/marketplace/categories", listMarketplaceCategories);
 router.get("/marketplace/taxonomy/export", exportMarketplaceTaxonomy);
 router.get("/marketplace/recommendations/home", listMarketplaceHomeRecommendations);
+router.post("/marketplace/behavior", marketplaceBehaviorLimit, createMarketplaceBehavior);
 router.get("/marketplace/filters", listMarketplaceFilters);
 router.get("/marketplace/models", listMarketplaceModels);
+router.get("/marketplace/search/suggestions", listMarketplaceSearchSuggestions);
 router.post("/marketplace/image-search", imageSearchLimit, searchMarketplaceByImage);
 router.get("/marketplace/scenes/categories", sceneCatalog, listMarketplaceCategories);
 router.get("/marketplace/scenes/filters", sceneCatalog, listMarketplaceFilters);
 router.get("/marketplace/scenes", sceneCatalog, listMarketplaceModels);
+router.get("/marketplace/scenes/search/suggestions", sceneCatalog, listMarketplaceSearchSuggestions);
 router.post("/marketplace/scenes/image-search", sceneCatalog, imageSearchLimit, searchMarketplaceByImage);
 router.get("/marketplace/scenes/:id/cover", sceneCatalog, streamMarketplaceCover);
 router.get("/marketplace/scenes/:id/preview/:index", sceneCatalog, streamMarketplacePreview);

@@ -1,5 +1,6 @@
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import ModelDownload from "../models/ModelDownload.js";
+import MarketplaceInterestProfile from "../models/MarketplaceInterestProfile.js";
 import { marketplaceAssetTypeFilter } from "../data/marketplaceCatalogs.js";
 import { hydrateMarketplaceCategoryRefs } from "./marketplaceTaxonomy.js";
 import { normalizeMarketplaceSearchText } from "./marketplaceSearch.js";
@@ -139,18 +140,26 @@ function diversify(scored, limit) {
   return selected.map((item) => item.model);
 }
 
-function rankHomeCandidates(candidates, profile, hasHistory, limit) {
+function rankHomeCandidates(candidates, profile, hasHistory, limit, dailyRanking = []) {
   const maxDownloads = Math.max(...candidates.map((model) => Math.log2(Number(model.downloadCount || 0) + 1)), 1);
+  const dailyRank = new Map(dailyRanking.map((model, index) => [String(model._id), 1 - index / Math.max(1, dailyRanking.length)]));
   const preferenceScores = candidates.map((model) => profileScore(profile, model));
   const maxPreference = Math.max(...preferenceScores, 1);
   const scored = candidates.map((model, index) => {
     const preference = preferenceScores[index] / maxPreference;
     const popularity = Math.log2(Number(model.downloadCount || 0) + 1) / maxDownloads;
+    const interactions = Number(model.behaviorMetrics?.clicks || 0)
+      + Number(model.behaviorMetrics?.detailViews || 0);
+    const conversions = Number(model.behaviorMetrics?.downloads || 0);
+    const quality = Math.min(1, (conversions + 1) / (interactions + 8));
     const freshness = recency(model);
     return {
       model,
       score: hasHistory
-        ? preference * 70 + popularity * 20 + freshness * 10
+        ? preference * 55
+          + Number(dailyRank.get(String(model._id)) || 0) * 25
+          + quality * 10
+          + freshness * 10
         : popularity * 65 + freshness * 35,
     };
   }).sort((left, right) => right.score - left.score || String(left.model._id).localeCompare(String(right.model._id)));
@@ -170,7 +179,7 @@ async function candidatesFor(assetType, excludedIds) {
     .sort(assetType === "model"
       ? { sourceAssetIdSort: -1, createdAt: -1, _id: -1 }
       : { downloadCount: -1, createdAt: -1 })
-    .limit(720)
+    .limit(240)
     .lean();
   await hydrateMarketplaceCategoryRefs(models);
   return models;
@@ -179,8 +188,12 @@ async function candidatesFor(assetType, excludedIds) {
 function latestSourceIdModels(candidates, limit) {
   return [...candidates]
     .sort((left, right) => (
-      Number(right.sourceAssetIdSort || marketplaceSourceIdNumber(right.source?.assetId || right.metadataSourceModelId))
-      - Number(left.sourceAssetIdSort || marketplaceSourceIdNumber(left.source?.assetId || left.metadataSourceModelId))
+      Number(right.sourceAssetIdSort || marketplaceSourceIdNumber(
+        right.source?.assetId || right.metadataSourceModelId || right.source?.modelId,
+      ))
+      - Number(left.sourceAssetIdSort || marketplaceSourceIdNumber(
+        left.source?.assetId || left.metadataSourceModelId || left.source?.modelId,
+      ))
       || new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()
       || String(right._id).localeCompare(String(left._id))
     ))
@@ -261,9 +274,23 @@ function mergeHomeModels(popular, latest, limit) {
   }).slice(0, limit);
 }
 
-export async function marketplaceHomeRecommendations({ userId = null, limit = 6 } = {}) {
+function mergeBehaviorProfile(profile, storedProfile) {
+  for (const [key, amount] of Object.entries(storedProfile?.weights || {})) {
+    const [facet, ...valueParts] = String(key).split(":");
+    const value = valueParts.join(":");
+    if (!profile[facet] || !value) continue;
+    increment(profile[facet], value, Number(amount || 0));
+  }
+  return profile;
+}
+
+function profileHasSignals(profile) {
+  return Object.values(profile).some((weights) => weights instanceof Map && weights.size > 0);
+}
+
+export async function marketplaceHomeRecommendations({ userId = null, actorKey = "", limit = 6 } = {}) {
   const safeLimit = Math.min(12, Math.max(1, Number(limit || 6)));
-  const key = cacheKey(userId);
+  const key = cacheKey(userId || actorKey);
   const cached = cache.get(key);
   if (cached?.expiresAt > Date.now() && cached.limit >= safeLimit) {
     return {
@@ -284,12 +311,19 @@ export async function marketplaceHomeRecommendations({ userId = null, limit = 6 
       .limit(HISTORY_LIMIT)
       .lean();
   }
-  const downloadedIds = new Set(downloads.map((item) => String(item.modelId?._id || item.modelId)).filter(Boolean));
+  const storedProfile = actorKey
+    ? await MarketplaceInterestProfile.findOne({ actorKey }).lean()
+    : null;
+  const downloadedIds = new Set([
+    ...downloads.map((item) => String(item.modelId?._id || item.modelId)).filter(Boolean),
+    ...(storedProfile?.recentAssetIds || []).map(String),
+  ]);
   const historyModels = downloadedIds.size
     ? await MarketplaceModel.find({ _id: { $in: [...downloadedIds] } }).lean()
     : [];
-  const profile = preferenceProfile(historyModels, downloads);
-  const hasHistory = historyModels.length > 0;
+  const profile = mergeBehaviorProfile(preferenceProfile(historyModels, downloads), storedProfile);
+  const hasHistory = historyModels.length > 0 || Number(storedProfile?.eventCount || 0) > 0;
+  const hasPreference = hasHistory && profileHasSignals(profile);
   const noModelExclusions = new Set();
   const [modelCandidates, sceneCandidates, popularModels] = await Promise.all([
     candidatesFor("model", noModelExclusions),
@@ -297,14 +331,16 @@ export async function marketplaceHomeRecommendations({ userId = null, limit = 6 
     popularModelsToday(noModelExclusions, safeLimit),
   ]);
   const value = {
-    engine: "catalog_behavior_v2",
-    mode: hasHistory ? "personalized" : "trending",
-    models: mergeHomeModels(
-      popularModels,
-      latestSourceIdModels(modelCandidates, safeLimit),
-      safeLimit,
-    ),
-    scenes: rankHomeCandidates(sceneCandidates, profile, hasHistory, safeLimit),
+    engine: "catalog_behavior_v3",
+    mode: hasPreference ? "personalized" : "trending",
+    models: hasPreference
+      ? rankHomeCandidates(modelCandidates, profile, true, safeLimit, popularModels)
+      : mergeHomeModels(
+        popularModels,
+        latestSourceIdModels(modelCandidates, safeLimit),
+        safeLimit,
+      ),
+    scenes: rankHomeCandidates(sceneCandidates, profile, hasPreference, safeLimit),
   };
   cache.delete(key);
   cache.set(key, { value, limit: safeLimit, expiresAt: Date.now() + CACHE_TTL_MS });

@@ -23,6 +23,23 @@ services:
       retries: 12
       start_period: 20s
 
+  meilisearch:
+    image: getmeili/meilisearch:v1.45.1
+    container_name: 3dipl-meilisearch
+    env_file:
+      - /etc/3dipl/production/backend.env
+    environment:
+      MEILI_ENV: production
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_MAX_INDEXING_MEMORY: 3Gb
+      MEILI_MAX_INDEXING_THREADS: 2
+    restart: unless-stopped
+    volumes:
+      - /var/lib/3dipl/meilisearch:/meili_data
+    networks:
+      - private
+    mem_limit: 4g
+
   backend:
     build:
       context: ./backend
@@ -41,6 +58,8 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+      meilisearch:
+        condition: service_started
     stop_grace_period: 45s
 
   frontend:
@@ -49,6 +68,7 @@ services:
       args:
         VITE_API_URL: ""
         VITE_3DSMAX_PLUGIN_DOWNLOAD_URL: ${PLUGIN_DOWNLOAD_URL:-}
+        VITE_MARKETPLACE_IMAGE_SEARCH_ENABLED: "false"
     image: 3dipl-frontend:${APP_VERSION:-local}
     container_name: 3dipl-frontend
     restart: unless-stopped

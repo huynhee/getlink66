@@ -172,6 +172,8 @@ const { startMarketplaceDriveSyncJob, stopMarketplaceDriveSyncJob } = await impo
 const { startMarketplaceDriveReconcileJob, stopMarketplaceDriveReconcileJob } = await import("./src/utils/marketplaceDriveReconcileJob.js");
 const { startMarketplaceDiscoverySyncJob, stopMarketplaceDiscoverySyncJob } = await import("./src/utils/marketplaceDiscoverySyncJob.js");
 const { startMarketplaceSearchIndexJob, stopMarketplaceSearchIndexJob } = await import("./src/utils/marketplaceSearchIndexJob.js");
+const { startMarketplaceRecommendationJob, stopMarketplaceRecommendationJob } = await import("./src/utils/marketplaceRecommendationV3.js");
+const { startMarketplacePopularityJob, stopMarketplacePopularityJob } = await import("./src/utils/marketplacePopularityJob.js");
 const { startMarketplaceQuotaGrantJob, stopMarketplaceQuotaGrantJob } = await import("./src/utils/marketplaceQuotaGrantJob.js");
 const { startMarketplaceDeletionJob, stopMarketplaceDeletionJob } = await import("./src/utils/marketplaceDeletionJob.js");
 const { startMarketplaceCoverCacheJob, stopMarketplaceCoverCacheJob } = await import("./src/utils/marketplaceCoverCacheJob.js");
@@ -204,6 +206,8 @@ startMarketplaceDriveSyncJob();
 startMarketplaceDriveReconcileJob();
 startMarketplaceDiscoverySyncJob();
 startMarketplaceSearchIndexJob();
+startMarketplaceRecommendationJob();
+startMarketplacePopularityJob();
 startMarketplaceQuotaGrantJob();
 startMarketplaceDeletionJob();
 startMarketplaceCoverCacheJob();
@@ -451,6 +455,8 @@ async function gracefulShutdown(signal) {
   stopMarketplaceDriveReconcileJob();
   stopMarketplaceDiscoverySyncJob();
   stopMarketplaceSearchIndexJob();
+  stopMarketplaceRecommendationJob();
+  stopMarketplacePopularityJob();
   stopMarketplaceQuotaGrantJob();
   stopMarketplaceDeletionJob();
   stopMarketplaceCoverCacheJob();

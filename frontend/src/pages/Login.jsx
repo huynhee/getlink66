@@ -611,7 +611,15 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
               </div>
             ) : featuredModels.length ? (
               <div className="homeModelGrid">
-                {featuredModels.map((model) => <ModelCard key={model._id} model={model} language={language} />)}
+                {featuredModels.map((model, index) => (
+                  <ModelCard
+                    key={model._id}
+                    model={model}
+                    language={language}
+                    behaviorSource="home"
+                    position={index + 1}
+                  />
+                ))}
               </div>
             ) : (
               <div className="homeModelsEmpty">
@@ -634,7 +642,15 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
               </div>
             ) : featuredScenes.length ? (
               <div className="homeModelGrid homeSceneGrid">
-                {featuredScenes.map((scene) => <ModelCard key={scene._id} model={scene} language={language} />)}
+                {featuredScenes.map((scene, index) => (
+                  <ModelCard
+                    key={scene._id}
+                    model={scene}
+                    language={language}
+                    behaviorSource="home"
+                    position={index + 1}
+                  />
+                ))}
               </div>
             ) : (
               <div className="homeModelsEmpty">

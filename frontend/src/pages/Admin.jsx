@@ -301,6 +301,7 @@ export default function Admin({ user, language = "vi" }) {
   const [overview, setOverview] = useState(null);
   const [dashboard, setDashboard] = useState(null);
   const [storageHealth, setStorageHealth] = useState(null);
+  const [searchRebuildBusy, setSearchRebuildBusy] = useState(false);
   const [users, setUsers] = useState([]);
   const [packages, setPackages] = useState([]);
   const [membershipPlans, setMembershipPlans] = useState([]);
@@ -417,6 +418,25 @@ export default function Admin({ user, language = "vi" }) {
     setUserPagination(pagination);
     if (pagination.page !== userPage) setUserPage(pagination.page);
   }, [userFilter, userPage, userSearch, userSort]);
+
+  async function rebuildMarketplaceSearch() {
+    if (!window.confirm(l(
+      "Xây lại Search V3 trong nền? Website vẫn dùng index hiện tại cho đến khi index mới sẵn sàng.",
+      "Rebuild Search V3 in the background? The current index remains active until the new index is ready.",
+    ))) return;
+    setSearchRebuildBusy(true);
+    try {
+      await api("/api/admin/marketplace/search/rebuild", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setMessage(l("Đã bắt đầu xây lại Search V3 trong nền.", "Search V3 rebuild started in the background."));
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSearchRebuildBusy(false);
+    }
+  }
 
   const loadGetlinks = React.useCallback(async () => {
     const query = new URLSearchParams({ page: String(getlinkPage) });
@@ -1722,6 +1742,15 @@ export default function Admin({ user, language = "vi" }) {
               <span className={storageHealth?.ok ? "status active" : "status error"}>
                 {storageHealth?.ok ? l("Ổn định", "Healthy") : l("Cần kiểm tra", "Needs attention")}
               </span>
+              <button
+                type="button"
+                className="smallButton"
+                disabled={searchRebuildBusy || !storageHealth?.search?.configured}
+                onClick={rebuildMarketplaceSearch}
+              >
+                <RotateCcw size={14} className={searchRebuildBusy ? "spin" : ""} />
+                {l("Xây lại Search", "Rebuild search")}
+              </button>
             </div>
             <div className="storageHealthGrid">
               <div className="systemHealthItem">
@@ -1779,6 +1808,48 @@ export default function Admin({ user, language = "vi" }) {
                     {Number(storageHealth?.coverCache?.counts?.queued || 0).toLocaleString()} {l("đang chờ", "queued")}
                     {" · "}
                     {Number(storageHealth?.coverCache?.counts?.error || 0).toLocaleString()} {l("lỗi", "errors")}
+                  </small>
+                </div>
+              </div>
+              <div className="systemHealthItem">
+                <Search size={16} />
+                <div>
+                  <span>Search V3</span>
+                  <strong>
+                    {storageHealth?.search?.healthy
+                      ? `Meilisearch · ${storageHealth.search.latencyMs || 0} ms`
+                      : l("Mongo fallback", "Mongo fallback")}
+                  </strong>
+                  <small>
+                    {Number(storageHealth?.search?.indexes?.models?.documents || 0).toLocaleString()} Model
+                    {" · "}
+                    {Number(storageHealth?.search?.indexes?.scenes?.documents || 0).toLocaleString()} Scene
+                    {" · "}
+                    {Number(storageHealth?.search?.backlog?.pending || 0).toLocaleString()} {l("đang chờ", "pending")}
+                    {" · "}
+                    {Number(storageHealth?.search?.backlog?.errors || 0).toLocaleString()} {l("lỗi", "errors")}
+                    {" · "}
+                    {Number(storageHealth?.search?.analytics?.averageLatencyMs || 0).toLocaleString()} ms API
+                    {" · "}
+                    {Number(storageHealth?.search?.analytics?.zeroResultRate || 0).toLocaleString()}% {l("rỗng", "zero")}
+                    {" · "}
+                    {Number(storageHealth?.search?.analytics?.clickThroughRate || 0).toLocaleString()}% CTR
+                    {" · "}
+                    {Number(storageHealth?.search?.analytics?.downloadPerSearchRate || 0).toLocaleString()}% {l("tải", "download")}
+                    {" · "}
+                    {Number(storageHealth?.search?.rolloutPercent ?? 0).toLocaleString()}% rollout
+                  </small>
+                </div>
+              </div>
+              <div className="systemHealthItem">
+                <Zap size={16} />
+                <div>
+                  <span>{l("Cache đề xuất", "Recommendation cache")}</span>
+                  <strong>{Number(storageHealth?.search?.recommendationCache?.ready || 0).toLocaleString()}</strong>
+                  <small>
+                    {Number(storageHealth?.search?.recommendationCache?.queued || 0).toLocaleString()} {l("đang chờ", "queued")}
+                    {" · "}
+                    {Number(storageHealth?.search?.recommendationCache?.stale || 0).toLocaleString()} {l("hết hạn", "stale")}
                   </small>
                 </div>
               </div>
