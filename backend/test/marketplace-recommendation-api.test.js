@@ -6,6 +6,7 @@ useMemoryDb();
 
 const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
 const { default: ModelDownload } = await import("../src/models/ModelDownload.js");
+const { default: MarketplaceInterestProfile } = await import("../src/models/MarketplaceInterestProfile.js");
 const { invalidateMarketplaceHomeRecommendations } = await import(
   "../src/utils/marketplaceRecommendationService.js"
 );
@@ -183,6 +184,53 @@ test("home recommendations personalize from downloads and keep asset types separ
   assert.ok(capture.state.body.models.every((item) => item.accessType === "member"));
   assert.ok(capture.state.body.scenes.every((item) => item.assetType === "scene"));
   assert.equal(capture.state.body.models.some((item) => item._id === downloaded._id), false);
+});
+
+test("viewed scenes remain eligible for home recommendations until downloaded", async () => {
+  await Promise.all([
+    MarketplaceModel.deleteMany({}),
+    ModelDownload.deleteMany({}),
+    MarketplaceInterestProfile.deleteMany({}),
+  ]);
+  const userId = "cccccccccccccccccccccccc";
+  const scenes = await Promise.all(Array.from({ length: 6 }, (_, index) => MarketplaceModel.create({
+    assetType: "scene",
+    source: { provider: "drive", modelId: `viewed-scene-${index}`, assetId: `viewed-scene-${index}` },
+    title: `Viewed scene ${index}`,
+    slug: `viewed-scene-${index}`,
+    categorySourceId: "living-room",
+    styles: ["modern"],
+    renderers: ["corona"],
+    renderer: "Corona",
+    accessType: "member",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+  })));
+  await MarketplaceInterestProfile.create({
+    actorKey: `user:${userId}`,
+    userId,
+    weights: { "category:living-room": 6 },
+    recentAssetIds: scenes.map((scene) => scene._id),
+    eventCount: 6,
+    lastEventAt: new Date(),
+    expiresAt: new Date(Date.now() + 86_400_000),
+  });
+  invalidateMarketplaceHomeRecommendations(userId);
+
+  const capture = responseCapture();
+  await listMarketplaceHomeRecommendations(
+    { query: { limit: "6" }, user: { _id: userId } },
+    capture.response,
+    (error) => { throw error; },
+  );
+
+  assert.equal(capture.state.statusCode, 200);
+  assert.equal(capture.state.body.scenes.length, 6);
+  assert.deepEqual(
+    new Set(capture.state.body.scenes.map((scene) => scene._id)),
+    new Set(scenes.map((scene) => scene._id)),
+  );
 });
 
 test("home model recommendations rank today's downloads before larger source IDs", async () => {

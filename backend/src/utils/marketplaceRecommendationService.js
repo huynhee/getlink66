@@ -314,12 +314,15 @@ export async function marketplaceHomeRecommendations({ userId = null, actorKey =
   const storedProfile = actorKey
     ? await MarketplaceInterestProfile.findOne({ actorKey }).lean()
     : null;
-  const downloadedIds = new Set([
-    ...downloads.map((item) => String(item.modelId?._id || item.modelId)).filter(Boolean),
+  const downloadedIds = new Set(
+    downloads.map((item) => String(item.modelId?._id || item.modelId)).filter(Boolean),
+  );
+  const historyIds = new Set([
+    ...downloadedIds,
     ...(storedProfile?.recentAssetIds || []).map(String),
   ]);
-  const historyModels = downloadedIds.size
-    ? await MarketplaceModel.find({ _id: { $in: [...downloadedIds] } }).lean()
+  const historyModels = historyIds.size
+    ? await MarketplaceModel.find({ _id: { $in: [...historyIds] } }).lean()
     : [];
   const profile = mergeBehaviorProfile(preferenceProfile(historyModels, downloads), storedProfile);
   const hasHistory = historyModels.length > 0 || Number(storedProfile?.eventCount || 0) > 0;
