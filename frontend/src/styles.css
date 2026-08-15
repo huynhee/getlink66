@@ -3735,6 +3735,24 @@ button:disabled {
     width: 60px;
   }
 
+  .marketAdminPreviewOrderList > article {
+    grid-template-columns: auto 60px minmax(0, 1fr);
+  }
+
+  .marketAdminPreviewOrderList img {
+    width: 60px;
+  }
+
+  .marketAdminPreviewActions {
+    grid-column: 2 / -1;
+    justify-content: flex-end;
+  }
+
+  .marketAdminImageToolbar > span {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .marketAdminLightbox {
     padding: 52px 12px;
   }
@@ -4789,6 +4807,124 @@ label {
   gap: 8px;
   border: 1px dashed var(--border-light);
   color: var(--text-tertiary);
+}
+
+.marketAdminImageManager {
+  margin-top: 2px;
+}
+
+.marketAdminImageToolbar,
+.marketAdminImageDeleteConfirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.marketAdminImageToolbar label {
+  cursor: pointer;
+}
+
+.marketAdminImageToolbar label.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.marketAdminImageToolbar input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.marketAdminImageToolbar > span {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.marketAdminPreviewOrderList {
+  display: grid;
+  gap: 7px;
+}
+
+.marketAdminPreviewOrderList > article {
+  display: grid;
+  grid-template-columns: auto 72px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px;
+  border: 1px solid var(--border-light);
+  background: var(--surface-2);
+  transition: opacity 120ms ease, border-color 120ms ease;
+}
+
+.marketAdminPreviewOrderList > article:hover {
+  border-color: var(--border-strong);
+}
+
+.marketAdminPreviewOrderList > article.dragging {
+  opacity: 0.45;
+}
+
+.marketAdminPreviewOrderList > article > svg {
+  color: var(--text-tertiary);
+  cursor: grab;
+}
+
+.marketAdminPreviewOrderList img {
+  width: 72px;
+  aspect-ratio: 1;
+  display: block;
+  object-fit: cover;
+  border: 1px solid var(--border-light);
+  background: #fff;
+}
+
+.marketAdminPreviewOrderList article > div:not(.marketAdminPreviewActions) {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.marketAdminPreviewOrderList article strong,
+.marketAdminPreviewOrderList article span,
+.marketAdminPreviewOrderList article small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketAdminPreviewOrderList article span,
+.marketAdminPreviewOrderList article small {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.marketAdminPreviewActions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.marketAdminPreviewActions .danger {
+  color: var(--danger);
+}
+
+.marketAdminImageDeleteConfirm {
+  justify-content: flex-end;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border-light));
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface-2));
+}
+
+.marketAdminImageDeleteConfirm > span {
+  margin-right: auto;
+  color: var(--text-primary);
+  font-size: 12px;
 }
 
 .marketAdminLightbox {

@@ -60,6 +60,7 @@ export function normalizeMarketplaceMetadata(raw = {}, fallback = {}) {
   if (!["free", "member", "pro"].includes(accessValue)) {
     errors.push({ field: "accessType", code: "unknown_value", values: [accessValue] });
   }
+  const rawSha256 = stringValue(source.sha256, 128).toLowerCase();
   const metadata = {
     assetType,
     sourceAssetId: stringValue(source.sourceAssetId || source.sourceModelId, 80),
@@ -73,11 +74,12 @@ export function normalizeMarketplaceMetadata(raw = {}, fallback = {}) {
     forms: assetType === "scene" ? [] : normalizeFacet(source.forms, "form", errors, filters),
     colors: assetType === "scene" ? [] : normalizeFacet(source.colors, "color", errors, filters),
     materials: assetType === "scene" ? [] : normalizeFacet(source.materials, "material", errors, filters),
-    sha256: sha256Value(source.sha256),
+    sha256: sha256Value(rawSha256),
   };
   if (!metadata.sourceAssetId) errors.push({ field: "sourceAssetId", code: "required" });
   if (!metadata.title) errors.push({ field: "title", code: "required" });
   if (!metadata.sourceCategoryId) errors.push({ field: "sourceCategoryId", code: "required" });
+  if (rawSha256 && !metadata.sha256) errors.push({ field: "sha256", code: "invalid_format" });
   if (assetType === "scene" && !metadata.sha256) errors.push({ field: "sha256", code: "required" });
   return { metadata, errors };
 }

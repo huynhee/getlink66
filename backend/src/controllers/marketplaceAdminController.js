@@ -7,6 +7,10 @@ import {
   createGoogleDriveFile,
   getGoogleDriveFileMetadata,
   openGoogleDriveFileStream,
+  readGoogleDriveFileBuffer,
+  renameGoogleDriveFile,
+  setGoogleDriveFileTrashed,
+  updateGoogleDriveFileContent,
 } from "../utils/storageProvider.js";
 import {
   inspectMarketplaceModelMetadata,
@@ -32,6 +36,12 @@ import {
   marketplaceReportStats,
 } from "./marketplaceReportController.js";
 import { scanMarketplaceDriveFolderBatch } from "../utils/marketplaceDriveReconcileService.js";
+import {
+  MARKETPLACE_ADMIN_PREVIEW_LIMIT,
+  marketplacePreviewRenamePlan,
+  nextMarketplaceImageName,
+  validateMarketplaceImageUpload,
+} from "../utils/marketplaceImageAdmin.js";
 
 const ADMIN_MODEL_PAGE_SIZE = 20;
 
@@ -602,6 +612,185 @@ export function adminStreamMarketplaceCover(req, res, next) {
 
 export function adminStreamMarketplacePreview(req, res, next) {
   return streamAdminMarketplaceImage(req, res, next, "preview");
+}
+
+async function editableAdminAsset(req) {
+  const assetType = adminAssetType(req);
+  await assertMarketplaceMigrationUnlocked(assetType);
+  if (!isSafeId(req.params.id)) {
+    const error = new Error("Invalid marketplace asset id");
+    error.status = 400;
+    throw error;
+  }
+  const model = await MarketplaceModel.findById(req.params.id).select("-source.raw").lean();
+  if (!model || normalizeAssetType(model.assetType) !== assetType) {
+    const error = new Error(`${assetNoun(assetType)} not found`);
+    error.status = 404;
+    throw error;
+  }
+  assertMarketplaceAssetEditable(model);
+  if (!model.driveFolderId) {
+    const error = new Error(`${assetNoun(assetType)} does not have a Google Drive folder.`);
+    error.status = 400;
+    error.code = "MARKETPLACE_DRIVE_FOLDER_REQUIRED";
+    throw error;
+  }
+  return model;
+}
+
+function normalizedImageExtension(fileName) {
+  const extension = fileExtension(fileName);
+  return extension === "jpeg" ? "jpg" : extension;
+}
+
+async function writeMarketplaceCover(model, content, image) {
+  const fileName = `cover.${image.extension}`;
+  const existingCover = model.coverImage;
+  const hasDedicatedCover = existingCover?.driveFileId && /^cover\.(?:jpe?g|png)$/i.test(existingCover.fileName || "");
+  if (!hasDedicatedCover) {
+    return createGoogleDriveFile({
+      folderId: model.driveFolderId,
+      fileName,
+      content,
+      contentType: image.contentType,
+    });
+  }
+
+  await assertDriveFilesBelongToModel(model, [existingCover.driveFileId]);
+  if (normalizedImageExtension(existingCover.fileName) === image.extension) {
+    return updateGoogleDriveFileContent(existingCover.driveFileId, content, {
+      contentType: image.contentType,
+    });
+  }
+
+  const replacement = await createGoogleDriveFile({
+    folderId: model.driveFolderId,
+    fileName,
+    content,
+    contentType: image.contentType,
+  });
+  try {
+    await setGoogleDriveFileTrashed(existingCover.driveFileId, true);
+    return replacement;
+  } catch (error) {
+    await setGoogleDriveFileTrashed(replacement.id, true).catch(() => {});
+    throw error;
+  }
+}
+
+export async function adminUploadMarketplaceImage(req, res, next) {
+  try {
+    const model = await editableAdminAsset(req);
+    const kind = String(req.query.kind || "preview").trim().toLowerCase();
+    if (!["cover", "preview"].includes(kind)) {
+      return res.status(400).json({ message: "Image kind must be cover or preview." });
+    }
+    if (kind === "preview" && (model.previewImages || []).length >= MARKETPLACE_ADMIN_PREVIEW_LIMIT) {
+      return res.status(409).json({
+        message: `A marketplace asset can contain at most ${MARKETPLACE_ADMIN_PREVIEW_LIMIT} preview images.`,
+        code: "MARKETPLACE_PREVIEW_LIMIT_REACHED",
+      });
+    }
+    const image = validateMarketplaceImageUpload(req.body, req.get("content-type"));
+    const fileName = nextMarketplaceImageName(kind, image.extension, model.previewImages);
+    let driveFile;
+    if (kind === "cover") {
+      driveFile = await writeMarketplaceCover(model, req.body, image);
+    } else {
+      driveFile = await createGoogleDriveFile({
+        folderId: model.driveFolderId,
+        fileName,
+        content: req.body,
+        contentType: image.contentType,
+      });
+    }
+    const synced = await syncMarketplaceDriveFolder({
+      driveFolderId: model.driveFolderId,
+      force: true,
+      assetType: model.assetType,
+    });
+    req.auditDetails = { kind, fileName: driveFile?.name || fileName, size: image.size };
+    return res.status(201).json({ model: adminModel(synced.model), uploaded: { kind, fileName, size: image.size } });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function adminReorderMarketplacePreviews(req, res, next) {
+  try {
+    const model = await editableAdminAsset(req);
+    const unknownKey = rejectUnknownKeys(req.body, ["fileIds"]);
+    if (unknownKey || !Array.isArray(req.body.fileIds)) {
+      return res.status(400).json({ message: "Preview fileIds are required." });
+    }
+    const plan = marketplacePreviewRenamePlan(model.previewImages, req.body.fileIds);
+    await assertDriveFilesBelongToModel(model, plan.map((item) => item.fileId));
+    const temporarilyRenamed = [];
+    try {
+      for (const item of plan) {
+        await renameGoogleDriveFile(item.fileId, item.temporaryName);
+        temporarilyRenamed.push(item);
+      }
+      for (const item of plan) await renameGoogleDriveFile(item.fileId, item.finalName);
+    } catch (error) {
+      const rollbackPlan = temporarilyRenamed.map((item, index) => ({
+        ...item,
+        rollbackName: `.rollback-${Date.now()}-${index + 1}-${item.fileId.slice(-8)}`,
+      }));
+      await Promise.allSettled(rollbackPlan.map((item) => renameGoogleDriveFile(item.fileId, item.rollbackName)));
+      for (const item of rollbackPlan) {
+        await renameGoogleDriveFile(item.fileId, item.originalName).catch(() => {});
+      }
+      throw error;
+    }
+    const synced = await syncMarketplaceDriveFolder({ driveFolderId: model.driveFolderId, force: true, assetType: model.assetType });
+    req.auditDetails = { previewCount: plan.length };
+    return res.json({ model: adminModel(synced.model) });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function adminDeleteMarketplacePreview(req, res, next) {
+  try {
+    const model = await editableAdminAsset(req);
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0 || index >= (model.previewImages || []).length) {
+      return res.status(404).json({ message: "Preview image not found." });
+    }
+    const image = model.previewImages[index];
+    await assertDriveFilesBelongToModel(model, [image.driveFileId]);
+    await setGoogleDriveFileTrashed(image.driveFileId, true);
+    const synced = await syncMarketplaceDriveFolder({ driveFolderId: model.driveFolderId, force: true, assetType: model.assetType });
+    req.auditDetails = { previewIndex: index, fileName: image.fileName };
+    return res.json({ model: adminModel(synced.model) });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function adminSetMarketplaceCoverFromPreview(req, res, next) {
+  try {
+    const model = await editableAdminAsset(req);
+    const index = Number(req.params.index);
+    if (!Number.isInteger(index) || index < 0 || index >= (model.previewImages || []).length) {
+      return res.status(404).json({ message: "Preview image not found." });
+    }
+    const source = model.previewImages[index];
+    await assertDriveFilesBelongToModel(model, [source.driveFileId]);
+    const contentType = adminImageContentType(source.fileName);
+    const content = await readGoogleDriveFileBuffer(source.driveFileId, {
+      fileName: source.fileName,
+      maxBytes: 15 * 1024 * 1024,
+    });
+    const extension = normalizedImageExtension(source.fileName) === "png" ? "png" : "jpg";
+    await writeMarketplaceCover(model, content, { extension, contentType });
+    const synced = await syncMarketplaceDriveFolder({ driveFolderId: model.driveFolderId, force: true, assetType: model.assetType });
+    req.auditDetails = { previewIndex: index, sourceFileName: source.fileName };
+    return res.json({ model: adminModel(synced.model) });
+  } catch (error) {
+    return next(error);
+  }
 }
 
 async function adminAssetFromRequest(req) {

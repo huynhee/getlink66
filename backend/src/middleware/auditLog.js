@@ -54,6 +54,9 @@ export function auditAdmin(action) {
       const statusCode = res.statusCode;
 
       if (statusCode < 400) {
+        const requestDetails = Buffer.isBuffer(req.body)
+          ? { binaryBodyBytes: req.body.length, contentType: req.get("content-type") || "" }
+          : req.body;
         const logEntry = {
           actor: req.user?._id,
           actorEmail: req.user?.email || "",
@@ -61,7 +64,7 @@ export function auditAdmin(action) {
           target: req.params?.id || req.body?.userId || "",
           targetId: req.params?.id || "",
           details: sanitizeBody({
-            ...req.body,
+            ...(requestDetails || {}),
             ...(req.auditDetails && typeof req.auditDetails === "object" ? req.auditDetails : {}),
           }),
           ip: req.ip || "",

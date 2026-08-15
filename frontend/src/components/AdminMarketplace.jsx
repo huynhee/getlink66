@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   ChevronLeft,
   ChevronRight,
+  GripVertical,
   CheckCircle2,
   Database,
   Eye,
@@ -23,7 +26,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { api, buildApiUrl } from "../api.js";
+import { api, apiBinary, buildApiUrl } from "../api.js";
 import Pagination from "./Pagination.jsx";
 import AdminMarketplaceTaxonomy from "./AdminMarketplaceTaxonomy.jsx";
 import { text } from "../i18n.js";
@@ -281,7 +284,7 @@ function AdminCover({ model, adminAssetBase, language = "vi" }) {
     <div className="marketAdminModelCover">
       <img
         crossOrigin="use-credentials"
-        src={buildApiUrl(`${adminAssetBase}/${model._id}/cover`)}
+        src={buildApiUrl(`${adminAssetBase}/${model._id}/cover?v=${encodeURIComponent(model.coverImage?.driveVersion || model.coverImage?.modifiedTime || "0")}`)}
         alt={model.title || "Cover"}
         loading="lazy"
         onError={() => setFailed(true)}
@@ -296,12 +299,12 @@ function AdminPreviewGallery({ model, adminAssetBase, language = "vi" }) {
     const seen = new Set();
     if (model.coverImage?.driveFileId) {
       seen.add(model.coverImage.driveFileId);
-      refs.push({ key: `cover-${model.coverImage.driveFileId}`, label: text(language, "Ảnh cover", "Cover"), url: `${adminAssetBase}/${model._id}/cover` });
+      refs.push({ key: `cover-${model.coverImage.driveFileId}`, label: text(language, "Ảnh cover", "Cover"), url: `${adminAssetBase}/${model._id}/cover?v=${encodeURIComponent(model.coverImage.driveVersion || model.coverImage.modifiedTime || "0")}` });
     }
     (model.previewImages || []).forEach((image, index) => {
       if (!image?.driveFileId || seen.has(image.driveFileId)) return;
       seen.add(image.driveFileId);
-      refs.push({ key: image.driveFileId, label: `${text(language, "Ảnh", "Preview")} ${index + 1}`, url: `${adminAssetBase}/${model._id}/preview/${index}` });
+      refs.push({ key: image.driveFileId, label: `${text(language, "Ảnh", "Preview")} ${index + 1}`, url: `${adminAssetBase}/${model._id}/preview/${index}?v=${encodeURIComponent(image.driveVersion || image.modifiedTime || "0")}` });
     });
     return refs;
   }, [adminAssetBase, language, model]);
@@ -363,6 +366,147 @@ function AdminPreviewGallery({ model, adminAssetBase, language = "vi" }) {
           {images.length > 1 && <button type="button" className="iconButton previous" onClick={() => move(-1)} aria-label={text(language, "Ảnh trước", "Previous image")}><ChevronLeft size={22} /></button>}
           <img crossOrigin="use-credentials" src={buildApiUrl(current.url)} alt={`${model.title} - ${current.label}`} />
           {images.length > 1 && <button type="button" className="iconButton next" onClick={() => move(1)} aria-label={text(language, "Ảnh sau", "Next image")}><ChevronRight size={22} /></button>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AdminImageManager({
+  model,
+  adminAssetBase,
+  language = "vi",
+  busy = false,
+  onUpload,
+  onReorder,
+  onDelete,
+  onSetCover,
+}) {
+  const [ordered, setOrdered] = useState(model.previewImages || []);
+  const [draggedId, setDraggedId] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const originalIds = useMemo(
+    () => (model.previewImages || []).map((image) => image.driveFileId).filter(Boolean),
+    [model.previewImages],
+  );
+  const orderedIds = ordered.map((image) => image.driveFileId).filter(Boolean);
+  const orderChanged = orderedIds.join("|") !== originalIds.join("|");
+
+  useEffect(() => {
+    setOrdered(model.previewImages || []);
+    setDeleteTarget(null);
+  }, [model._id, model.previewImages]);
+
+  function moveImage(fromIndex, toIndex) {
+    if (toIndex < 0 || toIndex >= ordered.length || fromIndex === toIndex) return;
+    setOrdered((current) => {
+      const next = [...current];
+      const [item] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, item);
+      return next;
+    });
+  }
+
+  function sourceIndex(image) {
+    return (model.previewImages || []).findIndex((item) => item.driveFileId === image.driveFileId);
+  }
+
+  return (
+    <section className="marketAdminEditSection marketAdminImageManager">
+      <EditSectionTitle icon={UploadCloud} title={text(language, "Ảnh cover và preview", "Cover and preview images")} />
+      <div className="marketAdminImageToolbar">
+        <label className={`smallButton ${busy ? "disabled" : ""}`}>
+          <UploadCloud size={16} /> {text(language, "Tải cover", "Upload cover")}
+          <input
+            type="file"
+            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onUpload("cover", [file]);
+              event.target.value = "";
+            }}
+          />
+        </label>
+        <label className={`smallButton ${busy || ordered.length >= 20 ? "disabled" : ""}`}>
+          <UploadCloud size={16} /> {text(language, "Thêm preview", "Add previews")}
+          <input
+            type="file"
+            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+            multiple
+            disabled={busy || ordered.length >= 20}
+            onChange={(event) => {
+              const files = Array.from(event.target.files || []);
+              if (files.length) onUpload("preview", files);
+              event.target.value = "";
+            }}
+          />
+        </label>
+        <span>{ordered.length}/20 preview</span>
+      </div>
+
+      <div className="marketAdminPreviewOrderList">
+        {ordered.map((image, index) => {
+          const currentIndex = sourceIndex(image);
+          const version = encodeURIComponent(image.driveVersion || image.modifiedTime || "0");
+          return (
+            <article
+              key={image.driveFileId}
+              draggable={!busy}
+              className={draggedId === image.driveFileId ? "dragging" : ""}
+              onDragStart={() => setDraggedId(image.driveFileId)}
+              onDragEnd={() => setDraggedId("")}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => {
+                const fromIndex = ordered.findIndex((item) => item.driveFileId === draggedId);
+                moveImage(fromIndex, index);
+                setDraggedId("");
+              }}
+            >
+              <GripVertical size={17} aria-hidden="true" />
+              <img
+                crossOrigin="use-credentials"
+                src={buildApiUrl(`${adminAssetBase}/${model._id}/preview/${currentIndex}?v=${version}`)}
+                alt={`${model.title} - preview ${index + 1}`}
+                loading="lazy"
+              />
+              <div>
+                <strong>Preview {index + 1}</strong>
+                <span>{image.fileName || "preview"}</span>
+                <small>{image.width && image.height ? `${image.width} × ${image.height} · ` : ""}{formatBytes(image.size)}</small>
+              </div>
+              <div className="marketAdminPreviewActions">
+                <button type="button" className="iconButton" disabled={busy || index === 0} onClick={() => moveImage(index, index - 1)} title={text(language, "Đưa lên", "Move up")}><ArrowUp size={15} /></button>
+                <button type="button" className="iconButton" disabled={busy || index === ordered.length - 1} onClick={() => moveImage(index, index + 1)} title={text(language, "Đưa xuống", "Move down")}><ArrowDown size={15} /></button>
+                <button type="button" className="smallButton" disabled={busy} onClick={() => onSetCover(currentIndex)} title={text(language, "Dùng ảnh này làm cover", "Use this image as cover")}>
+                  <Square size={14} /> {text(language, "Đặt cover", "Set cover")}
+                </button>
+                <button type="button" className="iconButton danger" disabled={busy} onClick={() => setDeleteTarget({ image, currentIndex })} title={text(language, "Xóa preview", "Delete preview")}><Trash2 size={15} /></button>
+              </div>
+            </article>
+          );
+        })}
+        {!ordered.length && <p className="muted">{text(language, "Chưa có ảnh preview.", "No preview images yet.")}</p>}
+      </div>
+
+      {orderChanged && (
+        <div className="marketAdminSyncActions">
+          <button type="button" className="smallButton" disabled={busy} onClick={() => setOrdered(model.previewImages || [])}>
+            <RotateCcw size={15} /> {text(language, "Hoàn tác thứ tự", "Reset order")}
+          </button>
+          <button type="button" className="primaryButton" disabled={busy} onClick={() => onReorder(orderedIds)}>
+            <Save size={15} /> {text(language, "Lưu thứ tự preview", "Save preview order")}
+          </button>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="marketAdminImageDeleteConfirm">
+          <span>{text(language, `Xóa ${deleteTarget.image.fileName || "preview"} khỏi Drive?`, `Delete ${deleteTarget.image.fileName || "preview"} from Drive?`)}</span>
+          <button type="button" className="smallButton" disabled={busy} onClick={() => setDeleteTarget(null)}>{text(language, "Hủy", "Cancel")}</button>
+          <button type="button" className="smallButton danger" disabled={busy} onClick={() => onDelete(deleteTarget.currentIndex).then((deleted) => deleted && setDeleteTarget(null))}>
+            <Trash2 size={15} /> {text(language, "Xóa ảnh", "Delete image")}
+          </button>
         </div>
       )}
     </section>
@@ -582,6 +726,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
   const [migrationRunning, setMigrationRunning] = useState(false);
   const [migrationResult, setMigrationResult] = useState(null);
   const [metadataSavingId, setMetadataSavingId] = useState("");
+  const [imageManagingId, setImageManagingId] = useState("");
   const [verifyingFileId, setVerifyingFileId] = useState("");
   const [metadataConflict, setMetadataConflict] = useState(null);
   const [selectedModelIds, setSelectedModelIds] = useState([]);
@@ -636,6 +781,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
       colors: (model.colors || []).join(", "),
       materials: (model.materials || []).join(", "),
       renderer: model.renderer || "",
+      sha256: model.sha256 || "",
     };
   }
 
@@ -920,6 +1066,74 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
     }
   }
 
+  async function manageModelImages(model, action) {
+    setMessage("");
+    setError("");
+    setImageManagingId(model._id);
+    try {
+      const data = await action();
+      setSelectedModel(data.model || model);
+      await loadModels(page);
+      return data;
+    } catch (err) {
+      setError(err.message);
+      return null;
+    } finally {
+      setImageManagingId("");
+    }
+  }
+
+  async function uploadModelImages(model, kind, files) {
+    const available = kind === "preview" ? Math.max(0, 20 - (model.previewImages?.length || 0)) : 1;
+    const queue = files.slice(0, available);
+    if (!queue.length) {
+      setError(l("Model đã đủ 20 ảnh preview.", "This asset already has 20 preview images."));
+      return;
+    }
+    const result = await manageModelImages(model, async () => {
+      let latest = { model };
+      for (const file of queue) {
+        latest = await apiBinary(`${adminAssetBase}/${model._id}/images?kind=${kind}`, file, {
+          method: "POST",
+          headers: { "Content-Type": file.type || "image/jpeg" },
+        });
+      }
+      return latest;
+    });
+    if (!result) return;
+    setMessage(kind === "cover"
+      ? l("Đã cập nhật ảnh cover trên Drive.", "Cover image updated on Drive.")
+      : l(`Đã tải lên ${queue.length} ảnh preview và đồng bộ lại thứ tự.`, `Uploaded ${queue.length} preview images and synchronized their order.`));
+  }
+
+  async function reorderModelPreviews(model, fileIds) {
+    const result = await manageModelImages(model, () => api(`${adminAssetBase}/${model._id}/previews/order`, {
+      method: "PUT",
+      body: JSON.stringify({ fileIds }),
+    }));
+    if (!result) return;
+    setMessage(l("Đã lưu thứ tự preview trên Drive.", "Preview order saved on Drive."));
+  }
+
+  async function deleteModelPreview(model, index) {
+    const result = await manageModelImages(model, () => api(`${adminAssetBase}/${model._id}/previews/${index}`, {
+      method: "DELETE",
+      body: JSON.stringify({}),
+    }));
+    if (!result) return false;
+    setMessage(l("Đã chuyển ảnh preview vào thùng rác Drive.", "Preview moved to Drive trash."));
+    return true;
+  }
+
+  async function setModelCover(model, index) {
+    const result = await manageModelImages(model, () => api(`${adminAssetBase}/${model._id}/previews/${index}/cover`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }));
+    if (!result) return;
+    setMessage(l("Đã dùng preview đã chọn làm ảnh cover.", "Selected preview is now the cover image."));
+  }
+
   async function saveModelMetadata(model) {
     setMessage("");
     setError("");
@@ -950,7 +1164,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
             colors: form.colors,
             materials: form.materials,
             renderer: form.renderer,
-            sha256: model.sha256 || "",
+            sha256: form.sha256,
           },
           expectedMetadataHash: expected.metadataHash,
           expectedDriveVersion: expected.driveVersion,
@@ -1709,6 +1923,17 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
                 language={language}
               />
 
+              <AdminImageManager
+                model={currentSelectedModel}
+                adminAssetBase={adminAssetBase}
+                language={language}
+                busy={imageManagingId === currentSelectedModel._id}
+                onUpload={(kind, files) => uploadModelImages(currentSelectedModel, kind, files)}
+                onReorder={(fileIds) => reorderModelPreviews(currentSelectedModel, fileIds)}
+                onDelete={(index) => deleteModelPreview(currentSelectedModel, index)}
+                onSetCover={(index) => setModelCover(currentSelectedModel, index)}
+              />
+
               <div className="marketAdminModelGrid">
                 <ModelFact label={l("File nén", "Archive")} value={formatBytes(currentSelectedModel.fileSize)} detail={currentSelectedModel.archiveExt || "archive"} />
                 <ModelFact label={l("Ảnh cover", "Cover image")} value={currentSelectedModel.coverImage?.driveFileId ? l("Đã gắn", "Attached") : l("Thiếu", "Missing")} detail={currentSelectedModel.coverImage?.fileName} />
@@ -1752,6 +1977,16 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
                         <option key={option.value} value={option.label || option.value}>{optionLabel(option, language)}</option>
                       ))}
                     </select>
+                  </label>
+                  <label>
+                    <span>SHA-256 archive</span>
+                    <input
+                      value={selectedMetadataForm.sha256}
+                      maxLength={64}
+                      spellCheck="false"
+                      placeholder={l("64 ký tự hex", "64 hexadecimal characters")}
+                      onChange={(event) => updateMetadata(currentSelectedModel, "sha256", event.target.value.trim().toLowerCase())}
+                    />
                   </label>
                 </div>
                 <div className="marketAdminFacetGrid">

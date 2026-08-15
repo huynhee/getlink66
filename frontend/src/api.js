@@ -85,3 +85,35 @@ export async function api(path, options = {}) {
 
   return data;
 }
+
+export async function apiBinary(path, body, options = {}) {
+  const method = options.method || "POST";
+
+  async function send() {
+    const headers = { ...(options.headers || {}) };
+    headers["x-csrf-token"] = await getCsrfToken();
+    const response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      method,
+      body,
+      credentials: "include",
+      headers,
+    });
+    const data = await readResponseData(response);
+    return { response, data };
+  }
+
+  let { response, data } = await send();
+  if (response.status === 403 && data.message === "Invalid CSRF token") {
+    csrfToken = "";
+    ({ response, data } = await send());
+  }
+  if (!response.ok) {
+    const error = new Error(responseErrorMessage(response, data));
+    error.status = response.status;
+    error.code = data.code || "";
+    error.data = data;
+    throw error;
+  }
+  return data;
+}

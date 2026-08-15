@@ -307,6 +307,32 @@ export async function setGoogleDriveFileTrashed(fileId, trashed) {
   return googleDriveJson(response, trashed ? "move to trash" : "restore from trash");
 }
 
+export async function renameGoogleDriveFile(fileId, fileName) {
+  assertGoogleDriveWriteEnabled();
+  const normalizedFileId = String(fileId || "").trim();
+  const normalizedFileName = String(fileName || "").trim();
+  if (!normalizedFileId || !normalizedFileName) {
+    const error = new Error("Google Drive fileId and file name are required.");
+    error.status = 400;
+    throw error;
+  }
+  const hasControlCharacter = [...normalizedFileName].some((character) => character.charCodeAt(0) < 32);
+  if (normalizedFileName.length > 240 || hasControlCharacter) {
+    const error = new Error("Google Drive file name is invalid.");
+    error.status = 400;
+    throw error;
+  }
+  const url = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(normalizedFileId)}`);
+  url.searchParams.set("supportsAllDrives", "true");
+  url.searchParams.set("fields", "id,name,mimeType,size,imageMediaMetadata(width,height),modifiedTime,version,parents,trashed,driveId");
+  const response = await fetchGoogleDrive(url, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: normalizedFileName }),
+  });
+  return googleDriveJson(response, "file rename");
+}
+
 export async function deleteGoogleDriveFile(fileId) {
   assertGoogleDriveWriteEnabled();
   const normalizedFileId = String(fileId || "").trim();
