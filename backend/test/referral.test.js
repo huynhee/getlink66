@@ -7,8 +7,25 @@ useMemoryDb();
 const { default: User } = await import("../src/models/User.js");
 const { default: Referral } = await import("../src/models/Referral.js");
 const { default: SiteSetting } = await import("../src/models/SiteSetting.js");
-const { awardReferralSignup } = await import("../src/utils/referralService.js");
+const { awardReferralSignup, referralRewardProUntil } = await import("../src/utils/referralService.js");
 const { endOfVietnamDay } = await import("../src/utils/membershipService.js");
+
+test("referral Pro reward expires at the end of the referral day", () => {
+  const referredAt = new Date("2026-08-16T03:15:00.000Z");
+  assert.equal(
+    referralRewardProUntil({}, referredAt).toISOString(),
+    "2026-08-16T16:59:59.999Z",
+  );
+});
+
+test("referral Pro reward does not extend an active membership", () => {
+  const referredAt = new Date("2026-08-16T03:15:00.000Z");
+  const currentUntil = new Date("2026-09-30T16:59:59.999Z");
+  assert.equal(
+    referralRewardProUntil({ proUntil: currentUntil }, referredAt).getTime(),
+    currentUntil.getTime(),
+  );
+});
 
 test("referral grants one Pro day and 28 credits to both users exactly once", async () => {
   await SiteSetting.create({ key: "homepage", referralMode: "both" });
@@ -39,7 +56,10 @@ test("referral grants one Pro day and 28 credits to both users exactly once", as
     new Date((await User.findById(referrer._id)).proUntil).getTime(),
     new Date(firstReferrer.proUntil).getTime(),
   );
-  assert.ok(new Date(firstReferrer.proUntil).getTime() > Date.now() + 24 * 60 * 60 * 1000);
+  assert.equal(
+    new Date(firstReferrer.proUntil).getTime(),
+    endOfVietnamDay(new Date()).getTime(),
+  );
   assert.equal(new Date(firstReferrer.proUntil).toISOString().slice(11), "16:59:59.999Z");
   assert.equal(await Referral.countDocuments({ referredUserId: referred._id }), 1);
   const reward = await Referral.findOne({ referredUserId: referred._id });
@@ -49,7 +69,7 @@ test("referral grants one Pro day and 28 credits to both users exactly once", as
   assert.equal(reward.referredRewardCredit, 28);
 });
 
-test("referral Pro reward extends an existing membership without replacing it", async () => {
+test("referral Pro reward preserves an existing membership without extending it", async () => {
   const originalUntil = endOfVietnamDay(new Date(Date.now() + 10 * 24 * 60 * 60 * 1000));
   const referrer = await User.create({
     email: "active-referrer@example.test",
@@ -70,7 +90,7 @@ test("referral Pro reward extends an existing membership without replacing it", 
   const updatedReferrer = await User.findById(referrer._id);
   assert.equal(
     new Date(updatedReferrer.proUntil).getTime(),
-    originalUntil.getTime() + 24 * 60 * 60 * 1000,
+    originalUntil.getTime(),
   );
   assert.equal(updatedReferrer.proDailyDownloadLimit, 150);
   assert.equal(updatedReferrer.credit, 35);

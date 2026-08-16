@@ -15,6 +15,12 @@ const referralSchema = new mongoose.Schema(
     referredRewardProDays: { type: Number, default: 0, min: 0 },
     referrerProUntil: Date,
     referredProUntil: Date,
+    proExpiryPolicy: {
+      type: String,
+      enum: ["same_day", "legacy_24h"],
+      default: "same_day",
+      index: true,
+    },
     rewardMode: {
       type: String,
       enum: ["both", "referrer_only"],

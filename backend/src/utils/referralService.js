@@ -13,7 +13,6 @@ const REFERRAL_MODES = new Set(["both", "referrer_only", "off"]);
 const REFERRAL_PRO_DAYS = 1;
 const REFERRAL_CREDIT = 28;
 const MEMBER_DAILY_DOWNLOAD_LIMIT = 100;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 async function referralSettings() {
   const settings = await SiteSetting.findOne({ key: "homepage" })
@@ -62,8 +61,8 @@ export async function ensureReferralCode(user) {
 
 export function referralRewardProUntil(user, at = new Date()) {
   const currentUntil = user?.proUntil ? new Date(user.proUntil) : null;
-  const base = currentUntil && currentUntil > at ? currentUntil : at;
-  return endOfVietnamDay(new Date(base.getTime() + REFERRAL_PRO_DAYS * DAY_MS));
+  const rewardUntil = endOfVietnamDay(at);
+  return currentUntil && currentUntil > rewardUntil ? currentUntil : rewardUntil;
 }
 
 function proStateCondition(user) {
@@ -102,6 +101,7 @@ function referralRecord({ referrer, referredUser, referralCode, mode, rewards, n
     referredRewardProDays: referredProDays,
     referrerProUntil: rewards.proEnabled ? referrerProUntil : null,
     referredProUntil: referredProDays ? referredProUntil : null,
+    proExpiryPolicy: "same_day",
     rewardMode: mode,
     status: "rewarded",
     rewardedAt: now,
