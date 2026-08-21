@@ -624,13 +624,12 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
     const previews = (model.previewImages || [])
       .map((image) => ({ ...image, url: previewImageSrc(image) }))
       .filter((image) => image?.url);
-    const candidates = previews.length
-      ? previews
-      : assetType === "scene"
-        ? []
-        : [model.coverImage ? { ...model.coverImage, url: cover(model) } : null].filter(Boolean);
+    const coverImage = model.coverImage
+      ? { ...model.coverImage, url: cover(model), isCoverFallback: true }
+      : null;
+    const candidates = [...previews, coverImage].filter(Boolean);
     return candidates.filter((image, index) => candidates.findIndex((item) => item.url === image.url) === index);
-  }, [assetType, model]);
+  }, [model]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [imageStates, setImageStates] = useState({});
@@ -649,6 +648,14 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
     if (!url) return;
     setImageStates((current) => current[url] === status ? current : { ...current, [url]: status });
   }
+
+  useEffect(() => {
+    if (!activeImageUrl || imageStates[activeImageUrl] !== "error" || images.length <= 1) return;
+    const nextIndex = images.findIndex((image, index) => (
+      index !== activeIndex && imageStates[image.url] !== "error"
+    ));
+    if (nextIndex >= 0) setActiveIndex(nextIndex);
+  }, [activeImageUrl, activeIndex, imageStates, images]);
 
   useEffect(() => {
     if (!lightboxOpen) return undefined;
@@ -686,7 +693,10 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
     setActiveIndex((current) => (current + direction + images.length) % images.length);
   }
 
-  const lightbox = lightboxOpen && activeImageUrl && typeof document !== "undefined"
+  const lightbox = lightboxOpen
+    && activeImageUrl
+    && imageStates[activeImageUrl] !== "error"
+    && typeof document !== "undefined"
     ? createPortal(
       <div
         className="marketLightbox"
@@ -778,7 +788,9 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
               style={assetType === "scene" ? {
                 backgroundImage: `url(${JSON.stringify(activeImageUrl)})`,
               } : undefined}
-              onClick={() => setLightboxOpen(true)}
+              onClick={() => {
+                if (imageStates[activeImageUrl] !== "error") setLightboxOpen(true);
+              }}
               aria-label={textFor(language, "Mở ảnh đầy đủ", "Open full image")}
             >
               {imageStates[activeImageUrl] !== "loaded" && (
@@ -790,6 +802,7 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
                 src={activeImageUrl}
                 alt={activeImage.alt || model.title}
                 referrerPolicy="no-referrer"
+                style={{ opacity: imageStates[activeImageUrl] === "loaded" ? 1 : 0 }}
                 onLoad={() => setImageState(activeImageUrl, "loaded")}
                 onError={() => setImageState(activeImageUrl, "error")}
               />

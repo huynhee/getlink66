@@ -40,6 +40,7 @@
     "marketplace:asset:execute": "node scripts/marketplace-asset-migration.js --execute",
     "marketplace:covers:dry-run": "node scripts/marketplace-cover-cache.js",
     "marketplace:covers:backfill": "node scripts/marketplace-cover-cache.js --execute",
+    "marketplace:covers:retry-errors": "node scripts/marketplace-cover-cache.js --execute --retry-errors",
     "marketplace:covers:verify": "node scripts/marketplace-cover-cache.js --verify",
     "marketplace:catalog:reset:dry-run": "node scripts/reset-marketplace-model-catalog.js",
     "marketplace:catalog:reset": "node scripts/reset-marketplace-model-catalog.js --execute --confirm=RESET_MODEL_CATALOG",

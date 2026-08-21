@@ -121,6 +121,35 @@ test("pending payments expose planned values without reporting completed balance
   assert.equal(pro.metadata.amountMoney, 149000);
 });
 
+test("credit timeline combines incoming credit and Getlink spending with the model title", async () => {
+  const user = await User.create({ email: "timeline-credit-ledger@example.test", name: "Ledger" });
+  await Topup.create({
+    userId: user._id,
+    amount: 28000,
+    credit: 28,
+    type: "sepay",
+    status: "approved",
+    paymentCode: "LEDGERTOPUP123",
+    paidAt: new Date("2026-08-20T01:00:00.000Z"),
+  });
+  await Getlink.create({
+    userId: user._id,
+    productId: "CGI157990814327246",
+    title: "Phone repair shop scene",
+    creditUsed: 28,
+    createdAt: new Date("2026-08-20T02:00:00.000Z"),
+  });
+
+  const ledger = await buildUserTimeline({ userId: user._id, type: "credit", page: 1, limit: 20 });
+
+  assert.equal(ledger.pagination.total, 2);
+  assert.equal(ledger.events[0].type, "getlink");
+  assert.equal(ledger.events[0].title, "Phone repair shop scene");
+  assert.equal(ledger.events[0].amount, -28);
+  assert.equal(ledger.events[0].metadata.productId, "CGI157990814327246");
+  assert.equal(ledger.events[1].amount, 28);
+});
+
 test("manual credit adjustment exposes the balance change in user history", async () => {
   const user = await User.create({ email: "timeline-manual-credit@example.test", name: "Manual credit" });
   await Topup.create({

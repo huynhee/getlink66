@@ -299,7 +299,10 @@ async function fetchTimelineSources({ userId, type, sourceLimit }) {
     );
   }
 
-  if (type === "all" || type === "getlink") {
+  // The Credit view is a balance ledger, so it includes both incoming Topup
+  // rows and outgoing Getlink charges. The dedicated Getlink view remains
+  // available for download actions and expiry details.
+  if (type === "all" || type === "getlink" || type === "credit") {
     tasks.push(
       Getlink.find({ userId: userObjectId })
         .sort({ createdAt: -1 })
@@ -388,7 +391,9 @@ async function countTimelineSources({ userId, type }) {
   if (!userObjectId) return 0;
   const tasks = [];
   if (type === "all" || type === "credit") tasks.push(Topup.countDocuments({ userId: userObjectId }));
-  if (type === "all" || type === "getlink") tasks.push(Getlink.countDocuments({ userId: userObjectId }));
+  if (type === "all" || type === "getlink" || type === "credit") {
+    tasks.push(Getlink.countDocuments({ userId: userObjectId }));
+  }
   if (type === "all" || type === "pro") tasks.push(MembershipOrder.countDocuments({ userId: userObjectId }));
   if (type === "all" || type === "model" || type === "scene") {
     const downloadQuery = { userId: userObjectId };

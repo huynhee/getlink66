@@ -281,6 +281,36 @@ export async function processMarketplaceDriveChangeQueue({ rootId = "", limit = 
   return { processed, failed, results };
 }
 
+export async function retryFailedMarketplaceDriveChanges({ rootId = "" } = {}) {
+  const normalizedRootId = String(rootId || rootFolderId()).trim();
+  if (!normalizedRootId) {
+    const error = new Error("Marketplace Drive root folder is not configured");
+    error.status = 400;
+    throw error;
+  }
+  const result = await MarketplaceDriveChange.updateMany(
+    { rootFolderId: normalizedRootId, status: "failed" },
+    {
+      $set: {
+        status: "pending",
+        attempts: 0,
+        nextAttemptAt: new Date(),
+        lockedAt: null,
+        lastError: "",
+      },
+    },
+  );
+  await MarketplaceDriveSyncState.findOneAndUpdate(
+    { rootFolderId: normalizedRootId },
+    {
+      $set: {
+        queuedChangesCount: await MarketplaceDriveChange.countDocuments({ rootFolderId: normalizedRootId }),
+      },
+    },
+  );
+  return Number(result.modifiedCount || 0);
+}
+
 async function claimSyncState(rootId, assetType = "model") {
   const staleBefore = new Date(Date.now() - SYNC_LOCK_TIMEOUT_MS);
   let state = await MarketplaceDriveSyncState.findOneAndUpdate(

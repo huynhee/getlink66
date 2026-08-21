@@ -7,6 +7,7 @@ import {
   inspectGetlink,
   prepareRedownload,
   previewGetlink,
+  proxyCachedGetlinkPreviewImage,
 } from "../controllers/getlinkController.js";
 import {
   acknowledgeJob,
@@ -52,6 +53,7 @@ router.post("/getlink", requireAuth, requireNotBanned, getlinkLimit, getlinkIpLi
 router.post("/getlink/redownload/:id", requireAuth, requireNotBanned, getlinkLimit, getlinkIpLimit, prepareRedownload);
 router.get("/getlink/download/:id", downloadLimit, downloadGetlink);
 router.get("/getlink/preview-image/:id", downloadLimit, downloadGetlinkPreviewImage);
+router.get("/getlink/preview-cache/:productId", requireAuth, downloadLimit, proxyCachedGetlinkPreviewImage);
 router.get("/getlink/history", requireAuth, getlinkHistory);
 
 export default router;

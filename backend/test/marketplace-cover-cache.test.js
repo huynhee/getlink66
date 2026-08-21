@@ -14,6 +14,7 @@ const {
   marketplaceCoverCacheStats,
   processMarketplaceCoverCacheModel,
   queueMarketplaceCoverCache,
+  requeueFailedMarketplaceCoverCaches,
   verifyMarketplaceCoverCacheFile,
 } = await import("../src/utils/marketplaceCoverCache.js");
 const { listMarketplaceModels } = await import("../src/controllers/marketplaceController.js");
@@ -152,6 +153,94 @@ test("cover cache generates a square WebP and public catalog uses its static URL
     assert.equal(queued.coverCache.status, "queued");
     assert.notEqual(queued.coverCache.sourceFingerprint, stored.coverCache.sourceFingerprint);
     assert.equal(fs.existsSync(filePath), false);
+  } finally {
+    globalThis.fetch = previousFetch;
+    await fs.promises.rm(cacheRoot, { recursive: true, force: true });
+    Object.entries(previous).forEach(([name, value]) => restoreEnv(name, value));
+  }
+});
+
+test("cover cache falls back to a valid preview and failed jobs can be requeued", async () => {
+  const previous = Object.fromEntries([
+    "MARKETPLACE_COVER_CACHE_ENABLED",
+    "MARKETPLACE_COVER_CACHE_DIR",
+    "GOOGLE_DRIVE_ACCESS_TOKEN",
+  ].map((name) => [name, process.env[name]]));
+  const previousFetch = globalThis.fetch;
+  const cacheRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "3dipl-cover-fallback-"));
+  const validPreview = await sharp({
+    create: {
+      width: 240,
+      height: 180,
+      channels: 3,
+      background: { r: 210, g: 170, b: 80 },
+    },
+  }).jpeg().toBuffer();
+  const requestedIds = [];
+
+  process.env.MARKETPLACE_COVER_CACHE_ENABLED = "true";
+  process.env.MARKETPLACE_COVER_CACHE_DIR = cacheRoot;
+  process.env.GOOGLE_DRIVE_ACCESS_TOKEN = "cover-fallback-token";
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    const fileId = url.match(/files\/([^?]+)/)?.[1] || "";
+    requestedIds.push(fileId);
+    if (fileId === "broken-cover-id") {
+      return new Response(Buffer.from("not-an-image"), {
+        status: 200,
+        headers: { "content-type": "image/jpeg" },
+      });
+    }
+    return new Response(validPreview, {
+      status: 200,
+      headers: {
+        "content-type": "image/jpeg",
+        "content-length": String(validPreview.length),
+      },
+    });
+  };
+
+  try {
+    let model = await MarketplaceModel.create({
+      assetType: "model",
+      title: "Fallback cover model",
+      slug: `fallback-cover-${Math.random().toString(16).slice(2)}`,
+      source: {
+        provider: "drive",
+        modelId: "fallback-cover-folder",
+        assetId: `fallback-cover-${Math.random().toString(16).slice(2)}`,
+      },
+      coverImage: {
+        driveFileId: "broken-cover-id",
+        driveVersion: "1",
+        fileName: "cover.jpg",
+        size: 12,
+      },
+      previewImages: [{
+        driveFileId: "valid-preview-id",
+        driveVersion: "1",
+        fileName: "preview-01.jpg",
+        size: validPreview.length,
+      }],
+      deletionStatus: "active",
+    });
+    model = await queueMarketplaceCoverCache(model, model.coverImage);
+    model = await MarketplaceModel.findByIdAndUpdate(model._id, {
+      $set: { "coverCache.status": "processing", "coverCache.lockedAt": new Date() },
+      $inc: { "coverCache.attempts": 1 },
+    }, { new: true });
+
+    assert.equal((await processMarketplaceCoverCacheModel(model)).status, "ready");
+    assert.deepEqual(requestedIds, ["broken-cover-id", "valid-preview-id"]);
+
+    await MarketplaceModel.findByIdAndUpdate(model._id, {
+      $set: { "coverCache.status": "error", "coverCache.error": "temporary failure", "coverCache.attempts": 8 },
+    });
+    assert.equal(await requeueFailedMarketplaceCoverCaches({ assetType: "model" }), 1);
+    const requeued = await MarketplaceModel.findById(model._id).lean();
+    assert.equal(requeued.coverCache.status, "queued");
+    assert.equal(requeued.coverCache.attempts, 0);
+    assert.equal(requeued.coverCache.error, "");
   } finally {
     globalThis.fetch = previousFetch;
     await fs.promises.rm(cacheRoot, { recursive: true, force: true });

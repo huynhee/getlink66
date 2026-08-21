@@ -26,6 +26,7 @@ const { adminCleanupMarketplaceRaw } = await import("../src/controllers/marketpl
 const {
   pollMarketplaceDriveChanges,
   processMarketplaceDriveChangeQueue,
+  retryFailedMarketplaceDriveChanges,
 } = await import("../src/utils/marketplaceDriveSyncJob.js");
 const { listMarketplaceModels } = await import("../src/controllers/marketplaceController.js");
 
@@ -599,6 +600,27 @@ test("a change arriving during folder sync remains queued for the next pass", as
   } finally {
     restoreFetch();
   }
+});
+
+test("failed Drive changes can be reset without starting a full reconciliation", async () => {
+  const rootFolderId = `retry-root-${Math.random().toString(16).slice(2)}`;
+  await MarketplaceDriveChange.create({
+    rootFolderId,
+    driveFolderId: "failed-folder",
+    assetType: "model",
+    generation: 1,
+    attempts: 8,
+    status: "failed",
+    lastError: "temporary Drive error",
+    nextAttemptAt: new Date(Date.now() + 60_000),
+  });
+
+  assert.equal(await retryFailedMarketplaceDriveChanges({ rootId: rootFolderId }), 1);
+  const retried = await MarketplaceDriveChange.findOne({ rootFolderId }).lean();
+  assert.equal(retried.status, "pending");
+  assert.equal(retried.attempts, 0);
+  assert.equal(retried.lastError, "");
+  assert.ok(new Date(retried.nextAttemptAt).getTime() <= Date.now());
 });
 
 test("public marketplace response never exposes Drive or sync internals", async () => {

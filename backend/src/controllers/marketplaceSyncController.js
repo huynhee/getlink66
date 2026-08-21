@@ -1,8 +1,11 @@
 import {
   getMarketplaceDriveSyncState,
   marketplaceDriveSyncConfig,
+  processMarketplaceDriveChangeQueue,
+  retryFailedMarketplaceDriveChanges,
   runMarketplaceDriveSyncOnce,
 } from "../utils/marketplaceDriveSyncJob.js";
+import { requeueFailedMarketplaceCoverCaches } from "../utils/marketplaceCoverCache.js";
 import MarketplaceDriveChange from "../models/MarketplaceDriveChange.js";
 import { rejectUnknownKeys } from "../utils/validators.js";
 import {
@@ -56,6 +59,36 @@ export async function adminRunMarketplaceDriveSync(req, res, next) {
     });
   } catch (error) {
     next(error);
+  }
+}
+
+export async function adminRetryMarketplaceDriveFailures(req, res, next) {
+  try {
+    const assetType = req.marketplaceAssetType === "scene" ? "scene" : "model";
+    const config = marketplaceDriveSyncConfig();
+    const configuredRoot = config.roots?.find((item) => item.assetType === assetType)?.rootFolderId || "";
+    const unknownKey = rejectUnknownKeys(req.body || {}, ["rootFolderId"]);
+    if (unknownKey) return res.status(400).json({ message: "Invalid retry request" });
+    const rootFolderId = String(req.body?.rootFolderId || configuredRoot).trim();
+    const requeued = await retryFailedMarketplaceDriveChanges({ rootId: rootFolderId });
+    const queue = requeued
+      ? await processMarketplaceDriveChangeQueue({ rootId: rootFolderId, limit: requeued })
+      : { processed: 0, failed: 0, results: [] };
+    return res.json({ requeued, ...queue });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function adminRetryMarketplaceCoverFailures(req, res, next) {
+  try {
+    const assetType = req.marketplaceAssetType === "scene" ? "scene" : "model";
+    const unknownKey = rejectUnknownKeys(req.body || {}, []);
+    if (unknownKey) return res.status(400).json({ message: "Invalid cover retry request" });
+    const requeued = await requeueFailedMarketplaceCoverCaches({ assetType });
+    return res.json({ requeued, assetType });
+  } catch (error) {
+    return next(error);
   }
 }
 

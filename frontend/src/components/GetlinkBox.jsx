@@ -96,6 +96,7 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
   const [includePreviewImage, setIncludePreviewImage] = useState(false);
   const [selectedFormatKey, setSelectedFormatKey] = useState("");
   const [pendingFormatSelection, setPendingFormatSelection] = useState(null);
+  const [previewImageFailed, setPreviewImageFailed] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -184,6 +185,7 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
           || job.selectedFormat;
         setSelectedFormatKey(defaultFormat?.key || "");
       }
+      setPreviewImageFailed(false);
       setPreview((current) => ({
         ...(current || {}),
         title: job.title || current?.title,
@@ -198,6 +200,7 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
       setResult(job.result?.downloadUrl || "");
       setPreviewImageDownloadUrl(job.result?.previewImageDownloadUrl || "");
       setIncludePreviewImage(Boolean(job.includePreviewImage));
+      setPreviewImageFailed(false);
       setPreview((current) => ({
         ...(current || {}),
         title: job.title || current?.title,
@@ -336,6 +339,7 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
         method: "POST",
         body: JSON.stringify({ modelId: modelInput })
       });
+      setPreviewImageFailed(false);
       setPreview(data);
       setPreviewUrl(modelInput);
       finishProgress(language === "vi" ? "Đã lấy thông tin model" : "Model info loaded");
@@ -560,8 +564,13 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
           <span>{t.modelInfo}</span>
           <div style={{ display: "grid", gridTemplateColumns: "96px minmax(0, 1fr)", gap: 14, alignItems: "center" }}>
             <div style={{ width: 96, height: 96, borderRadius: 8, overflow: "hidden", background: "rgba(255,255,255,0.05)" }}>
-              {preview.imageUrl ? (
-                <img src={preview.imageUrl} alt={preview.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              {preview.imageUrl && !previewImageFailed ? (
+                <img
+                  src={preview.imageUrl}
+                  alt={preview.title}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  onError={() => setPreviewImageFailed(true)}
+                />
               ) : (
                 <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", opacity: 0.55 }}>
                   3D

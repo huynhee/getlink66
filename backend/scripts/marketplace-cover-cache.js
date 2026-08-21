@@ -6,6 +6,7 @@ import { closeDbConnections, connectDb } from "../src/config/db.js";
 const args = new Set(process.argv.slice(2));
 const execute = args.has("--execute");
 const verifyOnly = args.has("--verify");
+const retryErrors = args.has("--retry-errors");
 const batchArgument = process.argv.find((value) => value.startsWith("--batch="));
 const batchSize = Math.min(2_000, Math.max(50, Number(batchArgument?.split("=")[1] || 500)));
 const checkpointPath = path.resolve(process.cwd(), ".cache", "marketplace-cover-backfill.json");
@@ -71,6 +72,7 @@ async function main() {
       marketplaceCoverCacheConfig,
       marketplaceCoverSourceFingerprint,
       queueMarketplaceCoverCache,
+      requeueFailedMarketplaceCoverCaches,
       verifyMarketplaceCoverCacheFile,
     },
   ] = await Promise.all([
@@ -89,6 +91,17 @@ async function main() {
   }
   if (execute && !config.enabled) {
     throw new Error("Set MARKETPLACE_COVER_CACHE_ENABLED=true before running cover backfill.");
+  }
+
+  if (retryErrors) {
+    const failed = await MarketplaceModel.countDocuments({ "coverCache.status": "error" });
+    const requeued = execute ? await requeueFailedMarketplaceCoverCaches() : failed;
+    console.log(JSON.stringify({
+      mode: execute ? "retry-errors" : "retry-errors-dry-run",
+      failed,
+      requeued,
+    }, null, 2));
+    return;
   }
 
   const checkpoint = execute ? readCheckpoint() : { processed: 0, queued: 0, lastId: null };

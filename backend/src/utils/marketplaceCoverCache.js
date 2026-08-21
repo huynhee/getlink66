@@ -1,8 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
@@ -158,7 +156,7 @@ export async function queueMarketplaceCoverCache(model, sourceImage = null, opti
     !options.force
     &&
     current.sourceFingerprint === fingerprint
-    && ["queued", "processing", "ready", "error"].includes(current.status)
+    && ["queued", "processing", "ready"].includes(current.status)
   ) {
     return model;
   }
@@ -203,9 +201,12 @@ async function cacheFileInfo(key) {
 async function generateCover(model) {
   const config = marketplaceCoverCacheConfig();
   const fingerprint = String(model.coverCache?.sourceFingerprint || "");
-  const driveFileId = String(model.coverImage?.driveFileId || "");
-  if (!fingerprint || !driveFileId) throw new Error("Marketplace cover source is missing.");
-  assertSupportedCoverSource(model.coverImage?.fileName);
+  const candidates = [model.coverImage, ...(model.previewImages || [])]
+    .filter((image) => image?.driveFileId)
+    .filter((image, index, values) => (
+      values.findIndex((candidate) => candidate.driveFileId === image.driveFileId) === index
+    ));
+  if (!fingerprint || !candidates.length) throw new Error("Marketplace cover source is missing.");
   const key = coverCacheKey(model, fingerprint);
   const targetPath = marketplaceCoverCachePath(key);
   await fs.promises.mkdir(path.dirname(targetPath), { recursive: true, mode: 0o755 });
@@ -217,48 +218,45 @@ async function generateCover(model) {
     await removeFile(key);
   }
 
-  const token = `${process.pid}-${crypto.randomBytes(8).toString("hex")}`;
-  const sourcePath = `${targetPath}.${token}.source`;
-  const outputPath = `${targetPath}.${token}.tmp`;
-  try {
-    const source = await openGoogleDriveFileStream(driveFileId, model.coverImage?.fileName || "cover");
-    if (source.contentLength > 50 * 1024 * 1024) {
-      throw new Error("Marketplace cover source exceeds 50 MB.");
-    }
-    let receivedBytes = 0;
-    const limitSourceSize = new Transform({
-      transform(chunk, _encoding, callback) {
-        receivedBytes += chunk.length;
+  let lastError = null;
+  for (const [candidateIndex, candidate] of candidates.entries()) {
+    const token = `${process.pid}-${candidateIndex}-${crypto.randomBytes(8).toString("hex")}`;
+    const outputPath = `${targetPath}.${token}.tmp`;
+    try {
+      assertSupportedCoverSource(candidate.fileName);
+      const source = await openGoogleDriveFileStream(candidate.driveFileId, candidate.fileName || "cover");
+      if (source.contentLength > 50 * 1024 * 1024) {
+        throw new Error("Marketplace cover source exceeds 50 MB.");
+      }
+      let receivedBytes = 0;
+      const chunks = [];
+      for await (const chunk of source.stream) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        receivedBytes += buffer.length;
         if (receivedBytes > 50 * 1024 * 1024) {
-          callback(new Error("Marketplace cover source exceeds 50 MB."));
-          return;
+          throw new Error("Marketplace cover source exceeds 50 MB.");
         }
-        callback(null, chunk);
-      },
-    });
-    await pipeline(
-      source.stream,
-      limitSourceSize,
-      fs.createWriteStream(sourcePath, { flags: "wx", mode: 0o600 }),
-    );
-    await sharp(sourcePath, { failOn: "warning" })
-      .rotate()
-      .resize(config.size, config.size, {
-        fit: "contain",
-        withoutEnlargement: false,
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      })
-      .webp({ quality: config.quality, alphaQuality: config.quality, effort: 4 })
-      .toFile(outputPath);
-    await fs.promises.chmod(outputPath, 0o644);
-    await fs.promises.rename(outputPath, targetPath);
-    return cacheFileInfo(key);
-  } finally {
-    await Promise.allSettled([
-      fs.promises.rm(sourcePath, { force: true }),
-      fs.promises.rm(outputPath, { force: true }),
-    ]);
+        chunks.push(buffer);
+      }
+      await sharp(Buffer.concat(chunks, receivedBytes), { failOn: "warning" })
+        .rotate()
+        .resize(config.size, config.size, {
+          fit: "contain",
+          withoutEnlargement: false,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
+        .webp({ quality: config.quality, alphaQuality: config.quality, effort: 4 })
+        .toFile(outputPath);
+      await fs.promises.chmod(outputPath, 0o644);
+      await fs.promises.rename(outputPath, targetPath);
+      return cacheFileInfo(key);
+    } catch (error) {
+      lastError = error;
+    } finally {
+      await fs.promises.rm(outputPath, { force: true }).catch(() => {});
+    }
   }
+  throw lastError || new Error("No valid JPEG or PNG cover source was found.");
 }
 
 function retryAt(attempts) {
@@ -327,6 +325,25 @@ export async function openMarketplaceCoverCache(model = {}) {
   } catch {
     return null;
   }
+}
+
+export async function requeueFailedMarketplaceCoverCaches({ assetType = "" } = {}) {
+  const query = {
+    "coverCache.status": "error",
+    "coverCache.sourceFingerprint": { $type: "string", $gt: "" },
+    $or: [{ deletionStatus: "active" }, { deletionStatus: { $exists: false } }],
+  };
+  if (assetType) query.assetType = normalizeAssetType(assetType);
+  const result = await MarketplaceModel.updateMany(query, {
+    $set: {
+      "coverCache.status": "queued",
+      "coverCache.error": "",
+      "coverCache.attempts": 0,
+      "coverCache.nextRetryAt": new Date(),
+      "coverCache.lockedAt": null,
+    },
+  });
+  return Number(result.modifiedCount || 0);
 }
 
 export async function marketplaceCoverCacheStats() {

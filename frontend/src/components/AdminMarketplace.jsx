@@ -723,6 +723,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
   const [syncRunning, setSyncRunning] = useState(false);
   const [syncFolderId, setSyncFolderId] = useState("");
   const [folderSyncRunning, setFolderSyncRunning] = useState(false);
+  const [retryingFailureType, setRetryingFailureType] = useState("");
   const [migrationRunning, setMigrationRunning] = useState(false);
   const [migrationResult, setMigrationResult] = useState(null);
   const [metadataSavingId, setMetadataSavingId] = useState("");
@@ -1063,6 +1064,34 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
       setError(err.message);
     } finally {
       setVerifyingFileId("");
+    }
+  }
+
+  async function retryFailedJobs(type) {
+    setMessage("");
+    setError("");
+    setRetryingFailureType(type);
+    try {
+      const endpoint = type === "cover"
+        ? `${adminOpsBase}/covers/retry-failures`
+        : `${adminOpsBase}/drive/retry-failures`;
+      const data = await api(endpoint, {
+        method: "POST",
+        body: JSON.stringify(type === "drive" ? {
+          rootFolderId: syncRootFolderId || driveImportForm.rootFolderId,
+        } : {}),
+      });
+      setMessage(type === "cover"
+        ? l(`Đã đưa ${data.requeued || 0} cover lỗi về hàng đợi.`, `Requeued ${data.requeued || 0} failed covers.`)
+        : l(
+          `Đã thử lại ${data.requeued || 0} folder; còn lỗi ${data.failed || 0}.`,
+          `Retried ${data.requeued || 0} folders; ${data.failed || 0} still failed.`,
+        ));
+      await loadModels(page);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRetryingFailureType("");
     }
   }
 
@@ -1496,6 +1525,12 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
                     : l("Chạy nền có checkpoint", "Background with checkpoint")}
               </span>
             </div>
+            <p className="muted">
+              {l(
+                "Chỉ dùng khi phục hồi hoặc kiểm tra toàn bộ dữ liệu. Model/scene mới và file vừa đổi được Changes API đồng bộ riêng từng folder.",
+                "Use only for recovery or a full audit. Changes API syncs new assets and changed files one folder at a time.",
+              )}
+            </p>
             <div className="marketAdminFieldGrid">
               <label>
                 <span>{isScene ? l("Thư mục scenes trên Drive", "Scenes folder on Drive") : l("Thư mục models trên Drive", "Models folder on Drive")}</span>
@@ -1577,6 +1612,12 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
                 {syncInfo?.config?.enabled ? l("Đang bật", "Enabled") : l("Đang tắt", "Disabled")}
               </span>
             </div>
+            <p className="muted">
+              {l(
+                "Đây là đồng bộ tăng dần: chỉ đọc thay đổi mới kể từ token gần nhất, không quét lại toàn bộ Drive.",
+                "This is incremental sync: only changes after the latest token are read; the entire Drive is not rescanned.",
+              )}
+            </p>
             <div className="marketAdminFieldGrid">
               <label>
                 <span>Root folder ID</span>
@@ -1622,6 +1663,16 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
               </label>
             </div>
             <div className="marketAdminSyncActions">
+              {Number(syncInfo?.queue?.failed || 0) > 0 && (
+                <button type="button" className="smallButton" onClick={() => retryFailedJobs("drive")} disabled={Boolean(retryingFailureType)}>
+                  <RotateCcw size={17} /> {retryingFailureType === "drive" ? l("Đang thử lại...", "Retrying...") : l("Thử lại sync lỗi", "Retry failed syncs")}
+                </button>
+              )}
+              {Number(stats?.coverCacheErrors || 0) > 0 && (
+                <button type="button" className="smallButton" onClick={() => retryFailedJobs("cover")} disabled={Boolean(retryingFailureType)}>
+                  <ImageOff size={17} /> {retryingFailureType === "cover" ? l("Đang đưa lại hàng đợi...", "Requeuing...") : l(`Thử lại ${stats.coverCacheErrors} cover lỗi`, `Retry ${stats.coverCacheErrors} failed covers`)}
+                </button>
+              )}
               <button type="button" className="smallButton" onClick={syncOneDriveFolder} disabled={folderSyncRunning || !syncFolderId.trim()}>
                 <RefreshCw size={17} /> {folderSyncRunning ? l("Đang đồng bộ...", "Syncing...") : isScene ? l("Sync một scene", "Sync one scene") : l("Sync một model", "Sync one model")}
               </button>
@@ -1632,7 +1683,13 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
           </section>
 
           <details className="marketAdminForm marketAdminManualImport">
-            <summary><Database size={16} /> {isScene ? "Migration metadata V3" : "Migration metadata V2"}</summary>
+            <summary><Database size={16} /> {isScene ? l("Nâng cấp metadata cũ · Scene V3", "Upgrade legacy metadata · Scene V3") : l("Nâng cấp metadata cũ · Model V2", "Upgrade legacy metadata · Model V2")}</summary>
+            <p className="muted">
+              {l(
+                "Chỉ dùng một lần cho file metadata schema cũ: hệ thống backup rồi chuẩn hóa sang schema hiện tại. Upload và đồng bộ tài nguyên mới không cần chạy mục này.",
+                "Use once for legacy metadata schemas: the current file is backed up before conversion. New uploads and normal sync do not use this action.",
+              )}
+            </p>
             <div className="marketAdminSyncActions">
               <button type="button" className="smallButton" disabled={migrationRunning} onClick={() => runMetadataMigration(true)}>
                 {l("Kiểm tra batch đầu", "Check first batch")}

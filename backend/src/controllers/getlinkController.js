@@ -551,6 +551,12 @@ function publicPreviewImageUrl(req, historyId) {
   return `${publicBaseUrl(req)}/api/getlink/preview-image/${historyId}?t=${token}`;
 }
 
+function publicCachedPreviewImageUrl(req, productId) {
+  const normalizedProductId = String(productId || "").trim();
+  if (!normalizedProductId) return "";
+  return `${publicBaseUrl(req)}/api/getlink/preview-cache/${encodeURIComponent(normalizedProductId)}`;
+}
+
 export function publicHistoryItem(req, item) {
   const doc = item.toObject ? item.toObject() : item;
   const allowed = canRedownload(doc);
@@ -559,7 +565,7 @@ export function publicHistoryItem(req, item) {
     _id: doc._id,
     productId: doc.productId || "",
     title: doc.title || "",
-    imageUrl: doc.imageUrl || "",
+    imageUrl: doc.imageUrl ? publicCachedPreviewImageUrl(req, doc.productId) : "",
     creditUsed: Number(doc.creditUsed || 0),
     downloadFormat: doc.downloadFormat || null,
     initialDownloadAt: doc.initialDownloadAt || null,
@@ -596,7 +602,7 @@ function sendFreeRedownload(req, res, history, options = {}) {
         : null,
     productId: history.productId,
     title: history.title,
-    imageUrl: history.imageUrl,
+    imageUrl: history.imageUrl ? publicCachedPreviewImageUrl(req, history.productId) : "",
     selectedFormat: history.downloadFormat || null,
     credit: req.user.credit,
     cached: true,
@@ -1223,7 +1229,7 @@ export async function previewGetlink(req, res, next) {
       return res.json({
         productId: previewProductId,
         title: cache.title || cache.productId,
-        imageUrl: cache.imageUrl || "",
+        imageUrl: cache.imageUrl ? publicCachedPreviewImageUrl(req, previewProductId) : "",
         creditCost: normalizeDownloadCreditCost(cache.creditCost, 1),
         cached: isCacheFresh(cache),
       });
@@ -1248,7 +1254,7 @@ export async function previewGetlink(req, res, next) {
       productId: resolvedProductId,
       sourceUrl: preview.sourceUrl || url,
       title: preview.title,
-      imageUrl: preview.imageUrl,
+      imageUrl: preview.imageUrl ? publicCachedPreviewImageUrl(req, resolvedProductId) : "",
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
       priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
     };
@@ -2495,6 +2501,73 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
   } finally {
     if (previewTimeout) clearTimeout(previewTimeout);
     if (downloadSlot?.release) downloadSlot.release();
+  }
+}
+
+export async function proxyCachedGetlinkPreviewImage(req, res, next) {
+  const controller = new AbortController();
+  const timeoutController = new AbortController();
+  const timeout = setTimeout(() => timeoutController.abort(), PREVIEW_IMAGE_TIMEOUT_MS);
+  res.on("close", () => {
+    if (!res.writableEnded) controller.abort();
+  });
+
+  try {
+    const productId = String(req.params.productId || "").trim();
+    if (!productId || productId.length > 160) {
+      return res.status(400).json({ message: "Invalid product id" });
+    }
+    const cache = await ProductCache.findOne({ productId })
+      .select("productId imageUrl sourceUrl updatedAt")
+      .lean();
+    const history = cache?.imageUrl ? null : await Getlink.findOne({ userId: req.user._id, productId })
+      .sort({ createdAt: -1 })
+      .select("productId imageUrl sourceUrl")
+      .lean();
+    const sourceRecord = cache?.imageUrl ? cache : history;
+    if (!sourceRecord?.imageUrl) return res.status(404).json({ message: "Preview image not found" });
+
+    const signal = AbortSignal.any([controller.signal, timeoutController.signal]);
+    const headers = {
+      "user-agent": req.get("user-agent") || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      referer: sourceRecord.sourceUrl || "https://www.3d66.com/",
+      accept: "image/jpeg,image/png,image/webp,image/gif,image/*;q=0.8,*/*;q=0.5",
+    };
+    let sourceBuffer = null;
+    let lastStatus = 0;
+    for (const previewUrl of previewImageUrlCandidates(sourceRecord.imageUrl, sourceRecord.sourceUrl)) {
+      const candidate = await fetchPreviewImageCandidate(previewUrl, { signal, headers });
+      lastStatus = candidate.status;
+      const declaredType = String(candidate.headers.get("content-type") || "").toLowerCase();
+      const declaredLength = Number(candidate.headers.get("content-length") || 0);
+      if (candidate.ok && declaredType.startsWith("image/") && declaredLength <= MAX_PREVIEW_IMAGE_BYTES) {
+        const candidateBuffer = Buffer.from(await candidate.arrayBuffer());
+        if (candidateBuffer.length <= MAX_PREVIEW_IMAGE_BYTES && sniffImageMime(candidateBuffer)) {
+          sourceBuffer = candidateBuffer;
+          break;
+        }
+      }
+      await candidate.body?.cancel().catch(() => {});
+    }
+    if (!sourceBuffer) {
+      return res.status(502).json({ message: `Preview image unavailable: HTTP ${lastStatus || 502}` });
+    }
+
+    const jpegBuffer = await convertPreviewImageToJpeg(sourceBuffer);
+    const safeName = productId.replace(/[^a-z0-9_-]+/gi, "-") || "preview";
+    res.setHeader("content-type", "image/jpeg");
+    res.setHeader("content-length", String(jpegBuffer.length));
+    res.setHeader("content-disposition", `inline; filename="${safeName}.jpg"`);
+    res.setHeader("cache-control", "private, max-age=600, stale-if-error=86400");
+    return res.status(200).end(jpegBuffer);
+  } catch (error) {
+    if (error.name === "AbortError" && timeoutController.signal.aborted && !controller.signal.aborted) {
+      return res.status(504).json({ message: "Preview image request timed out." });
+    }
+    if (error.name === "AbortError") return;
+    return next(error);
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

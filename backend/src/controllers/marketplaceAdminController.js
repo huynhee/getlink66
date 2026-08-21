@@ -907,13 +907,14 @@ export async function adminMarketplaceStats(req, res, next) {
     const assetType = adminAssetType(req);
     const assetQuery = { assetType };
     const catalogQuery = { assetType, $and: [marketplaceActiveDeletionQuery()] };
-    const [models, ready, missing, sessions, downloads, trashed, reportStats] = await Promise.all([
+    const [models, ready, missing, sessions, downloads, trashed, coverCacheErrors, reportStats] = await Promise.all([
       MarketplaceModel.countDocuments(catalogQuery),
       MarketplaceModel.countDocuments({ ...catalogQuery, fileStatus: "ready" }),
       MarketplaceModel.countDocuments({ ...catalogQuery, fileStatus: { $ne: "ready" } }),
       DownloadSession.countDocuments(assetQuery),
       ModelDownload.countDocuments(assetQuery),
       MarketplaceModel.countDocuments({ assetType, ...marketplaceTrashDeletionQuery() }),
+      MarketplaceModel.countDocuments({ ...catalogQuery, "coverCache.status": "error" }),
       marketplaceReportStats(assetType),
     ]);
     const [completeMetadata, incompleteMetadata, published] = await Promise.all([
@@ -934,6 +935,7 @@ export async function adminMarketplaceStats(req, res, next) {
         published,
         draft: Math.max(0, models - published),
         trashed,
+        coverCacheErrors,
         activeReports: reportStats.activeReports,
         reportedAssets: reportStats.reportedAssets,
       },

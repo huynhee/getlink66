@@ -38,7 +38,7 @@ function redownloadUsageLabel(item, language = "vi") {
 export default function Home({ user, onUserChange, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const [getlinkHistory, setGetlinkHistory] = useState([]);
-  const [topupHistory, setTopupHistory] = useState([]);
+  const [creditHistory, setCreditHistory] = useState([]);
   const [redownloadItem, setRedownloadItem] = useState(null);
   const [redownloadPreparingId, setRedownloadPreparingId] = useState("");
   const initialUrl = new URLSearchParams(window.location.search).get("url") || "";
@@ -46,11 +46,6 @@ export default function Home({ user, onUserChange, language = "vi" }) {
 
   function updateCredit(credit) {
     onUserChange({ ...user, credit });
-  }
-
-  function topupTitle(item) {
-    if (item.type === "manual" && !item.packageId) return t.adminCredit;
-    return `${t.packagePrefix} ${item.packageId?.name || "Coin"}`;
   }
 
   function redownloadMeta(item) {
@@ -123,7 +118,8 @@ export default function Home({ user, onUserChange, language = "vi" }) {
 
   useEffect(() => {
     api("/api/getlink/history").then((data) => setGetlinkHistory(data.history || []));
-    api("/api/topup/history").then((data) => setTopupHistory(data.history || []));
+    api("/api/history/timeline?type=credit&page=1&limit=50")
+      .then((data) => setCreditHistory(data.events || []));
   }, [user.credit]);
 
   return (
@@ -209,23 +205,32 @@ export default function Home({ user, onUserChange, language = "vi" }) {
             {t.topupHistory}
           </h2>
           <div className="table compactHistoryTable">
-            {topupHistory.map((item) => (
-              <div className="tableRow" key={item._id}>
-                <span style={{ color: "var(--text-primary)" }}>{topupTitle(item)}</span>
-                <strong><CoinAmount value={item.credit} prefix="+" /></strong>
-                <span>
-                  {item.status === "approved" ? (
-                    <span className="badge success">{t.success}</span>
-                  ) : item.status === "pending" ? (
-                    <span className="badge pending">{t.pending}</span>
-                  ) : (
-                    <span className="badge error">{t.canceled}</span>
-                  )}
-                </span>
-                <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
-              </div>
-            ))}
-            {!topupHistory.length && (
+            {creditHistory.map((item) => {
+              const amount = Number(item.amount || 0);
+              const productId = item.type === "getlink" ? item.metadata?.productId : "";
+              return (
+                <div className="tableRow" key={item.id}>
+                  <span style={{ color: "var(--text-primary)", minWidth: 0 }}>
+                    <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis" }}>{item.title}</strong>
+                    {productId && <small className="historyMeta">ID: {productId}</small>}
+                  </span>
+                  <strong>
+                    {amount ? <CoinAmount value={Math.abs(amount)} prefix={amount > 0 ? "+" : "-"} /> : "-"}
+                  </strong>
+                  <span>
+                    {item.status === "approved" ? (
+                      <span className="badge success">{t.success}</span>
+                    ) : item.status === "pending" ? (
+                      <span className="badge pending">{t.pending}</span>
+                    ) : (
+                      <span className="badge error">{t.canceled}</span>
+                    )}
+                  </span>
+                  <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
+                </div>
+              );
+            })}
+            {!creditHistory.length && (
               <p className="muted" style={{ textAlign: "center", padding: "32px 0", fontSize: 13 }}>
                 {t.noTopupHistory}
               </p>
