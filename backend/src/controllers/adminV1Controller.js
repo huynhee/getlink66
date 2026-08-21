@@ -40,22 +40,32 @@ function parseDate(value) {
   return date && !Number.isNaN(date.getTime()) ? date : null;
 }
 
-function dateRange(req) {
-  const now = new Date();
-  const explicitFrom = parseDate(req.query.from);
-  const explicitTo = parseDate(req.query.to);
+export function adminDashboardDateRange(query = {}, now = new Date()) {
+  const explicitFrom = parseDate(query.from);
+  const explicitTo = parseDate(query.to);
   if (explicitFrom || explicitTo) {
     return {
       from: explicitFrom || new Date(0),
       to: explicitTo || now,
     };
   }
-  const period = String(req.query.period || "week");
+  const period = String(query.period || "week");
+  if (period === "day") {
+    const nextReset = nextVietnamReset(now);
+    return {
+      from: new Date(nextReset.getTime() - 24 * 60 * 60 * 1000),
+      to: new Date(nextReset.getTime() - 1),
+    };
+  }
   const days = period === "day" ? 1 : period === "month" ? 30 : 7;
   return {
     from: new Date(now.getTime() - days * 24 * 60 * 60 * 1000),
     to: now,
   };
+}
+
+function dateRange(req) {
+  return adminDashboardDateRange(req.query, new Date());
 }
 
 function rangeQuery(field, range) {

@@ -8,6 +8,7 @@ import User from "../models/User.js";
 import Voucher from "../models/Voucher.js";
 import { approvedVoucherUseCount } from "./voucherCheckoutService.js";
 import { synchronizeMarketplaceQuotaGrant } from "./marketplaceQuotaGrantService.js";
+import { notifyMembershipApproved } from "./telegramNotifier.js";
 
 export const DEFAULT_MEMBERSHIP_PLANS = [
   {
@@ -339,6 +340,15 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
   }
 }
 
+function notifyMembershipApproval(result, approvalFields = {}) {
+  if (!result) return;
+  notifyMembershipApproved({
+    order: result.order,
+    user: result.user,
+    source: approvalFields.gatewayTransactionId ? "Payment webhook" : "Admin",
+  });
+}
+
 export async function approvePendingMembershipOrder(order, approvalFields = {}) {
   if (isMemoryDb()) {
     const result = await approveMembershipOrderWithSession(order, approvalFields);
@@ -346,6 +356,7 @@ export async function approvePendingMembershipOrder(order, approvalFields = {}) 
       const synced = await synchronizeMarketplaceQuotaGrant(result.order);
       result.order = synced.order;
     }
+    notifyMembershipApproval(result, approvalFields);
     return result;
   }
   const session = await mongoose.startSession();
@@ -364,6 +375,7 @@ export async function approvePendingMembershipOrder(order, approvalFields = {}) 
         result.order = error.order || result.order;
       }
     }
+    notifyMembershipApproval(result, approvalFields);
     return result;
   } finally {
     await session.endSession();

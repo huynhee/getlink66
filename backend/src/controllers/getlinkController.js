@@ -1,5 +1,6 @@
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import sharp from "sharp";
 import Getlink from "../models/Getlink.js";
 import ProductCache from "../models/ProductCache.js";
 import User from "../models/User.js";
@@ -634,25 +635,6 @@ function fileExtensionFromUrl(fileUrl = "") {
   return match ? match[0].toLowerCase() : ".rar";
 }
 
-function imageExtensionFromUrl(imageUrl = "", contentType = "") {
-  const byContentType = String(contentType).toLowerCase();
-  if (byContentType.includes("avif")) return ".avif";
-  if (byContentType.includes("svg")) return ".svg";
-  if (byContentType.includes("heic")) return ".heic";
-  if (byContentType.includes("png")) return ".png";
-  if (byContentType.includes("webp")) return ".webp";
-  if (byContentType.includes("gif")) return ".gif";
-  if (byContentType.includes("jpeg") || byContentType.includes("jpg")) return ".jpg";
-
-  try {
-    const parsed = new URL(imageUrl);
-    const match = parsed.pathname.match(/\.(jpe?g|png|webp|gif|avif|svg|heic)$/i);
-    return match ? `.${match[1].toLowerCase().replace("jpeg", "jpg")}` : ".jpg";
-  } catch {
-    return ".jpg";
-  }
-}
-
 function sniffImageMime(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 4) return "";
 
@@ -695,12 +677,20 @@ function sniffImageMime(buffer) {
   return "";
 }
 
-function previewImageFileName(history, contentType = "") {
+function previewImageFileName(history) {
   const modelName = fileNameFromUrl(history.fileUrl, history.productId);
   const baseName =
     modelName.replace(/\.[^.]+$/, "").trim() ||
     String(history.productId || "preview");
-  return `${baseName}${imageExtensionFromUrl(history.imageUrl, contentType)}`.replace(/"/g, "");
+  return `${baseName}.jpg`.replace(/"/g, "");
+}
+
+export async function convertPreviewImageToJpeg(buffer) {
+  return sharp(buffer, { failOn: "warning", limitInputPixels: 40_000_000 })
+    .rotate()
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality: 90, chromaSubsampling: "4:4:4", mozjpeg: true })
+    .toBuffer();
 }
 
 export function resolvePreviewImageUrl(imageUrl = "", sourceUrl = "") {
@@ -2454,19 +2444,28 @@ export async function downloadGetlinkPreviewImage(req, res, next) {
       });
     }
 
-    const fileName = previewImageFileName(history, contentType);
+    let jpegBuffer;
+    try {
+      jpegBuffer = await convertPreviewImageToJpeg(previewImageBuffer);
+    } catch {
+      return res.status(502).json({
+        message: "The preview image could not be converted to JPEG.",
+      });
+    }
+
+    const fileName = previewImageFileName(history);
     const encoded = encodeURIComponent(fileName).replace(/['()]/g, (char) =>
       `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
     );
-    res.setHeader("content-length", String(previewImageBuffer.length));
-    res.setHeader("content-type", contentType);
+    res.setHeader("content-length", String(jpegBuffer.length));
+    res.setHeader("content-type", "image/jpeg");
     res.setHeader(
       "content-disposition",
       `attachment; filename="${fileName}"; filename*=UTF-8''${encoded}`,
     );
     res.setHeader("cache-control", "no-store");
     res.setHeader("x-accel-buffering", "no");
-    return res.status(200).end(previewImageBuffer);
+    return res.status(200).end(jpegBuffer);
   } catch (error) {
     if (
       error.name === "AbortError" &&

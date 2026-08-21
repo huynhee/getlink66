@@ -54,6 +54,16 @@ function shortId(value = "") {
   return String(value || "").slice(-8) || "-";
 }
 
+function vietnamDateTime(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
 export async function sendTelegramNotification(message, options = {}) {
   const token = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
   const targets = chatIds();
@@ -98,6 +108,23 @@ export function notifyTopupApproved({ topup, user, source = "System" } = {}) {
   ];
 
   sendTelegramNotification(lines.join("\n")).catch(() => {});
+}
+
+export function notifyMembershipApproved({ order, user, source = "System" } = {}) {
+  const lines = [
+    "<b>Pro membership approved</b>",
+    `Source: ${escapeHtml(source)}`,
+    `User: ${escapeHtml(user?.email || user?.name || String(order?.userId || "-"))}`,
+    `Plan: ${escapeHtml(order?.planName || order?.planCode || "Pro")}`,
+    `Type: ${order?.isQuotaAddon ? "Daily quota add-on" : "Pro membership"}`,
+    `Amount: ${money(order?.amount)}`,
+    `Active until: ${escapeHtml(vietnamDateTime(order?.activatedUntil || user?.proUntil))}`,
+    `Payment code: <code>${escapeHtml(order?.paymentCode || "-")}</code>`,
+  ];
+
+  return sendTelegramNotification(lines.join("\n"), {
+    dedupeKey: `membership-approved:${String(order?._id || order?.paymentCode || "-")}`,
+  }).catch(() => {});
 }
 
 export function notifyTopupRejected({ topup, actor } = {}) {

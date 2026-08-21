@@ -132,6 +132,36 @@ test("daily plan adds quota without replacing an active monthly expiry", async (
   assert.equal(quota.bonusLimit, 100);
 });
 
+test("a seven-day plan extends an active monthly membership", async () => {
+  const originalExpiry = endOfVietnamDay(new Date(Date.now() + 20 * 24 * 60 * 60 * 1000));
+  const user = await User.create({
+    email: "seven-day-extension@example.test",
+    name: "Seven-day extension",
+    proUntil: originalExpiry,
+    proDailyDownloadLimit: 100,
+  });
+  const order = await MembershipOrder.create({
+    userId: user._id,
+    planId: "plan-seven-day-extension",
+    planCode: "WEEKLY",
+    planName: "7 days",
+    amount: 99000,
+    durationDays: 7,
+    dailyDownloadLimit: 100,
+    status: "pending",
+    paymentCode: "PROWEEKLY123456",
+  });
+
+  const result = await approvePendingMembershipOrder(order);
+  const updatedUser = await User.findById(user._id);
+
+  assert.equal(result.order.isQuotaAddon, false);
+  assert.equal(
+    new Date(updatedUser.proUntil).getTime(),
+    originalExpiry.getTime() + 7 * 24 * 60 * 60 * 1000,
+  );
+});
+
 test("a bank transaction claimed by Credit cannot activate Pro", async () => {
   const user = await User.create({ email: "cross-payment@example.test", name: "Cross payment" });
   const order = await MembershipOrder.create({
