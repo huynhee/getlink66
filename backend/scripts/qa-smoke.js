@@ -32,7 +32,6 @@ function browserLaunchOptions() {
 function isExpectedClientAbort(request) {
   const errorText = String(request.failure()?.errorText || "");
   return !request.isNavigationRequest()
-    && ["fetch", "xhr"].includes(request.resourceType())
     && errorText.includes("net::ERR_ABORTED");
 }
 
@@ -69,6 +68,10 @@ function proxyApi(req, res) {
     upstreamResponse.pipe(res);
   });
   upstream.on("error", (error) => {
+    if (res.headersSent || res.writableEnded) {
+      res.destroy(error);
+      return;
+    }
     res.writeHead(502, { "content-type": "application/json" });
     res.end(JSON.stringify({ message: error.message }));
   });

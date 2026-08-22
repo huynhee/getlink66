@@ -6714,12 +6714,12 @@ label {
 
 .fullscreenNotice {
   position: relative;
-  width: min(820px, 100%);
+  width: min(1080px, 100%);
   max-height: min(780px, calc(100vh - 32px));
   overflow: hidden;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  align-items: stretch;
   border: 1px solid rgba(0, 255, 136, 0.45);
   background: rgba(4, 8, 6, 0.97);
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.58), 0 0 40px rgba(0, 255, 136, 0.12);
@@ -6747,9 +6747,12 @@ label {
 }
 
 .fullscreenNoticeImage {
+  min-width: 0;
+  min-height: 420px;
   width: 100%;
-  aspect-ratio: 1 / 1;
-  align-self: start;
+  height: 100%;
+  display: grid;
+  place-items: center;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.04);
 }
@@ -6757,14 +6760,17 @@ label {
 .fullscreenNoticeImage img {
   width: 100%;
   height: 100%;
+  max-height: min(780px, calc(100vh - 32px));
   object-fit: contain;
   object-position: center;
   display: block;
 }
 
 .fullscreenNoticeContent {
+  width: 390px;
+  max-width: 100%;
   display: grid;
-  align-content: center;
+  align-content: start;
   gap: var(--space-8);
   min-height: 0;
   max-height: min(780px, calc(100vh - 32px));
@@ -6811,10 +6817,13 @@ label {
   }
 
   .fullscreenNoticeImage {
+    min-height: 0;
+    height: auto;
     aspect-ratio: 1 / 1;
   }
 
   .fullscreenNoticeContent {
+    width: 100%;
     max-height: none;
     overflow: visible;
     padding: var(--space-16);
