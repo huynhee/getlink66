@@ -4,6 +4,7 @@ import { sendTelegramNotification } from "./telegramNotifier.js";
 
 let timer = null;
 let running = false;
+let stopping = false;
 const sentAt = new Map();
 
 function intervalMs() {
@@ -21,10 +22,11 @@ function shouldSend(code) {
 }
 
 async function run() {
-  if (running) return;
+  if (running || stopping) return;
   running = true;
   try {
     const snapshot = await buildStorageHealthSnapshot({ verifyDrive: true });
+    if (stopping) return;
     const capacityPressure = Number(snapshot.databases?.core?.usagePercent || 0) >= 85
       || Number(snapshot.disk?.usagePercent || 0) >= 85;
     if (
@@ -51,6 +53,7 @@ async function run() {
       }
     }
     for (const alert of snapshot.alerts) {
+      if (stopping) break;
       if (!shouldSend(alert.code)) continue;
       await sendTelegramNotification(
         `<b>3DIPL storage ${alert.severity}</b>\nCode: <code>${alert.code}</code>\n${alert.message}`,
@@ -68,12 +71,14 @@ async function run() {
 
 export function startStorageHealthJob() {
   if (timer || process.env.STORAGE_HEALTH_JOB_ENABLED === "false") return;
+  stopping = false;
   if (process.env.STORAGE_HEALTH_RUN_ON_START === "true") run();
   timer = setInterval(run, intervalMs());
   timer.unref?.();
 }
 
 export function stopStorageHealthJob() {
+  stopping = true;
   if (timer) clearInterval(timer);
   timer = null;
 }

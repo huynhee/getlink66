@@ -183,14 +183,16 @@ export function evaluateStorageAlerts(snapshot, now = new Date()) {
   }
   thresholdAlert(alerts, "ATLAS_CAPACITY", "Atlas Core", snapshot.databases?.core?.usagePercent);
   thresholdAlert(alerts, "VPS_DISK_CAPACITY", "VPS disk", snapshot.disk?.usagePercent);
-  for (const kind of ["core", "marketplace"]) {
-    const backup = snapshot.backups?.[kind];
-    if (!backup || backup.status !== "verified" || Number(backup.ageHours) > 26) {
-      alerts.push({
-        code: `BACKUP_STALE_${kind.toUpperCase()}`,
-        severity: "critical",
-        message: `${kind} backup is missing or older than 26 hours.`,
-      });
+  if (!snapshot.backups?.error) {
+    for (const kind of ["core", "marketplace"]) {
+      const backup = snapshot.backups?.[kind];
+      if (!backup || backup.status !== "verified" || Number(backup.ageHours) > 26) {
+        alerts.push({
+          code: `BACKUP_STALE_${kind.toUpperCase()}`,
+          severity: "critical",
+          message: `${kind} backup is missing or older than 26 hours.`,
+        });
+      }
     }
   }
   if (snapshot.backups?.latestFailure) {
@@ -356,7 +358,7 @@ export async function buildStorageHealthSnapshot({ verifyDrive = true } = {}) {
       driveFailed: countValue(failed),
       archiveErrors: countValue(archiveErrors),
       lastDrivePollAt,
-      queryError: [pending, processing, failed, archiveErrors, states]
+      queryError: [backups, pending, processing, failed, archiveErrors, states]
         .map((value) => value?.error)
         .filter(Boolean)
         .join("; "),

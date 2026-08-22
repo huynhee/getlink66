@@ -90,6 +90,21 @@ test("storage alerts clear an older backup failure after a newer verified run", 
   assert.ok(!evaluateStorageAlerts(snapshot).some((alert) => alert.code === "BACKUP_FAILED"));
 });
 
+test("storage alerts do not report stale backups when the backup query failed", () => {
+  const snapshot = healthySnapshot({
+    backups: { error: "database connection closed" },
+    workers: {
+      driveFailed: 0,
+      archiveErrors: 0,
+      queryError: "database connection closed",
+    },
+  });
+  const codes = evaluateStorageAlerts(snapshot).map((alert) => alert.code);
+  assert.ok(codes.includes("STORAGE_MONITOR_QUERY_ERROR"));
+  assert.ok(!codes.includes("BACKUP_STALE_CORE"));
+  assert.ok(!codes.includes("BACKUP_STALE_MARKETPLACE"));
+});
+
 test("storage alerts expose failed cover cache jobs without making storage unhealthy", () => {
   const snapshot = healthySnapshot({
     coverCache: {
