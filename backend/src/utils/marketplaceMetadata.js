@@ -88,14 +88,15 @@ export function normalizeMarketplaceMetadata(raw = {}, fallback = {}) {
 
 export function marketplaceMetadataDocument(raw = {}, options = {}) {
   const { metadata, errors } = normalizeMarketplaceMetadata(raw, options.fallback || {});
+  const document = {
+    schemaVersion: metadata.assetType === "scene" ? MARKETPLACE_METADATA_SCHEMA_VERSION : 2,
+    revision: Math.max(1, Math.floor(Number(options.revision || raw.revision || 1))),
+    updatedAt: new Date(options.updatedAt || raw.updatedAt || Date.now()).toISOString(),
+    ...metadata,
+  };
+  if (metadata.assetType === "scene") delete document.sourceModelId;
   return {
-    document: {
-      schemaVersion: metadata.assetType === "scene" ? MARKETPLACE_METADATA_SCHEMA_VERSION : 2,
-      revision: Math.max(1, Math.floor(Number(options.revision || raw.revision || 1))),
-      updatedAt: new Date(options.updatedAt || raw.updatedAt || Date.now()).toISOString(),
-      ...metadata,
-      ...(metadata.assetType === "scene" ? { sourceModelId: undefined } : {}),
-    },
+    document,
     errors,
   };
 }

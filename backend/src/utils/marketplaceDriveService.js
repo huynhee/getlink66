@@ -200,12 +200,16 @@ function legacyMetadata(raw = {}, fallback = {}) {
 function stableMetadataDocument(raw, normalized) {
   const source = raw?.model || raw?.data || raw || {};
   const updated = new Date(source.updatedAt || 0);
-  return {
+  const document = {
     schemaVersion: Math.max(1, Number(source.schemaVersion || 1)),
     revision: Math.max(0, Math.floor(Number(source.revision || 0))),
     updatedAt: Number.isNaN(updated.getTime()) ? new Date(0).toISOString() : updated.toISOString(),
     ...normalized,
   };
+  // Scene schema v3 uses sourceAssetId only. Keeping the compatibility alias
+  // here changes the canonical hash after a successful Drive round-trip.
+  if (document.assetType === "scene") delete document.sourceModelId;
+  return document;
 }
 
 export function decodeMarketplaceMetadataBuffer(buffer, { compressed = false } = {}) {
@@ -539,7 +543,34 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
   const currentVersion = String(metadataFile?.version || "");
   const expectedHash = String(expected.metadataHash || "");
   const expectedVersion = String(expected.driveVersion || "");
+  const sourceAssetId = expected.allowSourceModelIdChange
+    ? rawMetadata.sourceAssetId || rawMetadata.sourceModelId
+    : current.metadata?.sourceAssetId || current.metadata?.sourceModelId || model.source?.assetId || model.metadataSourceModelId || sourceIdFromName(model.driveFolderName, model.slug);
+  const requested = normalizeMarketplaceMetadata({
+    ...rawMetadata,
+    assetType: model.assetType || "model",
+    sourceAssetId,
+    sourceModelId: sourceAssetId,
+  });
   if ((expectedHash && expectedHash !== current.hash) || (expectedVersion && expectedVersion !== currentVersion)) {
+    const driveAlreadyHasRequestedMetadata = current.document
+      && current.errors.length === 0
+      && requested.errors.length === 0
+      && marketplaceMetadataDiff(requested.metadata, current.metadata || {}).length === 0;
+    if (driveAlreadyHasRequestedMetadata) {
+      const synced = await syncMarketplaceDriveFolder({
+        driveFolderId: model.driveFolderId,
+        force: true,
+        assetType: model.assetType,
+      });
+      return {
+        ...synced,
+        metadata: current.document,
+        metadataHash: current.hash,
+        driveVersion: currentVersion,
+        recovered: true,
+      };
+    }
     const error = new Error("Drive metadata changed after the model was opened.");
     error.status = 409;
     error.code = "METADATA_CONFLICT";
@@ -555,9 +586,6 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
     error.diff = marketplaceMetadataDiff(rawMetadata, current.metadata || {});
     throw error;
   }
-  const sourceAssetId = expected.allowSourceModelIdChange
-    ? rawMetadata.sourceAssetId || rawMetadata.sourceModelId
-    : current.metadata?.sourceAssetId || current.metadata?.sourceModelId || model.source?.assetId || model.metadataSourceModelId || sourceIdFromName(model.driveFolderName, model.slug);
   const { document, errors } = marketplaceMetadataDocument({ ...rawMetadata, assetType: model.assetType || "model", sourceAssetId, sourceModelId: sourceAssetId }, {
     revision: Math.max(0, Number(current.document?.revision || model.metadataRevision || 0)) + 1,
     updatedAt: new Date(),

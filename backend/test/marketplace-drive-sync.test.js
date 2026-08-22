@@ -19,6 +19,7 @@ const {
 } = await import("../src/utils/marketplaceMetadata.js");
 const {
   decodeMarketplaceMetadataBuffer,
+  readMarketplaceDriveMetadata,
   syncMarketplaceDriveFolder,
   writeMarketplaceModelMetadata,
 } = await import("../src/utils/marketplaceDriveService.js");
@@ -597,6 +598,73 @@ test("a change arriving during folder sync remains queued for the next pass", as
     assert.equal(result.results[0].status, "rescheduled");
     assert.equal(queued.status, "pending");
     assert.equal(queued.generation, 2);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("scene metadata keeps its canonical hash after a Drive read", async () => {
+  const { document, errors } = marketplaceMetadataDocument({
+    assetType: "scene",
+    sourceAssetId: "scene-hash-roundtrip",
+    title: "Scene hash round-trip",
+    sourceCategoryId: "living-room",
+    accessType: "member",
+    renderer: "Corona",
+    styles: ["modern"],
+    renderers: ["corona"],
+    platforms: ["3dsmax"],
+    sha256: "b".repeat(64),
+  }, {
+    revision: 2,
+    updatedAt: "2026-08-22T00:00:00.000Z",
+  });
+  assert.deepEqual(errors, []);
+  assert.equal(Object.hasOwn(document, "sourceModelId"), false);
+
+  const compressed = zlib.gzipSync(Buffer.from(serializeMarketplaceMetadata(document)));
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/drive/v3/files/scene-metadata" && url.searchParams.get("alt") === "media") {
+      return new Response(compressed, { status: 200, headers: { "content-type": "application/gzip" } });
+    }
+    return jsonResponse({ error: { message: `Unhandled test URL ${url.pathname}` } }, 404);
+  };
+
+  try {
+    const confirmed = await readMarketplaceDriveMetadata({
+      id: "scene-metadata",
+      name: "metadata.json.gz",
+    });
+    assert.equal(Object.hasOwn(confirmed.document, "sourceModelId"), false);
+    assert.equal(confirmed.hash, marketplaceMetadataHash(document));
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("retrying an already-written metadata edit repairs Mongo without rewriting Drive", async () => {
+  const fixture = createDriveFixture();
+  const restoreFetch = fixture.install();
+  try {
+    const created = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id });
+    const staleModel = await MarketplaceModel.findById(created.model._id).lean();
+    fixture.setMetadata({ title: "Recovered Drive edit" });
+    const patchCountBeforeRetry = fixture.patchCount;
+
+    const result = await writeMarketplaceModelMetadata(
+      staleModel,
+      metadataInput({ title: "Recovered Drive edit" }),
+      {
+        metadataHash: staleModel.metadataHash,
+        driveVersion: staleModel.metadataDriveVersion,
+      },
+    );
+
+    assert.equal(result.recovered, true);
+    assert.equal(result.model.title, "Recovered Drive edit");
+    assert.equal(fixture.patchCount, patchCountBeforeRetry);
   } finally {
     restoreFetch();
   }
