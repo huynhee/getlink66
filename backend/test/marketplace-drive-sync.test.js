@@ -144,6 +144,9 @@ function createDriveFixture() {
     ],
     patchCount: 0,
     failPatch: false,
+    staleReadsAfterPatch: 0,
+    staleReadsRemaining: 0,
+    staleMetadataBuffer: null,
     changes: [],
     onFolderList: null,
     install() {
@@ -169,6 +172,10 @@ function createDriveFixture() {
         if (url.pathname === `/drive/v3/files/${rootId}`) return jsonResponse(fixture.root);
         if (url.pathname === `/drive/v3/files/${folderId}`) return jsonResponse(fixture.folder);
         if (url.pathname === `/drive/v3/files/${metadataId}` && url.searchParams.get("alt") === "media") {
+          if (fixture.staleReadsRemaining > 0 && fixture.staleMetadataBuffer) {
+            fixture.staleReadsRemaining -= 1;
+            return new Response(fixture.staleMetadataBuffer, { status: 200, headers: { "content-type": "application/gzip" } });
+          }
           return new Response(fixture.metadataBuffer, { status: 200, headers: { "content-type": "application/gzip" } });
         }
         const driveFile = fixture.files.find((file) => url.pathname === `/drive/v3/files/${file.id}`);
@@ -176,7 +183,9 @@ function createDriveFixture() {
         if (url.pathname === `/upload/drive/v3/files/${metadataId}` && method === "PATCH") {
           fixture.patchCount += 1;
           if (fixture.failPatch) return jsonResponse({ error: { message: "simulated Drive failure" } }, 500);
+          fixture.staleMetadataBuffer = fixture.metadataBuffer;
           fixture.metadataBuffer = Buffer.from(options.body);
+          fixture.staleReadsRemaining = fixture.staleReadsAfterPatch;
           const file = fixture.files.find((item) => item.id === metadataId);
           file.version = String(Number(file.version) + 1);
           file.modifiedTime = new Date().toISOString();
@@ -598,6 +607,24 @@ test("a change arriving during folder sync remains queued for the next pass", as
     assert.equal(result.results[0].status, "rescheduled");
     assert.equal(queued.status, "pending");
     assert.equal(queued.generation, 2);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("metadata verification tolerates a short stale Drive read after update", async () => {
+  const fixture = createDriveFixture();
+  fixture.staleReadsAfterPatch = 2;
+  const restoreFetch = fixture.install();
+  try {
+    const created = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id });
+    const result = await writeMarketplaceModelMetadata(created.model, metadataInput({ title: "Saved after stale reads" }), {
+      metadataHash: created.model.metadataHash,
+      driveVersion: created.model.metadataDriveVersion,
+    });
+    assert.equal(fixture.patchCount, 1);
+    assert.equal(fixture.staleReadsRemaining, 0);
+    assert.equal(result.model.title, "Saved after stale reads");
   } finally {
     restoreFetch();
   }

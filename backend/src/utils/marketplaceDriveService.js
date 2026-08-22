@@ -23,6 +23,11 @@ import { resolveMarketplaceCategory, validateMarketplaceTaxonomy } from "./marke
 import { queueMarketplaceCoverCache } from "./marketplaceCoverCache.js";
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
+const METADATA_VERIFY_DELAYS_MS = [0, 250, 750, 1500];
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 function clean(value, max = 200) {
   return String(value ?? "").trim().slice(0, max);
@@ -258,6 +263,20 @@ export async function readMarketplaceDriveMetadata(file, fallback = {}, options 
     hash: marketplaceMetadataHash(document),
     errors: [...errors, ...taxonomy.errors],
   };
+}
+
+async function verifyMarketplaceDriveMetadataWrite(file, expectedHash, model) {
+  let confirmed = null;
+  for (const delay of METADATA_VERIFY_DELAYS_MS) {
+    if (delay) await wait(delay);
+    confirmed = await readMarketplaceDriveMetadata(
+      { ...file, name: file.name || "metadata.json.gz" },
+      {},
+      { currentModel: model },
+    );
+    if (confirmed.hash === expectedHash) return confirmed;
+  }
+  return confirmed;
 }
 
 async function readChecksum(file) {
@@ -628,15 +647,17 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
       content: compressed,
       contentType: "application/gzip",
     });
-  const confirmed = await readMarketplaceDriveMetadata(
-    { ...written, name: written.name || "metadata.json.gz" },
-    {},
-    { currentModel: model },
-  );
   const expectedWrittenHash = marketplaceMetadataHash(document);
+  const confirmed = await verifyMarketplaceDriveMetadataWrite(written, expectedWrittenHash, model);
   if (confirmed.hash !== expectedWrittenHash) {
     const error = new Error("Google Drive metadata verification failed.");
     error.status = 502;
+    error.code = "DRIVE_METADATA_VERIFY_FAILED";
+    error.details = {
+      attempts: METADATA_VERIFY_DELAYS_MS.length,
+      expectedHash: expectedWrittenHash,
+      actualHash: confirmed?.hash || "",
+    };
     throw error;
   }
   const synced = await syncMarketplaceDriveFolder({ driveFolderId: model.driveFolderId, force: true, assetType: model.assetType });

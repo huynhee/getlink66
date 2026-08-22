@@ -642,13 +642,11 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
     const coverImage = model.coverImage
       ? { ...model.coverImage, url: cover(model), isCoverFallback: true }
       : null;
-    // Scene covers are square catalog crops, not gallery images. Use the cover
-    // only when a scene has no full-size preview available.
-    const candidates = assetType === "scene"
-      ? (previews.length ? previews : [coverImage].filter(Boolean))
-      : [...previews, coverImage].filter(Boolean);
+    // Covers are catalog crops, not gallery images. Use one only as a fallback
+    // for legacy assets that do not have a dedicated preview yet.
+    const candidates = previews.length ? previews : [coverImage].filter(Boolean);
     return candidates.filter((image, index) => candidates.findIndex((item) => item.url === image.url) === index);
-  }, [assetType, model]);
+  }, [model]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [imageStates, setImageStates] = useState({});
