@@ -37,7 +37,7 @@ function makeKey(value = "") {
 function emptyCreateDraft(group) {
   return group === "category"
     ? { title: "", titleEn: "", aliasesVi: "", aliasesEn: "", key: "", parentId: "", position: 0, isActive: true }
-    : { labelVi: "", labelEn: "", aliasesVi: "", aliasesEn: "", key: "", position: 0, isActive: true, hex: "#808080", iconKey: defaultIconKeyByFacet[group] || "" };
+    : { labelVi: "", labelEn: "", aliasesVi: "", aliasesEn: "", key: "", position: 0, isActive: true, hex: "#808080", iconKey: defaultIconKeyByFacet[group] || "", iconUrl: "" };
 }
 
 export default function AdminMarketplaceTaxonomy({ assetType = "model", language = "vi", onChanged }) {
@@ -142,7 +142,9 @@ export default function AdminMarketplaceTaxonomy({ assetType = "model", language
           position: Number(row.position || 0),
           isActive: row.isActive !== false,
           ...(row.facet === "color" ? { hex: row.hex || "#808080" } : {}),
-          ...(data.iconKeysByFacet[row.facet]?.length ? { iconKey: row.iconKey || defaultIconKeyByFacet[row.facet] || "" } : {}),
+          ...(data.iconKeysByFacet[row.facet]?.length
+            ? { iconKey: row.iconKey || defaultIconKeyByFacet[row.facet] || "", iconUrl: row.iconUrl || "" }
+            : {}),
         });
   }
 
@@ -357,11 +359,20 @@ export default function AdminMarketplaceTaxonomy({ assetType = "model", language
                   <label className="marketTaxonomyColor"><input type="color" value={draft.hex} onChange={(event) => updateDraft(type, row, "hex", event.target.value)} /><code>{draft.hex}</code></label>
                 )}
                 {type === "filter" && data.iconKeysByFacet[row.facet]?.length > 0 && (
-                  <div className="marketTaxonomyIconSelect">
-                    <MarketplaceFacetIcon iconKey={draft.iconKey} />
-                    <select value={draft.iconKey} onChange={(event) => updateDraft(type, row, "iconKey", event.target.value)}>
-                      {data.iconKeysByFacet[row.facet].map((key) => <option value={key} key={key}>{MARKETPLACE_FACET_ICON_LABELS[key] || key}</option>)}
-                    </select>
+                  <div className="marketTaxonomyIconEditor">
+                    <div className="marketTaxonomyIconSelect">
+                      <MarketplaceFacetIcon iconKey={draft.iconKey} iconUrl={draft.iconUrl} />
+                      <select value={draft.iconKey} onChange={(event) => updateDraft(type, row, "iconKey", event.target.value)}>
+                        <option value="">{l("Chỉ dùng URL", "URL only")}</option>
+                        {data.iconKeysByFacet[row.facet].map((key) => <option value={key} key={key}>{MARKETPLACE_FACET_ICON_LABELS[key] || key}</option>)}
+                      </select>
+                    </div>
+                    <input
+                      aria-label={l("Đường dẫn icon", "Icon URL")}
+                      value={draft.iconUrl}
+                      placeholder="https://... /icons/..."
+                      onChange={(event) => updateDraft(type, row, "iconUrl", event.target.value)}
+                    />
                   </div>
                 )}
                 {type === "filter" && row.facet !== "color" && !data.iconKeysByFacet[row.facet]?.length && <span>{l(...(facetNames[row.facet] || [row.facet, row.facet]))}</span>}
@@ -426,7 +437,10 @@ export default function AdminMarketplaceTaxonomy({ assetType = "model", language
                 <label><span>{l("Mã màu", "Color")}</span><div className="marketTaxonomyColorInput"><input type="color" value={createDraft.hex} onChange={(event) => updateCreate("hex", event.target.value)} /><input required pattern="#[0-9a-fA-F]{6}" value={createDraft.hex} onChange={(event) => updateCreate("hex", event.target.value)} /></div></label>
               )}
               {data.iconKeysByFacet[group]?.length > 0 && (
-                <label><span>{l("Icon hiển thị", "Display icon")}</span><div className="marketTaxonomyIconSelect"><MarketplaceFacetIcon iconKey={createDraft.iconKey} /><select value={createDraft.iconKey} onChange={(event) => updateCreate("iconKey", event.target.value)}>{data.iconKeysByFacet[group].map((key) => <option value={key} key={key}>{MARKETPLACE_FACET_ICON_LABELS[key] || key}</option>)}</select></div></label>
+                <>
+                  <label><span>{l("Icon có sẵn", "Icon preset")}</span><div className="marketTaxonomyIconSelect"><MarketplaceFacetIcon iconKey={createDraft.iconKey} iconUrl={createDraft.iconUrl} /><select value={createDraft.iconKey} onChange={(event) => updateCreate("iconKey", event.target.value)}><option value="">{l("Chỉ dùng URL", "URL only")}</option>{data.iconKeysByFacet[group].map((key) => <option value={key} key={key}>{MARKETPLACE_FACET_ICON_LABELS[key] || key}</option>)}</select></div></label>
+                  <label className="marketTaxonomyIconUrlField"><span>{l("Icon URL (ưu tiên)", "Icon URL (preferred)")}</span><input type="text" value={createDraft.iconUrl} placeholder="https://... hoặc /icons/..." onChange={(event) => updateCreate("iconUrl", event.target.value)} /><small>{l("Chỉ nhận HTTPS hoặc đường dẫn nội bộ bắt đầu bằng /.", "HTTPS or an internal path starting with / only.")}</small></label>
+                </>
               )}
               <label><span>{l("Vị trí", "Order")}</span><input type="number" min="0" max="100000" value={createDraft.position} onChange={(event) => updateCreate("position", Number(event.target.value || 0))} /></label>
               <label className="marketTaxonomyCreateToggle"><input type="checkbox" checked={createDraft.isActive} onChange={(event) => updateCreate("isActive", event.target.checked)} /><span>{l("Bật ngay sau khi tạo", "Activate after creation")}</span></label>

@@ -607,7 +607,7 @@ function FacetPicker({ field, value, options = [], onChange, language = "vi" }) 
               title={option.value}
             >
               {option.hex && <i style={{ backgroundColor: option.hex }} />}
-              {option.iconKey && <MarketplaceFacetIcon iconKey={option.iconKey} />}
+              {(option.iconKey || option.iconUrl) && <MarketplaceFacetIcon iconKey={option.iconKey} iconUrl={option.iconUrl} />}
               {optionLabel(option, language)}
             </button>
           );

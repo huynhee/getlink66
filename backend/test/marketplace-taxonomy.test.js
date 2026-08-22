@@ -163,10 +163,26 @@ test("admin can create filter options only inside supported fixed facets", async
       labelEn: "Test 3ds Max",
       key: "test-3dsmax",
       iconKey: "3dsmax",
+      iconUrl: "https://cdn.example.com/3dsmax.svg",
     },
   });
   assert.equal(scenePlatform.status, 201);
   assert.equal(scenePlatform.payload.filterOption.iconKey, "3dsmax");
+  assert.equal(scenePlatform.payload.filterOption.iconUrl, "https://cdn.example.com/3dsmax.svg");
+
+  const internalIcon = await invoke(adminUpdateMarketplaceFilterOption, {
+    params: { id: scenePlatform.payload.filterOption._id },
+    body: { iconUrl: "/icons/marketplace/3dsmax.svg" },
+  });
+  assert.equal(internalIcon.status, 200);
+  assert.equal(internalIcon.payload.filterOption.iconUrl, "/icons/marketplace/3dsmax.svg");
+
+  const unsafeIcon = await invoke(adminUpdateMarketplaceFilterOption, {
+    params: { id: scenePlatform.payload.filterOption._id },
+    body: { iconUrl: "javascript:alert(1)" },
+  });
+  assert.equal(unsafeIcon.status, 400);
+  assert.equal(unsafeIcon.payload.code, "INVALID_TAXONOMY_ICON_URL");
 });
 
 test("disabled taxonomy is blocked for new metadata but grandfathered for existing models", async () => {
@@ -280,7 +296,7 @@ test("Scene seed includes the expanded category tree and style vocabulary", asyn
 
   const modelRenderers = await MarketplaceFilterOption.find({ assetType: "model", facet: "render" }).lean();
   const modelRendererByKey = new Map(modelRenderers.map((item) => [item.value, item]));
-  for (const key of ["vray", "corona", "standard"]) {
+  for (const key of ["vray", "corona", "enscape", "d5-render", "standard"]) {
     assert.equal(modelRendererByKey.get(key)?.iconKey, key, `Missing Model renderer icon: ${key}`);
   }
 

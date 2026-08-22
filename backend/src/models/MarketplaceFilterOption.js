@@ -17,6 +17,7 @@ const marketplaceFilterOptionSchema = new mongoose.Schema(
     aliasesEn: { type: [String], default: [] },
     hex: { type: String, default: "", trim: true },
     iconKey: { type: String, default: "", trim: true },
+    iconUrl: { type: String, default: "", trim: true },
     position: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true, index: true },
     catalogVersion: { type: Number, default: 1, min: 1 },

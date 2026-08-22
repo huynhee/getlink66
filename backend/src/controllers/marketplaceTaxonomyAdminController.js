@@ -15,7 +15,7 @@ const FORM_ICON_KEYS = new Set([
   "round", "oval", "square", "rectangle", "triangle",
   "diamond", "pentagon", "star", "angle", "bioform",
 ]);
-const RENDER_ICON_KEYS = new Set(["vray", "corona", "standard"]);
+const RENDER_ICON_KEYS = new Set(["vray", "corona", "enscape", "d5-render", "standard"]);
 const PLATFORM_ICON_KEYS = new Set(["3dsmax", "autocad", "sketchup", "fbx-obj"]);
 const ICON_KEYS_BY_FACET = {
   form: FORM_ICON_KEYS,
@@ -24,6 +24,22 @@ const ICON_KEYS_BY_FACET = {
 };
 const TAXONOMY_KEY_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+
+function taxonomyIconUrl(value) {
+  const iconUrl = String(value || "").trim().slice(0, 500);
+  if (!iconUrl) return "";
+  if (iconUrl.startsWith("/") && !iconUrl.startsWith("//") && !iconUrl.includes("\\")) return iconUrl;
+  try {
+    const parsed = new URL(iconUrl);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password) throw new Error("unsafe icon URL");
+    return parsed.href;
+  } catch {
+    const error = new Error("Icon URL must use HTTPS or an internal /path");
+    error.status = 400;
+    error.code = "INVALID_TAXONOMY_ICON_URL";
+    throw error;
+  }
+}
 
 function requestAssetType(req) {
   return normalizeAssetType(req.query?.assetType || req.body?.assetType || "model");
@@ -240,7 +256,7 @@ export async function adminUpdateMarketplaceCategory(req, res, next) {
 
 export async function adminCreateMarketplaceFilterOption(req, res, next) {
   try {
-    if (rejectUnknownKeys(req.body, ["assetType", "facet", "labelVi", "labelEn", "aliasesVi", "aliasesEn", "key", "position", "isActive", "hex", "iconKey"])) {
+    if (rejectUnknownKeys(req.body, ["assetType", "facet", "labelVi", "labelEn", "aliasesVi", "aliasesEn", "key", "position", "isActive", "hex", "iconKey", "iconUrl"])) {
       return res.status(400).json({ message: "Invalid filter option create request" });
     }
     const assetType = requestAssetType(req);
@@ -257,11 +273,15 @@ export async function adminCreateMarketplaceFilterOption(req, res, next) {
     if (duplicate) throw taxonomyConflict();
     const hex = limitedString(req.body.hex, 7).toLowerCase();
     const iconKey = limitedString(req.body.iconKey, 40).toLowerCase();
+    const iconUrl = taxonomyIconUrl(req.body.iconUrl);
     if (facet === "color" && !HEX_COLOR_RE.test(hex)) {
       return res.status(400).json({ message: "Color requires a valid #RRGGBB value" });
     }
-    if (ICON_KEYS_BY_FACET[facet] && !ICON_KEYS_BY_FACET[facet].has(iconKey)) {
+    if (ICON_KEYS_BY_FACET[facet] && iconKey && !ICON_KEYS_BY_FACET[facet].has(iconKey)) {
       return res.status(400).json({ message: `${facet} requires a supported icon` });
+    }
+    if (ICON_KEYS_BY_FACET[facet] && !iconKey && !iconUrl) {
+      return res.status(400).json({ message: `${facet} requires an icon preset or Icon URL` });
     }
 
     const filterOption = await MarketplaceFilterOption.create({
@@ -274,6 +294,7 @@ export async function adminCreateMarketplaceFilterOption(req, res, next) {
       aliasesEn: normalizeTaxonomyAliases(req.body.aliasesEn),
       hex: facet === "color" ? hex : "",
       iconKey: ICON_KEYS_BY_FACET[facet] ? iconKey : "",
+      iconUrl,
       position: position(req.body.position),
       isActive: req.body.isActive !== false,
       catalogVersion: 1,
@@ -290,7 +311,7 @@ export async function adminCreateMarketplaceFilterOption(req, res, next) {
 export async function adminUpdateMarketplaceFilterOption(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid filter option id" });
-    if (rejectUnknownKeys(req.body, ["labelVi", "labelEn", "aliasesVi", "aliasesEn", "position", "isActive", "hex", "iconKey"])) {
+    if (rejectUnknownKeys(req.body, ["labelVi", "labelEn", "aliasesVi", "aliasesEn", "position", "isActive", "hex", "iconKey", "iconUrl"])) {
       return res.status(400).json({ message: "Filter keys and facets are locked" });
     }
     requireBoolean(req.body.isActive);
@@ -313,8 +334,14 @@ export async function adminUpdateMarketplaceFilterOption(req, res, next) {
       const supportedIcons = ICON_KEYS_BY_FACET[current.facet];
       if (!supportedIcons) return res.status(400).json({ message: "This facet cannot define an icon" });
       const iconKey = limitedString(req.body.iconKey, 40).toLowerCase();
-      if (!supportedIcons.has(iconKey)) return res.status(400).json({ message: `${current.facet} requires a supported icon` });
+      if (iconKey && !supportedIcons.has(iconKey)) return res.status(400).json({ message: `${current.facet} requires a supported icon` });
       update.iconKey = iconKey;
+    }
+    if (req.body.iconUrl !== undefined) update.iconUrl = taxonomyIconUrl(req.body.iconUrl);
+    if (ICON_KEYS_BY_FACET[current.facet]
+      && !(update.iconKey ?? current.iconKey)
+      && !(update.iconUrl ?? current.iconUrl)) {
+      return res.status(400).json({ message: `${current.facet} requires an icon preset or Icon URL` });
     }
     requireLabels(update.labelVi ?? current.labelVi, update.labelEn ?? current.labelEn);
     const filterOption = await MarketplaceFilterOption.findByIdAndUpdate(current._id, { $set: update }, { new: true });

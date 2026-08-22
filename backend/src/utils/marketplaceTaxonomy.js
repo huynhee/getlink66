@@ -9,7 +9,7 @@ const LABELS_VI = {
   french: "Phong cách Pháp", "modern-classic": "Cổ điển hiện đại", other: "Khác",
   "taiwan-style": "Phong cách Đài Loan", scandinavian: "Bắc Âu", rustic: "Mộc mạc",
   "color-block": "Khối màu", tropical: "Nhiệt đới",
-  vray: "Vray", corona: "Corona", standard: "Standard",
+  vray: "Vray", corona: "Corona", enscape: "Enscape", "d5-render": "D5 Render", standard: "Standard",
   round: "Tròn", oval: "Bầu dục", square: "Vuông", rectangle: "Chữ nhật",
   triangle: "Tam giác", diamond: "Hình thoi", pentagon: "Ngũ giác", star: "Ngôi sao",
   angle: "Angle", bioform: "Bioform", white: "Trắng", gray: "Xám", black: "Đen",
@@ -98,6 +98,7 @@ export async function seedMarketplaceFilterOptions() {
               aliasesEn: seededAliasesEn,
               hex: option.hex || "",
               iconKey: option.iconKey || (facet === "form" ? option.value : ""),
+              iconUrl: option.iconUrl || "",
               position: position + 1,
               isActive: true,
               catalogVersion: 1,
@@ -110,16 +111,19 @@ export async function seedMarketplaceFilterOptions() {
         const aliasesVi = normalizeTaxonomyAliases([...currentAliasesVi, ...seededAliasesVi]);
         const aliasesEn = normalizeTaxonomyAliases([...currentAliasesEn, ...seededAliasesEn]);
         const seededIconKey = option.iconKey || (facet === "form" ? option.value : "");
+        const seededIconUrl = option.iconUrl || "";
         if (
           JSON.stringify(aliasesVi) !== JSON.stringify(currentAliasesVi)
           || JSON.stringify(aliasesEn) !== JSON.stringify(currentAliasesEn)
           || (seededIconKey && !saved.iconKey)
+          || (seededIconUrl && !saved.iconUrl)
         ) {
           await MarketplaceFilterOption.findByIdAndUpdate(saved._id, {
             $set: {
               aliasesVi,
               aliasesEn,
               ...(seededIconKey && !saved.iconKey ? { iconKey: seededIconKey } : {}),
+              ...(seededIconUrl && !saved.iconUrl ? { iconUrl: seededIconUrl } : {}),
             },
           });
         }
@@ -152,6 +156,7 @@ export async function marketplaceFilterSnapshot(assetType, { includeInactive = f
       aliasesEn: normalizeTaxonomyAliases(option.aliasesEn),
       ...(option.hex ? { hex: option.hex } : {}),
       ...(option.iconKey ? { iconKey: option.iconKey } : {}),
+      ...(option.iconUrl ? { iconUrl: option.iconUrl } : {}),
       isActive: option.isActive !== false,
       position: Number(option.position || 0),
     });

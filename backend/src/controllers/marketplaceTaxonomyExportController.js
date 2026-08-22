@@ -46,6 +46,7 @@ function filterRows(filters, includeInactive) {
         position: Number(option.position || 0),
         ...(option.hex ? { hex: option.hex } : {}),
         ...(option.iconKey ? { iconKey: option.iconKey } : {}),
+        ...(option.iconUrl ? { iconUrl: option.iconUrl } : {}),
         ...(includeInactive ? { isActive: option.isActive !== false } : {}),
       }))]),
   );

@@ -7,6 +7,8 @@ export const MARKETPLACE_FILTERS = {
   render: [
     { value: "vray", label: "Vray", iconKey: "vray" },
     { value: "corona", label: "Corona", iconKey: "corona" },
+    { value: "enscape", label: "Enscape", iconKey: "enscape" },
+    { value: "d5-render", label: "D5 Render", iconKey: "d5-render", aliasesEn: ["D5"] },
     { value: "standard", label: "Standard", iconKey: "standard" },
   ],
   form: [

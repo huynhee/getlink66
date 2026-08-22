@@ -335,8 +335,8 @@ function FacetSection({ id, title, options = [], values = [], onToggle, onClear,
               ) : isShape ? (
                 <ShapeIcon value={option.value} />
               ) : (
-                option.iconKey
-                  ? <MarketplaceFacetIcon iconKey={option.iconKey} />
+                option.iconKey || option.iconUrl
+                  ? <MarketplaceFacetIcon iconKey={option.iconKey} iconUrl={option.iconUrl} />
                   : <span className={`marketCategoryCheck ${checked ? "checked" : ""}`} aria-hidden="true" />
               )}
               {!isColor && !isShape && <span>{label}</span>}
@@ -852,7 +852,7 @@ function DetailFacetList({ facet, values = [], filterOptions = {}, language = "v
         return (
           <span className={`marketDetailFacetChip ${facet}`} key={`${facet}-${value}`} title={label}>
             {facet === "form" && <ShapeIcon value={value} />}
-            {option.iconKey && !["form", "color"].includes(facet) && <MarketplaceFacetIcon iconKey={option.iconKey} />}
+            {(option.iconKey || option.iconUrl) && !["form", "color"].includes(facet) && <MarketplaceFacetIcon iconKey={option.iconKey} iconUrl={option.iconUrl} />}
             {facet === "color" && (
               <i
                 className="marketColorSwatch"

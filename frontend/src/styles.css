@@ -1966,6 +1966,13 @@ button:disabled {
   stroke-linejoin: round;
 }
 
+.marketFacetBrandIcon img {
+  width: 15px;
+  height: 15px;
+  display: block;
+  object-fit: contain;
+}
+
 .marketFacetBrandIcon svg circle {
   fill: currentColor;
   stroke: none;
@@ -9222,9 +9229,9 @@ label {
 }
 
 .marketTaxonomyRow {
-  min-width: 1480px;
+  min-width: 1640px;
   display: grid;
-  grid-template-columns: minmax(170px, 1.1fr) minmax(150px, 1fr) minmax(150px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(130px, 0.8fr) 76px 76px 84px 44px;
+  grid-template-columns: minmax(170px, 1.1fr) minmax(150px, 1fr) minmax(150px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(290px, 1.5fr) 76px 76px 84px 44px;
   align-items: center;
   gap: 8px;
   padding: 8px;
@@ -9318,6 +9325,24 @@ label {
 
 .marketTaxonomyIconSelect select {
   min-width: 0;
+}
+
+.marketTaxonomyIconEditor {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.85fr) minmax(150px, 1.15fr);
+  gap: 7px;
+}
+
+.marketTaxonomyIconEditor > input {
+  min-width: 0;
+  min-height: 36px;
+  font-size: 10px;
+}
+
+.marketTaxonomyIconUrlField {
+  grid-column: 1 / -1;
 }
 
 .marketTaxonomyColor {
