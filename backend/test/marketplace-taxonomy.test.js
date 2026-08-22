@@ -227,3 +227,38 @@ test("taxonomy export is bilingual, stable and excludes internal identifiers", a
   ))));
   assert.equal(JSON.stringify(first).includes('"_id"'), false);
 });
+
+test("Scene seed includes the expanded category tree and style vocabulary", async () => {
+  await initializeMarketplaceCategories();
+  const firstCategoryCount = await MarketplaceCategory.countDocuments({ assetType: "scene" });
+  const firstFilterCount = await MarketplaceFilterOption.countDocuments({ assetType: "scene" });
+  await initializeMarketplaceCategories();
+
+  assert.equal(await MarketplaceCategory.countDocuments({ assetType: "scene" }), firstCategoryCount);
+  assert.equal(await MarketplaceFilterOption.countDocuments({ assetType: "scene" }), firstFilterCount);
+
+  const categories = await MarketplaceCategory.find({ assetType: "scene" }).lean();
+  const categoryKeys = new Set(categories.map((item) => item.sourceCategoryId));
+  for (const key of [
+    "building", "full-apartment", "restaurant", "coffee-shop", "tea-house", "bakery", "fast-food",
+    "reception", "meeting-room", "open-office", "director-room", "co-working-space",
+    "gym", "yoga-room", "fitness-center", "sport-hall", "swimming-facility",
+    "fashion-store", "furniture-store", "cosmetic-shop", "jewelry-store", "retail-store",
+    "furniture-showroom", "car-showroom", "material-showroom", "product-display",
+    "massage-room", "facial-room", "waiting-area", "luxury-spa",
+    "dental-clinic", "cosmetic-clinic", "examination-room", "reception-area",
+    "lounge-bar", "wine-bar", "pub", "rooftop-bar", "cocktail-bar",
+  ]) assert.ok(categoryKeys.has(key), `Missing Scene category: ${key}`);
+
+  const styles = await MarketplaceFilterOption.find({ assetType: "scene", facet: "style" }).lean();
+  const styleByKey = new Map(styles.map((item) => [item.value, item]));
+  for (const key of ["ethnic", "taiwan-style", "scandinavian", "rustic", "color-block", "tropical"]) {
+    assert.ok(styleByKey.has(key), `Missing Scene style: ${key}`);
+  }
+  assert.ok(styleByKey.get("japanese").aliasesEn.includes("Japan Style"));
+
+  clearMarketplaceTaxonomyCache();
+  const bundle = await buildMarketplaceTaxonomyBundle({ assetType: "scene" });
+  assert.equal(bundle.assets.scene.categories.some((item) => item.key === "full-apartment"), true);
+  assert.equal(bundle.assets.scene.filters.style.some((item) => item.value === "taiwan-style"), true);
+});

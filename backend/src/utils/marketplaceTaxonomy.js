@@ -7,6 +7,8 @@ const LABELS_VI = {
   industrial: "Công nghiệp", neoclassic: "Tân cổ điển", luxury: "Sang trọng",
   indochine: "Đông Dương", japanese: "Nhật Bản", "wabi-sabi": "Wabi-sabi",
   french: "Phong cách Pháp", "modern-classic": "Cổ điển hiện đại", other: "Khác",
+  "taiwan-style": "Phong cách Đài Loan", scandinavian: "Bắc Âu", rustic: "Mộc mạc",
+  "color-block": "Khối màu", tropical: "Nhiệt đới",
   vray: "Vray", corona: "Corona", standard: "Standard",
   round: "Tròn", oval: "Bầu dục", square: "Vuông", rectangle: "Chữ nhật",
   triangle: "Tam giác", diamond: "Hình thoi", pentagon: "Ngũ giác", star: "Ngôi sao",
@@ -80,7 +82,9 @@ export async function seedMarketplaceFilterOptions() {
     for (const [facet, options] of Object.entries(filters)) {
       for (let position = 0; position < options.length; position += 1) {
         const option = options[position];
-        await MarketplaceFilterOption.findOneAndUpdate(
+        const seededAliasesVi = normalizeTaxonomyAliases(option.aliasesVi);
+        const seededAliasesEn = normalizeTaxonomyAliases(option.aliasesEn);
+        const saved = await MarketplaceFilterOption.findOneAndUpdate(
           { assetType, facet, value: option.value },
           {
             $setOnInsert: {
@@ -89,8 +93,8 @@ export async function seedMarketplaceFilterOptions() {
               value: option.value,
               labelVi: LABELS_VI[option.value] || option.label,
               labelEn: option.label,
-              aliasesVi: [],
-              aliasesEn: [],
+              aliasesVi: seededAliasesVi,
+              aliasesEn: seededAliasesEn,
               hex: option.hex || "",
               iconKey: facet === "form" ? option.value : "",
               position: position + 1,
@@ -100,6 +104,18 @@ export async function seedMarketplaceFilterOptions() {
           },
           { upsert: true, new: true },
         );
+        const currentAliasesVi = normalizeTaxonomyAliases(saved.aliasesVi);
+        const currentAliasesEn = normalizeTaxonomyAliases(saved.aliasesEn);
+        const aliasesVi = normalizeTaxonomyAliases([...currentAliasesVi, ...seededAliasesVi]);
+        const aliasesEn = normalizeTaxonomyAliases([...currentAliasesEn, ...seededAliasesEn]);
+        if (
+          JSON.stringify(aliasesVi) !== JSON.stringify(currentAliasesVi)
+          || JSON.stringify(aliasesEn) !== JSON.stringify(currentAliasesEn)
+        ) {
+          await MarketplaceFilterOption.findByIdAndUpdate(saved._id, {
+            $set: { aliasesVi, aliasesEn },
+          });
+        }
       }
     }
   }
