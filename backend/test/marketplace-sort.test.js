@@ -5,11 +5,21 @@ import { useMemoryDb } from "../src/config/memoryStore.js";
 useMemoryDb();
 
 const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
+const { default: MarketplaceInterestProfile } = await import("../src/models/MarketplaceInterestProfile.js");
 const { listMarketplaceModels } = await import("../src/controllers/marketplaceController.js");
 const { marketplaceSourceIdNumber, normalizeMarketplaceTitle } = await import("../src/utils/marketplaceSort.js");
+const { marketplaceActorKey } = await import("../src/utils/marketplaceBehaviorService.js");
 const { initializeMarketplaceCategories } = await import("../src/utils/marketplaceSeed.js");
 
-async function createCatalogAsset({ title, slug, createdAt, downloadCount, assetId = slug }) {
+async function createCatalogAsset({
+  title,
+  slug,
+  createdAt,
+  downloadCount,
+  assetId = slug,
+  categorySourceId = "",
+  parentCategorySourceId = "",
+}) {
   const model = await MarketplaceModel.create({
     assetType: "model",
     source: {
@@ -21,6 +31,8 @@ async function createCatalogAsset({ title, slug, createdAt, downloadCount, asset
     title,
     titleSort: normalizeMarketplaceTitle(title),
     slug,
+    categorySourceId,
+    parentCategorySourceId,
     styles: ["modern"],
     renderers: ["corona"],
     forms: ["rectangle"],
@@ -37,10 +49,18 @@ async function createCatalogAsset({ title, slug, createdAt, downloadCount, asset
   return model;
 }
 
-async function list(query = {}) {
+async function list(query = {}, request = {}) {
   let payload;
   await listMarketplaceModels(
-    { query },
+    {
+      query,
+      user: request.user,
+      body: {},
+      ip: "127.0.0.1",
+      get(name) {
+        return request.headers?.[String(name).toLowerCase()] || "";
+      },
+    },
     {
       json(value) {
         payload = value;
@@ -94,29 +114,17 @@ test("marketplace list defaults to newest and reports the effective sort", async
   assert.deepEqual(payload.sort, { requested: null, effective: "newest" });
 });
 
-test("popular and oldest ordering are applied before pagination", async () => {
+test("popular ordering is applied before pagination", async () => {
   const popular = await list({ sort: "popular", limit: "2", page: "1" });
   assert.deepEqual(popular.models.map((item) => item.title), ["Beta Chair", "Gamma Chair"]);
   assert.equal(popular.sort.effective, "popular");
-
-  const oldestPageTwo = await list({ sort: "oldest", limit: "2", page: "2" });
-  assert.deepEqual(oldestPageTwo.models.map((item) => item.title), ["Gamma Chair", "Delta Chair"]);
-  assert.equal(oldestPageTwo.pagination.page, 2);
 });
 
-test("title ordering uses normalized titles and remains stable across pages", async () => {
-  const ascendingFirst = await list({ sort: "title_asc", limit: "2", page: "1" });
-  const ascendingSecond = await list({ sort: "title_asc", limit: "2", page: "2" });
-  assert.deepEqual(ascendingFirst.models.map((item) => item.title), ["Álpha Chair", "Beta Chair"]);
-  assert.deepEqual(ascendingSecond.models.map((item) => item.title), ["Delta Chair", "Gamma Chair"]);
-
-  const descending = await list({ sort: "title_desc", limit: "4" });
-  assert.deepEqual(descending.models.map((item) => item.title), [
-    "Gamma Chair",
-    "Delta Chair",
-    "Beta Chair",
-    "Álpha Chair",
-  ]);
+test("removed and legacy sort names safely resolve to newest", async () => {
+  for (const legacySort of ["source_id_desc", "oldest", "title_asc", "title_desc"]) {
+    const payload = await list({ sort: legacySort, limit: "4" });
+    assert.deepEqual(payload.sort, { requested: "newest", effective: "newest" });
+  }
 });
 
 test("text search defaults to relevance while invalid sort falls back safely", async () => {
@@ -128,7 +136,7 @@ test("text search defaults to relevance while invalid sort falls back safely", a
   assert.deepEqual(invalid.sort, { requested: null, effective: "newest" });
 });
 
-test("source ID ordering is numeric and applied before pagination", async () => {
+test("newest means numeric source ID descending before pagination", async () => {
   await createCatalogAsset({
     title: "ID Nine",
     slug: "source-id-nine",
@@ -151,13 +159,50 @@ test("source ID ordering is numeric and applied before pagination", async () => 
     downloadCount: 0,
   });
 
-  const payload = await list({ sort: "source_id_desc", limit: "3" });
+  const payload = await list({ sort: "newest", limit: "3" });
   assert.deepEqual(payload.models.map((item) => item.title), [
     "ID One Thousand",
     "ID One Hundred",
     "ID Nine",
   ]);
-  assert.equal(payload.sort.effective, "source_id_desc");
+  assert.equal(payload.sort.effective, "newest");
+});
+
+test("featured models use the visitor interest profile", async () => {
+  const preferred = await createCatalogAsset({
+    title: "Personalized Quiet Chair",
+    slug: "personalized-quiet-chair",
+    assetId: "7001",
+    categorySourceId: "personalized-chair",
+    createdAt: "2026-01-06T00:00:00.000Z",
+    downloadCount: 0,
+  });
+  await createCatalogAsset({
+    title: "Generic Popular Cabinet",
+    slug: "generic-popular-cabinet",
+    assetId: "9000",
+    categorySourceId: "generic-cabinet",
+    createdAt: "2026-01-07T00:00:00.000Z",
+    downloadCount: 10_000,
+  });
+  const sessionId = "marketplace-featured-sort-session-12345";
+  const actorKey = marketplaceActorKey({ sessionId });
+  await MarketplaceInterestProfile.create({
+    actorKey,
+    weights: { "category:personalized-chair": 50 },
+    recentAssetIds: [preferred._id],
+    eventCount: 5,
+    lastEventAt: new Date(),
+    expiresAt: new Date(Date.now() + 86_400_000),
+  });
+
+  const payload = await list(
+    { sort: "featured", limit: "4" },
+    { headers: { "x-marketplace-session-id": sessionId } },
+  );
+  assert.equal(payload.models[0].slug, "personalized-quiet-chair");
+  assert.equal(payload.sort.effective, "featured");
+  assert.equal(payload.sort.mode, "personalized");
 });
 
 test("taxonomy search accepts Vietnamese, unaccented Vietnamese and English", async () => {

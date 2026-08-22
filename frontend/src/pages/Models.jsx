@@ -1107,8 +1107,8 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   const [categoriesExpanded, setCategoriesExpanded] = useState(true);
   const [activeFilters, setActiveFilters] = useState(EMPTY_FILTERS);
   const [accessType, setAccessType] = useState("");
-  const [sortMode, setSortMode] = useState(assetType === "model" ? "source_id_desc" : "");
-  const [effectiveSort, setEffectiveSort] = useState(assetType === "model" ? "source_id_desc" : "newest");
+  const [sortMode, setSortMode] = useState(assetType === "model" ? "featured" : "newest");
+  const [effectiveSort, setEffectiveSort] = useState(assetType === "model" ? "featured" : "newest");
   const [imageSearchMeta, setImageSearchMeta] = useState(null);
   const [imageSearchPreview, setImageSearchPreview] = useState("");
   const [imageSearching, setImageSearching] = useState(false);
@@ -1127,6 +1127,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   const suggestionAbortRef = useRef(null);
   const initializedCatalogRef = useRef("");
   const searchActiveRef = useRef(Boolean(search.trim()));
+  const sortAssetTypeRef = useRef(assetType);
 
   const loadCategories = useCallback(async () => {
     const data = await apiCached(assetType === "scene" ? "/api/marketplace/scenes/categories" : "/api/marketplace/categories");
@@ -1307,17 +1308,17 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
 
   useEffect(() => {
     const active = search.trim().length >= 2;
-    if (active === searchActiveRef.current) return;
+    const assetTypeChanged = sortAssetTypeRef.current !== assetType;
+    if (active === searchActiveRef.current && !assetTypeChanged) return;
     searchActiveRef.current = active;
+    sortAssetTypeRef.current = assetType;
     if (active) {
       setSortMode("relevance");
       setEffectiveSort("relevance");
-    } else if (assetType === "model") {
-      setSortMode("source_id_desc");
-      setEffectiveSort("source_id_desc");
     } else {
-      setSortMode("");
-      setEffectiveSort("newest");
+      const nextSort = assetType === "model" ? "featured" : "newest";
+      setSortMode(nextSort);
+      setEffectiveSort(nextSort);
     }
   }, [assetType, search]);
 
@@ -1376,17 +1377,10 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   );
   const totalFilterCount = activeFilterCount + (category ? 1 : 0) + (accessType ? 1 : 0);
   const sortOptions = [
-    ...(assetType === "model" ? [{
-      value: "source_id_desc",
-      vi: search.trim() || imageSearchMeta ? "ID lớn nhất" : "Phù hợp nhất",
-      en: search.trim() || imageSearchMeta ? "Highest ID" : "Best match",
-    }] : []),
-    { value: "relevance", vi: "Phù hợp nhất", en: "Relevance" },
+    { value: "relevance", vi: "Khớp tìm kiếm", en: "Search relevance" },
+    ...(assetType === "model" ? [{ value: "featured", vi: "Model nổi bật", en: "Featured models" }] : []),
     { value: "newest", vi: "Mới nhất", en: "Newest" },
     { value: "popular", vi: "Tải nhiều nhất", en: "Most downloaded" },
-    { value: "oldest", vi: "Cũ nhất", en: "Oldest" },
-    { value: "title_asc", vi: "Tên A-Z", en: "Title A-Z" },
-    { value: "title_desc", vi: "Tên Z-A", en: "Title Z-A" },
   ];
   const filterChips = useMemo(() => {
     const chips = [];

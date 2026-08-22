@@ -5,7 +5,7 @@ import GuideContent from "../components/GuideContent.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
 import { ModelCard } from "./Models.jsx";
 import { translations } from "../i18n.js";
-import { membershipFeatureLabel } from "../utils/membershipPresentation.js";
+import { membershipBenefitLabels } from "../utils/membershipPresentation.js";
 
 const HOME_TEXT_DEFAULTS = {
   vi: {
@@ -709,8 +709,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 <h3>{language === "vi" ? "Nạp theo nhu cầu" : "Top up by need"}</h3>
                 <p className="homeTopupPurpose">
                   {language === "vi"
-                    ? "Credit dùng riêng cho Getlink (28 credit tương đương 1 lượt). Pro mở quyền và quota tải Model/Scene trong thư viện."
-                    : "Credit is only for Getlink (28 credits equal one request). Pro unlocks Model/Scene library access and quota."}
+                    ? "Credit dùng cho Getlink và tải lẻ Model/Scene. Pro phù hợp người tải thường xuyên, mở quyền Pro và quota theo ngày."
+                    : "Credits cover Getlink and one-off Model/Scene downloads. Pro suits frequent users with Pro access and daily quota."}
                 </p>
               </div>
               <div className="homeTopupActions">
@@ -738,7 +738,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 >
                   <Wallet size={18} />
                   <span>Credit</span>
-                  <small>{language === "vi" ? "Số dư chỉ dùng cho Getlink" : "Getlink-only balance"}</small>
+                  <small>{language === "vi" ? "Getlink và tải lẻ Model/Scene" : "Getlink and one-off Model/Scene downloads"}</small>
                   <small className="homeTopupActionStatus">
                     {homeTopupMode === "credit" && <CheckCircle2 size={13} />}
                     {homeTopupMode === "credit"
@@ -754,7 +754,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
               <span>{language === "vi" ? "Đang hiển thị:" : "Showing:"}</span>
               <strong>
                 {homeTopupMode === "credit"
-                  ? (language === "vi" ? "Gói Credit cho Getlink" : "Credit plans for Getlink")
+                  ? (language === "vi" ? "Gói Credit cho Getlink và tải lẻ" : "Credit plans for Getlink and one-off downloads")
                   : (language === "vi" ? "Gói Pro cho thư viện Model/Scene" : "Pro plans for the Model/Scene library")}
               </strong>
             </div>
@@ -863,8 +863,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                       </div>
                     )}
                     <ul>
-                      {(plan.features || []).map((feature, featureIndex) => (
-                        <li key={featureIndex}>{membershipFeatureLabel(feature, language)}</li>
+                      {membershipBenefitLabels(plan, language).map((feature, featureIndex) => (
+                        <li key={featureIndex}>{feature}</li>
                       ))}
                     </ul>
                     <a className={plan.code === "GOLD" ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("pro", plan._id))}>

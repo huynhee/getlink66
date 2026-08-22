@@ -11,6 +11,7 @@ import logger from "./logger.js";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const RECENT_DOWNLOAD_DAYS = 180;
+const RECOMMENDATION_ENGINE = "catalog_category_v4";
 const pending = new Set();
 let timer = null;
 let running = false;
@@ -74,19 +75,43 @@ function publicQuery(model, extra = {}) {
   };
 }
 
+function categoryRef(model, sourceKey, legacyKey) {
+  const sourceId = String(model?.[sourceKey] || "").trim();
+  if (sourceId) return { field: sourceKey, value: sourceId, comparable: sourceId };
+  const legacyId = model?.[legacyKey];
+  return legacyId ? { field: legacyKey, value: legacyId, comparable: String(legacyId) } : null;
+}
+
+function categoryRefs(model) {
+  return {
+    leaf: categoryRef(model, "categorySourceId", "categoryId"),
+    parent: categoryRef(model, "parentCategorySourceId", "parentCategoryId"),
+  };
+}
+
 function relatedQuery(model) {
-  const related = [];
-  if (model.categorySourceId) related.push({ categorySourceId: model.categorySourceId });
-  if (model.parentCategorySourceId) related.push({ parentCategorySourceId: model.parentCategorySourceId });
-  if (model.renderer) related.push({ renderer: model.renderer });
-  if (model.styles?.length) related.push({ styles: { $in: model.styles } });
-  if (model.renderers?.length) related.push({ renderers: { $in: model.renderers } });
-  if (model.platforms?.length) related.push({ platforms: { $in: model.platforms } });
-  if (normalizeAssetType(model.assetType) === "model") {
-    if (model.materials?.length) related.push({ materials: { $in: model.materials } });
-    if (model.forms?.length) related.push({ forms: { $in: model.forms } });
-  }
-  return related.length ? { $or: related } : {};
+  const { leaf, parent } = categoryRefs(model);
+  const branches = [leaf, parent]
+    .filter(Boolean)
+    .map((ref) => ({ [ref.field]: ref.value }));
+  return branches.length ? { $or: branches } : null;
+}
+
+function categoryTier(source, candidate) {
+  const sourceRefs = categoryRefs(source);
+  const candidateRefs = categoryRefs(candidate);
+  if (sourceRefs.leaf && candidateRefs.leaf?.comparable === sourceRefs.leaf.comparable) return 2;
+  if (sourceRefs.parent && candidateRefs.parent?.comparable === sourceRefs.parent.comparable) return 1;
+  return 0;
+}
+
+function categoryOrdered(scored, limit = 60) {
+  const exact = scored.filter((item) => categoryTier(item.source, item.model) === 2);
+  const sameBranch = scored.filter((item) => categoryTier(item.source, item.model) === 1);
+  return [
+    ...diversify(exact, limit),
+    ...diversify(sameBranch, Math.max(0, limit - exact.length)),
+  ].slice(0, limit);
 }
 
 async function behaviorScores(model) {
@@ -125,12 +150,14 @@ async function behaviorScores(model) {
 }
 
 async function semanticCandidates(model) {
+  const { leaf, parent } = categoryRefs(model);
+  if (!leaf && !parent) return [];
   try {
     const result = await searchMarketplaceMeili({
       assetType: model.assetType,
       q: [model.title, model.categorySourceId, model.renderer, ...(model.styles || [])].filter(Boolean).join(" "),
       accessType: normalizeAssetType(model.assetType) === "model" ? "member" : "",
-      categoryKeys: [],
+      categoryKeys: [leaf?.comparable || parent?.comparable].filter(Boolean),
       facets: {},
       sort: "relevance",
       page: 1,
@@ -144,10 +171,30 @@ async function semanticCandidates(model) {
 }
 
 async function buildRecommendationCache(model) {
+  const categoryQuery = relatedQuery(model);
+  if (!categoryQuery) {
+    await MarketplaceRecommendationCache.findOneAndUpdate(
+      { modelId: model._id },
+      {
+        $set: {
+          modelId: model._id,
+          assetType: normalizeAssetType(model.assetType),
+          candidateIds: [],
+          engine: RECOMMENDATION_ENGINE,
+          sourceUpdatedAt: model.updatedAt || new Date(),
+          generatedAt: new Date(),
+          expiresAt: new Date(Date.now() + CACHE_TTL_MS),
+          error: "missing_category",
+        },
+      },
+      { upsert: true, new: true },
+    );
+    return [];
+  }
   const [localCandidates, semantic, behavior] = await Promise.all([
     MarketplaceModel.find(publicQuery(model, {
       _id: { $ne: model._id },
-      ...relatedQuery(model),
+      ...categoryQuery,
     }))
       .sort({ downloadCount: -1, sourceAssetIdSort: -1, createdAt: -1 })
       .limit(240)
@@ -164,12 +211,16 @@ async function buildRecommendationCache(model) {
   });
   const missingIds = [...semanticScore.keys()].filter((id) => !byId.has(id));
   if (missingIds.length) {
-    const extra = await MarketplaceModel.find(publicQuery(model, { _id: { $in: missingIds } }))
+    const extra = await MarketplaceModel.find(publicQuery(model, {
+      _id: { $in: missingIds },
+      ...categoryQuery,
+    }))
       .limit(60)
       .lean();
     extra.forEach((candidate) => byId.set(String(candidate._id), candidate));
   }
-  const candidates = [...byId.values()].filter((candidate) => String(candidate._id) !== String(model._id));
+  const candidates = [...byId.values()].filter((candidate) =>
+    String(candidate._id) !== String(model._id) && categoryTier(model, candidate) > 0);
   const maxContent = Math.max(...candidates.map((candidate) => marketplaceContentScore(model, candidate)), 1);
   const maxBehavior = Math.max(...candidates.map((candidate) => Number(behavior.get(String(candidate._id)) || 0)), 1);
   const maxDownloads = Math.max(...candidates.map((candidate) => Math.log2(Number(candidate.downloadCount || 0) + 1)), 1);
@@ -180,15 +231,16 @@ async function buildRecommendationCache(model) {
       : 0;
     return {
       model: candidate,
+      source: model,
       score:
-        (marketplaceContentScore(model, candidate) / maxContent) * 45
-        + Number(semanticScore.get(String(candidate._id)) || 0) * 35
-        + (Number(behavior.get(String(candidate._id)) || 0) / maxBehavior) * 10
-        + (Math.log2(Number(candidate.downloadCount || 0) + 1) / maxDownloads) * 5
-        + freshness * 5,
+        (marketplaceContentScore(model, candidate) / maxContent) * 58
+        + Number(semanticScore.get(String(candidate._id)) || 0) * 30
+        + (Number(behavior.get(String(candidate._id)) || 0) / maxBehavior) * 8
+        + (Math.log2(Number(candidate.downloadCount || 0) + 1) / maxDownloads) * 2
+        + freshness * 2,
     };
   }).sort((left, right) => right.score - left.score || String(left.model._id).localeCompare(String(right.model._id)));
-  const ranked = diversify(scored, 60);
+  const ranked = categoryOrdered(scored, 60);
   await MarketplaceRecommendationCache.findOneAndUpdate(
     { modelId: model._id },
     {
@@ -196,7 +248,7 @@ async function buildRecommendationCache(model) {
         modelId: model._id,
         assetType: normalizeAssetType(model.assetType),
         candidateIds: ranked.map((candidate) => candidate._id),
-        engine: "catalog_behavior_v3",
+        engine: RECOMMENDATION_ENGINE,
         sourceUpdatedAt: model.updatedAt || new Date(),
         generatedAt: new Date(),
         expiresAt: new Date(Date.now() + CACHE_TTL_MS),
@@ -223,10 +275,15 @@ async function recentDownloads(userId) {
 }
 
 async function modelsForIds(model, candidateIds, excludedIds = []) {
+  const categoryQuery = relatedQuery(model);
+  if (!categoryQuery) return [];
   const exclusions = new Set([String(model._id), ...excludedIds.map(String)]);
   const ids = candidateIds.map(String).filter((id) => !exclusions.has(id));
   if (!ids.length) return [];
-  const models = await MarketplaceModel.find(publicQuery(model, { _id: { $in: ids } })).lean();
+  const models = await MarketplaceModel.find(publicQuery(model, {
+    _id: { $in: ids },
+    ...categoryQuery,
+  })).lean();
   const byId = new Map(models.map((candidate) => [String(candidate._id), candidate]));
   const ordered = ids.map((id) => byId.get(id)).filter(Boolean);
   await hydrateMarketplaceCategoryRefs(ordered);
@@ -234,26 +291,21 @@ async function modelsForIds(model, candidateIds, excludedIds = []) {
 }
 
 async function fastFallback(model, excludedIds = []) {
+  const categoryQuery = relatedQuery(model);
+  if (!categoryQuery) return [];
   const exclusions = [model._id, ...excludedIds];
-  let candidates = await MarketplaceModel.find(publicQuery(model, {
+  const candidates = await MarketplaceModel.find(publicQuery(model, {
     _id: { $nin: exclusions },
-    ...relatedQuery(model),
+    ...categoryQuery,
   }))
     .sort({ downloadCount: -1, sourceAssetIdSort: -1, createdAt: -1 })
     .limit(90)
     .lean();
-  if (candidates.length < 60) {
-    const seen = new Set([String(model._id), ...excludedIds.map(String), ...candidates.map((item) => String(item._id))]);
-    const fill = await MarketplaceModel.find(publicQuery(model, { _id: { $nin: [...seen] } }))
-      .sort({ downloadCount: -1, sourceAssetIdSort: -1, createdAt: -1 })
-      .limit(60 - candidates.length)
-      .lean();
-    candidates = [...candidates, ...fill];
-  }
   const ranked = candidates
-    .map((candidate) => ({ model: candidate, score: marketplaceContentScore(model, candidate) }))
+    .filter((candidate) => categoryTier(model, candidate) > 0)
+    .map((candidate) => ({ source: model, model: candidate, score: marketplaceContentScore(model, candidate) }))
     .sort((left, right) => right.score - left.score);
-  const models = diversify(ranked, 60);
+  const models = categoryOrdered(ranked, 60);
   await hydrateMarketplaceCategoryRefs(models);
   return models;
 }
@@ -268,6 +320,7 @@ export async function getMarketplaceRecommendationsV3(model, options = {}) {
   const excluded = await recentDownloads(options.userId);
   const cache = await MarketplaceRecommendationCache.findOne({ modelId: model._id }).lean();
   const valid = cache
+    && cache.engine === RECOMMENDATION_ENGINE
     && new Date(cache.expiresAt || 0) > new Date()
     && new Date(cache.sourceUpdatedAt || 0) >= new Date(model.updatedAt || 0);
   if (valid) {
@@ -275,7 +328,7 @@ export async function getMarketplaceRecommendationsV3(model, options = {}) {
     return {
       models: models.slice(offset, offset + limit),
       total: models.length,
-      engine: cache.engine || "catalog_behavior_v3",
+      engine: cache.engine || RECOMMENDATION_ENGINE,
       cached: true,
     };
   }
@@ -284,7 +337,7 @@ export async function getMarketplaceRecommendationsV3(model, options = {}) {
   return {
     models: fallback.slice(offset, offset + limit),
     total: fallback.length,
-    engine: "catalog_fast_fallback_v3",
+    engine: "catalog_category_fallback_v4",
     cached: false,
   };
 }

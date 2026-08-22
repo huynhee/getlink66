@@ -7,6 +7,9 @@ useMemoryDb();
 const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
 const { default: ModelDownload } = await import("../src/models/ModelDownload.js");
 const { default: MarketplaceInterestProfile } = await import("../src/models/MarketplaceInterestProfile.js");
+const { default: MarketplaceRecommendationCache } = await import(
+  "../src/models/MarketplaceRecommendationCache.js"
+);
 const { invalidateMarketplaceHomeRecommendations } = await import(
   "../src/utils/marketplaceRecommendationService.js"
 );
@@ -34,12 +37,16 @@ function responseCapture() {
 }
 
 test("model detail returns six recommendations and expansion returns the next 54", async () => {
+  await Promise.all([
+    MarketplaceModel.deleteMany({}),
+    MarketplaceRecommendationCache.deleteMany({}),
+  ]);
   await MarketplaceModel.create({
     source: { provider: "drive", modelId: "recommendation-source" },
     title: "Source chair",
     slug: "source-chair",
-    categoryId: "chairs",
-    parentCategoryId: "furniture",
+    categorySourceId: "chairs",
+    parentCategorySourceId: "furniture",
     renderer: "Corona",
     renderers: ["corona"],
     styles: ["modern"],
@@ -55,8 +62,8 @@ test("model detail returns six recommendations and expansion returns the next 54
     source: { provider: "drive", modelId: `recommendation-${index}` },
     title: `Recommended chair ${index + 1}`,
     slug: `recommended-chair-${index + 1}`,
-    categoryId: "chairs",
-    parentCategoryId: "furniture",
+    categorySourceId: "chairs",
+    parentCategorySourceId: "furniture",
     renderer: index % 2 ? "Vray" : "Corona",
     renderers: [index % 2 ? "vray" : "corona"],
     styles: ["modern"],
@@ -69,6 +76,21 @@ test("model detail returns six recommendations and expansion returns the next 54
     isPublished: true,
     downloadCount: index,
   })));
+  await MarketplaceModel.create({
+    source: { provider: "drive", modelId: "unrelated-most-downloaded" },
+    title: "Most downloaded floor lamp",
+    slug: "unrelated-most-downloaded",
+    categorySourceId: "floor-lamps",
+    parentCategorySourceId: "lighting",
+    renderer: "Corona",
+    renderers: ["corona"],
+    styles: ["modern"],
+    accessType: "member",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+    downloadCount: 1_000_000,
+  });
 
   const detail = responseCapture();
   await getMarketplaceModel(
@@ -79,6 +101,7 @@ test("model detail returns six recommendations and expansion returns the next 54
   assert.equal(detail.state.statusCode, 200);
   assert.equal(detail.state.body.recommendedModels.length, 6);
   assert.ok(detail.state.body.recommendedModels.every((item) => item.accessType === "member"));
+  assert.ok(detail.state.body.recommendedModels.every((item) => item.categorySourceId === "chairs"));
   assert.equal(detail.state.body.recommendations.total, 60);
   assert.equal(detail.state.body.recommendations.hasMore, true);
 
@@ -91,8 +114,78 @@ test("model detail returns six recommendations and expansion returns the next 54
   assert.equal(expanded.state.statusCode, 200);
   assert.equal(expanded.state.body.models.length, 54);
   assert.ok(expanded.state.body.models.every((item) => item.accessType === "member"));
+  assert.ok(expanded.state.body.models.every((item) => item.categorySourceId === "chairs"));
   assert.equal(expanded.state.body.pagination.total, 60);
   assert.equal(expanded.state.body.pagination.hasMore, false);
+});
+
+test("detail recommendations exhaust the child category before sibling categories", async () => {
+  await MarketplaceRecommendationCache.deleteMany({});
+  await MarketplaceModel.create({
+    source: { provider: "drive", modelId: "branch-source" },
+    title: "Dining chair source",
+    slug: "branch-source",
+    categorySourceId: "dining-chairs",
+    parentCategorySourceId: "furniture",
+    accessType: "member",
+    metadataStatus: "complete",
+    fileStatus: "ready",
+    isPublished: true,
+  });
+  await MarketplaceModel.insertMany([
+    ...Array.from({ length: 2 }, (_, index) => ({
+      source: { provider: "drive", modelId: `exact-chair-${index}` },
+      title: `Exact dining chair ${index}`,
+      slug: `exact-dining-chair-${index}`,
+      categorySourceId: "dining-chairs",
+      parentCategorySourceId: "furniture",
+      accessType: "member",
+      metadataStatus: "complete",
+      fileStatus: "ready",
+      isPublished: true,
+      downloadCount: 0,
+    })),
+    ...Array.from({ length: 4 }, (_, index) => ({
+      source: { provider: "drive", modelId: `sibling-table-${index}` },
+      title: `Sibling dining table ${index}`,
+      slug: `sibling-dining-table-${index}`,
+      categorySourceId: "dining-tables",
+      parentCategorySourceId: "furniture",
+      accessType: "member",
+      metadataStatus: "complete",
+      fileStatus: "ready",
+      isPublished: true,
+      downloadCount: 10_000 + index,
+    })),
+    {
+      source: { provider: "drive", modelId: "unrelated-popular-plant" },
+      title: "Unrelated popular plant",
+      slug: "unrelated-popular-plant",
+      categorySourceId: "indoor-plants",
+      parentCategorySourceId: "plants",
+      accessType: "member",
+      metadataStatus: "complete",
+      fileStatus: "ready",
+      isPublished: true,
+      downloadCount: 9_999_999,
+    },
+  ]);
+
+  const capture = responseCapture();
+  await listMarketplaceModelRecommendations(
+    { params: { slug: "branch-source" }, query: { offset: "0", limit: "6" } },
+    capture.response,
+    (error) => { throw error; },
+  );
+
+  assert.equal(capture.state.statusCode, 200);
+  assert.equal(capture.state.body.models.length, 6);
+  assert.deepEqual(
+    capture.state.body.models.slice(0, 2).map((item) => item.categorySourceId),
+    ["dining-chairs", "dining-chairs"],
+  );
+  assert.ok(capture.state.body.models.slice(2).every((item) => item.parentCategorySourceId === "furniture"));
+  assert.equal(capture.state.body.models.some((item) => item.slug === "unrelated-popular-plant"), false);
 });
 
 test("model detail can defer recommendations for a faster first render", async () => {

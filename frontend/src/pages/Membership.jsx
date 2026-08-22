@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Check, CreditCard, Sparkles } from "lucide-react";
 import { api } from "../api.js";
-import { membershipDurationLabel, membershipFeatureLabel } from "../utils/membershipPresentation.js";
+import { membershipBenefitLabels, membershipDurationLabel } from "../utils/membershipPresentation.js";
 
 const PENDING_MEMBERSHIP_ORDER_KEY = "pendingMembershipOrderId";
 
@@ -132,8 +132,8 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
           <h2>{language === "vi" ? "Nâng cấp Pro" : "Upgrade to Pro"}</h2>
           <p>
             {language === "vi"
-              ? "Pro dùng 100 lượt tải mỗi ngày, tải nhanh, mở model Pro và không cộng lẫn với credit."
-              : "Pro gives 100 downloads per day, fast access, Pro models, and stays separate from credit."}
+              ? "Pro mở toàn bộ Model/Scene Pro và dùng quota theo từng gói: Model trừ 1 lượt, Scene trừ 5 lượt; Credit vẫn được giữ riêng."
+              : "Pro unlocks all Pro Models/Scenes and uses each plan's quota: Models cost 1 download, Scenes cost 5; Credits remain separate."}
           </p>
           {membership?.active && (
             <span className="badge success">
@@ -164,8 +164,8 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
               </span>
             )}
             <ul>
-              {(plan.features || []).map((feature) => (
-                <li key={feature}><Check size={14} /> {membershipFeatureLabel(feature, language)}</li>
+              {membershipBenefitLabels(plan, language).map((feature) => (
+                <li key={feature}><Check size={14} /> {feature}</li>
               ))}
             </ul>
           </button>

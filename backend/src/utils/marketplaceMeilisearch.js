@@ -544,12 +544,9 @@ function semanticRatio(query) {
 
 function meiliSort(sort) {
   const map = {
-    source_id_desc: ["sourceAssetIdSort:desc"],
-    newest: ["createdAtEpoch:desc", "sourceAssetIdSort:desc"],
-    popular: ["popularity24h:desc", "downloadCount:desc", "createdAtEpoch:desc"],
-    oldest: ["createdAtEpoch:asc", "sourceAssetIdSort:asc"],
-    title_asc: ["titleNormalized:asc"],
-    title_desc: ["titleNormalized:desc"],
+    featured: ["popularity24h:desc", "qualityScore:desc", "downloadCount:desc", "sourceAssetIdSort:desc"],
+    newest: ["sourceAssetIdSort:desc", "createdAtEpoch:desc"],
+    popular: ["popularity24h:desc", "downloadCount:desc", "sourceAssetIdSort:desc"],
   };
   return map[sort] || [];
 }

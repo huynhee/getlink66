@@ -5,7 +5,7 @@ import CoinAmount from "./CoinAmount.jsx";
 import { translations } from "../i18n.js";
 import { setFaviconNotificationCount } from "../utils/faviconProgress.js";
 
-const DEFAULT_MODEL_CATALOG_PATH = "/api/marketplace/models?page=1&limit=60&sort=source_id_desc";
+const DEFAULT_MODEL_CATALOG_PATH = "/api/marketplace/models?page=1&limit=60&sort=featured";
 
 function warmModelCatalog() {
   return Promise.all([

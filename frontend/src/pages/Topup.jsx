@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Check, Copy, Gift, CreditCard, Sparkles, Wallet } from "lucide-react";
 import { api } from "../api.js";
 import { translations } from "../i18n.js";
-import { membershipFeatureLabel } from "../utils/membershipPresentation.js";
+import { membershipBenefitLabels, membershipDurationLabel } from "../utils/membershipPresentation.js";
 
 const CURRENCY = "đ";
 const PENDING_TOPUP_ID_KEY = "pendingSepayTopupId";
@@ -595,8 +595,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               <h2><Sparkles size={20} /> {language === "vi" ? "Mua Pro" : "Buy Pro"}</h2>
               <p className="muted">
                 {language === "vi"
-                  ? "Pro kích hoạt quyền tải model Pro, 100 lượt mỗi ngày, tải nhanh và không cộng credit."
-                  : "Pro unlocks Pro models, 100 downloads per day, fast download, and does not add credits."}
+                  ? "Pro dành cho người tải thường xuyên: dùng quota theo từng gói, Model trừ 1 lượt, Scene trừ 5 lượt và không trừ Credit."
+                  : "Pro is for frequent downloads: each plan provides quota, Models cost 1 download, Scenes cost 5, and Credits are not charged."}
               </p>
             </div>
             {membership?.active && (
@@ -624,15 +624,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 {voucherTargetsMembership && (
                   <span>{language === "vi" ? `Voucher ${appliedVoucher.code}: giảm ${appliedVoucher.discountPercent}%` : `Voucher ${appliedVoucher.code}: ${appliedVoucher.discountPercent}% off`}</span>
                 )}
-                <span>
-                  {membership?.active && isDailyMembershipPlan(plan)
-                    ? (language === "vi"
-                      ? `Thêm ${plan.dailyDownloadLimit} lượt hôm nay`
-                      : `Add ${plan.dailyDownloadLimit} downloads today`)
-                    : (language === "vi"
-                      ? `${plan.durationDays} ngày · ${plan.dailyDownloadLimit}/ngày`
-                      : `${plan.durationDays} days · ${plan.dailyDownloadLimit}/day`)}
-                </span>
+                <span>{membershipDurationLabel(plan, language)}</span>
                 {Number(plan.maxPurchasesPerUser || 0) > 0 && (
                   <span className="muted">
                     {language === "vi"
@@ -641,8 +633,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                   </span>
                 )}
                 <ul>
-                  {(plan.features || []).map((feature) => (
-                    <li key={feature}><Check size={14} /> {membershipFeatureLabel(feature, language)}</li>
+                  {membershipBenefitLabels(plan, language).map((feature) => (
+                    <li key={feature}><Check size={14} /> {feature}</li>
                   ))}
                 </ul>
               </button>

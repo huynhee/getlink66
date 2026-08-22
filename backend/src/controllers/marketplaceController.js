@@ -92,14 +92,17 @@ const MARKETPLACE_PUBLIC_LIST_FIELDS = [
   "updatedAt",
 ].join(" ");
 
-export function sendMarketplaceJsonWithEtag(req, res, payload) {
+export function sendMarketplaceJsonWithEtag(req, res, payload, options = {}) {
   const digest = crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
   const etag = `"sha256:${digest}"`;
+  res.setHeader?.("ETag", etag);
+  res.setHeader?.(
+    "Cache-Control",
+    options.private ? "private, no-cache" : "public, max-age=60, must-revalidate",
+  );
   if (String(req.headers?.["if-none-match"] || "") === etag) {
     return res.status(304).end();
   }
-  res.setHeader?.("ETag", etag);
-  res.setHeader?.("Cache-Control", "public, max-age=60, must-revalidate");
   return res.json(payload);
 }
 
@@ -568,6 +571,97 @@ async function prioritizedMarketplaceBrowsePage({ query, sortSelection, page, li
   };
 }
 
+async function marketplaceBrowseSlice({ query, sortSpec, offset, limit, prioritizePro }) {
+  if (limit <= 0) return [];
+  if (!prioritizePro) {
+    return MarketplaceModel.find(query)
+      .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
+      .sort(sortSpec)
+      .skip(offset)
+      .limit(limit)
+      .lean();
+  }
+
+  const memberQuery = { ...query, accessType: "member" };
+  const freeQuery = { ...query, accessType: "free" };
+  const memberTotal = await MarketplaceModel.countDocuments(memberQuery);
+  const memberTake = offset < memberTotal ? Math.min(limit, memberTotal - offset) : 0;
+  const freeOffset = Math.max(0, offset - memberTotal);
+  const freeTake = limit - memberTake;
+  const [members, free] = await Promise.all([
+    memberTake
+      ? MarketplaceModel.find(memberQuery)
+        .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
+        .sort(sortSpec)
+        .skip(offset)
+        .limit(memberTake)
+        .lean()
+      : Promise.resolve([]),
+    freeTake
+      ? MarketplaceModel.find(freeQuery)
+        .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
+        .sort(sortSpec)
+        .skip(freeOffset)
+        .limit(freeTake)
+        .lean()
+      : Promise.resolve([]),
+  ]);
+  return [...members, ...free];
+}
+
+async function featuredMarketplaceBrowsePage({
+  query,
+  page,
+  limit,
+  prioritizePro,
+  userId,
+  actorKey,
+}) {
+  const [total, recommendations] = await Promise.all([
+    MarketplaceModel.countDocuments(query),
+    marketplaceHomeRecommendations({ userId, actorKey, limit: 12 }),
+  ]);
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const safePage = Math.min(page, totalPages);
+  const recommendedIds = recommendations.models.map((model) => model._id).filter(Boolean);
+  let pinned = [];
+  if (recommendedIds.length) {
+    const matching = await MarketplaceModel.find({
+      $and: [query, { _id: { $in: recommendedIds } }],
+    })
+      .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
+      .lean();
+    const byId = new Map(matching.map((model) => [String(model._id), model]));
+    pinned = recommendedIds.map((id) => byId.get(String(id))).filter(Boolean);
+  }
+
+  const offset = (safePage - 1) * limit;
+  const pinnedPage = offset < pinned.length
+    ? pinned.slice(offset, offset + limit)
+    : [];
+  const remaining = limit - pinnedPage.length;
+  const globalOffset = Math.max(0, offset - pinned.length);
+  const globalQuery = pinned.length
+    ? { $and: [query, { _id: { $nin: pinned.map((model) => model._id) } }] }
+    : query;
+  const globalModels = await marketplaceBrowseSlice({
+    query: globalQuery,
+    sortSpec: marketplaceSortSpec("featured"),
+    offset: globalOffset,
+    limit: remaining,
+    prioritizePro,
+  });
+  return {
+    models: [...pinnedPage, ...globalModels],
+    total,
+    totalPages,
+    safePage,
+    engine: "catalog_behavior_v3",
+    mode: pinned.length ? recommendations.mode : "trending",
+    truncated: false,
+  };
+}
+
 async function bilingualMarketplacePage({
   query,
   search,
@@ -575,8 +669,21 @@ async function bilingualMarketplacePage({
   page,
   limit,
   prioritizePro = false,
+  assetType = "model",
+  userId = null,
+  actorKey = "",
 }) {
   if (!search) {
+    if (normalizeAssetType(assetType) === "model" && sortSelection.effective === "featured") {
+      return featuredMarketplaceBrowsePage({
+        query,
+        page,
+        limit,
+        prioritizePro,
+        userId,
+        actorKey,
+      });
+    }
     if (prioritizePro) {
       return prioritizedMarketplaceBrowsePage({ query, sortSelection, page, limit });
     }
@@ -726,10 +833,13 @@ export async function listMarketplaceModels(req, res, next) {
     const trafficSeed = marketplaceActorKeyFromRequest(req)
       || `${req.ip || ""}|${req.get?.("user-agent") || ""}|${queryId}`;
     const traffic = marketplaceMeiliTrafficDecision(trafficSeed);
-    if (traffic.shadow) {
+    const personalizedFeatured = assetType === "model"
+      && !search
+      && sortSelection.effective === "featured";
+    if (traffic.shadow && !personalizedFeatured) {
       searchMarketplaceMeili(meiliOptions).catch(() => {});
     }
-    if (traffic.useMeili) {
+    if (traffic.useMeili && !personalizedFeatured) {
       try {
         const meili = await searchMarketplaceMeili({
           ...meiliOptions,
@@ -779,6 +889,9 @@ export async function listMarketplaceModels(req, res, next) {
       page,
       limit,
       prioritizePro,
+      assetType,
+      userId: req.user?._id || null,
+      actorKey: marketplaceActorKeyFromRequest(req),
     });
     await hydrateMarketplaceCategoryRefs(models);
     const assets = models.map((model) => publicModel(model, { previewLimit: 1 }));
@@ -805,9 +918,12 @@ export async function listMarketplaceModels(req, res, next) {
         timingMs: fallbackTimingMs,
         correctedQuery: "",
       },
-      sort: sortSelection,
+      sort: {
+        ...sortSelection,
+        ...(sortSelection.effective === "featured" ? { mode } : {}),
+      },
       ranking: marketplaceRankingMetadata({ applied: prioritizePro, accessType }),
-    });
+    }, { private: personalizedFeatured });
   } catch (error) {
     next(error);
   }

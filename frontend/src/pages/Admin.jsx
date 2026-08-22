@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Archive, Ban, BarChart3, Box, Check, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Flag, Gauge, Gift, Globe2, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Archive, ArrowDown, ArrowUp, Ban, BarChart3, Box, Check, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Flag, Gauge, Gift, Globe2, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import AdminDownloadHistory from "../components/AdminDownloadHistory.jsx";
 import AdminMarketplace from "../components/AdminMarketplace.jsx";
@@ -27,7 +27,7 @@ const emptyMembershipPlan = {
   dailyDownloadLimit: "100",
   maxPurchasesPerUser: "",
   badge: "",
-  features: "100 lượt tải model mỗi ngày\nTải nhanh, không chờ 30s\nTải model Pro",
+  features: "Tải nhanh\nQuyền truy cập ưu tiên",
   isActive: true
 };
 
@@ -361,6 +361,7 @@ export default function Admin({ user, language = "vi" }) {
   const [editingMembershipPlanId, setEditingMembershipPlanId] = useState("");
   const [editingVoucherId, setEditingVoucherId] = useState("");
   const [dragPackageId, setDragPackageId] = useState("");
+  const [dragMembershipPlanId, setDragMembershipPlanId] = useState("");
   const [userDetail, setUserDetail] = useState(null);
   const [userQuota, setUserQuota] = useState(null);
   const [userTimeline, setUserTimeline] = useState([]);
@@ -599,6 +600,25 @@ export default function Admin({ user, language = "vi" }) {
     });
     setPackages(data.packages || nextPackages);
     await loadData();
+  }
+
+  async function moveMembershipPlan(dragId, targetId) {
+    if (!dragId || !targetId || dragId === targetId) return;
+    const fromIndex = membershipPlans.findIndex((item) => item._id === dragId);
+    const toIndex = membershipPlans.findIndex((item) => item._id === targetId);
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    const nextPlans = [...membershipPlans];
+    const [dragged] = nextPlans.splice(fromIndex, 1);
+    nextPlans.splice(toIndex, 0, dragged);
+    setMembershipPlans(nextPlans);
+    setDragMembershipPlanId("");
+
+    const data = await api("/api/admin/membership-plans/reorder", {
+      method: "POST",
+      body: JSON.stringify({ orderedIds: nextPlans.map((item) => item._id) })
+    });
+    setMembershipPlans(data.plans || nextPlans);
   }
 
   function fillMembershipPlanForm(plan) {
@@ -2189,10 +2209,43 @@ export default function Admin({ user, language = "vi" }) {
                 </button>
               </form>
 
+              <p className="muted" style={{ marginTop: 14, marginBottom: 0, fontSize: 13 }}>
+                {l("Kéo thả gói Pro để đổi vị trí hiển thị ngoài trang chủ và trang nạp.", "Drag Pro plans to change their order on the homepage and top-up page.")}
+              </p>
               <div className="packageGrid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
-                {membershipPlans.map((plan) => (
-                  <div className="package membershipPlanCard" key={plan._id} style={{ alignItems: "stretch", padding: 16, textAlign: "left" }}>
+                {membershipPlans.map((plan, planIndex) => (
+                  <div
+                    className={`package membershipPlanCard draggablePackage ${dragMembershipPlanId === plan._id ? "dragging" : ""}`}
+                    key={plan._id}
+                    draggable
+                    onDragStart={() => setDragMembershipPlanId(plan._id)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => moveMembershipPlan(dragMembershipPlanId, plan._id)}
+                    onDragEnd={() => setDragMembershipPlanId("")}
+                    style={{ alignItems: "stretch", padding: 16, textAlign: "left" }}
+                  >
                     <div className="packageActions">
+                      <span title={l("Kéo để sắp xếp", "Drag to sort")}>
+                        <GripVertical size={16} />
+                      </span>
+                      <button
+                        type="button"
+                        disabled={planIndex === 0}
+                        onClick={() => moveMembershipPlan(plan._id, membershipPlans[planIndex - 1]?._id)}
+                        title={l("Đưa lên", "Move up")}
+                        aria-label={l("Đưa gói lên", "Move plan up")}
+                      >
+                        <ArrowUp size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={planIndex === membershipPlans.length - 1}
+                        onClick={() => moveMembershipPlan(plan._id, membershipPlans[planIndex + 1]?._id)}
+                        title={l("Đưa xuống", "Move down")}
+                        aria-label={l("Đưa gói xuống", "Move plan down")}
+                      >
+                        <ArrowDown size={15} />
+                      </button>
                       <button type="button" onClick={() => fillMembershipPlanForm(plan)} title={l("Sửa gói Pro", "Edit Pro plan")}>
                         <Pencil size={15} />
                       </button>

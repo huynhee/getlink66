@@ -16,7 +16,11 @@ import { isSafeId, isVoucherCode, normalizeVoucherCode, rejectUnknownKeys } from
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{16,128}$/;
 
 function sortPlans(plans = []) {
-  return [...plans].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  return [...plans].sort((a, b) =>
+    Number(a.sortOrder || 0) - Number(b.sortOrder || 0)
+    || Number(a.price || 0) - Number(b.price || 0)
+    || String(a.name || "").localeCompare(String(b.name || ""))
+    || String(a._id || "").localeCompare(String(b._id || "")));
 }
 
 export async function listMembershipPlans(_req, res, next) {
