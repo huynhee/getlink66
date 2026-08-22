@@ -364,7 +364,7 @@ export async function getStorageBrowserDownloadLink(session) {
   if (String(session?.storageProvider || "").trim() !== "google_drive") return "";
 
   const metadata = await getGoogleDriveFileMetadata(session.driveFileId, {
-    fields: "id,name,trashed,webContentLink,capabilities(canDownload),permissions(type,role)",
+    fields: "id,name,trashed,resourceKey,capabilities(canDownload),permissions(type,role)",
   });
   if (metadata.trashed) {
     const error = new Error("Stored file is no longer available.");
@@ -387,14 +387,20 @@ export async function getStorageBrowserDownloadLink(session) {
     throw error;
   }
 
-  const downloadUrl = String(metadata.webContentLink || "").trim();
-  if (!downloadUrl) {
+  const fileId = String(metadata.id || session.driveFileId || "").trim();
+  if (!fileId) {
     const error = new Error("Google Drive did not return a browser download link.");
     error.status = 409;
     error.code = "DRIVE_BROWSER_DOWNLOAD_UNAVAILABLE";
     throw error;
   }
-  return downloadUrl;
+  const downloadUrl = new URL("https://drive.usercontent.google.com/download");
+  downloadUrl.searchParams.set("id", fileId);
+  downloadUrl.searchParams.set("export", "download");
+  downloadUrl.searchParams.set("authuser", "0");
+  downloadUrl.searchParams.set("confirm", "t");
+  if (metadata.resourceKey) downloadUrl.searchParams.set("resourcekey", metadata.resourceKey);
+  return downloadUrl.toString();
 }
 
 export async function updateGoogleDriveFileContent(fileId, content, options = {}) {

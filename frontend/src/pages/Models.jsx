@@ -5,6 +5,7 @@ import { api, apiCached, buildApiUrl, prefetchApi } from "../api.js";
 import Pagination from "../components/Pagination.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
 import MarketplaceFacetIcon from "../components/MarketplaceFacetIcon.jsx";
+import { triggerBackgroundDownload } from "../utils/downloadWindow.js";
 
 const EMPTY_FILTERS = {
   style: [],
@@ -2240,7 +2241,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
             ? `Đã tạo phiên tải. Còn ${data.remaining ?? "-"} lượt hôm nay.`
             : `Download session created. ${data.remaining ?? "-"} downloads remaining today.`),
       );
-      window.open(buildApiUrl(data.downloadUrl), "_blank", "noopener,noreferrer");
+      triggerBackgroundDownload(buildApiUrl(data.downloadUrl));
       window.setTimeout(() => {
         api("/api/auth/user")
           .then((current) => {

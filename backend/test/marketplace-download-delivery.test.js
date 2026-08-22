@@ -41,9 +41,9 @@ test("Drive redirect resolves the browser content link without streaming file by
         id: "drive-file-1",
         name: "model.zip",
         trashed: false,
+        resourceKey: "resource-key-1",
         capabilities: { canDownload: true },
         permissions: [{ type: "anyone", role: "reader" }],
-        webContentLink: "https://drive.google.com/uc?id=drive-file-1&export=download",
       }), { status: 200, headers: { "content-type": "application/json" } });
     };
 
@@ -51,7 +51,14 @@ test("Drive redirect resolves the browser content link without streaming file by
       storageProvider: "google_drive",
       driveFileId: "drive-file-1",
     });
-    assert.equal(link, "https://drive.google.com/uc?id=drive-file-1&export=download");
+    const url = new URL(link);
+    assert.equal(url.origin, "https://drive.usercontent.google.com");
+    assert.equal(url.pathname, "/download");
+    assert.equal(url.searchParams.get("id"), "drive-file-1");
+    assert.equal(url.searchParams.get("export"), "download");
+    assert.equal(url.searchParams.get("authuser"), "0");
+    assert.equal(url.searchParams.get("confirm"), "t");
+    assert.equal(url.searchParams.get("resourcekey"), "resource-key-1");
   } finally {
     const envMap = {
       MARKETPLACE_DOWNLOAD_DELIVERY: original.mode,

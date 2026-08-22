@@ -25,6 +25,17 @@ export function triggerBrowserDownload(downloadUrl, popup = null) {
   window.location.href = downloadUrl;
 }
 
+export function triggerBackgroundDownload(downloadUrl) {
+  if (!downloadUrl || typeof document === "undefined") return;
+  const frame = document.createElement("iframe");
+  frame.hidden = true;
+  frame.setAttribute("aria-hidden", "true");
+  frame.setAttribute("title", "Download");
+  frame.src = downloadUrl;
+  document.body.appendChild(frame);
+  window.setTimeout(() => frame.remove(), 120_000);
+}
+
 export function closeDownloadWindow(popup = null) {
   if (popup && !popup.closed) popup.close();
 }
