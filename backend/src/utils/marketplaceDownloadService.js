@@ -15,6 +15,12 @@ import { marketplaceDbConnection } from "../config/db.js";
 import { invalidateMarketplaceHomeRecommendations } from "./marketplaceRecommendationService.js";
 import { recordMarketplaceDownloadBehavior } from "./marketplaceBehaviorService.js";
 import { downloadTokenSecret } from "../config/secrets.js";
+import User from "../models/User.js";
+import {
+  ensureMarketplaceCreditEntitlement,
+  getMarketplaceCreditEntitlement,
+} from "./marketplaceCreditBillingService.js";
+import { marketplaceCreditPrice } from "./marketplacePricingService.js";
 
 const SESSION_TTL_MS = 15 * 60 * 1000;
 
@@ -26,7 +32,7 @@ function makeToken() {
   return crypto.randomBytes(32).toString("base64url");
 }
 
-function pluginSessionToken(sessionId, nonce) {
+function deterministicSessionToken(sessionId, nonce) {
   return crypto
     .createHmac("sha256", downloadTokenSecret())
     .update(`3dipl-plugin-download:${sessionId}:${nonce}`)
@@ -40,16 +46,24 @@ function downloadSessionUrl(sessionId, token, clientType) {
   return `${prefix}/${sessionId}/file?t=${encodeURIComponent(token)}`;
 }
 
-function pluginIdempotencyKey(req, clientType) {
-  if (clientType !== "plugin") return "";
-  const value = String(req.get("idempotency-key") || "").trim();
+function requestIdempotencyKey(req, clientType) {
+  const value = String(
+    clientType === "plugin"
+      ? req.get("idempotency-key")
+      : (req.body?.clientRequestId || req.get?.("idempotency-key") || ""),
+  ).trim();
+  if (!value && clientType !== "plugin") return "";
   if (!/^[A-Za-z0-9._:-]{8,128}$/.test(value)) {
-    const error = new Error("A valid Idempotency-Key header is required.");
+    const error = new Error("A valid idempotency key is required.");
     error.status = 400;
     error.code = "IDEMPOTENCY_KEY_REQUIRED";
     throw error;
   }
   return value;
+}
+
+function idempotencyScope(userId, clientType, key) {
+  return key ? `${userId}:${clientType}:${key}` : "";
 }
 
 function safeArchiveExt(value = "") {
@@ -82,10 +96,150 @@ function tierLimit(req, tier) {
   return 5;
 }
 
-function canAccessModel(model, tier) {
-  if (model.accessType === "free") return true;
-  if (model.accessType === "member") return tier === "member";
-  return false;
+function legacyPaymentMethod(tier) {
+  return tier === "member" ? "pro_quota" : "free_quota";
+}
+
+function paymentMethodError(code, message, status = 400, details = {}) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  error.details = details;
+  error.publicDetails = details;
+  return error;
+}
+
+function resolvePaymentMethod({ requested, tier, model, assetType }) {
+  const value = String(requested || legacyPaymentMethod(tier)).trim().toLowerCase();
+  if (!new Set(["free_quota", "pro_quota", "credit"]).has(value)) {
+    throw paymentMethodError(
+      "PAYMENT_METHOD_NOT_ALLOWED",
+      "The selected payment method is not supported.",
+      400,
+      { paymentMethod: value, assetType },
+    );
+  }
+  if (value === "credit") return value;
+  if (value === "pro_quota" && tier !== "member") {
+    throw paymentMethodError(
+      "PRO_REQUIRED",
+      `Pro is required to download this ${assetType} with Pro quota.`,
+      403,
+      { assetType, upgradeUrl: "/topup?mode=pro" },
+    );
+  }
+  if (value === "free_quota" && (tier !== "free" || model.accessType !== "free")) {
+    if (!requested && model.accessType === "member") {
+      throw paymentMethodError(
+        "PRO_REQUIRED",
+        `Pro is required to download this ${assetType} with quota.`,
+        403,
+        { assetType, upgradeUrl: "/topup?mode=pro" },
+      );
+    }
+    throw paymentMethodError(
+      "PAYMENT_METHOD_NOT_ALLOWED",
+      "Free quota is not available for this download.",
+      400,
+      { paymentMethod: value, assetType },
+    );
+  }
+  return value;
+}
+
+async function quotaSnapshot(req, tier) {
+  const dayKey = vietnamDayKey();
+  const quota = await DailyDownloadQuota.findOne({ dayKey, tier, userId: req.user._id, guestKey: "" }).lean();
+  const limit = tierLimit(req, tier) + Number(quota?.bonusLimit || 0);
+  const used = Number(quota?.count || 0);
+  return {
+    tier,
+    used,
+    limit,
+    remaining: Math.max(0, limit - used),
+    resetAt: nextVietnamReset(),
+  };
+}
+
+async function loadDownloadableModel(modelId, expectedAssetType = "") {
+  const model = await MarketplaceModel.findById(modelId);
+  const assetType = normalizeAssetType(model?.assetType);
+  const assetLabel = assetType === "scene" ? "Scene" : "Model";
+  if (!model || isMarketplaceAssetDeleted(model) || !model.isPublished || (expectedAssetType && assetType !== normalizeAssetType(expectedAssetType))) {
+    const error = new Error("Marketplace asset not found");
+    error.status = 404;
+    throw error;
+  }
+  if (model.metadataStatus !== "complete") {
+    const error = new Error(`${assetLabel} metadata is not complete yet.`);
+    error.status = 409;
+    throw error;
+  }
+  if (model.fileStatus !== "ready") {
+    const error = new Error(`${assetLabel} file is not ready yet.`);
+    error.status = 409;
+    throw error;
+  }
+  if (model.source?.provider === "demo") {
+    const error = new Error(`${assetLabel} mẫu chỉ dùng để kiểm tra giao diện, không có file tải.`);
+    error.status = 409;
+    throw error;
+  }
+  return { model, assetType };
+}
+
+export async function getMarketplaceDownloadOptions({ req, modelId, expectedAssetType = "" }) {
+  if (!req.user) throw paymentMethodError("AUTH_REQUIRED", "Login is required.", 401);
+  const { model, assetType } = await loadDownloadableModel(modelId, expectedAssetType);
+  const tier = accessTier(req);
+  const quotaCost = marketplaceDownloadCost(assetType);
+  const [quota, creditPrice, entitlement, currentUser] = await Promise.all([
+    quotaSnapshot(req, tier),
+    marketplaceCreditPrice(assetType),
+    getMarketplaceCreditEntitlement({ userId: req.user._id, assetType, assetId: model._id }),
+    User.findById(req.user._id).select("credit proUntil proDailyDownloadLimit"),
+  ]);
+  const entitlementActive = Boolean(entitlement?.validUntil && new Date(entitlement.validUntil) > new Date());
+  const quotaMethod = tier === "member" ? "pro_quota" : "free_quota";
+  const quotaAllowed = tier === "member" || model.accessType === "free";
+  const quotaAvailable = quotaAllowed && quota.remaining >= quotaCost;
+  const creditBalance = Number(currentUser?.credit || 0);
+  const creditEffectiveCost = entitlementActive ? 0 : creditPrice;
+  const creditAvailable = entitlementActive || creditBalance >= creditPrice;
+  const defaultMethod = entitlementActive
+    ? "credit"
+    : tier === "member"
+      ? "pro_quota"
+      : quotaAvailable
+        ? "free_quota"
+        : "credit";
+  return {
+    assetType,
+    accessType: model.accessType,
+    quotaCost,
+    creditPrice,
+    creditBalance,
+    entitlementUntil: entitlementActive ? entitlement.validUntil : null,
+    defaultMethod,
+    quota,
+    options: [
+      {
+        method: quotaMethod,
+        available: quotaAvailable,
+        cost: quotaCost,
+        remaining: quota.remaining,
+        reason: quotaAllowed ? (quotaAvailable ? "" : "DOWNLOAD_QUOTA_EXCEEDED") : "PRO_REQUIRED",
+      },
+      {
+        method: "credit",
+        available: creditAvailable,
+        cost: creditEffectiveCost,
+        configuredCost: creditPrice,
+        balance: creditBalance,
+        reason: creditAvailable ? "" : "INSUFFICIENT_CREDIT",
+      },
+    ],
+  };
 }
 
 async function chargeQuota(req, tier, cost = 1) {
@@ -172,12 +326,11 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     throw error;
   }
   const normalizedClientType = clientType === "plugin" ? "plugin" : "web";
-  const idempotencyKey = pluginIdempotencyKey(req, normalizedClientType);
-  if (normalizedClientType === "plugin") {
+  const idempotencyKey = requestIdempotencyKey(req, normalizedClientType);
+  const scope = idempotencyScope(req.user._id, normalizedClientType, idempotencyKey);
+  if (idempotencyKey) {
     const existing = await DownloadSession.findOne({
-      userId: req.user._id,
-      clientType: "plugin",
-      idempotencyKey,
+      idempotencyScope: scope,
     });
     if (existing) {
       if (String(existing.modelId) !== String(modelId)) {
@@ -191,7 +344,7 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
         && new Date(existing.expiresAt) > new Date()
         && existing.pluginTokenNonce
       ) {
-        const token = pluginSessionToken(existing._id, existing.pluginTokenNonce);
+        const token = deterministicSessionToken(existing._id, existing.pluginTokenNonce);
         return {
           session: existing,
           token,
@@ -199,6 +352,10 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
           remaining: Number(existing.quotaRemaining || 0),
           quotaCost: Number(existing.quotaCost || 0),
           resetAt: existing.quotaResetAt || null,
+          paymentMethod: existing.paymentMethod,
+          billingStatus: existing.billingStatus,
+          creditCost: Number(existing.creditCost || 0),
+          creditEntitlementUntil: existing.creditEntitlementUntil || null,
         };
       }
       const error = new Error("The idempotent download operation has expired.");
@@ -207,43 +364,49 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
       throw error;
     }
   }
-  const model = await MarketplaceModel.findById(modelId);
-  const assetType = normalizeAssetType(model?.assetType);
-  const assetLabel = assetType === "scene" ? "Scene" : "Model";
-  if (!model || isMarketplaceAssetDeleted(model) || !model.isPublished || (expectedAssetType && assetType !== normalizeAssetType(expectedAssetType))) {
-    const error = new Error("Marketplace asset not found");
-    error.status = 404;
-    throw error;
-  }
-  if (model.metadataStatus !== "complete") {
-    const error = new Error(`${assetLabel} metadata is not complete yet.`);
-    error.status = 409;
-    throw error;
-  }
-  if (model.fileStatus !== "ready") {
-    const error = new Error(`${assetLabel} file is not ready yet.`);
-    error.status = 409;
-    throw error;
-  }
-  if (model.source?.provider === "demo") {
-    const error = new Error(`${assetLabel} mẫu chỉ dùng để kiểm tra giao diện, không có file tải.`);
-    error.status = 409;
-    throw error;
-  }
-
+  const { model, assetType } = await loadDownloadableModel(modelId, expectedAssetType);
   const tier = accessTier(req);
-  if (!canAccessModel(model, tier)) {
-    const error = new Error(`Pro is required to download this ${assetType}.`);
-    error.status = 403;
-    error.code = "PRO_REQUIRED";
-    error.details = { assetType, upgradeUrl: "/topup?mode=pro" };
-    error.publicDetails = error.details;
-    throw error;
+  const paymentMethod = resolvePaymentMethod({
+    requested: req.body?.paymentMethod,
+    tier,
+    model,
+    assetType,
+  });
+  const quotaCost = marketplaceDownloadCost(assetType);
+  let quota = {
+    charged: false,
+    cost: 0,
+    remaining: 0,
+    resetAt: nextVietnamReset(),
+  };
+  let creditCost = 0;
+  let creditEntitlementUntil = null;
+  if (paymentMethod === "credit") {
+    const [price, entitlement, currentUser, currentQuota] = await Promise.all([
+      marketplaceCreditPrice(assetType),
+      getMarketplaceCreditEntitlement({ userId: req.user._id, assetType, assetId: model._id }),
+      User.findById(req.user._id).select("credit"),
+      quotaSnapshot(req, tier),
+    ]);
+    creditEntitlementUntil = entitlement?.validUntil || null;
+    // Keep the configured price on the session as an immutable quote. The
+    // billing step will change it to zero when an active entitlement is reused.
+    creditCost = price;
+    if (!creditEntitlementUntil && Number(currentUser?.credit || 0) < price) {
+      throw paymentMethodError(
+        "INSUFFICIENT_CREDIT",
+        "Insufficient Credit for this download.",
+        402,
+        { balance: Number(currentUser?.credit || 0), required: price, topupUrl: "/topup?mode=credit" },
+      );
+    }
+    quota.remaining = currentQuota.remaining;
+    quota.resetAt = currentQuota.resetAt;
+  } else {
+    quota = await chargeQuota(req, tier, quotaCost);
   }
-
-  const quota = await chargeQuota(req, tier, marketplaceDownloadCost(assetType));
-  const pluginTokenNonce = normalizedClientType === "plugin" ? makeToken() : "";
-  let token = normalizedClientType === "plugin" ? "" : makeToken();
+  const pluginTokenNonce = idempotencyKey || normalizedClientType === "plugin" ? makeToken() : "";
+  let token = pluginTokenNonce ? "" : makeToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   const purgeAt = new Date(expiresAt.getTime() + 7 * 24 * 60 * 60 * 1000);
   let session = null;
@@ -255,6 +418,7 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
       guestKey: "",
       clientType: normalizedClientType,
       idempotencyKey,
+      idempotencyScope: scope,
       pluginTokenNonce,
       tokenHash: token ? sha256(token) : "pending",
       expiresAt,
@@ -262,6 +426,10 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
       status: "active",
       quotaCharged: quota.charged,
       quotaCost: quota.cost,
+      paymentMethod,
+      billingStatus: paymentMethod === "credit" ? "pending" : "not_applicable",
+      creditCost,
+      creditEntitlementUntil,
       accessTier: tier,
       storageProvider: model.storageProvider,
       storageKey: model.storageKey,
@@ -275,8 +443,8 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
       quotaRemaining: quota.remaining,
       quotaResetAt: quota.resetAt,
     });
-    if (normalizedClientType === "plugin") {
-      token = pluginSessionToken(session._id, pluginTokenNonce);
+    if (pluginTokenNonce) {
+      token = deterministicSessionToken(session._id, pluginTokenNonce);
       session = await DownloadSession.findByIdAndUpdate(
         session._id,
         { $set: { tokenHash: sha256(token) } },
@@ -294,6 +462,10 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
       accessTier: tier,
       quotaCharged: quota.charged,
       quotaCost: quota.cost,
+      paymentMethod,
+      billingStatus: paymentMethod === "credit" ? "pending" : "not_applicable",
+      creditCost,
+      creditEntitlementUntil,
       status: "requested",
       ip: req.ip,
       userAgent: String(req.get("user-agent") || "").slice(0, 300),
@@ -310,7 +482,107 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     remaining: quota.remaining,
     quotaCost: quota.cost,
     resetAt: quota.resetAt,
+    paymentMethod,
+    billingStatus: session.billingStatus,
+    creditCost: Number(session.creditCost || 0),
+    creditEntitlementUntil: session.creditEntitlementUntil || null,
   };
+}
+
+async function waitForCreditBilling(sessionId, timeoutMs = 2_500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const current = await DownloadSession.findById(sessionId);
+    if (current && current.billingStatus !== "pending") return current;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+  }
+  throw paymentMethodError(
+    "CREDIT_BILLING_IN_PROGRESS",
+    "Credit payment is still being processed. Please retry shortly.",
+    409,
+  );
+}
+
+async function syncDownloadBilling(session) {
+  if (!session?._id) return;
+  await ModelDownload.findOneAndUpdate(
+    { sessionId: session._id },
+    {
+      $set: {
+        billingStatus: session.billingStatus,
+        creditCost: Number(session.creditCost || 0),
+        creditTransactionId: String(session.creditTransactionId || ""),
+        creditEntitlementUntil: session.creditEntitlementUntil || null,
+      },
+    },
+  );
+}
+
+export async function finalizeMarketplaceDownloadBilling(session) {
+  if (!session?._id || session.paymentMethod !== "credit") return session;
+  const fresh = await DownloadSession.findById(session._id);
+  if (!fresh) throw paymentMethodError("DOWNLOAD_SESSION_NOT_FOUND", "Download session not found.", 404);
+  if (["charged", "reused"].includes(fresh.billingStatus)) {
+    await syncDownloadBilling(fresh);
+    return fresh;
+  }
+
+  const billingClaim = `pending:${crypto.randomUUID()}`;
+  const claimed = await DownloadSession.findOneAndUpdate(
+    {
+      _id: fresh._id,
+      billingStatus: "pending",
+      $or: [{ creditTransactionId: "" }, { creditTransactionId: { $exists: false } }],
+    },
+    { $set: { creditTransactionId: billingClaim } },
+    { new: true },
+  );
+  if (!claimed) return waitForCreditBilling(fresh._id);
+
+  try {
+    const model = await MarketplaceModel.findById(claimed.modelId)
+      .select("assetType title slug source")
+      .lean();
+    if (!model) throw paymentMethodError("MARKETPLACE_ASSET_NOT_FOUND", "Marketplace asset not found.", 404);
+    const configuredCost = Math.max(
+      1,
+      Math.floor(Number(claimed.creditCost || await marketplaceCreditPrice(claimed.assetType))),
+    );
+    const billing = await ensureMarketplaceCreditEntitlement({
+      userId: claimed.userId,
+      model,
+      cost: configuredCost,
+      operationId: `marketplace-download:${claimed._id}`,
+    });
+    const billingStatus = billing.charged ? "charged" : "reused";
+    const actualCost = billing.charged ? configuredCost : 0;
+    const transactionId = String(
+      billing.ledger?._id
+      || billing.entitlement?.lastTransactionId
+      || `entitlement:${billing.entitlement?._id || ""}`,
+    );
+    const entitlementUntil = billing.entitlement?.validUntil || null;
+    const update = {
+      billingStatus,
+      creditCost: actualCost,
+      creditTransactionId: transactionId,
+      creditEntitlementUntil: entitlementUntil,
+    };
+    const updated = await DownloadSession.findOneAndUpdate(
+      { _id: claimed._id, billingStatus: "pending", creditTransactionId: billingClaim },
+      { $set: update },
+      { new: true },
+    );
+    if (!updated) return waitForCreditBilling(claimed._id);
+    await syncDownloadBilling(updated);
+    return updated;
+  } catch (error) {
+    await DownloadSession.findOneAndUpdate(
+      { _id: claimed._id, billingStatus: "pending", creditTransactionId: billingClaim },
+      { $set: { creditTransactionId: "" } },
+    ).catch(() => {});
+    throw error;
+  }
 }
 
 async function markRedeemedWithSession(session, databaseSession = null) {

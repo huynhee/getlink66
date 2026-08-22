@@ -4,6 +4,7 @@ import Topup from "../models/Topup.js";
 import MembershipOrder from "../models/MembershipOrder.js";
 import ModelDownload from "../models/ModelDownload.js";
 import Referral from "../models/Referral.js";
+import CreditLedgerEntry from "../models/CreditLedgerEntry.js";
 import { hydrateAtlasUserField } from "./crossDatabaseHydration.js";
 
 const TIMELINE_TYPES = new Set(["all", "credit", "pro", "getlink", "model", "scene", "referral", "voucher"]);
@@ -138,6 +139,30 @@ function mapGetlink(item) {
   );
 }
 
+function mapCreditLedger(item) {
+  const assetType = item.asset?.assetType === "scene" ? "scene" : "model";
+  const title = item.asset?.title || item.asset?.sourceAssetId || "";
+  return eventBase(
+    `credit-ledger:${item._id}`,
+    "credit",
+    `${assetType === "scene" ? "Tải scene bằng Credit" : "Tải model bằng Credit"}${title ? ` - ${title}` : ""}`,
+    item.direction === "debit" ? -Number(item.amount || 0) : Number(item.amount || 0),
+    "approved",
+    item.createdAt,
+    {
+      ledgerEntryId: item._id,
+      marketplaceDownload: true,
+      direction: item.direction,
+      creditAmount: Number(item.amount || 0),
+      balanceBefore: Number(item.balanceBefore || 0),
+      balanceAfter: Number(item.balanceAfter || 0),
+      entitlementId: item.entitlementId || "",
+      asset: item.asset || null,
+      user: userSummary(item.userId),
+    },
+  );
+}
+
 function mapMembership(item) {
   const isAddon = Boolean(item.isQuotaAddon);
   const isApproved = item.status === "approved";
@@ -183,6 +208,9 @@ function modelSummary(model) {
 function mapModelDownload(item) {
   const assetType = item.assetType || item.modelId?.assetType || "model";
   const quotaCost = item.quotaCharged ? Number(item.quotaCost || 1) : 0;
+  const creditCost = item.paymentMethod === "credit" && item.billingStatus === "charged"
+    ? Number(item.creditCost || 0)
+    : 0;
   const event = eventBase(
     `model-download:${item._id}`,
     "model",
@@ -197,6 +225,10 @@ function mapModelDownload(item) {
       accessTier: item.accessTier || "",
       quotaCharged: Boolean(item.quotaCharged),
       quotaCost,
+      paymentMethod: item.paymentMethod || (item.accessTier === "member" ? "pro_quota" : "free_quota"),
+      billingStatus: item.billingStatus || "not_applicable",
+      creditCost,
+      creditEntitlementUntil: item.creditEntitlementUntil || null,
       assetType,
       guestKey: item.guestKey || "",
       user: userSummary(item.userId),
@@ -205,7 +237,7 @@ function mapModelDownload(item) {
   event.id = `${assetType}-download:${item._id}`;
   event.type = assetType;
   event.title = `${assetType === "scene" ? "Tải scene" : "Tải model"}${item.modelId?.title ? ` - ${item.modelId.title}` : ""}`;
-  event.amount = -quotaCost;
+  event.amount = creditCost ? -creditCost : -quotaCost;
   return event;
 }
 
@@ -296,6 +328,19 @@ async function fetchTimelineSources({ userId, type, sourceLimit }) {
         .populate("userId", "name email avatar credit role")
         .lean()
         .then((items) => items.map(mapTopup)),
+    );
+  }
+
+  // The matching ModelDownload remains in the all/model/scene views. Showing
+  // the ledger only in the Credit view avoids duplicate timeline events.
+  if (type === "credit") {
+    tasks.push(
+      CreditLedgerEntry.find({ userId: userObjectId })
+        .sort({ createdAt: -1 })
+        .limit(sourceLimit)
+        .populate("userId", "name email avatar credit role")
+        .lean()
+        .then((items) => items.map(mapCreditLedger)),
     );
   }
 
@@ -391,6 +436,7 @@ async function countTimelineSources({ userId, type }) {
   if (!userObjectId) return 0;
   const tasks = [];
   if (type === "all" || type === "credit") tasks.push(Topup.countDocuments({ userId: userObjectId }));
+  if (type === "credit") tasks.push(CreditLedgerEntry.countDocuments({ userId: userObjectId }));
   if (type === "all" || type === "getlink" || type === "credit") {
     tasks.push(Getlink.countDocuments({ userId: userObjectId }));
   }

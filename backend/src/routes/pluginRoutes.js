@@ -10,6 +10,7 @@ import {
 import {
   createDownloadSession,
   downloadSessionFile,
+  getDownloadOptions,
 } from "../controllers/marketplaceController.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
 import { pluginBearerAuth } from "../middleware/pluginBearerAuth.js";
@@ -58,6 +59,19 @@ router.post("/auth/refresh", refreshLimit, refresh);
 router.get("/release", releaseManifest);
 router.delete("/auth/session", pluginBearerAuth, privateLimit, logout);
 router.get("/me", pluginBearerAuth, privateLimit, me);
+router.get(
+  "/models/:id/download-options",
+  pluginBearerAuth,
+  privateLimit,
+  getDownloadOptions,
+);
+router.get(
+  "/scenes/:id/download-options",
+  pluginBearerAuth,
+  privateLimit,
+  sceneCatalog,
+  getDownloadOptions,
+);
 router.get(
   "/download/session/:id/file",
   pluginBearerAuth,

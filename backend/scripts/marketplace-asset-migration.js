@@ -44,12 +44,14 @@ async function main() {
     categoriesMissingAssetType: await countMissing(MarketplaceCategory, { assetType: { $exists: false } }),
     sessionsMissingAssetType: await countMissing(DownloadSession, { assetType: { $exists: false } }),
     sessionsMissingQuotaCost: await countMissing(DownloadSession, { quotaCost: { $exists: false } }),
+    sessionsMissingPaymentMethod: await countMissing(DownloadSession, { paymentMethod: { $exists: false } }),
     sessionsMissingPurgeAt: await countMissing(DownloadSession, {
       purgeAt: { $exists: false },
       expiresAt: { $type: "date" },
     }),
     downloadsMissingAssetType: await countMissing(ModelDownload, { assetType: { $exists: false } }),
     downloadsMissingQuotaCost: await countMissing(ModelDownload, { quotaCost: { $exists: false } }),
+    downloadsMissingPaymentMethod: await countMissing(ModelDownload, { paymentMethod: { $exists: false } }),
     driveChangesMissingAssetType: await countMissing(MarketplaceDriveChange, { assetType: { $exists: false } }),
     driveStatesMissingAssetType: await countMissing(MarketplaceDriveSyncState, { assetType: { $exists: false } }),
   };

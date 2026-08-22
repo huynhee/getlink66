@@ -1,6 +1,7 @@
 import SiteSetting from "../models/SiteSetting.js";
 import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
 import { limitedString, rejectUnknownKeys, sanitizeHtml } from "../utils/validators.js";
+import { invalidateMarketplacePricingCache } from "../utils/marketplacePricingService.js";
 
 const REFERRAL_MODES = ["both", "referrer_only", "off"];
 const THREED66_MODEL_RESOLVE_MODES = ["search", "footprint", "direct"];
@@ -235,6 +236,11 @@ const RETENTION_NUMBER_FIELDS = {
   auditLogHistoryRetentionDays: { fallback: 365, minActive: 30 },
 };
 
+const MARKETPLACE_PRICE_FIELDS = {
+  marketplaceModelCreditPrice: { fallback: 5, min: 1, max: 100000 },
+  marketplaceSceneCreditPrice: { fallback: 25, min: 1, max: 100000 },
+};
+
 const defaultSettings = {
   key: "homepage",
   heroText: "SIEU RE\nTAI 3D\nTOC DO",
@@ -298,6 +304,8 @@ const defaultSettings = {
   maxDownloadsPerIp: Number(process.env.MAX_DOWNLOADS_PER_IP || 4),
   getlinkRedownloadDays: Number(process.env.GETLINK_REDOWNLOAD_DAYS || 3),
   getlinkRedownloadLimit: Number(process.env.GETLINK_REDOWNLOAD_LIMIT || 5),
+  marketplaceModelCreditPrice: 5,
+  marketplaceSceneCreditPrice: 25,
   getlinkDetailRetentionDaysAfterExpiry: 1,
   getlinkHistoryRetentionDaysAfterExpiry: 365,
   marketplaceDownloadHistoryRetentionDays: 365,
@@ -368,6 +376,8 @@ function publicSettings(settings = {}, { includeRuntime = false } = {}) {
         "referralRewardCreditEnabled",
         "referralRewardProEnabled",
         "threed66ModelResolveMode",
+        "marketplaceModelCreditPrice",
+        "marketplaceSceneCreditPrice",
       ].map((field) => [field, snapshot[field]]),
     );
   }
@@ -680,6 +690,8 @@ export async function updateSettings(req, res, next) {
       "maxDownloadsPerIp",
       "getlinkRedownloadDays",
       "getlinkRedownloadLimit",
+      "marketplaceModelCreditPrice",
+      "marketplaceSceneCreditPrice",
       "getlinkDetailRetentionDaysAfterExpiry",
       "getlinkHistoryRetentionDaysAfterExpiry",
       "marketplaceDownloadHistoryRetentionDays",
@@ -708,6 +720,10 @@ export async function updateSettings(req, res, next) {
       }
       if (RETENTION_NUMBER_FIELDS[field]) {
         update[field] = normalizeRetentionDays(req.body[field], RETENTION_NUMBER_FIELDS[field]);
+        return;
+      }
+      if (MARKETPLACE_PRICE_FIELDS[field]) {
+        update[field] = clampInteger(req.body[field], MARKETPLACE_PRICE_FIELDS[field]);
         return;
       }
       if (field === "threed66PaytypeValue") {
@@ -760,6 +776,12 @@ export async function updateSettings(req, res, next) {
       process.env.THREED66_PROXY_URL = "";
     }
     cacheSettings(settings);
+    if (
+      update.marketplaceModelCreditPrice !== undefined
+      || update.marketplaceSceneCreditPrice !== undefined
+    ) {
+      invalidateMarketplacePricingCache();
+    }
 
     res.json({ settings: publicSettings(settings, { includeRuntime: true }) });
   } catch (error) {

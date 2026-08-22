@@ -164,6 +164,7 @@ const { ensurePaymentReceiptIndexes } = await import("./src/models/PaymentReceip
 const { ensureNotificationReceiptIndexes } = await import("./src/models/NotificationReceipt.js");
 const { ensureMarketplaceReportIndexes } = await import("./src/models/MarketplaceReport.js");
 const { ensureBackupRunIndexes } = await import("./src/models/BackupRun.js");
+const { ensureMarketplaceCreditBillingIndexes } = await import("./src/utils/marketplaceCreditBillingService.js");
 const { awardReferralSignup, ensureReferralCode } = await import("./src/utils/referralService.js");
 const { initializeMarketplaceCategories } = await import("./src/utils/marketplaceSeed.js");
 const { ensureMarketplaceAssetMigration } = await import("./src/utils/marketplaceMigration.js");
@@ -189,6 +190,7 @@ await ensurePaymentReceiptIndexes();
 await ensureNotificationReceiptIndexes();
 await ensureMarketplaceReportIndexes();
 await ensureBackupRunIndexes();
+await ensureMarketplaceCreditBillingIndexes();
 if (
   process.env.NODE_ENV !== "production"
   || process.env.MARKETPLACE_STARTUP_MIGRATIONS_ENABLED === "true"

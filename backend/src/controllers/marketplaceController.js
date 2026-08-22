@@ -6,6 +6,8 @@ import { marketplaceAssetTypeFilter, marketplaceDownloadCost, normalizeAssetType
 import { isSafeId } from "../utils/validators.js";
 import {
   createMarketplaceDownloadSession,
+  finalizeMarketplaceDownloadBilling,
+  getMarketplaceDownloadOptions,
   markMarketplaceDownloadRedeemed,
   nextVietnamReset,
   vietnamDayKey,
@@ -1208,7 +1210,28 @@ export async function createDownloadSession(req, res, next) {
       remaining: result.remaining,
       quotaCost: result.quotaCost,
       resetAt: result.resetAt,
+      paymentMethod: result.paymentMethod,
+      billingStatus: result.billingStatus,
+      creditCost: result.creditCost,
+      creditEntitlementUntil: result.creditEntitlementUntil,
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getDownloadOptions(req, res, next) {
+  try {
+    const assetType = requestAssetType(req);
+    if (!isSafeId(req.params.id)) {
+      return res.status(400).json({ message: `Invalid ${assetLabel(assetType).toLowerCase()} id` });
+    }
+    const options = await getMarketplaceDownloadOptions({
+      req,
+      modelId: req.params.id,
+      expectedAssetType: assetType,
+    });
+    res.json(options);
   } catch (error) {
     next(error);
   }
@@ -1234,12 +1257,20 @@ export async function downloadSessionFile(req, res, next) {
       throw error;
     });
     if (redirectUrl) {
-      await markMarketplaceDownloadRedeemed(session);
+      const billedSession = await finalizeMarketplaceDownloadBilling(session);
+      await markMarketplaceDownloadRedeemed(billedSession);
       return res.redirect(302, redirectUrl);
     }
 
     const file = await openStorageStream(session);
-    await markMarketplaceDownloadRedeemed(session);
+    let billedSession;
+    try {
+      billedSession = await finalizeMarketplaceDownloadBilling(session);
+    } catch (error) {
+      file.stream?.destroy?.();
+      throw error;
+    }
+    await markMarketplaceDownloadRedeemed(billedSession);
     res.setHeader("content-type", "application/octet-stream");
     res.setHeader(
       "content-disposition",

@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createDownloadSession,
   downloadSessionFile,
+  getDownloadOptions,
   getMarketplaceModel,
   listMarketplaceHomeRecommendations,
   listMarketplaceModelRecommendations,
@@ -67,6 +68,7 @@ router.get("/marketplace/scenes/search/suggestions", sceneCatalog, listMarketpla
 router.post("/marketplace/scenes/image-search", sceneCatalog, imageSearchLimit, searchMarketplaceByImage);
 router.get("/marketplace/scenes/:id/cover", sceneCatalog, streamMarketplaceCover);
 router.get("/marketplace/scenes/:id/preview/:index", sceneCatalog, streamMarketplacePreview);
+router.get("/marketplace/scenes/:id/download-options", requireAuth, requireNotBanned, sceneCatalog, getDownloadOptions);
 router.get("/marketplace/scenes/:slug/recommendations", sceneCatalog, listMarketplaceModelRecommendations);
 router.get("/marketplace/scenes/:slug", sceneCatalog, getMarketplaceModel);
 router.get("/marketplace/scenes/:id/report-status", requireAuth, requireNotBanned, sceneCatalog, getMarketplaceReportStatus);
@@ -74,6 +76,7 @@ router.post("/marketplace/scenes/:id/reports", requireAuth, requireNotBanned, sc
 router.post("/marketplace/scenes/:id/download-session", requireAuth, requireNotBanned, sceneCatalog, downloadSessionLimit, createDownloadSession);
 router.get("/marketplace/models/:id/cover", streamMarketplaceCover);
 router.get("/marketplace/models/:id/preview/:index", streamMarketplacePreview);
+router.get("/marketplace/models/:id/download-options", requireAuth, requireNotBanned, getDownloadOptions);
 router.get("/marketplace/models/:slug/recommendations", listMarketplaceModelRecommendations);
 router.get("/marketplace/models/:slug", getMarketplaceModel);
 router.get("/marketplace/models/:id/report-status", requireAuth, requireNotBanned, getMarketplaceReportStatus);

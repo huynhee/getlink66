@@ -152,6 +152,8 @@ const defaultSiteSettings = {
   ctaUserTextEn: "Open Getlink to download 3D models and manage your credit.",
   ctaGuestTextEn: "Sign in with Google to start using 3D Getlink and manage your credit.",
   footerTaglineEn: "24/7 support",
+  marketplaceModelCreditPrice: 5,
+  marketplaceSceneCreditPrice: 25,
   threed66GetlinkConcurrency: 1,
   threed66PreviewConcurrency: 1,
   threed66RefreshConcurrency: 1,
@@ -893,6 +895,8 @@ export default function Admin({ user, language = "vi" }) {
           maxGlobalDownloads: Number(siteSettings.maxGlobalDownloads || 20),
           maxDownloadsPerUser: Number(siteSettings.maxDownloadsPerUser || 2),
           maxDownloadsPerIp: Number(siteSettings.maxDownloadsPerIp || 4),
+          marketplaceModelCreditPrice: Number(siteSettings.marketplaceModelCreditPrice || 5),
+          marketplaceSceneCreditPrice: Number(siteSettings.marketplaceSceneCreditPrice || 25),
           getlinkRedownloadDays: Number(siteSettings.getlinkRedownloadDays || 3),
           getlinkRedownloadLimit: Number(siteSettings.getlinkRedownloadLimit || 5),
           getlinkDetailRetentionDaysAfterExpiry: Number(siteSettings.getlinkDetailRetentionDaysAfterExpiry ?? 1),
@@ -1415,6 +1419,24 @@ export default function Admin({ user, language = "vi" }) {
     },
   ];
   const userRuntimeSettings = [
+    {
+      field: "marketplaceModelCreditPrice",
+      label: l("Giá tải lẻ một Model (Credit)", "Model one-off price (Credits)"),
+      help: l("Credit bị trừ khi backend thực sự cấp file. Giá mới chỉ áp dụng cho giao dịch mới.", "Credits are charged only when the backend issues the file. New prices apply to new transactions only."),
+      type: "number",
+      min: 1,
+      max: 100000,
+      fallback: 5,
+    },
+    {
+      field: "marketplaceSceneCreditPrice",
+      label: l("Giá tải lẻ một Scene (Credit)", "Scene one-off price (Credits)"),
+      help: l("Một lần trả Credit được tải lại cùng Scene trong 24 giờ trên web và plugin.", "One Credit payment allows the same Scene to be redownloaded for 24 hours on web and plugin."),
+      type: "number",
+      min: 1,
+      max: 100000,
+      fallback: 25,
+    },
     {
       field: "maxGlobalDownloads",
       label: l("Tổng file tải cùng lúc", "Global concurrent downloads"),
@@ -1980,7 +2002,7 @@ export default function Admin({ user, language = "vi" }) {
           </div>
           <p className="muted" style={{ marginTop: 8 }}>
             {packageMode === "credit"
-              ? l("Gói Credit chỉ cộng số dư dùng cho Getlink, không kích hoạt Pro và không cộng quota thư viện Model/Scene.", "Credit packages only add Getlink balance; they do not activate Pro or add Model/Scene library quota.")
+              ? l("Gói Credit cộng số dư dùng cho Getlink và tải lẻ Model/Scene; không kích hoạt Pro hoặc cộng quota hằng ngày.", "Credit packages add balance for Getlink and one-off Model/Scene downloads; they do not activate Pro or add daily quota.")
               : l("Gói Pro kích hoạt quyền thành viên và quota tải Model/Scene, không cộng credit.", "Pro plans activate membership and Model/Scene download quota, not credit.")}
           </p>
 

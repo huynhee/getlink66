@@ -94,6 +94,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   const [voucherMessage, setVoucherMessage] = useState("");
   const [voucherError, setVoucherError] = useState("");
   const [topupMode, setTopupModeState] = useState(modeFromLocation);
+  const [marketplacePrices, setMarketplacePrices] = useState({ model: 5, scene: 25 });
 
   function changeTopupMode(nextMode) {
     const normalizedMode = nextMode === "credit" ? "credit" : "pro";
@@ -126,6 +127,18 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         setSelectedPackageId(packageId);
       }
     });
+  }, []);
+
+  useEffect(() => {
+    api("/api/settings")
+      .then((data) => {
+        const settings = data.settings || {};
+        setMarketplacePrices({
+          model: Number(settings.marketplaceModelCreditPrice || 5),
+          scene: Number(settings.marketplaceSceneCreditPrice || 25),
+        });
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -527,10 +540,10 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           <strong>Credit</strong>
           <span>
             {language === "vi"
-              ? "Dùng riêng làm số dư Getlink. Mỗi lượt Getlink thành công sẽ trừ credit theo giá giao dịch."
-              : "Used only as Getlink balance. Each successful Getlink request deducts credit at the transaction rate."}
+              ? `Dùng cho Getlink và tải lẻ thư viện: Model ${marketplacePrices.model} Credit, Scene ${marketplacePrices.scene} Credit.`
+              : `Use for Getlink and one-off library downloads: Model ${marketplacePrices.model} Credits, Scene ${marketplacePrices.scene} Credits.`}
           </span>
-          <small>{language === "vi" ? "Không mua Pro và không cộng quota tải Model/Scene." : "Does not buy Pro or add Model/Scene download quota."}</small>
+          <small>{language === "vi" ? "Phù hợp khi tải ít; không kích hoạt Pro hoặc cộng quota hằng ngày." : "Best for occasional downloads; does not activate Pro or add daily quota."}</small>
           <span className="topupPurposeState">
             {topupMode === "credit" && <Check size={13} />}
             {topupMode === "credit"
@@ -549,8 +562,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           <strong>Pro</strong>
           <span>
             {language === "vi"
-              ? "Dùng để mở quyền thành viên: tải Model/Scene Pro, tải nhanh và quota theo ngày."
-              : "Unlocks membership access: Pro Models/Scenes, fast downloads, and daily quota."}
+              ? "Dành cho người tải thường xuyên: mở Model/Scene Pro, tải nhanh và quota theo ngày."
+              : "For frequent downloaders: unlocks Pro Models/Scenes, fast downloads, and daily quota."}
           </span>
           <small>{language === "vi" ? "Không cộng thêm số dư Credit." : "Does not add Credit balance."}</small>
           <span className="topupPurposeState">
@@ -568,7 +581,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           <span>{language === "vi" ? "Hình thức đang chọn:" : "Selected top-up type:"}</span>
           <strong>
             {topupMode === "credit"
-              ? (language === "vi" ? "Nạp Credit dùng cho Getlink" : "Credit for Getlink")
+              ? (language === "vi" ? "Nạp Credit cho Getlink và tải lẻ" : "Credit for Getlink and one-off downloads")
               : (language === "vi" ? "Mua Pro để tải Model/Scene" : "Pro for Model/Scene downloads")}
           </strong>
         </div>
@@ -669,8 +682,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               <h2><Wallet size={20} /> {language === "vi" ? "Nạp Credit" : "Top up Credit"}</h2>
               <p className="muted">
                 {language === "vi"
-                  ? "Credit dùng riêng cho Getlink. Tỉ lệ 1:1 với 3d66, 28 credit là giá của 1 lượt tải Getlink model 3d66 trung bình."
-                  : "Credits are used exclusively for Getlink. Standard rate is 1:1 with 3d66; a 3d66 model download costs an average of 28 credits."}
+                  ? `Credit dùng cho Getlink và tải nhỏ lẻ trong thư viện. Tỉ lệ Getlink 1:1 với 3d66 (trung bình 28 Credit/model); tải thư viện: Model ${marketplacePrices.model} Credit, Scene ${marketplacePrices.scene} Credit.`
+                  : `Credits work for Getlink and occasional library downloads. Getlink follows the 3d66 1:1 rate (about 28 Credits/model); library downloads cost ${marketplacePrices.model} Credits per Model and ${marketplacePrices.scene} Credits per Scene.`}
               </p>
             </div>
             <span className="badge success">{language === "vi" ? "ĐANG NẠP CREDIT" : "CREDIT TOP-UP"}</span>
@@ -743,8 +756,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 <strong>{selectedPackage.name || t.defaultPackageName}</strong>
                 <p>
                   {language === "vi"
-                    ? `Thanh toán ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} để nhận ${finalCredit(selectedPackage)} credit dùng cho Getlink`
-                    : `Pay ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} to receive ${finalCredit(selectedPackage)} Getlink credits`}
+                    ? `Thanh toán ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} để nhận ${finalCredit(selectedPackage)} Credit dùng cho Getlink hoặc tải lẻ Model/Scene`
+                    : `Pay ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} to receive ${finalCredit(selectedPackage)} Credits for Getlink or one-off Model/Scene downloads`}
                   {appliedVoucher && voucherAppliesToPackage(appliedVoucher, selectedPackage)
                     ? (language === "vi" ? `, đã áp dụng voucher ${appliedVoucher.code}` : `, voucher ${appliedVoucher.code} applied`)
                     : ""}.

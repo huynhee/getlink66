@@ -140,6 +140,8 @@ const siteSettingSchema = new mongoose.Schema(
     maxDownloadsPerIp: { type: Number, default: 4 },
     getlinkRedownloadDays: { type: Number, default: 3 },
     getlinkRedownloadLimit: { type: Number, default: 5 },
+    marketplaceModelCreditPrice: { type: Number, default: 5, min: 1, max: 100000 },
+    marketplaceSceneCreditPrice: { type: Number, default: 25, min: 1, max: 100000 },
     getlinkDetailRetentionDaysAfterExpiry: { type: Number, default: 1, min: 0, max: 3650 },
     getlinkHistoryRetentionDaysAfterExpiry: { type: Number, default: 365, min: 0, max: 3650 },
     marketplaceDownloadHistoryRetentionDays: { type: Number, default: 365, min: 0, max: 3650 },

@@ -44,6 +44,16 @@ export async function ensureMarketplaceAssetMigration() {
     [{ $set: { quotaCost: { $cond: ["$quotaCharged", 1, 0] } } }],
   );
   await DownloadSession.updateMany(
+    { paymentMethod: { $exists: false } },
+    [{
+      $set: {
+        paymentMethod: { $cond: [{ $eq: ["$accessTier", "member"] }, "pro_quota", "free_quota"] },
+        billingStatus: "not_applicable",
+        creditCost: 0,
+      },
+    }],
+  );
+  await DownloadSession.updateMany(
     { purgeAt: { $exists: false }, expiresAt: { $type: "date" } },
     [{ $set: { purgeAt: { $add: ["$expiresAt", 7 * 24 * 60 * 60 * 1000] } } }],
   );
@@ -51,6 +61,16 @@ export async function ensureMarketplaceAssetMigration() {
   await ModelDownload.updateMany(
     { quotaCost: { $exists: false } },
     [{ $set: { quotaCost: { $cond: ["$quotaCharged", 1, 0] } } }],
+  );
+  await ModelDownload.updateMany(
+    { paymentMethod: { $exists: false } },
+    [{
+      $set: {
+        paymentMethod: { $cond: [{ $eq: ["$accessTier", "member"] }, "pro_quota", "free_quota"] },
+        billingStatus: "not_applicable",
+        creditCost: 0,
+      },
+    }],
   );
   await MarketplaceDriveChange.updateMany({ assetType: { $exists: false } }, { $set: { assetType: "model" } });
   await MarketplaceDriveSyncState.updateMany({ assetType: { $exists: false } }, { $set: { assetType: "model" } });
@@ -62,9 +82,18 @@ export async function ensureMarketplaceAssetMigration() {
   const hasLegacyTextIndex = modelIndexes.some((index) => index.name === "marketplace_model_text");
   if (hasLegacyTextIndex) {
     logger.warn("Legacy marketplace text index is still active; run marketplace:search:execute to replace it safely");
-    await MarketplaceCategory.createIndexes();
+    await Promise.all([
+      MarketplaceCategory.createIndexes(),
+      DownloadSession.createIndexes(),
+      ModelDownload.createIndexes(),
+    ]);
   } else {
-    await Promise.all([MarketplaceModel.createIndexes(), MarketplaceCategory.createIndexes()]);
+    await Promise.all([
+      MarketplaceModel.createIndexes(),
+      MarketplaceCategory.createIndexes(),
+      DownloadSession.createIndexes(),
+      ModelDownload.createIndexes(),
+    ]);
   }
   logger.info("Marketplace asset migration and indexes are ready");
 }

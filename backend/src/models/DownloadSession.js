@@ -10,6 +10,7 @@ const downloadSessionSchema = new mongoose.Schema(
     guestKey: { type: String, default: "", index: true },
     clientType: { type: String, enum: ["web", "plugin"], default: "web", index: true },
     idempotencyKey: { type: String, default: "", index: true },
+    idempotencyScope: { type: String, default: "" },
     pluginTokenNonce: { type: String, default: "" },
     tokenHash: { type: String, required: true },
     expiresAt: { type: Date, required: true, index: true },
@@ -19,6 +20,21 @@ const downloadSessionSchema = new mongoose.Schema(
     downloadCountedAt: Date,
     quotaCharged: { type: Boolean, default: false },
     quotaCost: { type: Number, default: 0, min: 0 },
+    paymentMethod: {
+      type: String,
+      enum: ["free_quota", "pro_quota", "credit"],
+      default: "free_quota",
+      index: true,
+    },
+    billingStatus: {
+      type: String,
+      enum: ["pending", "charged", "reused", "not_applicable"],
+      default: "not_applicable",
+      index: true,
+    },
+    creditCost: { type: Number, default: 0, min: 0 },
+    creditTransactionId: { type: String, default: "" },
+    creditEntitlementUntil: Date,
     // `guest` is retained only so historical sessions remain readable.
     accessTier: { type: String, enum: ["guest", "free", "member", "admin"], default: "free" },
     storageProvider: { type: String, default: "" },
@@ -37,6 +53,10 @@ const downloadSessionSchema = new mongoose.Schema(
 );
 
 downloadSessionSchema.index({ expiresAt: 1, status: 1 });
+downloadSessionSchema.index(
+  { idempotencyScope: 1 },
+  { unique: true, partialFilterExpression: { idempotencyScope: { $type: "string", $ne: "" } } },
+);
 downloadSessionSchema.index(
   { userId: 1, clientType: 1, idempotencyKey: 1 },
   {

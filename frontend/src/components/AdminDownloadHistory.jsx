@@ -42,6 +42,7 @@ export default function AdminDownloadHistory({
   const [clientType, setClientType] = useState("all");
   const [assetType, setAssetType] = useState("all");
   const [accessTier, setAccessTier] = useState("all");
+  const [paymentMethod, setPaymentMethod] = useState("all");
   const [sessionStatus, setSessionStatus] = useState("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -59,6 +60,7 @@ export default function AdminDownloadHistory({
           clientType,
           accessTier,
           assetType,
+          paymentMethod,
         });
         const sessionQuery = new URLSearchParams({
           page: String(sessionPage),
@@ -66,6 +68,7 @@ export default function AdminDownloadHistory({
           clientType,
           status: sessionStatus,
           assetType,
+          paymentMethod,
         });
         const [downloadData, sessionData] = await Promise.all([
           api(`/api/admin/marketplace/downloads?${downloadQuery.toString()}`),
@@ -86,7 +89,7 @@ export default function AdminDownloadHistory({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [accessTier, activeTab, assetType, clientType, downloadPage, sessionPage, sessionStatus]);
+  }, [accessTier, activeTab, assetType, clientType, downloadPage, paymentMethod, sessionPage, sessionStatus]);
 
   return (
     <section className="panel adminDownloadHistory">
@@ -171,6 +174,12 @@ export default function AdminDownloadHistory({
               <option value="member">Pro</option>
               <option value="admin">Admin</option>
             </select>
+            <select value={paymentMethod} onChange={(event) => { setPaymentMethod(event.target.value); setDownloadPage(1); setSessionPage(1); }}>
+              <option value="all">{l("Mọi phương thức", "All payment methods")}</option>
+              <option value="free_quota">{l("Lượt Free", "Free quota")}</option>
+              <option value="pro_quota">{l("Lượt Pro", "Pro quota")}</option>
+              <option value="credit">Credit</option>
+            </select>
             <select value={sessionStatus} onChange={(event) => { setSessionStatus(event.target.value); setSessionPage(1); }}>
               <option value="all">{l("Mọi trạng thái phiên", "All session statuses")}</option>
               <option value="active">Active</option>
@@ -191,8 +200,12 @@ export default function AdminDownloadHistory({
                       <strong>{item.modelId?.title || (item.assetType === "scene" ? "Scene" : "Model")}</strong>
                       <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || l("Dữ liệu cũ", "Legacy record")} · {item.clientType} · {item.accessTier === "member" ? "Pro" : item.accessTier === "admin" ? "Admin" : "Free"}</span>
                     </div>
-                    <span className={`badge ${item.quotaCharged ? "success" : ""}`}>
-                      {item.quotaCharged
+                    <span className={`badge ${item.quotaCharged || item.billingStatus === "charged" ? "success" : ""}`}>
+                      {item.paymentMethod === "credit"
+                        ? (item.billingStatus === "charged"
+                          ? `${Number(item.creditCost || 0)} Credit`
+                          : l("Credit · tải lại 24 giờ", "Credit · 24h redownload"))
+                        : item.quotaCharged
                         ? `${item.assetType === "scene" ? "Scene" : "Model"} · ${Number(item.quotaCost || (item.assetType === "scene" ? 5 : 1))} ${l("lượt", "downloads")}`
                         : l("Miễn phí", "No quota charge")}
                     </span>
@@ -219,7 +232,9 @@ export default function AdminDownloadHistory({
                       <strong>{item.modelId?.title || l("Phiên tải", "Download session")}</strong>
                       <span className="marketAdminLogMeta">{item.userId?.email || item.guestKey || l("Dữ liệu cũ", "Legacy record")} · {item.clientType} · {item.accessTier === "member" ? "Pro" : item.accessTier === "admin" ? "Admin" : "Free"}</span>
                     </div>
-                    <span className={`badge ${statusClass(item.status)}`}>{item.assetType === "scene" ? "Scene" : "Model"} · {item.status}</span>
+                    <span className={`badge ${statusClass(item.status)}`}>
+                      {item.assetType === "scene" ? "Scene" : "Model"} · {item.status} · {item.paymentMethod === "credit" ? "Credit" : item.paymentMethod === "pro_quota" ? "Pro" : "Free"}
+                    </span>
                     <time>{new Date(item.createdAt).toLocaleString(locale)}</time>
                   </div>
                 ))}

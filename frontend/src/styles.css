@@ -11511,6 +11511,153 @@ html[data-theme="dark"] .inviteSectionTag {
   padding-top: 4px;
 }
 
+.marketPaymentDialog {
+  width: min(620px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 22px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+}
+
+.marketPaymentDialog > header,
+.marketPaymentDialog > footer,
+.marketPaymentDialog h2 {
+  display: flex;
+  align-items: center;
+}
+
+.marketPaymentDialog > header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.marketPaymentDialog h2 {
+  gap: 9px;
+  margin: 0;
+  font-size: 20px;
+}
+
+.marketPaymentDialog header p,
+.marketPaymentHint {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.marketPaymentLoading {
+  min-height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-secondary);
+}
+
+.marketPaymentOptions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.marketPaymentOption {
+  min-height: 122px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 16px;
+  text-align: left;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+}
+
+.marketPaymentOption:hover:not(:disabled),
+.marketPaymentOption.selected {
+  border-color: var(--neon-green);
+  background: color-mix(in srgb, var(--neon-green) 7%, var(--surface-1));
+}
+
+.marketPaymentOption.credit:hover:not(:disabled),
+.marketPaymentOption.credit.selected {
+  border-color: var(--neon-cyan);
+  background: color-mix(in srgb, var(--neon-cyan) 7%, var(--surface-1));
+}
+
+.marketPaymentOption:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.marketPaymentOptionIcon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  color: var(--neon-green);
+  border: 1px solid currentColor;
+}
+
+.marketPaymentOption.credit .marketPaymentOptionIcon {
+  color: var(--neon-cyan);
+}
+
+.marketPaymentOption > span:nth-child(2) {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.marketPaymentOption strong {
+  font-size: 15px;
+}
+
+.marketPaymentOption small {
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.marketPaymentOption > b {
+  grid-column: 1 / -1;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.marketPaymentHint {
+  padding: 10px 12px;
+  border-left: 2px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 6%, transparent);
+}
+
+.marketPaymentDialog > footer {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+@media (max-width: 640px) {
+  .marketPaymentOptions {
+    grid-template-columns: 1fr;
+  }
+
+  .marketPaymentDialog {
+    padding: 16px;
+  }
+
+  .marketPaymentDialog > footer > button {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
+
 .marketDetailMeta {
   background: var(--surface-2);
   border-radius: var(--radius-sm);

@@ -1389,10 +1389,12 @@ export async function adminListMarketplaceDownloads(req, res, next) {
     const pageSize = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
     const clientType = String(req.query.clientType || "all");
     const accessTier = String(req.query.accessTier || "all");
+    const paymentMethod = String(req.query.paymentMethod || "all");
     const query = {};
     if (["model", "scene"].includes(requestedAssetType)) query.assetType = requestedAssetType;
     if (["web", "plugin"].includes(clientType)) query.clientType = clientType;
     if (["guest", "free", "member", "admin"].includes(accessTier)) query.accessTier = accessTier;
+    if (["free_quota", "pro_quota", "credit"].includes(paymentMethod)) query.paymentMethod = paymentMethod;
     const total = await ModelDownload.countDocuments(query);
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const safePage = Math.min(page, totalPages);
@@ -1419,10 +1421,12 @@ export async function adminListMarketplaceDownloadSessions(req, res, next) {
     const pageSize = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
     const status = String(req.query.status || "all");
     const clientType = String(req.query.clientType || "all");
+    const paymentMethod = String(req.query.paymentMethod || "all");
     const query = {};
     if (["model", "scene"].includes(requestedAssetType)) query.assetType = requestedAssetType;
     if (["active", "used", "expired", "revoked"].includes(status)) query.status = status;
     if (["web", "plugin"].includes(clientType)) query.clientType = clientType;
+    if (["free_quota", "pro_quota", "credit"].includes(paymentMethod)) query.paymentMethod = paymentMethod;
     const total = await DownloadSession.countDocuments(query);
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const safePage = Math.min(page, totalPages);

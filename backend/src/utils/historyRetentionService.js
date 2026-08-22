@@ -5,6 +5,7 @@ import AuditLog from "../models/AuditLog.js";
 import HistoryArchiveManifest from "../models/HistoryArchiveManifest.js";
 import MarketplaceReport from "../models/MarketplaceReport.js";
 import ModelDownload from "../models/ModelDownload.js";
+import CreditLedgerEntry from "../models/CreditLedgerEntry.js";
 import SiteSetting from "../models/SiteSetting.js";
 import {
   createGoogleDriveFile,
@@ -89,6 +90,7 @@ async function deleteArchivedRecords(kind, recordIds) {
   const models = {
     getlink: Getlink,
     "marketplace-download": ModelDownload,
+    "marketplace-credit": CreditLedgerEntry,
     "marketplace-report": MarketplaceReport,
     "audit-log": AuditLog,
   };
@@ -261,6 +263,17 @@ export async function runHistoryRetentionCycle({ now = new Date(), batchSize = 5
       marketplace = await archiveHistoryRecords({ kind: "marketplace-download", records, archiveWriter });
     }
   }
+  let marketplaceCredit = { archived: 0, deleted: 0, skipped: true };
+  if (settings.marketplaceDays > 0) {
+    const cutoff = new Date(now.getTime() - settings.marketplaceDays * DAY_MS);
+    const records = await CreditLedgerEntry.find({ createdAt: { $lte: cutoff } })
+      .sort({ createdAt: 1 })
+      .limit(safeBatchSize)
+      .lean();
+    if (records.length) {
+      marketplaceCredit = await archiveHistoryRecords({ kind: "marketplace-credit", records, archiveWriter });
+    }
+  }
   let reports = { archived: 0, deleted: 0, skipped: true };
   if (settings.reportDays > 0) {
     const cutoff = new Date(now.getTime() - settings.reportDays * DAY_MS);
@@ -286,5 +299,5 @@ export async function runHistoryRetentionCycle({ now = new Date(), batchSize = 5
       audit = await archiveHistoryRecords({ kind: "audit-log", records, archiveWriter });
     }
   }
-  return { settings, resumed, detailsPurged, getlink, marketplace, reports, audit };
+  return { settings, resumed, detailsPurged, getlink, marketplace, marketplaceCredit, reports, audit };
 }

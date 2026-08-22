@@ -14,6 +14,20 @@ const modelDownloadSchema = new mongoose.Schema(
     accessTier: { type: String, enum: ["guest", "free", "member", "admin"], default: "free" },
     quotaCharged: { type: Boolean, default: false },
     quotaCost: { type: Number, default: 0, min: 0 },
+    paymentMethod: {
+      type: String,
+      enum: ["free_quota", "pro_quota", "credit"],
+      default: "free_quota",
+      index: true,
+    },
+    billingStatus: {
+      type: String,
+      enum: ["pending", "charged", "reused", "not_applicable"],
+      default: "not_applicable",
+    },
+    creditCost: { type: Number, default: 0, min: 0 },
+    creditTransactionId: { type: String, default: "" },
+    creditEntitlementUntil: Date,
     status: {
       type: String,
       enum: ["requested", "downloaded", "expired", "failed"],

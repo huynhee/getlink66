@@ -6,7 +6,7 @@ const historyArchiveManifestSchema = new mongoose.Schema(
   {
     kind: {
       type: String,
-      enum: ["getlink", "marketplace-download", "marketplace-report", "audit-log"],
+      enum: ["getlink", "marketplace-download", "marketplace-credit", "marketplace-report", "audit-log"],
       required: true,
       index: true,
     },

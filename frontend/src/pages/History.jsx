@@ -99,6 +99,11 @@ function eventAmount(event, language = "vi") {
     return <CoinAmount value={Math.abs(amount)} prefix={amount > 0 ? "+" : "-"} />;
   }
   if (["model", "scene"].includes(event.type)) {
+    if (event.metadata?.paymentMethod === "credit") {
+      return amount < 0
+        ? <CoinAmount value={Math.abs(amount)} prefix="-" />
+        : (language === "vi" ? "Đã thanh toán" : "Already paid");
+    }
     return amount < 0
       ? `${Math.abs(amount)} ${language === "vi" ? "lượt" : "downloads"}`
       : (language === "vi" ? "Miễn phí" : "No quota charge");
@@ -135,6 +140,13 @@ function metadataLines(event, language) {
       : (language === "vi" ? "Giá trị đơn" : "Order value");
   const locale = language === "vi" ? "vi-VN" : "en-US";
   if (event.type === "credit") {
+    if (m.marketplaceDownload) {
+      return [
+        m.asset?.title || "",
+        `${language === "vi" ? "Tài nguyên" : "Asset"}: ${m.asset?.assetType === "scene" ? "Scene" : "Model"}`,
+        `${language === "vi" ? "Số dư" : "Balance"}: ${Number(m.balanceBefore || 0).toLocaleString(locale)} → ${Number(m.balanceAfter || 0).toLocaleString(locale)}`,
+      ].filter(Boolean);
+    }
     if (m.isManualAdjustment) {
       const delta = Number(m.creditAmount || 0);
       return [
@@ -171,9 +183,13 @@ function metadataLines(event, language) {
     return [
       m.model?.title || "",
       m.clientType ? `${language === "vi" ? "Thiết bị" : "Client"}: ${m.clientType}` : "",
-      m.quotaCharged
-        ? `${language === "vi" ? "Đã trừ" : "Charged"}: ${Number(m.quotaCost || (event.type === "scene" ? 5 : 1))} ${language === "vi" ? "lượt" : "downloads"}`
-        : (language === "vi" ? "Miễn phí" : "No quota charge"),
+      m.paymentMethod === "credit"
+        ? (m.billingStatus === "charged"
+          ? `${language === "vi" ? "Đã trừ" : "Charged"}: ${Number(m.creditCost || 0)} Credit`
+          : (language === "vi" ? "Đã thanh toán trong 24 giờ" : "Reused 24-hour Credit entitlement"))
+        : (m.quotaCharged
+          ? `${language === "vi" ? "Đã trừ" : "Charged"}: ${Number(m.quotaCost || (event.type === "scene" ? 5 : 1))} ${language === "vi" ? "lượt" : "downloads"}`
+          : (language === "vi" ? "Miễn phí" : "No quota charge")),
     ].filter(Boolean);
   }
   if (event.type === "referral") {

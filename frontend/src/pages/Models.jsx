@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Download, Filter, Flag, HardDrive, Image as ImageIcon, ImagePlus, Loader2, LogIn, Package, Search, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ClipboardPaste, Download, Filter, Flag, HardDrive, Image as ImageIcon, ImagePlus, Loader2, LogIn, Package, Search, ShieldCheck, Sparkles, Upload, Wallet, X } from "lucide-react";
 import { api, apiCached, buildApiUrl, prefetchApi } from "../api.js";
 import Pagination from "../components/Pagination.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
@@ -1880,6 +1880,148 @@ function MarketplaceReportModal({
   );
 }
 
+function DownloadPaymentModal({
+  open,
+  options,
+  loading,
+  submitting,
+  selectedMethod,
+  language,
+  assetType,
+  onSelect,
+  onConfirm,
+  onClose,
+  onNavigate,
+}) {
+  const dialogRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.requestAnimationFrame(() => dialogRef.current?.focus());
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !submitting) onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open, submitting]);
+
+  if (!open || typeof document === "undefined") return null;
+  const quotaOption = options?.options?.find((item) => item.method !== "credit");
+  const creditOption = options?.options?.find((item) => item.method === "credit");
+  const selectedOption = options?.options?.find((item) => item.method === selectedMethod);
+  const noun = assetType === "scene"
+    ? textFor(language, "Scene", "Scene")
+    : textFor(language, "Model", "Model");
+  const quotaName = quotaOption?.method === "pro_quota"
+    ? textFor(language, "Lượt Pro", "Pro quota")
+    : textFor(language, "Lượt Free", "Free quota");
+  const entitlementActive = Boolean(options?.entitlementUntil);
+
+  return createPortal(
+    <div
+      className="marketReportOverlay marketPaymentOverlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !submitting) onClose();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="marketPaymentDialog panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="market-payment-title"
+        tabIndex={-1}
+      >
+        <header>
+          <div>
+            <h2 id="market-payment-title"><Download size={20} /> {textFor(language, "Chọn cách tải", "Choose payment method")}</h2>
+            <p>{textFor(language, `${noun} có thể tải bằng lượt hằng ngày hoặc Credit.`, `Download this ${noun} with daily quota or Credit.`)}</p>
+          </div>
+          <button type="button" className="iconButton" onClick={onClose} disabled={submitting} aria-label={textFor(language, "Đóng", "Close")}>
+            <X size={18} />
+          </button>
+        </header>
+
+        {loading ? (
+          <div className="marketPaymentLoading"><Loader2 className="spin" size={22} /> {textFor(language, "Đang kiểm tra quyền tải...", "Checking download options...")}</div>
+        ) : (
+          <div className="marketPaymentOptions">
+            <button
+              type="button"
+              className={`marketPaymentOption ${selectedMethod === quotaOption?.method ? "selected" : ""}`}
+              disabled={!quotaOption?.available || submitting}
+              onClick={() => onSelect(quotaOption.method)}
+            >
+              <span className="marketPaymentOptionIcon"><ShieldCheck size={20} /></span>
+              <span>
+                <strong>{quotaName}</strong>
+                <small>{textFor(language, `Dùng ${options?.quotaCost || 0} lượt · còn ${options?.quota?.remaining ?? 0}`, `Use ${options?.quotaCost || 0} downloads · ${options?.quota?.remaining ?? 0} remaining`)}</small>
+              </span>
+              <b>{quotaOption?.available ? textFor(language, "Khả dụng", "Available") : textFor(language, "Không khả dụng", "Unavailable")}</b>
+            </button>
+
+            <button
+              type="button"
+              className={`marketPaymentOption credit ${selectedMethod === "credit" ? "selected" : ""}`}
+              disabled={!creditOption?.available || submitting}
+              onClick={() => onSelect("credit")}
+            >
+              <span className="marketPaymentOptionIcon"><Wallet size={20} /></span>
+              <span>
+                <strong>Credit</strong>
+                <small>
+                  {entitlementActive
+                    ? textFor(language, "Đã thanh toán, tải lại 0 Credit trong 24 giờ", "Already paid, redownload for 0 Credit within 24 hours")
+                    : textFor(language, `${creditOption?.configuredCost ?? options?.creditPrice ?? 0} Credit · số dư ${options?.creditBalance ?? 0}`, `${creditOption?.configuredCost ?? options?.creditPrice ?? 0} Credits · balance ${options?.creditBalance ?? 0}`)}
+                </small>
+              </span>
+              <b>{creditOption?.available ? `${creditOption?.cost ?? 0} Credit` : textFor(language, "Thiếu Credit", "Insufficient")}</b>
+            </button>
+          </div>
+        )}
+
+        {!loading && quotaOption?.reason === "PRO_REQUIRED" && (
+          <p className="marketPaymentHint">
+            {textFor(language, "Tài nguyên Pro cần gói Pro hoặc có thể tải lẻ bằng Credit.", "This Pro asset requires Pro quota or a one-off Credit payment.")}
+          </p>
+        )}
+        {!loading && creditOption && !creditOption.available && (
+          <p className="marketPaymentHint">
+            {textFor(language, `Bạn cần ${creditOption.configuredCost} Credit nhưng hiện có ${options?.creditBalance ?? 0}.`, `You need ${creditOption.configuredCost} Credits but have ${options?.creditBalance ?? 0}.`)}
+          </p>
+        )}
+
+        <footer>
+          {quotaOption?.reason === "PRO_REQUIRED" && (
+            <button type="button" className="smallButton" onClick={() => { onClose(); onNavigate("/topup?mode=pro"); }}>
+              <Sparkles size={16} /> {textFor(language, "Mua Pro", "Buy Pro")}
+            </button>
+          )}
+          {creditOption && !creditOption.available && (
+            <button type="button" className="smallButton" onClick={() => { onClose(); onNavigate("/topup?mode=credit"); }}>
+              <Wallet size={16} /> {textFor(language, "Nạp Credit", "Top up Credit")}
+            </button>
+          )}
+          <button
+            type="button"
+            className="primaryButton"
+            disabled={loading || submitting || !selectedMethod || !selectedOption?.available}
+            onClick={() => onConfirm(selectedMethod)}
+          >
+            {submitting ? <Loader2 className="spin" size={17} /> : <Download size={17} />}
+            {submitting ? textFor(language, "Đang tạo phiên tải...", "Creating download...") : textFor(language, "Xác nhận tải", "Confirm download")}
+          </button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, assetType = "model" }) {
   const segment = catalogSegment(assetType);
   const noun = catalogNoun(assetType, language);
@@ -1898,6 +2040,10 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
   const [error, setError] = useState("");
   const [downloadProtection, setDownloadProtection] = useState({ enabled: false, siteKey: "", action: "" });
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [downloadOptions, setDownloadOptions] = useState(null);
+  const [downloadOptionsLoading, setDownloadOptionsLoading] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportMessage, setReportMessage] = useState("");
@@ -1922,6 +2068,9 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
     setRecommendationsError("");
     setDownloadProtection({ enabled: false, siteKey: "", action: "" });
     setTurnstileToken("");
+    setDownloadOptions(null);
+    setPaymentDialogOpen(false);
+    setSelectedPaymentMethod("");
     const detailRequest = apiCached(`/api/marketplace/${segment}/${encodeURIComponent(slug)}?includeRecommendations=false`);
     detailRequest
       .then((data) => {
@@ -2056,7 +2205,24 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
     }
   }
 
-  async function downloadModel() {
+  async function openPaymentDialog() {
+    if (!model || !user || downloading) return;
+    setPaymentDialogOpen(true);
+    setDownloadOptionsLoading(true);
+    setError("");
+    try {
+      const data = await api(`/api/marketplace/${segment}/${model._id}/download-options`);
+      setDownloadOptions(data);
+      setSelectedPaymentMethod(data.defaultMethod || "");
+    } catch (err) {
+      setPaymentDialogOpen(false);
+      setError(err.message);
+    } finally {
+      setDownloadOptionsLoading(false);
+    }
+  }
+
+  async function downloadModel(paymentMethod) {
     if (!model) return;
     if (downloadProtection.enabled && !turnstileToken) {
       return;
@@ -2067,20 +2233,29 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
     try {
       const data = await api(`/api/marketplace/${segment}/${model._id}/download-session`, {
         method: "POST",
-        body: JSON.stringify({ turnstileToken }),
+        body: JSON.stringify({
+          turnstileToken,
+          paymentMethod,
+          clientRequestId: globalThis.crypto?.randomUUID?.() || `web-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        }),
       });
+      setPaymentDialogOpen(false);
       setTurnstileToken("");
       setMessage(
-        language === "vi"
-          ? `Đã tạo phiên tải. Còn ${data.remaining ?? "-"} lượt hôm nay.`
-          : `Download session created. ${data.remaining ?? "-"} downloads remaining today.`,
+        paymentMethod === "credit"
+          ? textFor(language, `Đã tạo phiên tải bằng Credit. Bạn được tải lại tài nguyên này trong 24 giờ.`, `Credit download created. You may redownload this asset for 24 hours.`)
+          : (language === "vi"
+            ? `Đã tạo phiên tải. Còn ${data.remaining ?? "-"} lượt hôm nay.`
+            : `Download session created. ${data.remaining ?? "-"} downloads remaining today.`),
       );
-      api("/api/auth/user")
-        .then((current) => {
-          if (current.user) onUserChange?.(current.user);
-        })
-        .catch(() => { });
       window.open(buildApiUrl(data.downloadUrl), "_blank", "noopener,noreferrer");
+      window.setTimeout(() => {
+        api("/api/auth/user")
+          .then((current) => {
+            if (current.user) onUserChange?.(current.user);
+          })
+          .catch(() => {});
+      }, paymentMethod === "credit" ? 1_500 : 300);
     } catch (err) {
       const quota = err.data?.details;
       if (err.code === "DOWNLOAD_QUOTA_EXCEEDED" && quota) {
@@ -2088,6 +2263,9 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
         setError(language === "vi"
           ? `Không đủ lượt tải: cần ${quota.required}, còn ${quota.remaining}. Hạn mức đặt lại lúc ${resetAt}.`
           : `Not enough downloads: ${quota.required} required, ${quota.remaining} remaining. Quota resets at ${resetAt}.`);
+      } else if (err.code === "INSUFFICIENT_CREDIT") {
+        const details = err.data?.details || {};
+        setError(textFor(language, `Không đủ Credit: cần ${details.required ?? "-"}, hiện có ${details.balance ?? 0}.`, `Insufficient Credit: ${details.required ?? "-"} required, ${details.balance ?? 0} available.`));
       } else {
         setError(err.message);
       }
@@ -2146,8 +2324,7 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
 
   const fileReady = model.fileStatus === "ready";
   const isDemo = Boolean(model.isDemo);
-  const requiresPro = model.accessType !== "free" && !user?.isPro;
-  const canDownload = Boolean(user) && fileReady && !requiresPro && !isDemo;
+  const canDownload = Boolean(user) && fileReady && !isDemo;
   const requiresDownloadVerification = downloadProtection.enabled && !turnstileToken;
   const loginReturnTo = `/${segment}/${encodeURIComponent(model.slug || model._id || slug)}`;
   const loginHref = buildApiUrl(`/api/auth/google?returnTo=${encodeURIComponent(loginReturnTo)}`);
@@ -2201,8 +2378,8 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
           <div className="marketDetailActions">
             <p className="marketQuotaCost">
               {assetType === "scene"
-                ? textFor(language, "Mỗi lần tải Scene trừ 5 lượt.", "Each Scene download costs 5 downloads.")
-                : textFor(language, "Mỗi lần tải Model trừ 1 lượt.", "Each Model download costs 1 download.")}
+                ? textFor(language, `Tải bằng 5 lượt hằng ngày hoặc ${downloadOptions?.creditPrice ?? 25} Credit.`, `Use 5 daily downloads or ${downloadOptions?.creditPrice ?? 25} Credits.`)
+                : textFor(language, `Tải bằng 1 lượt hằng ngày hoặc ${downloadOptions?.creditPrice ?? 5} Credit.`, `Use 1 daily download or ${downloadOptions?.creditPrice ?? 5} Credits.`)}
             </p>
             {requiresDownloadVerification ? (
               <TurnstileDownloadGate
@@ -2225,15 +2402,10 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
                     <LogIn size={18} />
                     {textFor(language, "Đăng nhập để tải", "Sign in to download")}
                   </a>
-                ) : requiresPro ? (
-                  <button className="primaryButton" type="button" onClick={() => navigateTo("/topup?mode=pro", onNavigate)}>
-                    <ShieldCheck size={18} />
-                    {textFor(language, "Nâng cấp Pro để tải", "Upgrade to Pro")}
-                  </button>
                 ) : (
-                  <button className="primaryButton" type="button" disabled={downloading || !canDownload} onClick={downloadModel}>
+                  <button className="primaryButton" type="button" disabled={downloading || !canDownload} onClick={openPaymentDialog}>
                     <Download size={18} />
-                    {downloading ? textFor(language, "Đang tạo phiên tải...", "Creating download...") : textFor(language, `Tải ${noun}`, `Download ${noun}`)}
+                    {textFor(language, `Tải ${noun}`, `Download ${noun}`)}
                   </button>
                 )}
                 {!user ? (
@@ -2319,6 +2491,20 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
           onSubmit={submitReport}
         />
       )}
+
+      <DownloadPaymentModal
+        open={paymentDialogOpen}
+        options={downloadOptions}
+        loading={downloadOptionsLoading}
+        submitting={downloading}
+        selectedMethod={selectedPaymentMethod}
+        language={language}
+        assetType={assetType}
+        onSelect={setSelectedPaymentMethod}
+        onConfirm={downloadModel}
+        onClose={() => !downloading && setPaymentDialogOpen(false)}
+        onNavigate={(href) => navigateTo(href, onNavigate)}
+      />
 
       <section ref={recommendationSectionRef} className="marketRecommendations">
         <div className="marketSectionHeader">
