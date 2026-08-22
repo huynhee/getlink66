@@ -159,25 +159,42 @@ function escapeDriveQueryValue(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
-export async function openGoogleDriveFileStream(fileId, fallbackFileName = "file") {
+function normalizedByteRange(value) {
+  const range = String(value || "").trim();
+  if (!range) return "";
+  if (!/^bytes=(?:\d+-\d*|-\d+)$/.test(range)) {
+    const error = new Error("Invalid byte range.");
+    error.status = 416;
+    error.code = "INVALID_BYTE_RANGE";
+    throw error;
+  }
+  return range;
+}
+
+export async function openGoogleDriveFileStream(fileId, fallbackFileName = "file", options = {}) {
   const normalizedFileId = String(fileId || "").trim();
   if (!normalizedFileId) {
     const error = new Error("Google Drive driveFileId is required.");
     error.status = 400;
     throw error;
   }
+  const range = normalizedByteRange(options.range);
   const response = await fetchGoogleDrive(
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(normalizedFileId)}?alt=media&supportsAllDrives=true`,
+    range ? { headers: { range } } : {},
   );
   if (!response.ok || !response.body) {
     const body = await response.text().catch(() => "");
     const error = new Error(`Google Drive download failed: ${response.status} ${body.slice(0, 160)}`);
-    error.status = response.status === 404 ? 404 : 502;
+    error.status = response.status === 404 ? 404 : response.status === 416 ? 416 : 502;
     throw error;
   }
   return {
     stream: Readable.fromWeb(response.body),
     contentLength: Number(response.headers.get("content-length") || 0),
+    contentRange: String(response.headers.get("content-range") || ""),
+    acceptRanges: String(response.headers.get("accept-ranges") || "bytes"),
+    statusCode: response.status === 206 ? 206 : 200,
     contentType: response.headers.get("content-type") || "",
     fileName: fallbackFileName || "file",
   };
@@ -590,7 +607,7 @@ export async function listGoogleDriveChanges(pageToken, options = {}) {
   return googleDriveJson(response, "changes list");
 }
 
-export async function openStorageStream(session) {
+export async function openStorageStream(session, options = {}) {
   const provider = String(session.storageProvider || "").trim();
   if (provider === "local") {
     const root = localRoot();
@@ -605,18 +622,46 @@ export async function openStorageStream(session) {
       error.status = 404;
       throw error;
     }
+    const fileSize = fs.statSync(target).size;
+    const range = normalizedByteRange(options.range);
+    let start = 0;
+    let end = fileSize - 1;
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (match?.[1]) {
+        start = Number(match[1]);
+        end = match[2] ? Number(match[2]) : end;
+      } else if (match?.[2]) {
+        const suffixLength = Number(match[2]);
+        start = Math.max(0, fileSize - suffixLength);
+      }
+      if (start >= fileSize || end < start) {
+        const error = new Error("Requested byte range is not satisfiable.");
+        error.status = 416;
+        error.code = "BYTE_RANGE_NOT_SATISFIABLE";
+        throw error;
+      }
+      end = Math.min(end, fileSize - 1);
+    }
     return {
-      stream: fs.createReadStream(target),
-      contentLength: fs.statSync(target).size,
+      stream: fs.createReadStream(target, range ? { start, end } : undefined),
+      contentLength: range ? end - start + 1 : fileSize,
+      contentRange: range ? `bytes ${start}-${end}/${fileSize}` : "",
+      acceptRanges: "bytes",
+      statusCode: range ? 206 : 200,
       fileName: session.fileName || path.basename(target),
     };
   }
 
   if (provider === "google_drive") {
-    const file = await openGoogleDriveFileStream(session.driveFileId, session.fileName || "model.zip");
+    const file = await openGoogleDriveFileStream(
+      session.driveFileId,
+      session.fileName || "model.zip",
+      { range: options.range },
+    );
     return {
       ...file,
-      contentLength: file.contentLength || Number(session.fileSize || 0),
+      contentLength: file.contentLength || (file.statusCode === 206 ? 0 : Number(session.fileSize || 0)),
       fileName: session.fileName || file.fileName || "model.zip",
     };
   }

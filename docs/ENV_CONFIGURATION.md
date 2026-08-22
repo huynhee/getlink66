@@ -203,7 +203,7 @@ TTL ton trong header origin. Khong dat Cache Everything cho `/api`.
 ## 6. Download va Turnstile
 
 ```env
-MARKETPLACE_DOWNLOAD_DELIVERY=drive_redirect
+MARKETPLACE_DOWNLOAD_DELIVERY=proxy
 MARKETPLACE_DOWNLOAD_REDIRECT_FALLBACK_PROXY=true
 TURNSTILE_ENABLED=true
 TURNSTILE_SITE_KEY=<cloudflare-site-key>

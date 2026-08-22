@@ -1365,6 +1365,7 @@ export async function downloadSessionFile(req, res, next) {
     );
     res.setHeader("cache-control", "no-store");
     res.setHeader("referrer-policy", "no-referrer");
+    res.setHeader("x-accel-buffering", "no");
 
     const redirectUrl = await getStorageBrowserDownloadLink(session).catch((error) => {
       if (String(process.env.MARKETPLACE_DOWNLOAD_REDIRECT_FALLBACK_PROXY || "true").toLowerCase() === "true") {
@@ -1378,7 +1379,7 @@ export async function downloadSessionFile(req, res, next) {
       return res.redirect(302, redirectUrl);
     }
 
-    const file = await openStorageStream(session);
+    const file = await openStorageStream(session, { range: req.get("range") || "" });
     let billedSession;
     try {
       billedSession = await finalizeMarketplaceDownloadBilling(session);
@@ -1392,7 +1393,10 @@ export async function downloadSessionFile(req, res, next) {
       "content-disposition",
       `attachment; filename="${String(file.fileName || "model.zip").replace(/"/g, "")}"`,
     );
+    res.setHeader("accept-ranges", file.acceptRanges || "bytes");
+    if (file.contentRange) res.setHeader("content-range", file.contentRange);
     if (file.contentLength) res.setHeader("content-length", file.contentLength);
+    res.status(file.statusCode === 206 ? 206 : 200);
     file.stream.on("error", next);
     file.stream.pipe(res);
   } catch (error) {
