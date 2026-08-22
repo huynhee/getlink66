@@ -642,9 +642,13 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
     const coverImage = model.coverImage
       ? { ...model.coverImage, url: cover(model), isCoverFallback: true }
       : null;
-    const candidates = [...previews, coverImage].filter(Boolean);
+    // Scene covers are square catalog crops, not gallery images. Use the cover
+    // only when a scene has no full-size preview available.
+    const candidates = assetType === "scene"
+      ? (previews.length ? previews : [coverImage].filter(Boolean))
+      : [...previews, coverImage].filter(Boolean);
     return candidates.filter((image, index) => candidates.findIndex((item) => item.url === image.url) === index);
-  }, [model]);
+  }, [assetType, model]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [imageStates, setImageStates] = useState({});
@@ -800,9 +804,6 @@ function ModelPreview({ model, assetType = "model", language = "vi" }) {
               ref={openerRef}
               type="button"
               className="marketDetailImageButton"
-              style={assetType === "scene" ? {
-                backgroundImage: `url(${JSON.stringify(activeImageUrl)})`,
-              } : undefined}
               onClick={() => {
                 if (imageStates[activeImageUrl] !== "error") setLightboxOpen(true);
               }}
