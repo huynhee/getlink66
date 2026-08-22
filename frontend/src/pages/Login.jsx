@@ -830,8 +830,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
               </div>
             ) : (
               <div
-                className="pricingGrid"
-                style={{ "--package-count": Math.min(membershipPlans.length || 1, 4) }}
+                className="pricingGrid homeProPricingGrid"
+                style={{ "--package-count": Math.min(membershipPlans.length || 1, 5) }}
               >
                 {membershipPlans.map((plan) => (
                   <div className="pricingCard" key={plan._id || plan.code}>
