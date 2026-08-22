@@ -92,6 +92,7 @@ const facetTitles = {
   forms: "Hình dạng",
   colors: "Màu sắc",
   materials: "Vật liệu",
+  platforms: "Nền tảng",
 };
 
 const facetOptionMap = {
@@ -100,6 +101,7 @@ const facetOptionMap = {
   forms: "form",
   colors: "color",
   materials: "material",
+  platforms: "platform",
 };
 
 const facetLabelsVi = {
@@ -591,7 +593,7 @@ function FacetPicker({ field, value, options = [], onChange, language = "vi" }) 
 
   return (
     <div className={`marketAdminFacetPicker ${field}`}>
-      <span>{language === "en" ? ({ styles: "Style", renderers: "Render", forms: "Form", colors: "Color", materials: "Material" }[field] || field) : facetTitles[field]}</span>
+      <span>{language === "en" ? ({ styles: "Style", renderers: "Render", forms: "Form", colors: "Color", materials: "Material", platforms: "Platform" }[field] || field) : facetTitles[field]}</span>
       <div>
         {options.map((option) => {
           const active = selected.includes(option.value);
@@ -604,6 +606,11 @@ function FacetPicker({ field, value, options = [], onChange, language = "vi" }) 
               title={option.value}
             >
               {option.hex && <i style={{ backgroundColor: option.hex }} />}
+              {option.iconKey && (
+                <span className={`marketFacetBrandIcon ${option.iconKey}`} aria-hidden="true">
+                  {{ vray: "V", corona: "", standard: "S", "3dsmax": "3", autocad: "A", sketchup: "S", "fbx-obj": "F" }[option.iconKey] || option.iconKey.slice(0, 1).toUpperCase()}
+                </span>
+              )}
               {optionLabel(option, language)}
             </button>
           );
@@ -781,6 +788,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
       forms: (model.forms || []).join(", "),
       colors: (model.colors || []).join(", "),
       materials: (model.materials || []).join(", "),
+      platforms: (model.platforms || []).join(", "),
       renderer: model.renderer || "",
       sha256: model.sha256 || "",
     };
@@ -1192,6 +1200,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
             forms: form.forms,
             colors: form.colors,
             materials: form.materials,
+            platforms: form.platforms,
             renderer: form.renderer,
             sha256: form.sha256,
           },
@@ -1237,6 +1246,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
         forms: (current.metadata.forms || []).join(", "),
         colors: (current.metadata.colors || []).join(", "),
         materials: (current.metadata.materials || []).join(", "),
+        platforms: (current.metadata.platforms || []).join(", "),
       },
     }));
     setMetadataVersionById((versions) => ({
@@ -2047,7 +2057,7 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
                   </label>
                 </div>
                 <div className="marketAdminFacetGrid">
-                  {Object.entries(facetOptionMap).filter(([field]) => !isScene || ["styles", "renderers"].includes(field)).map(([field, filterKey]) => (
+                  {Object.entries(facetOptionMap).filter(([field]) => !isScene || ["styles", "renderers", "platforms"].includes(field)).map(([field, filterKey]) => (
                     <FacetPicker
                       key={field}
                       field={field}

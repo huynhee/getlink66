@@ -35,7 +35,7 @@ Metadata Drive owns:
 
 - `sourceModelId`, `title`, `sourceCategoryId`.
 - `accessType`: `free` hoac `member` (UI hien thi `member` la Pro).
-- `renderer`, `styles`, `renderers`, `forms`, `colors`, `materials`.
+- `renderer`, `styles`, `renderers`, `platforms`, `forms`, `colors`, `materials`.
 - SHA-256 cua archive.
 
 ### Atlas Core owns
@@ -232,12 +232,16 @@ description, tags, format/version/polygon hoac model credit price.
   "renderer": "Corona",
   "renderers": ["corona"],
   "styles": ["modern"],
+  "platforms": ["3dsmax"],
   "sha256": "64_lowercase_hex_chars"
 }
 ```
 
 Scene bat buoc ID, title, leaf category, Free/Pro va SHA-256. Renderer va style co
 the de trong; neu co gia tri thi van phai dung controlled vocabulary.
+`platforms` cung la tuy chon va chi nhan key taxonomy: `3dsmax`, `autocad`,
+`sketchup`, `fbx-obj`. UI co the hien icon va nhan nhu `3ds Max` hoac `FBX/OBJ`,
+nhung metadata chi ghi key he thong.
 Scene khong dung `forms`, `colors` hoac `materials`. Model tiep tuc dung schema V2;
 backend khong migration hang loat metadata Model sang V3.
 
@@ -260,7 +264,7 @@ ten cu `preview-1`, nhung tool upload moi phai xuat ten co hai chu so.
 
 Scene category va filter source of truth:
 
-- Categories/Style/Render: `backend/src/data/marketplaceCatalogs.js`.
+- Categories/Style/Render/Platform: `backend/src/data/marketplaceCatalogs.js`.
 - Category co con bat buoc gan leaf category.
 - System key dung English; UI co nhan Viet/Anh.
 

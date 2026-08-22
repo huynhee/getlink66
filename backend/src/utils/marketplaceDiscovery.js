@@ -54,6 +54,7 @@ export function marketplaceContentScore(source, candidate, now = Date.now()) {
   score += overlap(source.materials, candidate.materials) * 8;
   score += overlap(source.forms, candidate.forms) * 6;
   score += overlap(source.colors, candidate.colors) * 5;
+  score += overlap(source.platforms, candidate.platforms) * 9;
   score += Math.log2(Number(candidate.downloadCount || 0) + 1) * 0.8;
   score += recencyScore(candidate.createdAt, now) * 2;
   return score;
@@ -181,6 +182,7 @@ export function syncMarketplaceDiscoveryAsset(model) {
     renderer: model?.renderer || "",
     styles: model?.styles || [],
     renderers: model?.renderers || [],
+    platforms: model?.platforms || [],
     coverUrl: publicBaseUrl && model?._id ? `${publicBaseUrl}/api/marketplace/${segment}/${model._id}/cover` : "",
   });
 }
@@ -227,6 +229,7 @@ export function semanticRecommendations(model, limit = 180) {
       forms: model?.forms || [],
       colors: model?.colors || [],
       materials: model?.materials || [],
+      platforms: model?.platforms || [],
     },
   });
 }

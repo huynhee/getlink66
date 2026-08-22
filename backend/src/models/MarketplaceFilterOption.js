@@ -6,7 +6,7 @@ const marketplaceFilterOptionSchema = new mongoose.Schema(
     assetType: { type: String, enum: ["model", "scene"], required: true, index: true },
     facet: {
       type: String,
-      enum: ["style", "render", "form", "color", "material"],
+      enum: ["style", "render", "form", "color", "material", "platform"],
       required: true,
       index: true,
     },

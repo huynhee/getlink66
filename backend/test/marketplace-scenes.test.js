@@ -41,6 +41,7 @@ async function createAsset(assetType = "scene") {
     forms: isScene ? [] : ["rectangle"],
     colors: isScene ? [] : ["black"],
     materials: isScene ? [] : ["metal"],
+    platforms: isScene ? ["3dsmax"] : [],
     accessType: "free",
     metadataStatus: "complete",
     fileStatus: "ready",
@@ -64,6 +65,7 @@ test("scene metadata v3 allows empty optional facets, validates values and requi
     forms: ["rectangle"],
     colors: ["black"],
     materials: ["wood"],
+    platforms: ["3dsmax", "fbx/obj"],
     sha256,
   });
 
@@ -73,6 +75,7 @@ test("scene metadata v3 allows empty optional facets, validates values and requi
   assert.deepEqual(valid.document.forms, []);
   assert.deepEqual(valid.document.colors, []);
   assert.deepEqual(valid.document.materials, []);
+  assert.deepEqual(valid.document.platforms, ["3dsmax", "fbx-obj"]);
 
   const invalid = marketplaceMetadataDocument({
     assetType: "scene",
@@ -83,9 +86,11 @@ test("scene metadata v3 allows empty optional facets, validates values and requi
     renderer: "",
     renderers: ["unknown-renderer"],
     styles: ["unknown-style"],
+    platforms: ["unknown-platform"],
   });
   assert.ok(invalid.errors.some((error) => error.field === "render"));
   assert.ok(invalid.errors.some((error) => error.field === "style"));
+  assert.ok(invalid.errors.some((error) => error.field === "platform"));
   assert.ok(invalid.errors.some((error) => error.field === "sha256"));
 
   const emptyOptionalFacets = marketplaceMetadataDocument({
@@ -100,6 +105,7 @@ test("scene metadata v3 allows empty optional facets, validates values and requi
     sha256,
   });
   assert.deepEqual(emptyOptionalFacets.errors, []);
+  assert.deepEqual(emptyOptionalFacets.document.platforms, []);
 });
 
 test("an unauthenticated visitor cannot create a Scene download session", async () => {

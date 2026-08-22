@@ -192,6 +192,7 @@ function legacyMetadata(raw = {}, fallback = {}) {
     forms: source.forms || source.form || source.shape || fallback.forms,
     colors: source.colors || source.color || fallback.colors,
     materials: source.materials || source.material || fallback.materials,
+    platforms: source.platforms || source.platform || fallback.platforms,
     sha256: source.sha256 || source.checksum || source.file?.sha256 || fallback.sha256,
   };
 }
@@ -379,6 +380,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
         forms: existing?.forms,
         colors: existing?.colors,
         materials: existing?.materials,
+        platforms: existing?.platforms,
         sha256: existing?.sha256,
       }, { currentModel: existing });
     } catch (error) {
@@ -399,6 +401,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     forms: existing?.forms || [],
     colors: existing?.colors || [],
     materials: existing?.materials || [],
+    platforms: existing?.platforms || [],
     sha256: existing?.sha256 || "",
   };
   existing = existing || await findModelForFolder(folder, metadata, normalizedType);
@@ -449,6 +452,7 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     forms: metadata.forms || [],
     colors: metadata.colors || [],
     materials: metadata.materials || [],
+    platforms: metadata.platforms || [],
     renderer: metadata.renderer || "",
     accessType: metadata.accessType || "member",
     desiredPublished,
@@ -529,6 +533,7 @@ export async function writeMarketplaceModelMetadata(model, rawMetadata, expected
     forms: model.forms,
     colors: model.colors,
     materials: model.materials,
+    platforms: model.platforms,
     sha256: model.sha256,
   }, { currentModel: model });
   const currentVersion = String(metadataFile?.version || "");

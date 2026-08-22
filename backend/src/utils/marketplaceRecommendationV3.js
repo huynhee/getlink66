@@ -81,6 +81,7 @@ function relatedQuery(model) {
   if (model.renderer) related.push({ renderer: model.renderer });
   if (model.styles?.length) related.push({ styles: { $in: model.styles } });
   if (model.renderers?.length) related.push({ renderers: { $in: model.renderers } });
+  if (model.platforms?.length) related.push({ platforms: { $in: model.platforms } });
   if (normalizeAssetType(model.assetType) === "model") {
     if (model.materials?.length) related.push({ materials: { $in: model.materials } });
     if (model.forms?.length) related.push({ forms: { $in: model.forms } });

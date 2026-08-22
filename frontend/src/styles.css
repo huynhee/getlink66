@@ -1786,6 +1786,28 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.marketFilterCollapse {
+  min-width: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.marketFilterCollapse:hover,
+.marketFilterCollapse:focus-visible {
+  color: var(--neon-green);
+}
+
+.marketFilterCollapse svg {
+  flex: 0 0 auto;
+  opacity: 0.72;
+}
+
 .marketFacetClear {
   flex: 0 0 auto;
   min-width: 30px;
@@ -1914,6 +1936,57 @@ button:disabled {
   padding: 4px 7px;
   font-size: 11px;
   text-align: center;
+}
+
+.marketFacetBrandIcon {
+  width: 17px;
+  height: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 17px;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 45%, transparent);
+  border-radius: 3px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--panel-bg) 88%, var(--text-primary));
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.marketFacetBrandIcon.corona {
+  border: 3px solid #ff6a00;
+  border-right-color: transparent;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.marketFacetBrandIcon.vray {
+  border-color: #2d86c7;
+  color: #2d86c7;
+}
+
+.marketFacetBrandIcon.\33 dsmax {
+  border-color: #1689a7;
+  background: #1689a7;
+  color: #fff;
+}
+
+.marketFacetBrandIcon.autocad {
+  border-color: #d93832;
+  background: #d93832;
+  color: #fff;
+}
+
+.marketFacetBrandIcon.sketchup {
+  border-color: #db342f;
+  color: #db342f;
+}
+
+.marketFacetBrandIcon.fbx-obj {
+  border-color: #7e8a91;
+  color: #7e8a91;
 }
 
 .marketFacetSection.render .marketFacetOptions.compact .marketFacetOption:last-child {

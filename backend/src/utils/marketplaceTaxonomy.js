@@ -20,6 +20,7 @@ const LABELS_VI = {
   fur: "Lông", glass: "Kính", gypsum: "Thạch cao", leather: "Da",
   liquid: "Chất lỏng", metal: "Kim loại", organics: "Hữu cơ", paper: "Giấy",
   plastic: "Nhựa", rattan: "Mây tre", stone: "Đá", wood: "Gỗ",
+  "3dsmax": "3ds Max", autocad: "AutoCAD", sketchup: "SketchUp", "fbx-obj": "FBX / OBJ",
 };
 
 export function normalizeTaxonomyAliases(value) {
@@ -96,7 +97,7 @@ export async function seedMarketplaceFilterOptions() {
               aliasesVi: seededAliasesVi,
               aliasesEn: seededAliasesEn,
               hex: option.hex || "",
-              iconKey: facet === "form" ? option.value : "",
+              iconKey: option.iconKey || (facet === "form" ? option.value : ""),
               position: position + 1,
               isActive: true,
               catalogVersion: 1,
@@ -108,12 +109,18 @@ export async function seedMarketplaceFilterOptions() {
         const currentAliasesEn = normalizeTaxonomyAliases(saved.aliasesEn);
         const aliasesVi = normalizeTaxonomyAliases([...currentAliasesVi, ...seededAliasesVi]);
         const aliasesEn = normalizeTaxonomyAliases([...currentAliasesEn, ...seededAliasesEn]);
+        const seededIconKey = option.iconKey || (facet === "form" ? option.value : "");
         if (
           JSON.stringify(aliasesVi) !== JSON.stringify(currentAliasesVi)
           || JSON.stringify(aliasesEn) !== JSON.stringify(currentAliasesEn)
+          || (seededIconKey && !saved.iconKey)
         ) {
           await MarketplaceFilterOption.findByIdAndUpdate(saved._id, {
-            $set: { aliasesVi, aliasesEn },
+            $set: {
+              aliasesVi,
+              aliasesEn,
+              ...(seededIconKey && !saved.iconKey ? { iconKey: seededIconKey } : {}),
+            },
           });
         }
       }
@@ -183,8 +190,9 @@ export async function validateMarketplaceTaxonomy(metadata = {}, { currentModel 
   }
   if (!resolved) errors.push({ field: "sourceCategoryId", code: "invalid_leaf" });
   const filters = await marketplaceFilterSnapshot(assetType);
-  const fieldMap = { styles: "style", renderers: "render", forms: "form", colors: "color", materials: "material" };
+  const fieldMap = { styles: "style", renderers: "render", forms: "form", colors: "color", materials: "material", platforms: "platform" };
   for (const [field, facet] of Object.entries(fieldMap)) {
+    if (assetType === "model" && field === "platforms") continue;
     if (assetType === "scene" && ["forms", "colors", "materials"].includes(field)) continue;
     const allowed = new Set((filters[facet] || []).map((item) => item.value));
     const existing = new Set((currentModel?.[field] || []).map(String));

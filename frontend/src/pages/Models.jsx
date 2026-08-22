@@ -11,6 +11,7 @@ const EMPTY_FILTERS = {
   form: [],
   color: [],
   material: [],
+  platform: [],
 };
 const IMAGE_SEARCH_ENABLED = String(import.meta.env.VITE_MARKETPLACE_IMAGE_SEARCH_ENABLED || "false").toLowerCase() === "true";
 
@@ -76,6 +77,7 @@ const FILTER_TITLES_EN = {
   form: "Form",
   color: "Color",
   material: "Material",
+  platform: "Platform",
 };
 
 const FILTER_TITLES_VI = {
@@ -84,6 +86,7 @@ const FILTER_TITLES_VI = {
   form: "Hình dạng",
   color: "Màu sắc",
   material: "Vật liệu",
+  platform: "Nền tảng",
 };
 
 function cover(model = {}) {
@@ -281,16 +284,43 @@ function ShapeIcon({ value }) {
   );
 }
 
+function FacetIcon({ iconKey = "" }) {
+  if (!iconKey) return null;
+  const labels = {
+    vray: "V",
+    corona: "",
+    standard: "S",
+    "3dsmax": "3",
+    autocad: "A",
+    sketchup: "S",
+    "fbx-obj": "F",
+  };
+  return (
+    <span className={`marketFacetBrandIcon ${iconKey}`} aria-hidden="true">
+      {labels[iconKey] ?? iconKey.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
 function FacetSection({ id, title, options = [], values = [], onToggle, onClear, language = "vi" }) {
+  const [expanded, setExpanded] = useState(true);
   if (!options.length) return null;
   const isColor = id === "color";
   const isShape = id === "form";
-  const isCompact = ["render", "form"].includes(id);
+  const isCompact = ["render", "form", "platform"].includes(id);
   const selectedCount = values.length;
   return (
     <div className={`marketFacetSection ${id} ${selectedCount ? "hasSelection" : ""}`}>
       <div className="marketFacetHeader">
-        <h3>{title}</h3>
+        <button
+          type="button"
+          className="marketFilterCollapse"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+        >
+          <h3>{title}</h3>
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
         {selectedCount > 0 && (
           <button
             type="button"
@@ -304,7 +334,7 @@ function FacetSection({ id, title, options = [], values = [], onToggle, onClear,
           </button>
         )}
       </div>
-      <div className={isColor ? "marketColorFacetGrid" : isCompact ? "marketFacetOptions compact" : "marketFacetOptions"}>
+      {expanded && <div className={isColor ? "marketColorFacetGrid" : isCompact ? "marketFacetOptions compact" : "marketFacetOptions"}>
         {options.map((option) => {
           const checked = values.includes(option.value);
           const label = labelForFacet({ [id]: options }, id, option.value, language);
@@ -322,13 +352,15 @@ function FacetSection({ id, title, options = [], values = [], onToggle, onClear,
               ) : isShape ? (
                 <ShapeIcon value={option.value} />
               ) : (
-                <span className={`marketCategoryCheck ${checked ? "checked" : ""}`} aria-hidden="true" />
+                option.iconKey
+                  ? <FacetIcon iconKey={option.iconKey} />
+                  : <span className={`marketCategoryCheck ${checked ? "checked" : ""}`} aria-hidden="true" />
               )}
               {!isColor && !isShape && <span>{label}</span>}
             </button>
           );
         })}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -837,6 +869,7 @@ function DetailFacetList({ facet, values = [], filterOptions = {}, language = "v
         return (
           <span className={`marketDetailFacetChip ${facet}`} key={`${facet}-${value}`} title={label}>
             {facet === "form" && <ShapeIcon value={value} />}
+            {option.iconKey && !["form", "color"].includes(facet) && <FacetIcon iconKey={option.iconKey} />}
             {facet === "color" && (
               <i
                 className="marketColorSwatch"
@@ -1089,6 +1122,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   const [search, setSearch] = useState(() => searchFromPath(path, assetType));
   const [category, setCategory] = useState(() => categoryFromPath(path, assetType));
   const [openCategory, setOpenCategory] = useState("");
+  const [categoriesExpanded, setCategoriesExpanded] = useState(true);
   const [activeFilters, setActiveFilters] = useState(EMPTY_FILTERS);
   const [accessType, setAccessType] = useState("");
   const [sortMode, setSortMode] = useState(assetType === "model" ? "source_id_desc" : "");
@@ -1446,7 +1480,15 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
         </div>
         <div className={`marketFilterBlock ${category ? "hasSelection" : ""}`}>
           <div className="marketFilterBlockTitle">
-            <span>{textFor(language, "Danh mục", "Category")}</span>
+            <button
+              type="button"
+              className="marketFilterCollapse"
+              onClick={() => setCategoriesExpanded((value) => !value)}
+              aria-expanded={categoriesExpanded}
+            >
+              <span>{textFor(language, "Danh mục", "Category")}</span>
+              {categoriesExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
             {category && (
               <button
                 type="button"
@@ -1460,7 +1502,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
               </button>
             )}
           </div>
-          <div className="marketCategoryList">
+          {categoriesExpanded && <div className="marketCategoryList">
             {categories.map((item) => (
               <CategoryButton
                 key={item._id || item.slug}
@@ -1472,7 +1514,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
                 language={language}
               />
             ))}
-          </div>
+          </div>}
         </div>
         <div className="marketFilterBlock">
           <div className="marketFacetList">
@@ -2263,6 +2305,9 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
             <ModelMetaRow label={textFor(language, "Phong cách", "Style")}>
               <DetailFacetList facet="style" values={model.styles} filterOptions={filterOptions} language={language} />
             </ModelMetaRow>
+            {assetType === "scene" && <ModelMetaRow label={textFor(language, "Nền tảng", "Platform")}>
+              <DetailFacetList facet="platform" values={model.platforms} filterOptions={filterOptions} language={language} />
+            </ModelMetaRow>}
             {assetType !== "scene" && <ModelMetaRow label={textFor(language, "Hình dạng", "Form")}>
               <DetailFacetList facet="form" values={model.forms} filterOptions={filterOptions} language={language} />
             </ModelMetaRow>}

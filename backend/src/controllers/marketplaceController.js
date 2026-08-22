@@ -79,6 +79,7 @@ const MARKETPLACE_PUBLIC_LIST_FIELDS = [
   "forms",
   "colors",
   "materials",
+  "platforms",
   "renderer",
   "accessType",
   "fileStatus",
@@ -232,6 +233,7 @@ function publicModel(model, options = {}) {
     forms: model.forms || [],
     colors: model.colors || [],
     materials: model.materials || [],
+    platforms: model.platforms || [],
     renderer: model.renderer || "",
     accessType: model.accessType || "member",
     fileStatus: model.fileStatus || "missing",
@@ -390,7 +392,10 @@ function addLegacyFacetFilter(query, field, legacyField, values) {
 function applyMarketplaceFacetFilters(query, source = {}, assetType = "model") {
   addFacetFilter(query, "styles", parseFacetValues(source.style || source.styles));
   addLegacyFacetFilter(query, "renderers", "renderer", parseFacetValues(source.render || source.renderers));
-  if (normalizeAssetType(assetType) === "scene") return;
+  if (normalizeAssetType(assetType) === "scene") {
+    addFacetFilter(query, "platforms", parseFacetValues(source.platform || source.platforms));
+    return;
+  }
   addFacetFilter(query, "forms", parseFacetValues(source.form || source.forms));
   addFacetFilter(query, "colors", parseFacetValues(source.color || source.colors));
   addFacetFilter(query, "materials", parseFacetValues(source.material || source.materials));
@@ -688,6 +693,9 @@ export async function listMarketplaceModels(req, res, next) {
     const meiliFacets = {
       styles: parseFacetValues(req.query.style || req.query.styles),
       renderers: parseFacetValues(req.query.render || req.query.renderers),
+      ...(assetType === "scene" ? {
+        platforms: parseFacetValues(req.query.platform || req.query.platforms),
+      } : {}),
       ...(assetType === "model" ? {
         forms: parseFacetValues(req.query.form || req.query.forms),
         colors: parseFacetValues(req.query.color || req.query.colors),

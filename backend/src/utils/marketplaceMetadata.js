@@ -18,6 +18,7 @@ export const MARKETPLACE_METADATA_FIELDS = [
   "forms",
   "colors",
   "materials",
+  "platforms",
   "sha256",
 ];
 
@@ -74,6 +75,7 @@ export function normalizeMarketplaceMetadata(raw = {}, fallback = {}) {
     forms: assetType === "scene" ? [] : normalizeFacet(source.forms, "form", errors, filters),
     colors: assetType === "scene" ? [] : normalizeFacet(source.colors, "color", errors, filters),
     materials: assetType === "scene" ? [] : normalizeFacet(source.materials, "material", errors, filters),
+    platforms: assetType === "scene" ? normalizeFacet(source.platforms || source.platform, "platform", errors, filters) : [],
     sha256: sha256Value(rawSha256),
   };
   if (!metadata.sourceAssetId) errors.push({ field: "sourceAssetId", code: "required" });
@@ -137,6 +139,7 @@ export function metadataFromMarketplaceModel(model = {}) {
     forms: model.forms,
     colors: model.colors,
     materials: model.materials,
+    platforms: model.platforms,
     sha256: model.sha256,
   }).metadata;
 }

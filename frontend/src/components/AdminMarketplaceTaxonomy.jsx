@@ -9,6 +9,13 @@ const facetNames = {
   form: ["Hình dạng", "Form"],
   color: ["Màu sắc", "Color"],
   material: ["Vật liệu", "Material"],
+  platform: ["Nền tảng", "Platform"],
+};
+
+const defaultIconKeyByFacet = {
+  form: "round",
+  render: "vray",
+  platform: "3dsmax",
 };
 
 function rowId(type, row) {
@@ -29,12 +36,12 @@ function makeKey(value = "") {
 function emptyCreateDraft(group) {
   return group === "category"
     ? { title: "", titleEn: "", aliasesVi: "", aliasesEn: "", key: "", parentId: "", position: 0, isActive: true }
-    : { labelVi: "", labelEn: "", aliasesVi: "", aliasesEn: "", key: "", position: 0, isActive: true, hex: "#808080", iconKey: "round" };
+    : { labelVi: "", labelEn: "", aliasesVi: "", aliasesEn: "", key: "", position: 0, isActive: true, hex: "#808080", iconKey: defaultIconKeyByFacet[group] || "" };
 }
 
 export default function AdminMarketplaceTaxonomy({ assetType = "model", language = "vi", onChanged }) {
   const l = (vi, en) => text(language, vi, en);
-  const [data, setData] = useState({ categories: [], filterOptions: [], allowedFacets: [], formIconKeys: [] });
+  const [data, setData] = useState({ categories: [], filterOptions: [], allowedFacets: [], formIconKeys: [], iconKeysByFacet: {} });
   const [group, setGroup] = useState("category");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -58,6 +65,7 @@ export default function AdminMarketplaceTaxonomy({ assetType = "model", language
         filterOptions: result.filterOptions || [],
         allowedFacets: result.allowedFacets || [],
         formIconKeys: result.formIconKeys || [],
+        iconKeysByFacet: result.iconKeysByFacet || { form: result.formIconKeys || [] },
       });
       setDrafts({});
     } catch (err) {
@@ -133,7 +141,7 @@ export default function AdminMarketplaceTaxonomy({ assetType = "model", language
           position: Number(row.position || 0),
           isActive: row.isActive !== false,
           ...(row.facet === "color" ? { hex: row.hex || "#808080" } : {}),
-          ...(row.facet === "form" ? { iconKey: row.iconKey || "round" } : {}),
+          ...(data.iconKeysByFacet[row.facet]?.length ? { iconKey: row.iconKey || defaultIconKeyByFacet[row.facet] || "" } : {}),
         });
   }
 
@@ -347,12 +355,12 @@ export default function AdminMarketplaceTaxonomy({ assetType = "model", language
                 {type === "filter" && row.facet === "color" && (
                   <label className="marketTaxonomyColor"><input type="color" value={draft.hex} onChange={(event) => updateDraft(type, row, "hex", event.target.value)} /><code>{draft.hex}</code></label>
                 )}
-                {type === "filter" && row.facet === "form" && (
+                {type === "filter" && data.iconKeysByFacet[row.facet]?.length > 0 && (
                   <select value={draft.iconKey} onChange={(event) => updateDraft(type, row, "iconKey", event.target.value)}>
-                    {data.formIconKeys.map((key) => <option value={key} key={key}>{key}</option>)}
+                    {data.iconKeysByFacet[row.facet].map((key) => <option value={key} key={key}>{key}</option>)}
                   </select>
                 )}
-                {type === "filter" && !["color", "form"].includes(row.facet) && <span>{l(...(facetNames[row.facet] || [row.facet, row.facet]))}</span>}
+                {type === "filter" && row.facet !== "color" && !data.iconKeysByFacet[row.facet]?.length && <span>{l(...(facetNames[row.facet] || [row.facet, row.facet]))}</span>}
               </div>
               <input
                 aria-label={l("Vị trí", "Order")}
@@ -413,8 +421,8 @@ export default function AdminMarketplaceTaxonomy({ assetType = "model", language
               {group === "color" && (
                 <label><span>{l("Mã màu", "Color")}</span><div className="marketTaxonomyColorInput"><input type="color" value={createDraft.hex} onChange={(event) => updateCreate("hex", event.target.value)} /><input required pattern="#[0-9a-fA-F]{6}" value={createDraft.hex} onChange={(event) => updateCreate("hex", event.target.value)} /></div></label>
               )}
-              {group === "form" && (
-                <label><span>{l("Icon hình dạng", "Shape icon")}</span><select value={createDraft.iconKey} onChange={(event) => updateCreate("iconKey", event.target.value)}>{data.formIconKeys.map((key) => <option value={key} key={key}>{key}</option>)}</select></label>
+              {data.iconKeysByFacet[group]?.length > 0 && (
+                <label><span>{l("Icon hiển thị", "Display icon")}</span><select value={createDraft.iconKey} onChange={(event) => updateCreate("iconKey", event.target.value)}>{data.iconKeysByFacet[group].map((key) => <option value={key} key={key}>{key}</option>)}</select></label>
               )}
               <label><span>{l("Vị trí", "Order")}</span><input type="number" min="0" max="100000" value={createDraft.position} onChange={(event) => updateCreate("position", Number(event.target.value || 0))} /></label>
               <label className="marketTaxonomyCreateToggle"><input type="checkbox" checked={createDraft.isActive} onChange={(event) => updateCreate("isActive", event.target.checked)} /><span>{l("Bật ngay sau khi tạo", "Activate after creation")}</span></label>

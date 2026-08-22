@@ -10,7 +10,7 @@ import {
 } from "./marketplaceMeilisearch.js";
 import { enqueueMarketplaceRecommendationRefresh } from "./marketplaceRecommendationV3.js";
 
-export const MARKETPLACE_SEARCH_DOCUMENT_VERSION = 3;
+export const MARKETPLACE_SEARCH_DOCUMENT_VERSION = 4;
 
 const FACET_FIELDS = {
   styles: "style",
@@ -18,6 +18,7 @@ const FACET_FIELDS = {
   forms: "form",
   colors: "color",
   materials: "material",
+  platforms: "platform",
 };
 
 const SEARCH_STOP_WORDS = new Set([
@@ -113,6 +114,7 @@ export async function buildMarketplaceSearchDocument(model = {}, suppliedContext
   }
 
   for (const [field, facet] of Object.entries(FACET_FIELDS)) {
+    if (assetType === "model" && field === "platforms") continue;
     if (assetType === "scene" && ["forms", "colors", "materials"].includes(field)) continue;
     const optionByValue = new Map((filters[facet] || []).map((item) => [String(item.value), item]));
     for (const value of model[field] || []) {

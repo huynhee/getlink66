@@ -94,6 +94,7 @@ const marketplaceModelSchema = new mongoose.Schema(
     forms: { type: [String], default: [] },
     colors: { type: [String], default: [] },
     materials: { type: [String], default: [] },
+    platforms: { type: [String], default: [] },
     renderer: { type: String, default: "" },
     metadataStatus: {
       type: String,
@@ -188,6 +189,7 @@ marketplaceModelSchema.pre("validate", function normalizeTitleForSorting() {
     "forms",
     "colors",
     "materials",
+    "platforms",
   ];
   if (!this.isNew && searchFields.some((field) => this.isModified(field))) {
     this.searchStatus = "pending";
@@ -230,6 +232,7 @@ marketplaceModelSchema.index({ assetType: 1, renderers: 1, isPublished: 1 });
 marketplaceModelSchema.index({ assetType: 1, forms: 1, isPublished: 1 });
 marketplaceModelSchema.index({ assetType: 1, colors: 1, isPublished: 1 });
 marketplaceModelSchema.index({ assetType: 1, materials: 1, isPublished: 1 });
+marketplaceModelSchema.index({ assetType: 1, platforms: 1, isPublished: 1 });
 marketplaceModelSchema.index({ assetType: 1, syncStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, discoveryStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, searchStatus: 1, updatedAt: 1 });

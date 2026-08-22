@@ -163,6 +163,7 @@ const OPTIONAL_METADATA_BLOCKERS = new Set([
   "forms",
   "colors",
   "materials",
+  "platforms",
 ]);
 
 function requiredPublicationBlockers(model = {}) {
@@ -984,7 +985,7 @@ export async function adminCleanupMarketplaceRaw(_req, res, next) {
       },
     );
     const metadataDocs = await MarketplaceModel.find({})
-      .select("_id categorySourceId styles renderers renderer forms colors materials fileStatus desiredPublished isPublished metadataStatus metadataMissingFields publicationBlockers")
+      .select("_id categorySourceId styles renderers renderer forms colors materials platforms fileStatus desiredPublished isPublished metadataStatus metadataMissingFields publicationBlockers")
       .lean();
     let normalizedMetadata = 0;
     let unpublishedIncomplete = 0;

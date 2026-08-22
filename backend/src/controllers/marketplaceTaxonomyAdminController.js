@@ -9,12 +9,19 @@ import { isSafeId, limitedString, rejectUnknownKeys, sanitizeString } from "../u
 
 const FACETS_BY_ASSET = {
   model: ["style", "render", "form", "color", "material"],
-  scene: ["style", "render"],
+  scene: ["style", "render", "platform"],
 };
 const FORM_ICON_KEYS = new Set([
   "round", "oval", "square", "rectangle", "triangle",
   "diamond", "pentagon", "star", "angle", "bioform",
 ]);
+const RENDER_ICON_KEYS = new Set(["vray", "corona", "standard"]);
+const PLATFORM_ICON_KEYS = new Set(["3dsmax", "autocad", "sketchup", "fbx-obj"]);
+const ICON_KEYS_BY_FACET = {
+  form: FORM_ICON_KEYS,
+  render: RENDER_ICON_KEYS,
+  platform: PLATFORM_ICON_KEYS,
+};
 const TAXONOMY_KEY_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
 
@@ -83,12 +90,12 @@ async function marketplaceTaxonomyUsage(assetType) {
   const categoryDirect = new Map();
   const categoryParent = new Map();
   const facetUsage = new Map();
-  const fields = { styles: "style", renderers: "render", forms: "form", colors: "color", materials: "material" };
+  const fields = { styles: "style", renderers: "render", forms: "form", colors: "color", materials: "material", platforms: "platform" };
   const query = { assetType: marketplaceAssetTypeFilter(assetType) };
 
   if (isMemoryDb()) {
     const models = await MarketplaceModel.find(query)
-      .select("categorySourceId parentCategorySourceId styles renderers forms colors materials")
+      .select("categorySourceId parentCategorySourceId styles renderers forms colors materials platforms")
       .lean();
     for (const model of models) {
       increment(categoryDirect, model.categorySourceId);
@@ -137,6 +144,9 @@ export async function adminListMarketplaceTaxonomy(req, res, next) {
       })),
       allowedFacets: FACETS_BY_ASSET[assetType],
       formIconKeys: [...FORM_ICON_KEYS],
+      iconKeysByFacet: Object.fromEntries(
+        Object.entries(ICON_KEYS_BY_FACET).map(([facet, keys]) => [facet, [...keys]]),
+      ),
     });
   } catch (error) {
     next(error);
@@ -250,8 +260,8 @@ export async function adminCreateMarketplaceFilterOption(req, res, next) {
     if (facet === "color" && !HEX_COLOR_RE.test(hex)) {
       return res.status(400).json({ message: "Color requires a valid #RRGGBB value" });
     }
-    if (facet === "form" && !FORM_ICON_KEYS.has(iconKey)) {
-      return res.status(400).json({ message: "Form requires a supported icon" });
+    if (ICON_KEYS_BY_FACET[facet] && !ICON_KEYS_BY_FACET[facet].has(iconKey)) {
+      return res.status(400).json({ message: `${facet} requires a supported icon` });
     }
 
     const filterOption = await MarketplaceFilterOption.create({
@@ -263,7 +273,7 @@ export async function adminCreateMarketplaceFilterOption(req, res, next) {
       aliasesVi: normalizeTaxonomyAliases(req.body.aliasesVi),
       aliasesEn: normalizeTaxonomyAliases(req.body.aliasesEn),
       hex: facet === "color" ? hex : "",
-      iconKey: facet === "form" ? iconKey : "",
+      iconKey: ICON_KEYS_BY_FACET[facet] ? iconKey : "",
       position: position(req.body.position),
       isActive: req.body.isActive !== false,
       catalogVersion: 1,
@@ -300,9 +310,10 @@ export async function adminUpdateMarketplaceFilterOption(req, res, next) {
       update.hex = hex;
     }
     if (req.body.iconKey !== undefined) {
-      if (current.facet !== "form") return res.status(400).json({ message: "Only form options can define an icon" });
+      const supportedIcons = ICON_KEYS_BY_FACET[current.facet];
+      if (!supportedIcons) return res.status(400).json({ message: "This facet cannot define an icon" });
       const iconKey = limitedString(req.body.iconKey, 40).toLowerCase();
-      if (!FORM_ICON_KEYS.has(iconKey)) return res.status(400).json({ message: "Form requires a supported icon" });
+      if (!supportedIcons.has(iconKey)) return res.status(400).json({ message: `${current.facet} requires a supported icon` });
       update.iconKey = iconKey;
     }
     requireLabels(update.labelVi ?? current.labelVi, update.labelEn ?? current.labelEn);

@@ -361,6 +361,7 @@ lieu; khong tu suy doan. Neu co gia tri thi phai dung key trong taxonomy da impo
   "renderer": "Corona",
   "styles": ["modern"],
   "renderers": ["corona"],
+  "platforms": ["3dsmax"],
   "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 }
 ```
@@ -373,7 +374,9 @@ Scene bat buoc:
 - Free hoac Pro.
 - SHA-256.
 
-Renderer, Style va Render la tuy chon. De chuoi rong/`[]` neu chua co du lieu.
+Renderer, Style, Render va Platform la tuy chon. De chuoi rong/`[]` neu chua co du lieu.
+Platform chi ghi key taxonomy `3dsmax`, `autocad`, `sketchup` hoac `fbx-obj`;
+khong ghi nhan hien thi `3ds Max`/`FBX/OBJ` vao metadata.
 Scene van khong ghi Form, Color hoac Material.
 
 Scene khong ghi:

@@ -153,6 +153,20 @@ test("admin can create filter options only inside supported fixed facets", async
     },
   });
   assert.equal(unsupportedSceneFacet.status, 400);
+
+  const scenePlatform = await invoke(adminCreateMarketplaceFilterOption, {
+    query: {},
+    body: {
+      assetType: "scene",
+      facet: "platform",
+      labelVi: "3ds Max thử nghiệm",
+      labelEn: "Test 3ds Max",
+      key: "test-3dsmax",
+      iconKey: "3dsmax",
+    },
+  });
+  assert.equal(scenePlatform.status, 201);
+  assert.equal(scenePlatform.payload.filterOption.iconKey, "3dsmax");
 });
 
 test("disabled taxonomy is blocked for new metadata but grandfathered for existing models", async () => {
@@ -257,8 +271,16 @@ test("Scene seed includes the expanded category tree and style vocabulary", asyn
   }
   assert.ok(styleByKey.get("japanese").aliasesEn.includes("Japan Style"));
 
+  const platforms = await MarketplaceFilterOption.find({ assetType: "scene", facet: "platform" }).lean();
+  const platformByKey = new Map(platforms.map((item) => [item.value, item]));
+  for (const key of ["3dsmax", "autocad", "sketchup", "fbx-obj"]) {
+    assert.ok(platformByKey.has(key), `Missing Scene platform: ${key}`);
+    assert.equal(platformByKey.get(key).iconKey, key);
+  }
+
   clearMarketplaceTaxonomyCache();
   const bundle = await buildMarketplaceTaxonomyBundle({ assetType: "scene" });
   assert.equal(bundle.assets.scene.categories.some((item) => item.key === "full-apartment"), true);
   assert.equal(bundle.assets.scene.filters.style.some((item) => item.value === "taiwan-style"), true);
+  assert.equal(bundle.assets.scene.filters.platform.some((item) => item.value === "3dsmax" && item.iconKey === "3dsmax"), true);
 });

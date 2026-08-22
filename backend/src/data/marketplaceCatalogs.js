@@ -34,7 +34,13 @@ export const SCENE_FILTERS = {
     { value: "tropical", label: "Tropical" },
     { value: "other", label: "Other" },
   ],
-  render: MARKETPLACE_FILTERS.render,
+  render: MARKETPLACE_FILTERS.render.map((option) => ({ ...option, iconKey: option.value })),
+  platform: [
+    { value: "3dsmax", label: "3ds Max", iconKey: "3dsmax", aliasesEn: ["3dsmax", "3ds max"] },
+    { value: "autocad", label: "AutoCAD", iconKey: "autocad", aliasesEn: ["Auto CAD"] },
+    { value: "sketchup", label: "SketchUp", iconKey: "sketchup", aliasesEn: ["Sketch Up"] },
+    { value: "fbx-obj", label: "FBX / OBJ", iconKey: "fbx-obj", aliasesEn: ["FBX", "OBJ", "fbx/obj"] },
+  ],
 };
 
 export function marketplaceFiltersFor(assetType) {
