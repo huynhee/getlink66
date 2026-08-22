@@ -10,6 +10,7 @@ const membershipPlanSchema = new mongoose.Schema(
     expiresEndOfDay: { type: Boolean, default: false },
     tier: { type: String, enum: ["member"], default: "member" },
     dailyDownloadLimit: { type: Number, default: 100, min: 1 },
+    maxPurchasesPerUser: { type: Number, default: 0, min: 0 },
     badge: { type: String, default: "" },
     features: { type: [String], default: [] },
     isActive: { type: Boolean, default: true, index: true },

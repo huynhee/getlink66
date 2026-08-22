@@ -98,3 +98,35 @@ test("membership idempotency key cannot be reused for another plan", async () =>
   assert.match(conflict.payload.message, /already used/i);
   assert.equal(await MembershipOrder.countDocuments({ userId: user._id }), 1);
 });
+
+test("membership plan limits active purchases per account", async () => {
+  const user = await User.create({ email: "member-plan-limit@example.test", name: "Limited" });
+  const plan = await MembershipPlan.create({
+    code: "TEST-LIMITED",
+    name: "Limited plan",
+    price: 50000,
+    durationDays: 7,
+    dailyDownloadLimit: 100,
+    maxPurchasesPerUser: 1,
+    isActive: true,
+  });
+  const request = (key) => ({
+    user,
+    body: { planId: plan._id },
+    get(name) {
+      return String(name).toLowerCase() === "idempotency-key" ? key : "";
+    },
+  });
+
+  const first = await invokeCheckout(request("membership-plan-limit-test-0001"));
+  const replay = await invokeCheckout(request("membership-plan-limit-test-0001"));
+  const blocked = await invokeCheckout(request("membership-plan-limit-test-0002"));
+
+  assert.equal(first.status, 200);
+  assert.equal(replay.status, 200);
+  assert.equal(replay.payload.idempotentReplay, true);
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.payload.code, "MEMBERSHIP_PLAN_PURCHASE_LIMIT_REACHED");
+  assert.equal(blocked.payload.limit, 1);
+  assert.equal(await MembershipOrder.countDocuments({ userId: user._id, planId: plan._id }), 1);
+});

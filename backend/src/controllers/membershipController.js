@@ -76,6 +76,22 @@ export async function createMembershipCheckout(req, res, next) {
         });
       }
     }
+    const maxPurchasesPerUser = Number(plan.maxPurchasesPerUser || 0);
+    if (Number.isFinite(maxPurchasesPerUser) && maxPurchasesPerUser > 0) {
+      const usedPurchases = await MembershipOrder.countDocuments({
+        userId: req.user._id,
+        planId: plan._id,
+        status: { $in: ["pending", "approved"] },
+      });
+      if (usedPurchases >= maxPurchasesPerUser) {
+        return res.status(409).json({
+          code: "MEMBERSHIP_PLAN_PURCHASE_LIMIT_REACHED",
+          message: `Tài khoản đã đạt giới hạn mua gói Pro này (${maxPurchasesPerUser} lần).`,
+          limit: maxPurchasesPerUser,
+          used: usedPurchases,
+        });
+      }
+    }
     const originalAmount = Number(plan.price || 0);
     let discountAmount = 0;
     let voucher = null;

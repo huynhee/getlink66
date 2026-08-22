@@ -1945,7 +1945,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   flex: 0 0 17px;
-  border: 1px solid color-mix(in srgb, var(--text-muted) 45%, transparent);
+  border: 0;
   border-radius: 3px;
   color: var(--text-primary);
   background: color-mix(in srgb, var(--panel-bg) 88%, var(--text-primary));

@@ -620,6 +620,13 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                       ? `${plan.durationDays} ngày · ${plan.dailyDownloadLimit}/ngày`
                       : `${plan.durationDays} days · ${plan.dailyDownloadLimit}/day`)}
                 </span>
+                {Number(plan.maxPurchasesPerUser || 0) > 0 && (
+                  <span className="muted">
+                    {language === "vi"
+                      ? `Mỗi tài khoản mua tối đa ${plan.maxPurchasesPerUser} lần`
+                      : `Max ${plan.maxPurchasesPerUser} purchases per account`}
+                  </span>
+                )}
                 <ul>
                   {(plan.features || []).map((feature) => (
                     <li key={feature}><Check size={14} /> {membershipFeatureLabel(feature, language)}</li>

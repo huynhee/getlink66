@@ -855,6 +855,13 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                           ? `${plan.durationDays} ngày - ${plan.dailyDownloadLimit}/ngày`
                           : `${plan.durationDays} days - ${plan.dailyDownloadLimit}/day`)}
                     </div>
+                    {Number(plan.maxPurchasesPerUser || 0) > 0 && (
+                      <div className="muted">
+                        {language === "vi"
+                          ? `Tối đa ${plan.maxPurchasesPerUser} lần/tài khoản`
+                          : `Max ${plan.maxPurchasesPerUser} purchases/account`}
+                      </div>
+                    )}
                     <ul>
                       {(plan.features || []).map((feature, featureIndex) => (
                         <li key={featureIndex}>{membershipFeatureLabel(feature, language)}</li>

@@ -25,6 +25,7 @@ const emptyMembershipPlan = {
   price: "",
   durationDays: "",
   dailyDownloadLimit: "100",
+  maxPurchasesPerUser: "",
   badge: "",
   features: "100 lượt tải model mỗi ngày\nTải nhanh, không chờ 30s\nTải model Pro",
   isActive: true
@@ -611,6 +612,7 @@ export default function Admin({ user, language = "vi" }) {
       price: plan.price || "",
       durationDays: plan.durationDays || "",
       dailyDownloadLimit: plan.dailyDownloadLimit || "100",
+      maxPurchasesPerUser: Number(plan.maxPurchasesPerUser || 0) > 0 ? plan.maxPurchasesPerUser : "",
       badge: plan.badge || "",
       features: Array.isArray(plan.features) ? plan.features.join("\n") : "",
       isActive: plan.isActive !== false
@@ -623,7 +625,8 @@ export default function Admin({ user, language = "vi" }) {
       ...membershipPlanForm,
       price: Number(membershipPlanForm.price || 0),
       durationDays: Number(membershipPlanForm.durationDays || 1),
-      dailyDownloadLimit: Number(membershipPlanForm.dailyDownloadLimit || 100)
+      dailyDownloadLimit: Number(membershipPlanForm.dailyDownloadLimit || 100),
+      maxPurchasesPerUser: Number(membershipPlanForm.maxPurchasesPerUser || 0)
     };
     await api(editingMembershipPlanId ? `/api/admin/membership-plans/${editingMembershipPlanId}` : "/api/admin/membership-plans", {
       method: editingMembershipPlanId ? "PUT" : "POST",
@@ -2144,6 +2147,7 @@ export default function Admin({ user, language = "vi" }) {
                 <div className="inputRow">
                   <input type="number" min="1" value={membershipPlanForm.durationDays} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, durationDays: e.target.value })} placeholder={l("Số ngày hiệu lực", "Duration days")} />
                   <input type="number" min="1" value={membershipPlanForm.dailyDownloadLimit} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, dailyDownloadLimit: e.target.value })} placeholder={l("Quota tải/ngày", "Downloads/day")} />
+                  <input type="number" min="0" value={membershipPlanForm.maxPurchasesPerUser} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, maxPurchasesPerUser: e.target.value })} placeholder={l("Giới hạn lượt mua/tài khoản, 0 = không giới hạn", "Purchases/account, 0 = unlimited")} />
                   <input value={membershipPlanForm.badge} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, badge: e.target.value })} placeholder={l("Nhãn: HOT, BEST...", "Badge: HOT, BEST...")} />
                   <label className="adminCheckboxRow">
                     <input type="checkbox" checked={membershipPlanForm.isActive} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, isActive: e.target.checked })} />
@@ -2181,6 +2185,11 @@ export default function Admin({ user, language = "vi" }) {
                     </div>
                     <span>{Number(plan.durationDays || 0).toLocaleString(locale)} {l("ngày, hết hạn cuối ngày", "days, expires end of day")}</span>
                     <span>{Number(plan.dailyDownloadLimit || 100).toLocaleString(locale)} {l("lượt tải/ngày", "downloads/day")}</span>
+                    <span className="muted">
+                      {Number(plan.maxPurchasesPerUser || 0) > 0
+                        ? l(`Tối đa ${plan.maxPurchasesPerUser} lần/tài khoản`, `Max ${plan.maxPurchasesPerUser} purchases/account`)
+                        : l("Không giới hạn lượt mua/tài khoản", "Unlimited purchases/account")}
+                    </span>
                     {plan.badge && <span className="badge success" style={{ alignSelf: "start" }}>{plan.badge}</span>}
                     <ul style={{ marginTop: 10, paddingLeft: 18 }}>
                       {(Array.isArray(plan.features) && plan.features.length ? plan.features : emptyMembershipPlan.features.split("\n")).map((feature, index) => (

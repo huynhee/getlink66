@@ -527,6 +527,7 @@ function normalizePlanPayload(body = {}) {
   const price = Math.max(0, Math.round(Number(body.price || 0)));
   const durationDays = Math.max(1, Math.round(Number(body.durationDays || 1)));
   const dailyDownloadLimit = Math.max(1, Math.round(Number(body.dailyDownloadLimit || 100)));
+  const maxPurchasesPerUser = Math.max(0, Math.round(Number(body.maxPurchasesPerUser || 0)));
   const features = Array.isArray(body.features)
     ? body.features
     : String(body.features || "").split(/\n|,/);
@@ -538,6 +539,7 @@ function normalizePlanPayload(body = {}) {
     expiresEndOfDay: true,
     tier: "member",
     dailyDownloadLimit,
+    maxPurchasesPerUser,
     badge: limitedString(body.badge, 40),
     features: features.map((item) => limitedString(item, 120)).filter(Boolean).slice(0, 20),
     isActive: body.isActive !== false,
@@ -556,7 +558,7 @@ export async function adminListMembershipPlans(_req, res, next) {
 
 export async function adminCreateMembershipPlan(req, res, next) {
   try {
-    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "durationDays", "dailyDownloadLimit", "badge", "features", "isActive", "sortOrder"]);
+    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "durationDays", "dailyDownloadLimit", "maxPurchasesPerUser", "badge", "features", "isActive", "sortOrder"]);
     if (unknownKey) return res.status(400).json({ message: "Invalid membership plan request" });
     const payload = normalizePlanPayload(req.body);
     if (!payload.code || !payload.name) return res.status(400).json({ message: "Plan code and name are required" });
@@ -571,7 +573,7 @@ export async function adminCreateMembershipPlan(req, res, next) {
 export async function adminUpdateMembershipPlan(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid membership plan id" });
-    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "durationDays", "dailyDownloadLimit", "badge", "features", "isActive", "sortOrder"]);
+    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "durationDays", "dailyDownloadLimit", "maxPurchasesPerUser", "badge", "features", "isActive", "sortOrder"]);
     if (unknownKey) return res.status(400).json({ message: "Invalid membership plan request" });
     const payload = normalizePlanPayload(req.body);
     delete payload.code;

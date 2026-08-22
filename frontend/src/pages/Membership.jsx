@@ -156,6 +156,13 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
             <h3>{plan.name}</h3>
             <strong>{money(plan.price, locale)}</strong>
             <span>{membershipDurationLabel(plan, language)}</span>
+            {Number(plan.maxPurchasesPerUser || 0) > 0 && (
+              <span className="muted">
+                {language === "vi"
+                  ? `Mỗi tài khoản mua tối đa ${plan.maxPurchasesPerUser} lần`
+                  : `Max ${plan.maxPurchasesPerUser} purchases per account`}
+              </span>
+            )}
             <ul>
               {(plan.features || []).map((feature) => (
                 <li key={feature}><Check size={14} /> {membershipFeatureLabel(feature, language)}</li>
