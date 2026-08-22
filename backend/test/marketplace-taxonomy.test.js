@@ -278,6 +278,12 @@ test("Scene seed includes the expanded category tree and style vocabulary", asyn
     assert.equal(platformByKey.get(key).iconKey, key);
   }
 
+  const modelRenderers = await MarketplaceFilterOption.find({ assetType: "model", facet: "render" }).lean();
+  const modelRendererByKey = new Map(modelRenderers.map((item) => [item.value, item]));
+  for (const key of ["vray", "corona", "standard"]) {
+    assert.equal(modelRendererByKey.get(key)?.iconKey, key, `Missing Model renderer icon: ${key}`);
+  }
+
   clearMarketplaceTaxonomyCache();
   const bundle = await buildMarketplaceTaxonomyBundle({ assetType: "scene" });
   assert.equal(bundle.assets.scene.categories.some((item) => item.key === "full-apartment"), true);

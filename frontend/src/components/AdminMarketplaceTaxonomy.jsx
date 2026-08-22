@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, KeyRound, Plus, RefreshCw, Save, Search, X } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import { text } from "../i18n.js";
+import MarketplaceFacetIcon, { MARKETPLACE_FACET_ICON_LABELS } from "./MarketplaceFacetIcon.jsx";
 
 const facetNames = {
   style: ["Phong cách", "Style"],
@@ -356,9 +357,12 @@ export default function AdminMarketplaceTaxonomy({ assetType = "model", language
                   <label className="marketTaxonomyColor"><input type="color" value={draft.hex} onChange={(event) => updateDraft(type, row, "hex", event.target.value)} /><code>{draft.hex}</code></label>
                 )}
                 {type === "filter" && data.iconKeysByFacet[row.facet]?.length > 0 && (
-                  <select value={draft.iconKey} onChange={(event) => updateDraft(type, row, "iconKey", event.target.value)}>
-                    {data.iconKeysByFacet[row.facet].map((key) => <option value={key} key={key}>{key}</option>)}
-                  </select>
+                  <div className="marketTaxonomyIconSelect">
+                    <MarketplaceFacetIcon iconKey={draft.iconKey} />
+                    <select value={draft.iconKey} onChange={(event) => updateDraft(type, row, "iconKey", event.target.value)}>
+                      {data.iconKeysByFacet[row.facet].map((key) => <option value={key} key={key}>{MARKETPLACE_FACET_ICON_LABELS[key] || key}</option>)}
+                    </select>
+                  </div>
                 )}
                 {type === "filter" && row.facet !== "color" && !data.iconKeysByFacet[row.facet]?.length && <span>{l(...(facetNames[row.facet] || [row.facet, row.facet]))}</span>}
               </div>
@@ -422,7 +426,7 @@ export default function AdminMarketplaceTaxonomy({ assetType = "model", language
                 <label><span>{l("Mã màu", "Color")}</span><div className="marketTaxonomyColorInput"><input type="color" value={createDraft.hex} onChange={(event) => updateCreate("hex", event.target.value)} /><input required pattern="#[0-9a-fA-F]{6}" value={createDraft.hex} onChange={(event) => updateCreate("hex", event.target.value)} /></div></label>
               )}
               {data.iconKeysByFacet[group]?.length > 0 && (
-                <label><span>{l("Icon hiển thị", "Display icon")}</span><select value={createDraft.iconKey} onChange={(event) => updateCreate("iconKey", event.target.value)}>{data.iconKeysByFacet[group].map((key) => <option value={key} key={key}>{key}</option>)}</select></label>
+                <label><span>{l("Icon hiển thị", "Display icon")}</span><div className="marketTaxonomyIconSelect"><MarketplaceFacetIcon iconKey={createDraft.iconKey} /><select value={createDraft.iconKey} onChange={(event) => updateCreate("iconKey", event.target.value)}>{data.iconKeysByFacet[group].map((key) => <option value={key} key={key}>{MARKETPLACE_FACET_ICON_LABELS[key] || key}</option>)}</select></div></label>
               )}
               <label><span>{l("Vị trí", "Order")}</span><input type="number" min="0" max="100000" value={createDraft.position} onChange={(event) => updateCreate("position", Number(event.target.value || 0))} /></label>
               <label className="marketTaxonomyCreateToggle"><input type="checkbox" checked={createDraft.isActive} onChange={(event) => updateCreate("isActive", event.target.checked)} /><span>{l("Bật ngay sau khi tạo", "Activate after creation")}</span></label>

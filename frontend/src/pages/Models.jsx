@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Chevro
 import { api, apiCached, buildApiUrl, prefetchApi } from "../api.js";
 import Pagination from "../components/Pagination.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
+import MarketplaceFacetIcon from "../components/MarketplaceFacetIcon.jsx";
 
 const EMPTY_FILTERS = {
   style: [],
@@ -284,24 +285,6 @@ function ShapeIcon({ value }) {
   );
 }
 
-function FacetIcon({ iconKey = "" }) {
-  if (!iconKey) return null;
-  const labels = {
-    vray: "V",
-    corona: "",
-    standard: "S",
-    "3dsmax": "3",
-    autocad: "A",
-    sketchup: "S",
-    "fbx-obj": "F",
-  };
-  return (
-    <span className={`marketFacetBrandIcon ${iconKey}`} aria-hidden="true">
-      {labels[iconKey] ?? iconKey.slice(0, 1).toUpperCase()}
-    </span>
-  );
-}
-
 function FacetSection({ id, title, options = [], values = [], onToggle, onClear, language = "vi" }) {
   const [expanded, setExpanded] = useState(true);
   if (!options.length) return null;
@@ -353,7 +336,7 @@ function FacetSection({ id, title, options = [], values = [], onToggle, onClear,
                 <ShapeIcon value={option.value} />
               ) : (
                 option.iconKey
-                  ? <FacetIcon iconKey={option.iconKey} />
+                  ? <MarketplaceFacetIcon iconKey={option.iconKey} />
                   : <span className={`marketCategoryCheck ${checked ? "checked" : ""}`} aria-hidden="true" />
               )}
               {!isColor && !isShape && <span>{label}</span>}
@@ -869,7 +852,7 @@ function DetailFacetList({ facet, values = [], filterOptions = {}, language = "v
         return (
           <span className={`marketDetailFacetChip ${facet}`} key={`${facet}-${value}`} title={label}>
             {facet === "form" && <ShapeIcon value={value} />}
-            {option.iconKey && !["form", "color"].includes(facet) && <FacetIcon iconKey={option.iconKey} />}
+            {option.iconKey && !["form", "color"].includes(facet) && <MarketplaceFacetIcon iconKey={option.iconKey} />}
             {facet === "color" && (
               <i
                 className="marketColorSwatch"

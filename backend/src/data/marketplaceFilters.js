@@ -5,9 +5,9 @@ export const MARKETPLACE_FILTERS = {
     { value: "ethnic", label: "Ethnic" },
   ],
   render: [
-    { value: "vray", label: "Vray" },
-    { value: "corona", label: "Corona" },
-    { value: "standard", label: "Standard" },
+    { value: "vray", label: "Vray", iconKey: "vray" },
+    { value: "corona", label: "Corona", iconKey: "corona" },
+    { value: "standard", label: "Standard", iconKey: "standard" },
   ],
   form: [
     { value: "round", label: "Round" },

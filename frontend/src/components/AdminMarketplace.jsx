@@ -29,6 +29,7 @@ import {
 import { api, apiBinary, buildApiUrl } from "../api.js";
 import Pagination from "./Pagination.jsx";
 import AdminMarketplaceTaxonomy from "./AdminMarketplaceTaxonomy.jsx";
+import MarketplaceFacetIcon from "./MarketplaceFacetIcon.jsx";
 import { text } from "../i18n.js";
 
 const emptyDriveImportForm = {
@@ -606,11 +607,7 @@ function FacetPicker({ field, value, options = [], onChange, language = "vi" }) 
               title={option.value}
             >
               {option.hex && <i style={{ backgroundColor: option.hex }} />}
-              {option.iconKey && (
-                <span className={`marketFacetBrandIcon ${option.iconKey}`} aria-hidden="true">
-                  {{ vray: "V", corona: "", standard: "S", "3dsmax": "3", autocad: "A", sketchup: "S", "fbx-obj": "F" }[option.iconKey] || option.iconKey.slice(0, 1).toUpperCase()}
-                </span>
-              )}
+              {option.iconKey && <MarketplaceFacetIcon iconKey={option.iconKey} />}
               {optionLabel(option, language)}
             </button>
           );

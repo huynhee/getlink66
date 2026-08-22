@@ -1955,36 +1955,70 @@ button:disabled {
   line-height: 1;
 }
 
-.marketFacetBrandIcon.corona {
-  border: 3px solid #ff6a00;
-  border-right-color: transparent;
-  border-radius: 50%;
+.marketFacetBrandIcon svg {
+  width: 13px;
+  height: 13px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.marketFacetBrandIcon svg circle {
+  fill: currentColor;
+  stroke: none;
+}
+
+.marketFacetBrandIcon[data-icon="corona"] {
+  border: 0;
+  color: #ff6500;
   background: transparent;
 }
 
-.marketFacetBrandIcon.vray {
-  border-color: #2d86c7;
-  color: #2d86c7;
+.marketFacetBrandIcon[data-icon="corona"] svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.6;
 }
 
-.marketFacetBrandIcon.\33 dsmax {
-  border-color: #1689a7;
-  background: #1689a7;
+.marketFacetBrandIcon[data-icon="vray"] {
+  border-color: #4f95bd;
+  color: #4f95bd;
+  background: color-mix(in srgb, #4f95bd 10%, var(--panel-bg));
+}
+
+.marketFacetBrandIcon[data-icon="3dsmax"] {
+  border-color: #178ca9;
+  background: #178ca9;
   color: #fff;
 }
 
-.marketFacetBrandIcon.autocad {
+.marketFacetBrandIcon[data-icon="3dsmax"] b {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.marketFacetBrandIcon[data-icon="autocad"] {
   border-color: #d93832;
   background: #d93832;
   color: #fff;
 }
 
-.marketFacetBrandIcon.sketchup {
+.marketFacetBrandIcon[data-icon="autocad"] svg {
+  fill: #fff;
+  stroke: none;
+}
+
+.marketFacetBrandIcon[data-icon="sketchup"] {
   border-color: #db342f;
+  background: color-mix(in srgb, #db342f 10%, var(--panel-bg));
   color: #db342f;
 }
 
-.marketFacetBrandIcon.fbx-obj {
+.marketFacetBrandIcon[data-icon="fbx-obj"],
+.marketFacetBrandIcon[data-icon="standard"] {
   border-color: #7e8a91;
   color: #7e8a91;
 }
@@ -9271,6 +9305,19 @@ label {
 .marketTaxonomyVisual select {
   width: 100%;
   min-height: 36px;
+}
+
+.marketTaxonomyIconSelect {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+}
+
+.marketTaxonomyIconSelect select {
+  min-width: 0;
 }
 
 .marketTaxonomyColor {
