@@ -97,6 +97,7 @@ import { auditAdmin, listAuditLogs } from "../middleware/auditLog.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireNotBanned } from "../middleware/requireNotBanned.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
+import { marketplaceUploadTokenAuth } from "../middleware/marketplaceUploadTokenAuth.js";
 import {
   adminCreateMarketplaceCategory,
   adminCreateMarketplaceFilterOption,
@@ -123,6 +124,20 @@ function sceneAdmin(req, _res, next) {
   req.marketplaceAssetType = "scene";
   next();
 }
+
+router.post(
+  "/marketplace/drive/sync-folder",
+  marketplaceUploadTokenAuth,
+  adminWriteLimit,
+  adminSyncMarketplaceDriveFolder,
+);
+router.post(
+  "/marketplace/scenes/drive/sync-folder",
+  marketplaceUploadTokenAuth,
+  sceneAdmin,
+  adminWriteLimit,
+  adminSyncMarketplaceDriveFolder,
+);
 
 router.use(requireAuth, requireNotBanned, adminOnly);
 router.get("/dashboard", adminDashboard);
