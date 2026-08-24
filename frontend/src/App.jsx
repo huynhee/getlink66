@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MessageCircle } from "lucide-react";
 import { api } from "./api.js";
@@ -23,6 +23,10 @@ import "./design-system.css";
 
 const MESSENGER_URL = "https://m.me/1079508495252841";
 const THEME_STORAGE_KEY = "3dipl-theme";
+const USER_SYNC_CHANNEL_NAME = "3dipl-user-sync";
+const USER_SYNC_STORAGE_KEY = "3dipl-user-sync-event";
+const USER_SYNC_INTERVAL_MS = 15_000;
+const USER_SYNC_PAYMENT_INTERVAL_MS = 3_000;
 const THEME_META_COLORS = {
   dark: "#0a0a0a",
   light: "#faf8f5"
@@ -131,6 +135,38 @@ function applyTheme(nextTheme) {
   const themeMeta = document.querySelector('meta[name="theme-color"]');
   if (themeMeta) {
     themeMeta.setAttribute("content", THEME_META_COLORS[nextTheme] || THEME_META_COLORS.dark);
+  }
+}
+
+function userStateSignature(user) {
+  if (!user) return "";
+  return JSON.stringify({
+    _id: String(user._id || ""),
+    name: user.name || "",
+    email: user.email || "",
+    avatar: user.avatar || "",
+    role: user.role || "",
+    credit: Number(user.credit || 0),
+    proUntil: user.proUntil || null,
+    isPro: Boolean(user.isPro),
+    proDailyDownloadLimit: Number(user.proDailyDownloadLimit || 0),
+    isBanned: Boolean(user.isBanned),
+    banReason: user.banReason || "",
+    isTwoFactorEnabled: Boolean(user.isTwoFactorEnabled),
+    requires2FA: Boolean(user.requires2FA),
+    downloadQuota: user.downloadQuota || null,
+  });
+}
+
+function hasPendingPayment() {
+  if (typeof window === "undefined") return false;
+  try {
+    return Boolean(
+      window.sessionStorage.getItem("pendingSepayTopupId")
+      || window.sessionStorage.getItem("pendingMembershipOrderId"),
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -265,6 +301,13 @@ function App() {
   const [theme, setTheme] = useState(getInitialTheme);
   const [banOverlayClosed, setBanOverlayClosed] = useState(false);
   const previousUserIdRef = useRef("");
+  const userRef = useRef(null);
+  const userMutationVersionRef = useRef(0);
+  const userRefreshPromiseRef = useRef(null);
+  const userSyncChannelRef = useRef(null);
+  const userSyncTabIdRef = useRef(
+    globalThis.crypto?.randomUUID?.() || `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   const isAdminPath = path === "/admin";
   const isPublicHome = path === "/";
   const t = translations[language];
@@ -287,10 +330,59 @@ function App() {
     });
   }
 
-  async function refreshUser() {
-    const data = await api("/api/auth/user");
-    setUser(data.user);
-  }
+  const commitUser = useCallback((nextUser, { merge = false, localMutation = false } = {}) => {
+    const current = userRef.current;
+    const candidate = typeof nextUser === "function" ? nextUser(current) : nextUser;
+    const resolved = merge
+      && current
+      && candidate
+      && String(current._id || "") === String(candidate._id || "")
+      ? { ...current, ...candidate }
+      : candidate;
+
+    if (localMutation) userMutationVersionRef.current += 1;
+    userRef.current = resolved || null;
+    setUser((previous) => (
+      userStateSignature(previous) === userStateSignature(resolved) ? previous : (resolved || null)
+    ));
+    return resolved || null;
+  }, []);
+
+  const publishUserRefresh = useCallback((nextUser) => {
+    const payload = {
+      type: "refresh-user",
+      source: userSyncTabIdRef.current,
+      userId: String(nextUser?._id || ""),
+      at: Date.now(),
+    };
+    userSyncChannelRef.current?.postMessage(payload);
+    try {
+      window.localStorage.setItem(USER_SYNC_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // BroadcastChannel remains available when storage access is blocked.
+    }
+  }, []);
+
+  const handleUserChange = useCallback((nextUser) => {
+    const resolved = commitUser(nextUser, { merge: true, localMutation: true });
+    publishUserRefresh(resolved);
+  }, [commitUser, publishUserRefresh]);
+
+  const refreshUser = useCallback(async () => {
+    if (userRefreshPromiseRef.current) return userRefreshPromiseRef.current;
+    const mutationVersion = userMutationVersionRef.current;
+    const request = api("/api/auth/user", { cache: "no-store" })
+      .then((data) => {
+        // A response started before a local debit/credit must not overwrite it.
+        if (mutationVersion !== userMutationVersionRef.current) return userRef.current;
+        return commitUser(data.user, { merge: false });
+      })
+      .finally(() => {
+        if (userRefreshPromiseRef.current === request) userRefreshPromiseRef.current = null;
+      });
+    userRefreshPromiseRef.current = request;
+    return request;
+  }, [commitUser]);
 
   function navigate(nextPath) {
     window.history.pushState({}, "", nextPath);
@@ -315,9 +407,57 @@ function App() {
 
   useEffect(() => {
     refreshUser()
-      .catch(() => setUser(null))
+      .catch(() => commitUser(null))
       .finally(() => setLoading(false));
-  }, []);
+  }, [commitUser, refreshUser]);
+
+  useEffect(() => {
+    const receiveSyncSignal = (payload) => {
+      if (!payload || payload.type !== "refresh-user" || payload.source === userSyncTabIdRef.current) return;
+      refreshUser().catch(() => {});
+    };
+    const handleStorage = (event) => {
+      if (event.key !== USER_SYNC_STORAGE_KEY || !event.newValue) return;
+      try {
+        receiveSyncSignal(JSON.parse(event.newValue));
+      } catch {
+        // Ignore malformed or stale cross-tab messages.
+      }
+    };
+
+    if (typeof BroadcastChannel === "function") {
+      const channel = new BroadcastChannel(USER_SYNC_CHANNEL_NAME);
+      channel.onmessage = (event) => receiveSyncSignal(event.data);
+      userSyncChannelRef.current = channel;
+    }
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      userSyncChannelRef.current?.close();
+      userSyncChannelRef.current = null;
+    };
+  }, [refreshUser]);
+
+  useEffect(() => {
+    if (!user?._id) return undefined;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshUser().catch(() => {});
+    };
+    const intervalMs = page === "topup" || hasPendingPayment()
+      ? USER_SYNC_PAYMENT_INTERVAL_MS
+      : USER_SYNC_INTERVAL_MS;
+    const timer = window.setInterval(refreshWhenVisible, intervalMs);
+    window.addEventListener("focus", refreshWhenVisible);
+    window.addEventListener("pageshow", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    refreshWhenVisible();
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshWhenVisible);
+      window.removeEventListener("pageshow", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [page, refreshUser, user?._id]);
 
   useEffect(() => {
     applyTheme(theme);
@@ -391,8 +531,8 @@ function App() {
   useEffect(() => {
     const nextCredit = Number(getlinkJob?.result?.credit);
     if (!user?._id || !Number.isFinite(nextCredit) || Number(user.credit) === nextCredit) return;
-    setUser((current) => current?._id === user._id ? { ...current, credit: nextCredit } : current);
-  }, [getlinkJob?.result?.credit, user?._id, user?.credit]);
+    handleUserChange((current) => current?._id === user._id ? { ...current, credit: nextCredit } : current);
+  }, [getlinkJob?.result?.credit, handleUserChange, user?._id, user?.credit]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -408,7 +548,7 @@ function App() {
   if (isAdminPath) {
     return (
       <div className="appFrame page-admin">
-        <Navbar user={user} page="admin" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
+        <Navbar user={user} page="admin" setPage={navigateByPage} onUserChange={handleUserChange} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
         <main className="shell shell-admin">
           {user?.requires2FA && <TwoFactorModal onVerify={refreshUser} language={language} />}
           {!user && <Login onLogin={refreshUser} adminMode returnTo="/admin" language={language} />}
@@ -430,7 +570,7 @@ function App() {
   if (isPublicHome) {
     return (
       <div className="appFrame page-home">
-        <Navbar user={user} page="" setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
+        <Navbar user={user} page="" setPage={navigateByPage} onUserChange={handleUserChange} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
         <FacebookGroupBanner language={language} />
         <main className="shell shell-home">
           <Login user={user} onLogin={refreshUser} returnTo="/" language={language} />
@@ -444,21 +584,21 @@ function App() {
 
   return (
     <div className={`appFrame page-${page || "getlink"}`}>
-      <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={setUser} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
+      <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={handleUserChange} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
       <FacebookGroupBanner language={language} />
       <main className={`shell shell-${page || "getlink"}${page === "scenes" && path.startsWith("/scenes/") ? " shell-scene-detail" : ""}`}>
         {!user && !["guide", "privacy", "terms", "models", "scenes"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo={path || "/"} language={language} />}
-        {page === "models" && <Models user={user} language={language} path={path} onNavigate={navigate} onUserChange={setUser} />}
-        {page === "scenes" && <Scenes user={user} language={language} path={path} onNavigate={navigate} onUserChange={setUser} />}
+        {page === "models" && <Models user={user} language={language} path={path} onNavigate={navigate} onUserChange={handleUserChange} />}
+        {page === "scenes" && <Scenes user={user} language={language} path={path} onNavigate={navigate} onUserChange={handleUserChange} />}
         {page === "guide" && <Guide language={language} />}
         {page === "privacy" && <Privacy language={language} />}
         {page === "terms" && <Terms language={language} />}
         {user && page === "pluginActivate" && <PluginAccess language={language} mode="activate" />}
         {user && page === "pluginSessions" && <PluginAccess language={language} mode="sessions" />}
         {user && page === "pluginChallenge" && <PluginAccess language={language} mode="challenge" />}
-        {user && page === "getlink" && <Home user={user} onUserChange={setUser} language={language} />}
-        {user && page === "topup" && <Topup user={user} onUserChange={setUser} language={language} />}
-        {user && page === "membership" && <Membership user={user} onUserChange={setUser} language={language} />}
+        {user && page === "getlink" && <Home user={user} onUserChange={handleUserChange} language={language} />}
+        {user && page === "topup" && <Topup user={user} onUserChange={handleUserChange} language={language} />}
+        {user && page === "membership" && <Membership user={user} onUserChange={handleUserChange} language={language} />}
         {user && page === "history" && <History language={language} />}
         {user && page === "invite" && <Invite language={language} />}
       </main>

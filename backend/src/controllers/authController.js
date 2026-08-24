@@ -275,6 +275,7 @@ export async function logout(req, res, next) {
 
 export async function currentUser(req, res, next) {
   try {
+    res.set("Cache-Control", "private, no-store");
     if (!req.user) return res.json({ user: null });
 
     const normalizedProUntil = normalizeProUntil(req.user.proUntil);

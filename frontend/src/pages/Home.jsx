@@ -45,7 +45,7 @@ export default function Home({ user, onUserChange, language = "vi" }) {
   const redownloadText = language === "vi" ? "Tải lại" : "Redownload";
 
   function updateCredit(credit) {
-    onUserChange({ ...user, credit });
+    onUserChange((current) => current ? { ...current, credit } : current);
   }
 
   function redownloadMeta(item) {

@@ -75,7 +75,11 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
         if (data.status === "approved") {
           window.sessionStorage.removeItem(PENDING_MEMBERSHIP_ORDER_KEY);
           setMembership(data.membership);
-          onUserChange?.({ ...user, proUntil: data.membership?.proUntil, isPro: data.membership?.active });
+          onUserChange?.((current) => current ? {
+            ...current,
+            proUntil: data.membership?.proUntil,
+            isPro: data.membership?.active,
+          } : current);
           setMessage(language === "vi" ? "Đã kích hoạt gói Pro." : "Pro membership activated.");
           window.clearInterval(timer);
         }

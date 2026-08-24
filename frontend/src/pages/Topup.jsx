@@ -199,7 +199,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
 
           if (data.status === "approved") {
             setLastPaidPayment(data.topup);
-            onUserChange({ ...user, credit: data.userCredit });
+            onUserChange((current) => current ? { ...current, credit: data.userCredit } : current);
             setMessage(language === "vi"
               ? `Nạp thành công: +${data.topup.credit} credit. Số dư hiện tại: ${data.userCredit} credit`
               : `Top-up successful: +${data.topup.credit} credit. Current balance: ${data.userCredit} credit`);
@@ -242,7 +242,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         if (data.status === "approved") {
           setLastPaidPayment(data.topup);
           window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
-          onUserChange({ ...user, credit: data.userCredit });
+          onUserChange((current) => current ? { ...current, credit: data.userCredit } : current);
           setMessage(language === "vi"
             ? `Nạp thành công: +${data.topup.credit} credit. Số dư hiện tại: ${data.userCredit} credit`
             : `Top-up successful: +${data.topup.credit} credit. Current balance: ${data.userCredit} credit`);
@@ -273,7 +273,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           setLastPaidPayment(data.topup);
           setPayment(null);
           window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
-          onUserChange({ ...user, credit: data.userCredit });
+          onUserChange((current) => current ? { ...current, credit: data.userCredit } : current);
           setMessage(language === "vi"
             ? `Nạp thành công: +${data.topup.credit} credit. Số dư hiện tại: ${data.userCredit} credit`
             : `Top-up successful: +${data.topup.credit} credit. Current balance: ${data.userCredit} credit`);
@@ -336,7 +336,11 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           window.sessionStorage.removeItem(PENDING_MEMBERSHIP_ORDER_KEY);
           clearPaymentQuery();
           setMembership(data.membership || null);
-          onUserChange?.({ ...user, proUntil: data.membership?.proUntil, isPro: data.membership?.active });
+          onUserChange?.((current) => current ? {
+            ...current,
+            proUntil: data.membership?.proUntil,
+            isPro: data.membership?.active,
+          } : current);
           setProMessage(language === "vi" ? "Đã kích hoạt gói Pro." : "Pro membership activated.");
           window.clearInterval(timer);
         } else if (data.status === "rejected") {
