@@ -441,6 +441,21 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           voucherCode: voucherTargetsMembership ? appliedVoucher?.code : undefined,
         }),
       });
+      if (data.status === "approved") {
+        window.sessionStorage.removeItem(PENDING_MEMBERSHIP_ORDER_KEY);
+        setMembership(data.membership || null);
+        onUserChange?.((current) => current ? {
+          ...current,
+          proUntil: data.membership?.proUntil,
+          isPro: data.membership?.active,
+          proDailyDownloadLimit: data.membership?.dailyDownloadLimit
+            ?? current.proDailyDownloadLimit,
+        } : current);
+        setProMessage(language === "vi"
+          ? "Đã kích hoạt gói Pro miễn phí."
+          : "Free Pro plan activated.");
+        return;
+      }
       if (data.order?._id) {
         window.sessionStorage.setItem(PENDING_MEMBERSHIP_ORDER_KEY, data.order._id);
       }

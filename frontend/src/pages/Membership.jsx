@@ -113,6 +113,21 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
         headers: { "Idempotency-Key": requestKeyRef.current },
         body: JSON.stringify({ planId: selectedPlanId }),
       });
+      if (data.status === "approved") {
+        window.sessionStorage.removeItem(PENDING_MEMBERSHIP_ORDER_KEY);
+        setMembership(data.membership || null);
+        onUserChange?.((current) => current ? {
+          ...current,
+          proUntil: data.membership?.proUntil,
+          isPro: data.membership?.active,
+          proDailyDownloadLimit: data.membership?.dailyDownloadLimit
+            ?? current.proDailyDownloadLimit,
+        } : current);
+        setMessage(language === "vi"
+          ? "Đã kích hoạt gói Pro miễn phí."
+          : "Free Pro plan activated.");
+        return;
+      }
       window.sessionStorage.setItem(PENDING_MEMBERSHIP_ORDER_KEY, data.order._id);
       setMessage(language === "vi" ? "Đang chuyển sang cổng thanh toán..." : "Redirecting to payment...");
       if (!submitPaymentCheckout(data.payment)) {

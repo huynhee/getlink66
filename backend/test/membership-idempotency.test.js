@@ -130,3 +130,43 @@ test("membership plan limits active purchases per account", async () => {
   assert.equal(blocked.payload.limit, 1);
   assert.equal(await MembershipOrder.countDocuments({ userId: user._id, planId: plan._id }), 1);
 });
+
+test("zero-price membership activates immediately without SePay", async () => {
+  const user = await User.create({ email: "member-free-trial@example.test", name: "Free trial" });
+  const plan = await MembershipPlan.create({
+    code: "TEST-FREE-TRIAL",
+    name: "Free trial",
+    price: 0,
+    durationDays: 7,
+    dailyDownloadLimit: 100,
+    maxPurchasesPerUser: 1,
+    isActive: true,
+  });
+  const request = (key) => ({
+    user,
+    body: { planId: plan._id, voucherCode: "IGNORED-FOR-FREE" },
+    get(name) {
+      return String(name).toLowerCase() === "idempotency-key" ? key : "";
+    },
+  });
+
+  const first = await invokeCheckout(request("membership-free-trial-test-0001"));
+  const replay = await invokeCheckout(request("membership-free-trial-test-0001"));
+  const updatedUser = await User.findById(user._id);
+  const order = await MembershipOrder.findById(first.payload.order._id);
+
+  assert.equal(first.status, 200);
+  assert.equal(first.payload.status, "approved");
+  assert.equal(first.payload.payment, null);
+  assert.equal(first.payload.membership.active, true);
+  assert.equal(replay.payload.idempotentReplay, true);
+  assert.equal(String(replay.payload.order._id), String(first.payload.order._id));
+  assert.equal(order.gatewayProvider, "internal_free");
+  assert.equal(order.amount, 0);
+  assert.ok(new Date(updatedUser.proUntil) > new Date());
+  assert.equal(await MembershipOrder.countDocuments({ userId: user._id, planId: plan._id }), 1);
+
+  const blocked = await invokeCheckout(request("membership-free-trial-test-0002"));
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.payload.code, "MEMBERSHIP_PLAN_PURCHASE_LIMIT_REACHED");
+});
