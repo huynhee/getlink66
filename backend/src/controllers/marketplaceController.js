@@ -495,6 +495,29 @@ function withMarketplaceFallbackBudget(query) {
   return isMemoryDb() ? query : query.maxTimeMS(marketplaceFallbackMaxTimeMs());
 }
 
+function marketplaceQueryAssetType(assetType) {
+  const normalizedType = normalizeAssetType(assetType);
+  // Keep the in-memory compatibility store able to read pre-migration
+  // fixtures, while production catalog queries use the selective exact value
+  // now that assetType has been backfilled.
+  return isMemoryDb() ? marketplaceAssetTypeFilter(normalizedType) : normalizedType;
+}
+
+const MARKETPLACE_SEARCH_TOKEN_INDEX_HINT = Object.freeze({
+  assetType: 1,
+  isPublished: 1,
+  metadataStatus: 1,
+  fileStatus: 1,
+  searchTokens: 1,
+});
+
+function isMarketplaceSearchTimeoutError(error) {
+  const message = String(error?.message || "");
+  return Number(error?.code) === 50
+    || error?.codeName === "MaxTimeMSExpired"
+    || /operation exceeded time limit|multiplanner|time limit/i.test(message);
+}
+
 function exactSearchTokenFilter(search) {
   const tokens = marketplaceSearchTokens(search);
   if (!tokens.length) return {};
@@ -514,12 +537,17 @@ function exactSearchTokenFilter(search) {
 
 function fuzzySearchCandidateFilter(search, { broad = false } = {}) {
   const prefixes = marketplaceSearchCandidatePrefixes(search)
-    .map((prefix) => broad ? prefix.slice(0, 1) : prefix)
+    // A one-character regex is effectively a catalog-wide scan. Keep the
+    // typo fallback bounded to two characters so it remains useful without
+    // handing Mongo an unselective query.
+    .map((prefix) => broad ? prefix.slice(0, Math.min(2, prefix.length)) : prefix)
     .filter(Boolean);
   if (!prefixes.length) return {};
   return {
     searchTokens: {
-      $in: [...new Set(prefixes)].map((prefix) => new RegExp(`^${escapeSearchRegex(prefix)}`, "i")),
+      // searchTokens are normalized to lowercase during indexing. Keeping the
+      // regex case-sensitive lets Mongo derive an index range for the prefix.
+      $in: [...new Set(prefixes)].map((prefix) => new RegExp(`^${escapeSearchRegex(prefix)}`)),
     },
   };
 }
@@ -540,13 +568,27 @@ async function fuzzyMarketplacePage({
   const loadCandidates = async (broad = false) => {
     const candidateQuery = { ...query };
     addNestedFilter(candidateQuery, fuzzySearchCandidateFilter(search, { broad }));
-    return withMarketplaceFallbackBudget(MarketplaceModel.find(candidateQuery))
-      .sort({ downloadCount: -1, createdAt: -1, _id: 1 })
+    let candidateRequest = MarketplaceModel.find(candidateQuery);
+    if (!isMemoryDb()) candidateRequest = candidateRequest.hint(MARKETPLACE_SEARCH_TOKEN_INDEX_HINT);
+    return withMarketplaceFallbackBudget(candidateRequest)
       .limit(candidateLimit)
       .lean();
   };
-  let candidates = await loadCandidates(false);
-  if (!candidates.length) candidates = await loadCandidates(true);
+  let candidates = [];
+  let initialSearchTimedOut = false;
+  try {
+    candidates = await loadCandidates(false);
+  } catch (error) {
+    if (!isMarketplaceSearchTimeoutError(error)) throw error;
+    initialSearchTimedOut = true;
+  }
+  if (!candidates.length && !initialSearchTimedOut) {
+    try {
+      candidates = await loadCandidates(true);
+    } catch (error) {
+      if (!isMarketplaceSearchTimeoutError(error)) throw error;
+    }
+  }
   const queryTokens = marketplaceSearchTokens(search);
   const matched = candidates.filter((candidate) => {
     const candidateTokens = [...new Set([
@@ -888,7 +930,7 @@ export async function listMarketplaceModels(req, res, next) {
       });
     }
     const fileStatus = String(req.query.fileStatus || "").trim();
-    const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() };
+    const query = { assetType: marketplaceQueryAssetType(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() };
     Object.assign(query, accessTypeFilter(accessType));
     applyMarketplaceFacetFilters(query, req.query, assetType);
     if (["missing", "pending_upload", "ready", "failed"].includes(fileStatus)) query.fileStatus = fileStatus;
@@ -980,17 +1022,32 @@ export async function listMarketplaceModels(req, res, next) {
         // Meilisearch circuit breaker is open.
       }
     }
-    const { models, total, totalPages, safePage, engine, mode, truncated } = await bilingualMarketplacePage({
-      query,
-      search,
-      sortSelection,
-      page,
-      limit,
-      prioritizePro,
-      assetType,
-      userId: req.user?._id || null,
-      actorKey: marketplaceActorKeyFromRequest(req),
-    });
+    let marketplacePage;
+    try {
+      marketplacePage = await bilingualMarketplacePage({
+        query,
+        search,
+        sortSelection,
+        page,
+        limit,
+        prioritizePro,
+        assetType,
+        userId: req.user?._id || null,
+        actorKey: marketplaceActorKeyFromRequest(req),
+      });
+    } catch (error) {
+      if (!search || !isMarketplaceSearchTimeoutError(error)) throw error;
+      marketplacePage = {
+        models: [],
+        total: 0,
+        totalPages: 1,
+        safePage: 1,
+        engine: "mongo_timeout_fallback",
+        mode: "no_match",
+        truncated: true,
+      };
+    }
+    const { models, total, totalPages, safePage, engine, mode, truncated } = marketplacePage;
     await hydrateMarketplaceCategoryRefs(models);
     const assets = models.map((model) => publicModel(model, { previewLimit: 1 }));
     const fallbackTimingMs = Math.round((performance.now() - startedAt) * 10) / 10;
@@ -1049,7 +1106,7 @@ export async function listMarketplaceSearchSuggestions(req, res, next) {
     }
     const normalized = marketplaceSearchQuery(q);
     const models = await MarketplaceModel.find({
-      assetType: marketplaceAssetTypeFilter(assetType),
+      assetType: marketplaceQueryAssetType(assetType),
       isPublished: true,
       metadataStatus: "complete",
       fileStatus: "ready",
@@ -1191,7 +1248,7 @@ export async function searchMarketplaceByImage(req, res, next) {
       assetType,
     });
     const matchedIds = searchResult.matches.map((match) => match.modelId);
-    const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() };
+    const query = { assetType: marketplaceQueryAssetType(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() };
 
     Object.assign(query, accessTypeFilter(accessType));
     applyMarketplaceFacetFilters(query, req.body, assetType);
@@ -1257,7 +1314,7 @@ export async function getMarketplaceModel(req, res, next) {
   try {
     const assetType = requestAssetType(req);
     const slugOrId = String(req.params.slug || "").trim();
-    const assetFilter = marketplaceAssetTypeFilter(assetType);
+    const assetFilter = marketplaceQueryAssetType(assetType);
     const lookup = [{ assetType: assetFilter, slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() }];
     if (isSafeId(slugOrId)) lookup.push({ assetType: assetFilter, _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() });
     const model = await MarketplaceModel.findOne({ $or: lookup }).lean();
@@ -1288,7 +1345,7 @@ export async function listMarketplaceModelRecommendations(req, res, next) {
   try {
     const assetType = requestAssetType(req);
     const slugOrId = String(req.params.slug || "").trim();
-    const assetFilter = marketplaceAssetTypeFilter(assetType);
+    const assetFilter = marketplaceQueryAssetType(assetType);
     const lookup = [{ assetType: assetFilter, slug: slugOrId.toLowerCase(), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() }];
     if (isSafeId(slugOrId)) lookup.push({ assetType: assetFilter, _id: slugOrId, isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() });
     const model = await MarketplaceModel.findOne({ $or: lookup }).lean();
@@ -1342,7 +1399,7 @@ export async function streamMarketplaceCover(req, res, next) {
     if (!isSafeId(req.params.id)) {
       return res.status(400).json({ message: `Invalid ${assetLabel(assetType).toLowerCase()} id` });
     }
-    const model = await MarketplaceModel.findOne({ _id: req.params.id, assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() })
+    const model = await MarketplaceModel.findOne({ _id: req.params.id, assetType: marketplaceQueryAssetType(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() })
       .select("title coverImage previewImages coverCache")
       .lean();
     if (!model) return res.status(404).json({ message: "Model not found" });
@@ -1377,7 +1434,7 @@ export async function streamMarketplacePreview(req, res, next) {
     if (!Number.isInteger(index) || index < 0 || index > 50) {
       return res.status(400).json({ message: "Invalid preview index" });
     }
-    const model = await MarketplaceModel.findOne({ _id: req.params.id, assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() })
+    const model = await MarketplaceModel.findOne({ _id: req.params.id, assetType: marketplaceQueryAssetType(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() })
       .select("title previewImages")
       .lean();
     if (!model) return res.status(404).json({ message: "Model not found" });

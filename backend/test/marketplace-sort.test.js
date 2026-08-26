@@ -136,6 +136,15 @@ test("text search defaults to relevance while invalid sort falls back safely", a
   assert.deepEqual(invalid.sort, { requested: null, effective: "newest" });
 });
 
+test("no-match typo searches return an empty result instead of throwing", async () => {
+  for (const query of ["receiption", "adoor", "ardoor", "arcdoor", "archeddoor", "archedoor"]) {
+    const payload = await list({ q: query, sort: "featured", limit: "60" });
+
+    assert.deepEqual(payload.models, []);
+    assert.equal(payload.pagination.total, 0);
+  }
+});
+
 test("external URLs are rejected before they can reach catalog search", async () => {
   const payload = await list({
     q: "https://3d.3d66.com/reshtmla/model/items/rz/example.html?action_id=long-query",
