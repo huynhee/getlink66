@@ -567,10 +567,15 @@ async function rawSearch(options, accessType, offset, limit, ratioOverride = nul
   if (current.semanticEnabled && ratio > 0) {
     body.hybrid = { embedder: "multilingual", semanticRatio: ratio };
   }
+  const hybridRequested = Boolean(body.hybrid);
   try {
     return await meiliRequest(`/indexes/${encodeURIComponent(indexName(options.assetType))}/search`, {
       method: "POST",
       body,
+      // A semantic embedder can be temporarily unavailable while Meilisearch
+      // is indexing. Let the lexical retry decide whether the service itself
+      // is unhealthy instead of opening the circuit on the hybrid attempt.
+      useCircuit: !hybridRequested,
     });
   } catch (error) {
     if (!body.hybrid) throw error;

@@ -88,6 +88,40 @@ test("Meilisearch rollout bucket is stable and shadow only applies outside rollo
   assert.equal(enabled.shadow, false);
 });
 
+test("Meilisearch retries lexical search when hybrid search is temporarily unavailable", async () => {
+  const previousFetch = globalThis.fetch;
+  const bodies = [];
+  globalThis.fetch = async (_url, options = {}) => {
+    const body = JSON.parse(options.body || "{}");
+    bodies.push(body);
+    if (body.hybrid) throw new Error("Semantic embedder is still indexing");
+    return new Response(JSON.stringify({
+      estimatedTotalHits: 1,
+      processingTimeMs: 3,
+      hits: [hit("lexical-result", "member")],
+    }), { status: 200 });
+  };
+
+  try {
+    const result = await searchMarketplaceMeili({
+      assetType: "model",
+      accessType: "member",
+      q: "arched door",
+      page: 1,
+      limit: 60,
+      facets: {},
+      sort: "relevance",
+    });
+    assert.equal(result.total, 1);
+    assert.equal(result.assets[0].slug, "lexical-result");
+    assert.equal(bodies.length, 2);
+    assert.ok(bodies[0].hybrid);
+    assert.equal(bodies[1].hybrid, undefined);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test.after(() => {
   const restore = (key, value) => {
     if (value === undefined) delete process.env[key];
