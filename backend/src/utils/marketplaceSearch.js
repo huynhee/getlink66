@@ -360,24 +360,42 @@ export async function markMarketplaceSearchPendingForTaxonomy({ assetType, type,
 
 export async function runMarketplaceSearchIndexBatch(limit = 100) {
   const safeLimit = Math.min(500, Math.max(1, Number(limit || 100)));
-  const pendingConditions = [
+  const pendingQueries = [
     { searchStatus: { $in: ["pending", "error"] } },
     { searchStatus: { $exists: false } },
-    { searchTokens: { $exists: false } },
-    { searchVersion: { $ne: MARKETPLACE_SEARCH_DOCUMENT_VERSION } },
   ];
   if (marketplaceMeilisearchConfigured()) {
-    pendingConditions.push(
+    pendingQueries.push(
       { searchEngineStatus: { $in: ["pending", "error", "disabled"] } },
       { searchEngineStatus: { $exists: false } },
     );
   }
-  const models = await MarketplaceModel.find({
-    $or: pendingConditions,
-  })
-    .sort({ updatedAt: 1 })
-    .limit(safeLimit)
-    .lean();
+  pendingQueries.push(
+    { searchVersion: { $lt: MARKETPLACE_SEARCH_DOCUMENT_VERSION } },
+    { searchVersion: { $exists: false } },
+  );
+  const models = [];
+  const selectedIds = new Set();
+  for (const assetType of ["model", "scene"]) {
+    for (const pendingQuery of pendingQueries) {
+      if (models.length >= safeLimit) break;
+      const remaining = safeLimit - models.length;
+      const query = selectedIds.size
+        ? { assetType, ...pendingQuery, _id: { $nin: [...selectedIds] } }
+        : { assetType, ...pendingQuery };
+      const batch = await MarketplaceModel.find(query)
+        .sort({ updatedAt: 1 })
+        .limit(remaining)
+        .lean();
+      for (const model of batch) {
+        const id = String(model._id);
+        if (selectedIds.has(id)) continue;
+        selectedIds.add(id);
+        models.push(model);
+      }
+    }
+    if (models.length >= safeLimit) break;
+  }
   const records = [];
   let failed = 0;
   for (const model of models) {

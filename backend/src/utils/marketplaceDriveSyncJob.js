@@ -451,6 +451,10 @@ async function runConfiguredRootSyncs(trigger) {
     try {
       await runMarketplaceDriveSyncOnce({ trigger, rootFolderId: root.rootFolderId });
     } catch (error) {
+      if (error?.code === "MARKETPLACE_RECONCILIATION_ACTIVE") {
+        logger.debug({ assetType: root.assetType }, "Drive Changes sync paused during full reconciliation");
+        continue;
+      }
       logger.error({ err: error, assetType: root.assetType }, "Marketplace Drive changes sync failed");
     }
   }

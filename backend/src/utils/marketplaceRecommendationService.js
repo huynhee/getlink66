@@ -1,7 +1,6 @@
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import ModelDownload from "../models/ModelDownload.js";
 import MarketplaceInterestProfile from "../models/MarketplaceInterestProfile.js";
-import { marketplaceAssetTypeFilter } from "../data/marketplaceCatalogs.js";
 import { hydrateMarketplaceCategoryRefs } from "./marketplaceTaxonomy.js";
 import { normalizeMarketplaceSearchText } from "./marketplaceSearch.js";
 import { marketplaceSourceIdNumber } from "./marketplaceSort.js";
@@ -168,7 +167,7 @@ function rankHomeCandidates(candidates, profile, hasHistory, limit, dailyRanking
 
 async function candidatesFor(assetType, excludedIds) {
   const models = await MarketplaceModel.find({
-    assetType: marketplaceAssetTypeFilter(assetType),
+    assetType,
     ...(assetType === "model" ? { accessType: "member" } : {}),
     isPublished: true,
     metadataStatus: "complete",
@@ -220,7 +219,7 @@ async function popularModelsToday(excludedIds, limit) {
     || dailyPopularCache.expiresAt <= Date.now()
   ) {
     const downloads = await ModelDownload.find({
-      assetType: marketplaceAssetTypeFilter("model"),
+      assetType: "model",
       status: "downloaded",
       downloadedAt: { $gte: start, $lt: end },
     })
@@ -249,7 +248,7 @@ async function popularModelsToday(excludedIds, limit) {
 
   const models = await MarketplaceModel.find({
     _id: { $in: rankedIds },
-    assetType: marketplaceAssetTypeFilter("model"),
+    assetType: "model",
     accessType: "member",
     isPublished: true,
     metadataStatus: "complete",

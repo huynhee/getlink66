@@ -42,6 +42,7 @@ test("model detail returns six recommendations and expansion returns the next 54
     MarketplaceRecommendationCache.deleteMany({}),
   ]);
   await MarketplaceModel.create({
+    assetType: "model",
     source: { provider: "drive", modelId: "recommendation-source" },
     title: "Source chair",
     slug: "source-chair",
@@ -59,6 +60,7 @@ test("model detail returns six recommendations and expansion returns the next 54
     isPublished: true,
   });
   await MarketplaceModel.insertMany(Array.from({ length: 75 }, (_, index) => ({
+    assetType: "model",
     source: { provider: "drive", modelId: `recommendation-${index}` },
     title: `Recommended chair ${index + 1}`,
     slug: `recommended-chair-${index + 1}`,
@@ -77,6 +79,7 @@ test("model detail returns six recommendations and expansion returns the next 54
     downloadCount: index,
   })));
   await MarketplaceModel.create({
+    assetType: "model",
     source: { provider: "drive", modelId: "unrelated-most-downloaded" },
     title: "Most downloaded floor lamp",
     slug: "unrelated-most-downloaded",
@@ -122,6 +125,7 @@ test("model detail returns six recommendations and expansion returns the next 54
 test("detail recommendations exhaust the child category before sibling categories", async () => {
   await MarketplaceRecommendationCache.deleteMany({});
   await MarketplaceModel.create({
+    assetType: "model",
     source: { provider: "drive", modelId: "branch-source" },
     title: "Dining chair source",
     slug: "branch-source",
@@ -134,6 +138,7 @@ test("detail recommendations exhaust the child category before sibling categorie
   });
   await MarketplaceModel.insertMany([
     ...Array.from({ length: 2 }, (_, index) => ({
+      assetType: "model",
       source: { provider: "drive", modelId: `exact-chair-${index}` },
       title: `Exact dining chair ${index}`,
       slug: `exact-dining-chair-${index}`,
@@ -146,6 +151,7 @@ test("detail recommendations exhaust the child category before sibling categorie
       downloadCount: 0,
     })),
     ...Array.from({ length: 4 }, (_, index) => ({
+      assetType: "model",
       source: { provider: "drive", modelId: `sibling-table-${index}` },
       title: `Sibling dining table ${index}`,
       slug: `sibling-dining-table-${index}`,
@@ -158,6 +164,7 @@ test("detail recommendations exhaust the child category before sibling categorie
       downloadCount: 10_000 + index,
     })),
     {
+      assetType: "model",
       source: { provider: "drive", modelId: "unrelated-popular-plant" },
       title: "Unrelated popular plant",
       slug: "unrelated-popular-plant",

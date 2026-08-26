@@ -15,6 +15,23 @@ async function dropIndexIfPresent(model, name) {
   }
 }
 
+async function ensureMarketplaceOperationalIndexes() {
+  await MarketplaceModel.collection.createIndexes([
+    { key: { assetType: 1, driveFolderId: 1 }, name: "asset_drive_folder_lookup" },
+    {
+      key: { assetType: 1, "source.provider": 1, "source.modelId": 1 },
+      name: "asset_drive_source_model_lookup",
+    },
+    { key: { assetType: 1, "source.slug": 1 }, name: "asset_source_slug_lookup" },
+    { key: { assetType: 1, metadataSourceModelId: 1 }, name: "asset_metadata_source_lookup" },
+    { key: { assetType: 1, "source.assetId": 1 }, name: "asset_source_id_lookup" },
+    {
+      key: { assetType: 1, searchVersion: 1, updatedAt: 1 },
+      name: "asset_search_version_queue",
+    },
+  ]);
+}
+
 export async function ensureMarketplaceAssetMigration() {
   if (isMemoryDb()) return;
   await MarketplaceModel.updateMany({ assetType: { $exists: false } }, { $set: { assetType: "model" } });
@@ -78,6 +95,9 @@ export async function ensureMarketplaceAssetMigration() {
   await dropIndexIfPresent(MarketplaceModel, "slug_1");
   await dropIndexIfPresent(MarketplaceModel, "source.provider_1_source.modelId_1");
   await dropIndexIfPresent(MarketplaceCategory, "sourceProvider_1_sourceCategoryId_1");
+  // These indexes do not depend on the bilingual text-index migration. Create
+  // them even while the legacy text index is intentionally kept online.
+  await ensureMarketplaceOperationalIndexes();
   const modelIndexes = await MarketplaceModel.collection.indexes();
   const hasLegacyTextIndex = modelIndexes.some((index) => index.name === "marketplace_model_text");
   if (hasLegacyTextIndex) {

@@ -18,7 +18,7 @@ import {
   normalizeMarketplaceMetadata,
   serializeMarketplaceMetadata,
 } from "./marketplaceMetadata.js";
-import { marketplaceAssetTypeFilter, normalizeAssetType } from "../data/marketplaceCatalogs.js";
+import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { resolveMarketplaceCategory, validateMarketplaceTaxonomy } from "./marketplaceTaxonomy.js";
 import { queueMarketplaceCoverCache } from "./marketplaceCoverCache.js";
 
@@ -316,7 +316,7 @@ function publicationBlockers({ metadataFile, metadataErrors, categorySourceId, a
 async function uniqueSlug(preferred, folderId, existingId = "", assetType = "model") {
   const normalizedType = normalizeAssetType(assetType);
   const base = slugify(preferred) || `${normalizedType}-${String(folderId).slice(-8).toLowerCase()}`;
-  const found = await MarketplaceModel.findOne({ assetType: marketplaceAssetTypeFilter(normalizedType), slug: base }).select("_id").lean();
+  const found = await MarketplaceModel.findOne({ assetType: normalizedType, slug: base }).select("_id").lean();
   if (!found || String(found._id) === String(existingId)) return base;
   return `${base}-${String(folderId).slice(-8).toLowerCase()}`;
 }
@@ -325,18 +325,24 @@ async function findModelForFolder(folder, metadata = {}, assetType = "model") {
   const normalizedType = normalizeAssetType(assetType);
   const folderName = clean(folder.name, 200);
   const sourceModelId = metadata.sourceAssetId || metadata.sourceModelId || sourceIdFromName(folderName);
-  const candidates = [
+  const lookups = [
     { driveFolderId: folder.id },
     { "source.provider": "drive", "source.modelId": folder.id },
     { "source.slug": folderName },
   ];
   if (sourceModelId) {
-    candidates.push({ metadataSourceModelId: sourceModelId });
-    candidates.push({ "source.assetId": sourceModelId });
-    candidates.push({ "source.provider": "catalog", "source.modelId": sourceModelId });
-    candidates.push({ "source.provider": "3dsky", "source.modelId": sourceModelId });
+    lookups.push({ metadataSourceModelId: sourceModelId });
+    lookups.push({ "source.assetId": sourceModelId });
+    lookups.push({ "source.provider": "catalog", "source.modelId": sourceModelId });
+    lookups.push({ "source.provider": "3dsky", "source.modelId": sourceModelId });
   }
-  return MarketplaceModel.findOne({ assetType: marketplaceAssetTypeFilter(normalizedType), $or: candidates }).lean();
+  // Each lookup maps to a narrow compound index. A single broad $or made Mongo
+  // scan most of a 100k+ catalog for every Drive folder during reconciliation.
+  for (const lookup of lookups) {
+    const found = await MarketplaceModel.findOne({ assetType: normalizedType, ...lookup }).lean();
+    if (found) return found;
+  }
+  return null;
 }
 
 function assertMarketplaceAssetSyncable(model) {

@@ -204,6 +204,14 @@ marketplaceModelSchema.index(
   { assetType: 1, "source.provider": 1, "source.assetId": 1 },
   { unique: true, partialFilterExpression: { "source.assetId": { $type: "string", $gt: "" } } },
 );
+marketplaceModelSchema.index({ assetType: 1, driveFolderId: 1 }, { name: "asset_drive_folder_lookup" });
+marketplaceModelSchema.index(
+  { assetType: 1, "source.provider": 1, "source.modelId": 1 },
+  { name: "asset_drive_source_model_lookup" },
+);
+marketplaceModelSchema.index({ assetType: 1, "source.slug": 1 }, { name: "asset_source_slug_lookup" });
+marketplaceModelSchema.index({ assetType: 1, metadataSourceModelId: 1 }, { name: "asset_metadata_source_lookup" });
+marketplaceModelSchema.index({ assetType: 1, "source.assetId": 1 }, { name: "asset_source_id_lookup" });
 marketplaceModelSchema.index(
   { searchTitle: "text", searchTaxonomy: "text", slug: "text" },
   {
@@ -237,6 +245,10 @@ marketplaceModelSchema.index({ assetType: 1, syncStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, discoveryStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, searchStatus: 1, updatedAt: 1 });
 marketplaceModelSchema.index({ assetType: 1, searchEngineStatus: 1, updatedAt: 1 });
+marketplaceModelSchema.index(
+  { assetType: 1, searchVersion: 1, updatedAt: 1 },
+  { name: "asset_search_version_queue" },
+);
 marketplaceModelSchema.index({ deletionStatus: 1, purgeAt: 1 });
 marketplaceModelSchema.index({ "coverCache.status": 1, "coverCache.nextRetryAt": 1, "coverCache.lockedAt": 1 });
 

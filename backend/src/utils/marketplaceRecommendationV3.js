@@ -2,7 +2,7 @@ import MarketplaceBehaviorEvent from "../models/MarketplaceBehaviorEvent.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import ModelDownload from "../models/ModelDownload.js";
 import MarketplaceRecommendationCache from "../models/MarketplaceRecommendationCache.js";
-import { marketplaceAssetTypeFilter, normalizeAssetType } from "../data/marketplaceCatalogs.js";
+import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { marketplaceContentScore } from "./marketplaceDiscovery.js";
 import { hydrateMarketplaceCategoryRefs } from "./marketplaceTaxonomy.js";
 import { marketplacePublicDeletionQuery } from "./marketplaceDeletionService.js";
@@ -65,7 +65,7 @@ function diversify(scored, limit = 60) {
 function publicQuery(model, extra = {}) {
   const assetType = normalizeAssetType(model.assetType);
   return {
-    assetType: marketplaceAssetTypeFilter(assetType),
+    assetType,
     ...(assetType === "model" ? { accessType: "member" } : {}),
     isPublished: true,
     metadataStatus: "complete",
