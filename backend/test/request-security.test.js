@@ -65,6 +65,46 @@ test("CSRF middleware rejects a missing token and accepts the issued token", () 
   assert.equal(acceptedNext, true);
 });
 
+test("CSRF middleware delegates upload-tool sync routes to token auth", () => {
+  const path = "/api/admin/marketplace/drive/sync-folder";
+  const deniedResponse = response();
+  let deniedNext = false;
+  csrfProtection({
+    method: "POST",
+    path,
+    cookies: {},
+    ip: "127.0.0.1",
+    get() {
+      return "";
+    },
+  }, deniedResponse, () => {
+    deniedNext = true;
+  });
+  assert.equal(deniedNext, false);
+  assert.equal(deniedResponse.statusCode, 403);
+
+  for (const [name, value] of [
+    ["x-marketplace-upload-token", "upload-tool-token"],
+    ["authorization", "Bearer upload-tool-token"],
+  ]) {
+    const acceptedResponse = response();
+    let acceptedNext = false;
+    csrfProtection({
+      method: "POST",
+      path,
+      cookies: {},
+      ip: "127.0.0.1",
+      get(headerName) {
+        return String(headerName).toLowerCase() === name ? value : "";
+      },
+    }, acceptedResponse, () => {
+      acceptedNext = true;
+    });
+    assert.equal(acceptedNext, true);
+    assert.equal(acceptedResponse.statusCode, 200);
+  }
+});
+
 test("request guard blocks Mongo operators and dotted keys", () => {
   for (const body of [
     { $where: "return true" },

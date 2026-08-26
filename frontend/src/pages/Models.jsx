@@ -1203,9 +1203,17 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
       setImageSearchPreview("");
     }
     try {
-      const data = await api(`/api/marketplace/${segment}?${query.toString()}`, {
-        signal: controller.signal,
-      });
+      const requestPath = `/api/marketplace/${segment}?${query.toString()}`;
+      const canUseWarmCatalog = page === 1
+        && assetType === "model"
+        && !search.trim()
+        && !category
+        && !accessType
+        && sortMode === "featured"
+        && !Object.values(activeFilters).some((values) => values?.length);
+      const data = canUseWarmCatalog
+        ? await apiCached(requestPath, { ttlMs: 15_000 })
+        : await api(requestPath, { signal: controller.signal });
       if (requestId !== listRequestIdRef.current) return;
       setModels(data.assets || data.scenes || data.models || []);
       setPagination(data.pagination || { page: 1, totalPages: 1, total: 0 });
@@ -1220,7 +1228,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
     } finally {
       if (requestId === listRequestIdRef.current) setLoading(false);
     }
-  }, [accessType, activeFilters, category, search, segment, sortMode]);
+  }, [accessType, activeFilters, assetType, category, search, segment, sortMode]);
 
   useEffect(() => () => {
     listAbortRef.current?.abort();

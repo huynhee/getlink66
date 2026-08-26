@@ -66,6 +66,7 @@ const PAGE_SIZE = 60;
 const IMAGE_SEARCH_FREE_LIMIT = 10;
 const IMAGE_SEARCH_PRO_LIMIT = 150;
 const MAX_IMAGE_SEARCH_BYTES = 512 * 1024;
+const featuredRecommendationTasks = new Map();
 const MARKETPLACE_PUBLIC_LIST_FIELDS = [
   "_id",
   "assetType",
@@ -450,6 +451,50 @@ function escapeSearchRegex(value = "") {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function normalizeMarketplaceCatalogSearch(value = "", assetType = "model") {
+  const raw = String(value || "").trim().slice(0, 2_048);
+  if (!/^https?:\/\//i.test(raw)) {
+    return { search: raw.slice(0, 120), externalUrl: false };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return { search: raw.slice(0, 120), externalUrl: false };
+  }
+
+  const allowedHosts = new Set(["3dipl.org", "www.3dipl.org"]);
+  for (const configuredUrl of [process.env.PUBLIC_BASE_URL, process.env.CLIENT_URL]) {
+    try {
+      if (configuredUrl) allowedHosts.add(new URL(configuredUrl).hostname.toLowerCase());
+    } catch {
+      // Optional public URL configuration must not break catalog search.
+    }
+  }
+  if (!allowedHosts.has(parsed.hostname.toLowerCase())) {
+    return { search: "", externalUrl: true };
+  }
+
+  const route = normalizeAssetType(assetType) === "scene" ? "scenes" : "models";
+  const match = parsed.pathname.match(new RegExp(`^/${route}/([^/]+)/?$`, "i"));
+  if (!match) return { search: "", externalUrl: true };
+  return {
+    search: decodeURIComponent(match[1]).replace(/[-_]+/g, " ").trim().slice(0, 120),
+    externalUrl: false,
+  };
+}
+
+function marketplaceFallbackMaxTimeMs() {
+  const configured = Number(process.env.MARKETPLACE_SEARCH_FALLBACK_MAX_TIME_MS || 1_000);
+  const resolved = Number.isFinite(configured) ? configured : 1_000;
+  return Math.min(5_000, Math.max(100, resolved));
+}
+
+function withMarketplaceFallbackBudget(query) {
+  return isMemoryDb() ? query : query.maxTimeMS(marketplaceFallbackMaxTimeMs());
+}
+
 function exactSearchTokenFilter(search) {
   const tokens = marketplaceSearchTokens(search);
   if (!tokens.length) return {};
@@ -495,7 +540,7 @@ async function fuzzyMarketplacePage({
   const loadCandidates = async (broad = false) => {
     const candidateQuery = { ...query };
     addNestedFilter(candidateQuery, fuzzySearchCandidateFilter(search, { broad }));
-    return MarketplaceModel.find(candidateQuery)
+    return withMarketplaceFallbackBudget(MarketplaceModel.find(candidateQuery))
       .sort({ downloadCount: -1, createdAt: -1, _id: 1 })
       .limit(candidateLimit)
       .lean();
@@ -617,13 +662,35 @@ async function featuredMarketplaceBrowsePage({
   userId,
   actorKey,
 }) {
+  const recommendationKey = String(userId || actorKey || "guest");
+  let recommendationTask = featuredRecommendationTasks.get(recommendationKey);
+  if (!recommendationTask) {
+    recommendationTask = marketplaceHomeRecommendations({ userId, actorKey, limit: 12 })
+      .finally(() => {
+        if (featuredRecommendationTasks.get(recommendationKey) === recommendationTask) {
+          featuredRecommendationTasks.delete(recommendationKey);
+        }
+      });
+    featuredRecommendationTasks.set(recommendationKey, recommendationTask);
+  }
+  const recommendationBudgetMs = isMemoryDb()
+    ? 5_000
+    : Math.min(1_000, Math.max(50, Number(process.env.MARKETPLACE_FEATURED_TIMEOUT_MS || 180)));
+  let timeoutId;
+  const recommendationsWithinBudget = Promise.race([
+    recommendationTask.catch(() => null),
+    new Promise((resolve) => {
+      timeoutId = setTimeout(() => resolve(null), recommendationBudgetMs);
+      timeoutId.unref?.();
+    }),
+  ]).finally(() => clearTimeout(timeoutId));
   const [total, recommendations] = await Promise.all([
     MarketplaceModel.countDocuments(query),
-    marketplaceHomeRecommendations({ userId, actorKey, limit: 12 }),
+    recommendationsWithinBudget,
   ]);
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const safePage = Math.min(page, totalPages);
-  const recommendedIds = recommendations.models.map((model) => model._id).filter(Boolean);
+  const recommendedIds = (recommendations?.models || []).map((model) => model._id).filter(Boolean);
   let pinned = [];
   if (recommendedIds.length) {
     const matching = await MarketplaceModel.find({
@@ -739,7 +806,7 @@ async function bilingualMarketplacePage({
     try {
       const textQuery = { ...query, $text: { $search: marketplaceSearchQuery(search) } };
       addNestedFilter(textQuery, exactSearchTokenFilter(search));
-      const total = await MarketplaceModel.countDocuments(textQuery);
+      const total = await withMarketplaceFallbackBudget(MarketplaceModel.countDocuments(textQuery));
       if (total > 0) {
         const relevance = sortSelection.effective === "relevance";
         const projection = relevance ? { relevance: { $meta: "textScore" } } : undefined;
@@ -748,7 +815,7 @@ async function bilingualMarketplacePage({
           : { ...(prioritizePro ? { accessType: -1 } : {}), ...marketplaceSortSpec(sortSelection.effective) };
         const totalPages = Math.max(1, Math.ceil(total / limit));
         const safePage = Math.min(page, totalPages);
-        const models = await MarketplaceModel.find(textQuery, projection)
+        const models = await withMarketplaceFallbackBudget(MarketplaceModel.find(textQuery, projection))
           .sort(sortSpec)
           .skip((safePage - 1) * limit)
           .limit(limit)
@@ -785,10 +852,41 @@ export async function listMarketplaceModels(req, res, next) {
     const requestedPage = Number(req.query.page || 1);
     const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const limit = Math.min(60, Math.max(1, Number(req.query.limit || PAGE_SIZE)));
-    const search = String(req.query.q || req.query.search || "").trim().slice(0, 120);
-    const sortSelection = marketplaceSortSelection(req.query.sort, Boolean(search));
+    const searchInput = normalizeMarketplaceCatalogSearch(
+      req.query.q || req.query.search || "",
+      assetType,
+    );
+    const search = searchInput.search;
+    const sortSelection = marketplaceSortSelection(
+      req.query.sort,
+      Boolean(search || searchInput.externalUrl),
+    );
     const accessType = String(req.query.accessType || "").trim();
     const prioritizePro = shouldPrioritizeMarketplaceModelPro(assetType, accessType);
+    if (searchInput.externalUrl) {
+      const queryId = marketplaceSearchQueryId("external-url", {
+        assetType,
+        accessType,
+        sort: sortSelection.effective,
+      });
+      const assets = [];
+      return sendMarketplaceJsonWithEtag(req, res, {
+        assetType,
+        assets,
+        ...(assetType === "scene" ? { scenes: assets } : { models: assets }),
+        pagination: { page: 1, pageSize: limit, total: 0, totalPages: 1 },
+        search: {
+          engine: "input_guard_v1",
+          mode: "external_url",
+          truncated: false,
+          queryId,
+          timingMs: Math.round((performance.now() - startedAt) * 10) / 10,
+          correctedQuery: "",
+        },
+        sort: sortSelection,
+        ranking: marketplaceRankingMetadata({ applied: prioritizePro, accessType }),
+      });
+    }
     const fileStatus = String(req.query.fileStatus || "").trim();
     const query = { assetType: marketplaceAssetTypeFilter(assetType), isPublished: true, metadataStatus: "complete", fileStatus: "ready", ...marketplacePublicDeletionQuery() };
     Object.assign(query, accessTypeFilter(accessType));

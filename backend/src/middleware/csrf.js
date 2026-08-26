@@ -1,12 +1,17 @@
 import crypto from "node:crypto";
 import { csrfHmacSecret } from "../config/secrets.js";
 import { securityEvent } from "../utils/logger.js";
+import { hasMarketplaceUploadToken } from "./marketplaceUploadTokenAuth.js";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const CSRF_SKIP_PATHS = new Set([
   "/api/auth/csrf",
   "/api/payments/vietqr/webhook",
   "/api/payments/sepay/ipn"
+]);
+const UPLOAD_TOOL_PATHS = new Set([
+  "/api/admin/marketplace/drive/sync-folder",
+  "/api/admin/marketplace/scenes/drive/sync-folder",
 ]);
 
 function ensureToken(req, res) {
@@ -33,6 +38,9 @@ export function issueCsrfToken(req, res) {
 export function csrfProtection(req, res, next) {
   if (SAFE_METHODS.has(req.method) || CSRF_SKIP_PATHS.has(req.path)) {
     ensureToken(req, res);
+    return next();
+  }
+  if (UPLOAD_TOOL_PATHS.has(req.path) && hasMarketplaceUploadToken(req)) {
     return next();
   }
 

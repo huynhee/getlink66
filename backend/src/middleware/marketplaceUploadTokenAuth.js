@@ -8,6 +8,10 @@ function providedToken(req) {
   return String(match?.[1] || "").trim();
 }
 
+export function hasMarketplaceUploadToken(req) {
+  return Boolean(providedToken(req));
+}
+
 function equalToken(left, right) {
   const first = Buffer.from(String(left || ""), "utf8");
   const second = Buffer.from(String(right || ""), "utf8");

@@ -49,7 +49,6 @@ export function marketplaceSortSpec(effectiveSort = "newest") {
   }
   if (effectiveSort === "featured") {
     return {
-      "behaviorMetrics.downloads": -1,
       downloadCount: -1,
       sourceAssetIdSort: -1,
       createdAt: -1,

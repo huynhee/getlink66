@@ -136,6 +136,26 @@ test("text search defaults to relevance while invalid sort falls back safely", a
   assert.deepEqual(invalid.sort, { requested: null, effective: "newest" });
 });
 
+test("external URLs are rejected before they can reach catalog search", async () => {
+  const payload = await list({
+    q: "https://3d.3d66.com/reshtmla/model/items/rz/example.html?action_id=long-query",
+    accessType: "pro",
+    sort: "relevance",
+  });
+
+  assert.deepEqual(payload.models, []);
+  assert.equal(payload.pagination.total, 0);
+  assert.equal(payload.search.engine, "input_guard_v1");
+  assert.equal(payload.search.mode, "external_url");
+});
+
+test("a public 3DIPL detail URL is normalized back to its catalog slug", async () => {
+  const payload = await list({ q: "https://3dipl.org/models/sort-gamma", limit: "4" });
+
+  assert.deepEqual(payload.models.map((item) => item.title), ["Gamma Chair"]);
+  assert.equal(payload.sort.effective, "relevance");
+});
+
 test("newest means numeric source ID descending before pagination", async () => {
   await createCatalogAsset({
     title: "ID Nine",
