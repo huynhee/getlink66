@@ -5,11 +5,13 @@ import { useMemoryDb } from "../src/config/memoryStore.js";
 useMemoryDb();
 
 const { default: MarketplaceModel } = await import("../src/models/MarketplaceModel.js");
+const { default: MarketplaceCategory } = await import("../src/models/MarketplaceCategory.js");
 const { default: MarketplaceInterestProfile } = await import("../src/models/MarketplaceInterestProfile.js");
 const { listMarketplaceModels } = await import("../src/controllers/marketplaceController.js");
 const { marketplaceSourceIdNumber, normalizeMarketplaceTitle } = await import("../src/utils/marketplaceSort.js");
 const { marketplaceActorKey } = await import("../src/utils/marketplaceBehaviorService.js");
 const { initializeMarketplaceCategories } = await import("../src/utils/marketplaceSeed.js");
+const { clearMarketplaceTaxonomyCache } = await import("../src/utils/marketplaceTaxonomy.js");
 
 async function createCatalogAsset({
   title,
@@ -142,6 +144,30 @@ test("no-match typo searches return an empty result instead of throwing", async 
 
     assert.deepEqual(payload.models, []);
     assert.equal(payload.pagination.total, 0);
+  }
+});
+
+test("route-level Mongo timeouts return a safe empty search response", async () => {
+  const gamma = await MarketplaceModel.findOne({ slug: "sort-gamma" });
+  await MarketplaceModel.findByIdAndUpdate(gamma._id, { $set: { categorySourceId: "timeout-category" } });
+  clearMarketplaceTaxonomyCache();
+  const originalFind = MarketplaceCategory.find;
+  MarketplaceCategory.find = () => {
+    const error = new Error("error while multiplanner was selecting best plan :: caused by :: operation exceeded time limit");
+    error.code = 50;
+    error.codeName = "MaxTimeMSExpired";
+    throw error;
+  };
+
+  try {
+    const payload = await list({ q: "Gamma", sort: "relevance", limit: "60" });
+    assert.deepEqual(payload.models, []);
+    assert.equal(payload.pagination.total, 0);
+    assert.equal(payload.search.engine, "mongo_timeout_fallback");
+  } finally {
+    MarketplaceCategory.find = originalFind;
+    clearMarketplaceTaxonomyCache();
+    await MarketplaceModel.findByIdAndUpdate(gamma._id, { $set: { categorySourceId: "" } });
   }
 });
 

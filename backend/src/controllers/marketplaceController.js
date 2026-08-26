@@ -1080,6 +1080,37 @@ export async function listMarketplaceModels(req, res, next) {
       ranking: marketplaceRankingMetadata({ applied: prioritizePro, accessType }),
     }, { private: personalizedFeatured });
   } catch (error) {
+    const rawSearch = String(req.query.q || req.query.search || "").trim();
+    if (!res.headersSent && rawSearch && isMarketplaceSearchTimeoutError(error)) {
+      const assetType = requestAssetType(req);
+      const limit = Math.min(60, Math.max(1, Number(req.query.limit || PAGE_SIZE)));
+      const accessType = String(req.query.accessType || "").trim();
+      const sortSelection = marketplaceSortSelection(req.query.sort, true);
+      const assets = [];
+      return sendMarketplaceJsonWithEtag(req, res, {
+        assetType,
+        assets,
+        ...(assetType === "scene" ? { scenes: assets } : { models: assets }),
+        pagination: { page: 1, pageSize: limit, total: 0, totalPages: 1 },
+        search: {
+          engine: "mongo_timeout_fallback",
+          mode: "no_match",
+          truncated: true,
+          queryId: marketplaceSearchQueryId(rawSearch, {
+            assetType,
+            accessType,
+            sort: sortSelection.effective,
+          }),
+          timingMs: marketplaceFallbackMaxTimeMs(),
+          correctedQuery: "",
+        },
+        sort: sortSelection,
+        ranking: marketplaceRankingMetadata({
+          applied: shouldPrioritizeMarketplaceModelPro(assetType, accessType),
+          accessType,
+        }),
+      });
+    }
     next(error);
   }
 }
