@@ -185,6 +185,26 @@ function publicCover(model) {
   };
 }
 
+function publicFirstPreview(model) {
+  const previews = model.previewImages || [];
+  const coverDriveFileId = String(model.coverImage?.driveFileId || "");
+  const index = previews.findIndex((image) => (
+    image?.driveFileId
+    && (!coverDriveFileId || String(image.driveFileId) !== coverDriveFileId)
+  ));
+  if (index < 0) return null;
+  const image = previews[index];
+  const segment = normalizeAssetType(model.assetType) === "scene" ? "scenes" : "models";
+  const version = model.updatedAt ? new Date(model.updatedAt).getTime().toString(36) : "";
+  return {
+    url: `/api/marketplace/${segment}/${model._id}/preview/${index}${version ? `?v=${version}` : ""}`,
+    alt: image.alt || model.title || "",
+    width: Number(image.width || 0),
+    height: Number(image.height || 0),
+    size: Number(image.size || 0),
+  };
+}
+
 async function taxonomyContext(assetType) {
   const [categories, filters] = await Promise.all([
     marketplaceCategorySnapshot(assetType, { includeInactive: true }),
@@ -251,7 +271,7 @@ export async function buildMarketplaceMeiliDocument(model, searchDocument = {}, 
     categorySourceId: model.categorySourceId || "",
     parentCategorySourceId: model.parentCategorySourceId || "",
     coverImage: publicCover(model),
-    previewImages: [],
+    previewImages: [publicFirstPreview(model)].filter(Boolean),
     styles: model.styles || [],
     renderers: model.renderers || [],
     forms: model.forms || [],

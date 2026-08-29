@@ -16,6 +16,7 @@ process.env.MEILI_MASTER_KEY = "test-master-key-with-more-than-16-characters";
 process.env.MARKETPLACE_SEARCH_SEMANTIC_ENABLED = "true";
 
 const {
+  buildMarketplaceMeiliDocument,
   marketplaceMeiliTrafficDecision,
   searchMarketplaceMeili,
 } = await import("../src/utils/marketplaceMeilisearch.js");
@@ -86,6 +87,27 @@ test("Meilisearch rollout bucket is stable and shadow only applies outside rollo
   const enabled = marketplaceMeiliTrafficDecision("user:stable-id");
   assert.equal(enabled.useMeili, true);
   assert.equal(enabled.shadow, false);
+});
+
+test("Meilisearch cards expose the first preview that is distinct from the cover", async () => {
+  const context = { categories: [], categoryByKey: new Map(), filterByFacet: {} };
+  const document = await buildMarketplaceMeiliDocument({
+    _id: "asset-with-preview",
+    assetType: "scene",
+    title: "Scene with preview",
+    slug: "scene-with-preview",
+    coverImage: { driveFileId: "cover-id", fileName: "cover.jpg" },
+    previewImages: [
+      { driveFileId: "cover-id", fileName: "cover.jpg" },
+      { driveFileId: "preview-id", fileName: "preview-01.jpg", width: 1600, height: 900 },
+    ],
+    updatedAt: new Date("2026-08-29T00:00:00.000Z"),
+  }, {}, context);
+
+  assert.equal(document.card.previewImages.length, 1);
+  assert.match(document.card.previewImages[0].url, /\/api\/marketplace\/scenes\/asset-with-preview\/preview\/1\?v=/);
+  assert.equal(document.card.previewImages[0].width, 1600);
+  assert.notEqual(document.card.previewImages[0].url, document.card.coverImage.url);
 });
 
 test("Meilisearch retries lexical search when hybrid search is temporarily unavailable", async () => {

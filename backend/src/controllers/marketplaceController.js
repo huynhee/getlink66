@@ -164,8 +164,10 @@ function publicCoverImage(model) {
 }
 
 function publicPreviewImages(model) {
+  const coverDriveFileId = String(model.coverImage?.driveFileId || "");
   return (model.previewImages || [])
     .map((image, index) => {
+      if (coverDriveFileId && String(image?.driveFileId || "") === coverDriveFileId) return null;
       return publicImageRef(model, image, previewUrl(model, index));
     })
     .filter(Boolean);
