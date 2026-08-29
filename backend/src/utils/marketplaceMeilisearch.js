@@ -194,7 +194,7 @@ function publicHoverPreview(model) {
       image?.driveFileId
       && (!coverDriveFileId || String(image.driveFileId) !== coverDriveFileId)
     ));
-  const selected = candidates[1] || candidates[0];
+  const selected = candidates[0];
   if (!selected) return null;
   const { image, index } = selected;
   const segment = normalizeAssetType(model.assetType) === "scene" ? "scenes" : "models";

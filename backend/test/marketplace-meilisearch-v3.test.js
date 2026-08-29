@@ -89,7 +89,7 @@ test("Meilisearch rollout bucket is stable and shadow only applies outside rollo
   assert.equal(enabled.shadow, false);
 });
 
-test("Meilisearch cards prefer a second distinct preview for hover cards", async () => {
+test("Meilisearch cards expose the first preview that is distinct from the cover", async () => {
   const context = { categories: [], categoryByKey: new Map(), filterByFacet: {} };
   const document = await buildMarketplaceMeiliDocument({
     _id: "asset-with-preview",
@@ -99,14 +99,14 @@ test("Meilisearch cards prefer a second distinct preview for hover cards", async
     coverImage: { driveFileId: "cover-id", fileName: "cover.jpg" },
     previewImages: [
       { driveFileId: "cover-id", fileName: "cover.jpg" },
-      { driveFileId: "preview-id-1", fileName: "preview-01.jpg", width: 1600, height: 900 },
-      { driveFileId: "preview-id-2", fileName: "preview-02.jpg", width: 1200, height: 1200 },
+      { driveFileId: "preview-id-1", fileName: "preview-01.jpg", width: 1200, height: 1200 },
+      { driveFileId: "preview-id-2", fileName: "preview-02.jpg", width: 1600, height: 900 },
     ],
     updatedAt: new Date("2026-08-29T00:00:00.000Z"),
   }, {}, context);
 
   assert.equal(document.card.previewImages.length, 1);
-  assert.match(document.card.previewImages[0].url, /\/api\/marketplace\/scenes\/asset-with-preview\/preview\/2\?v=/);
+  assert.match(document.card.previewImages[0].url, /\/api\/marketplace\/scenes\/asset-with-preview\/preview\/1\?v=/);
   assert.equal(document.card.previewImages[0].width, 1200);
   assert.notEqual(document.card.previewImages[0].url, document.card.coverImage.url);
 

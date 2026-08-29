@@ -106,7 +106,7 @@ function hoverPreviewImageSrc(images = [], coverUrl = "") {
   const distinctImages = images
     .map(previewImageSrc)
     .filter((url, index, urls) => url && url !== coverUrl && urls.indexOf(url) === index);
-  return distinctImages[1] || distinctImages[0] || "";
+  return distinctImages[0] || "";
 }
 
 function formatBytes(value) {
