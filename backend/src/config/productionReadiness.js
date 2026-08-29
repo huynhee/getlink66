@@ -81,6 +81,7 @@ export function productionReadinessIssues(env = process.env) {
     const releaseSignature = text(env, "PLUGIN_RELEASE_SIGNATURE");
     const releasePublicKey = text(env, "PLUGIN_RELEASE_PUBLIC_KEY");
     const releasePublishedAt = text(env, "PLUGIN_RELEASE_PUBLISHED_AT");
+    const releaseManifestVersion = Number(text(env, "PLUGIN_RELEASE_MANIFEST_VERSION") || 0);
     const challengeMode = text(env, "PLUGIN_DOWNLOAD_CHALLENGE_MODE").toLowerCase();
     if (pluginSecret.length < 32) {
       errors.push("PLUGIN_JWT_SECRET must contain at least 32 characters");
@@ -102,6 +103,30 @@ export function productionReadinessIssues(env = process.env) {
     }
     if (!text(env, "PLUGIN_MINIMUM_VERSION")) {
       errors.push("PLUGIN_MINIMUM_VERSION is required");
+    }
+    if (releaseManifestVersion !== 2) {
+      errors.push("PLUGIN_RELEASE_MANIFEST_VERSION must be 2");
+    }
+    for (const prefix of ["PLUGIN_DESKTOP_RELEASE", "PLUGIN_MAX_BRIDGE_RELEASE"]) {
+      if (!/^https:\/\//i.test(text(env, `${prefix}_URL`))) {
+        errors.push(`${prefix}_URL must be an HTTPS URL`);
+      }
+      if (!/^[a-f0-9]{64}$/i.test(text(env, `${prefix}_SHA256`))) {
+        errors.push(`${prefix}_SHA256 must be a 64-character SHA-256`);
+      }
+      if (!/^[A-Za-z0-9+/=_-]{40,}$/.test(text(env, `${prefix}_SIGNATURE`))) {
+        errors.push(`${prefix}_SIGNATURE must contain a detached component signature`);
+      }
+      const componentPublishedAt = text(env, `${prefix}_PUBLISHED_AT`);
+      if (!componentPublishedAt || Number.isNaN(new Date(componentPublishedAt).getTime())) {
+        errors.push(`${prefix}_PUBLISHED_AT must be a valid timestamp`);
+      }
+      const protocolMinimum = Number(text(env, `${prefix}_PROTOCOL_MINIMUM`) || 0);
+      const protocolMaximum = Number(text(env, `${prefix}_PROTOCOL_MAXIMUM`) || 0);
+      if (!Number.isInteger(protocolMinimum) || !Number.isInteger(protocolMaximum)
+          || protocolMinimum < 1 || protocolMaximum < protocolMinimum) {
+        errors.push(`${prefix} protocol range is invalid`);
+      }
     }
     if (challengeMode !== "risk") {
       errors.push("PLUGIN_DOWNLOAD_CHALLENGE_MODE must be risk in production");

@@ -27,10 +27,11 @@ export async function deviceStart(req, res, next) {
 }
 
 export function releaseManifest(_req, res, next) {
-  const version = String(process.env.PLUGIN_RELEASE_VERSION || "0.2.1").trim();
+  const version = String(process.env.PLUGIN_RELEASE_VERSION || "0.3.0").trim();
   const downloadUrl = String(process.env.PLUGIN_RELEASE_URL || "").trim();
   const sha256 = String(process.env.PLUGIN_RELEASE_SHA256 || "").trim().toLowerCase();
   const manifest = {
+    manifestVersion: Number(process.env.PLUGIN_RELEASE_MANIFEST_VERSION || 1),
     channel: String(process.env.PLUGIN_RELEASE_CHANNEL || "beta"),
     version,
     minimumVersion: String(process.env.PLUGIN_MINIMUM_VERSION || version),
@@ -41,6 +42,24 @@ export function releaseManifest(_req, res, next) {
     signatureAlgorithm: "ES256",
     publishedAt: process.env.PLUGIN_RELEASE_PUBLISHED_AT || null,
   };
+  if (manifest.manifestVersion >= 2) {
+    manifest.desktopArtifact = releaseArtifactFromEnvironment({
+      prefix: "PLUGIN_DESKTOP_RELEASE",
+      component: "desktop",
+      version,
+      channel: manifest.channel,
+      requiresMaxRestart: false,
+      publishedAt: manifest.publishedAt,
+    });
+    manifest.maxBridge2026Artifact = releaseArtifactFromEnvironment({
+      prefix: "PLUGIN_MAX_BRIDGE_RELEASE",
+      component: "maxBridge2026",
+      version,
+      channel: manifest.channel,
+      requiresMaxRestart: true,
+      publishedAt: manifest.publishedAt,
+    });
+  }
   if (
     process.env.NODE_ENV === "production"
     && !verifyPluginReleaseManifest(manifest, process.env.PLUGIN_RELEASE_PUBLIC_KEY)
@@ -53,6 +72,29 @@ export function releaseManifest(_req, res, next) {
   }
   res.setHeader("cache-control", "public, max-age=300");
   return res.json(manifest);
+}
+
+function releaseArtifactFromEnvironment({
+  prefix,
+  component,
+  version,
+  channel,
+  requiresMaxRestart,
+  publishedAt,
+}) {
+  return {
+    component,
+    channel,
+    version: String(process.env[`${prefix}_VERSION`] || version),
+    downloadUrl: String(process.env[`${prefix}_URL`] || ""),
+    sha256: String(process.env[`${prefix}_SHA256`] || "").toLowerCase(),
+    protocolMinimum: Number(process.env[`${prefix}_PROTOCOL_MINIMUM`] || 1),
+    protocolMaximum: Number(process.env[`${prefix}_PROTOCOL_MAXIMUM`] || 1),
+    requiresMaxRestart,
+    signature: String(process.env[`${prefix}_SIGNATURE`] || ""),
+    signatureAlgorithm: "ES256",
+    publishedAt: process.env[`${prefix}_PUBLISHED_AT`] || publishedAt,
+  };
 }
 
 export async function deviceToken(req, res, next) {

@@ -19,7 +19,7 @@ import {
 } from "../utils/marketplaceDriveService.js";
 import { metadataFromMarketplaceModel } from "../utils/marketplaceMetadata.js";
 import { isSafeId, limitedString, rejectUnknownKeys, sanitizeString } from "../utils/validators.js";
-import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
+import { marketplaceAssetTypeFilter, normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { hydrateAtlasUserField } from "../utils/crossDatabaseHydration.js";
 import {
   marketplaceActiveDeletionQuery,
@@ -1135,7 +1135,10 @@ export async function adminMigrateMarketplaceDriveMetadata(req, res, next) {
       : Math.max(1, Math.floor(Number(req.body.page || migrationState?.migrationNextPage || 1)));
     const limit = Math.min(50, Math.max(1, Math.floor(Number(req.body.limit || 20))));
     const dryRun = req.body.dryRun !== false;
-    const query = { assetType, driveFolderId: { $nin: ["", null] } };
+    const query = {
+      assetType: marketplaceAssetTypeFilter(assetType),
+      driveFolderId: { $nin: ["", null] },
+    };
     const total = await MarketplaceModel.countDocuments(query);
     const models = await MarketplaceModel.find(query)
       .sort({ createdAt: 1 })
