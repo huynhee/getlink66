@@ -195,56 +195,79 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   }, [language]);
 
   React.useEffect(() => {
-    if (!adminMode) {
-      api("/api/settings")
-        .then((data) => {
-          if (data?.settings) {
-            setSiteSettings((current) => ({
-              ...current,
-              ...data.settings,
-              ...localizedHomeText(data.settings, language),
-            }));
-          }
-        })
-        .catch(console.error);
-      setFeaturedModelsLoading(true);
-      setFeaturedScenesLoading(true);
-      api("/api/marketplace/recommendations/home?limit=6")
-        .then((data) => {
+    if (adminMode) return undefined;
+    let cancelled = false;
+    api("/api/settings")
+      .then((data) => {
+        if (!cancelled && data?.settings) {
+          setSiteSettings((current) => ({
+            ...current,
+            ...data.settings,
+            ...localizedHomeText(data.settings, language),
+          }));
+        }
+      })
+      .catch(() => {});
+    setFeaturedModelsLoading(true);
+    setFeaturedScenesLoading(true);
+    api("/api/marketplace/recommendations/home?limit=6")
+      .then((data) => {
+        if (!cancelled) {
           setFeaturedModels((data.models || []).slice(0, 6));
           setFeaturedScenes((data.scenes || []).slice(0, 6));
-        })
-        .catch(() => {
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
           setFeaturedModels([]);
           setFeaturedScenes([]);
-        })
-        .finally(() => {
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
           setFeaturedModelsLoading(false);
           setFeaturedScenesLoading(false);
-        });
-      api("/api/topup/packages")
-        .then((data) => setPackages(data.packages || []))
-        .catch(console.error);
-      api("/api/membership/plans")
-        .then((data) => setMembershipPlans(data.plans || []))
-        .catch(console.error);
-      api("/api/system/3d66-status")
-        .then((data) => setSystemStatus({ online: Boolean(data.online), message: data.message || "" }))
-        .catch(() => setSystemStatus({ online: false, message: t.systemOfflineMessage }));
-      setGuideLoading(true);
-      setGuideError("");
-      api(`/api/guides?language=${language}`)
-        .then((data) => {
+        }
+      });
+    api("/api/topup/packages")
+      .then((data) => {
+        if (!cancelled) setPackages(data.packages || []);
+      })
+      .catch(() => {});
+    api("/api/membership/plans")
+      .then((data) => {
+        if (!cancelled) setMembershipPlans(data.plans || []);
+      })
+      .catch(() => {});
+    api("/api/system/3d66-status")
+      .then((data) => {
+        if (!cancelled) setSystemStatus({ online: Boolean(data.online), message: data.message || "" });
+      })
+      .catch(() => {
+        if (!cancelled) setSystemStatus({ online: false, message: t.systemOfflineMessage });
+      });
+    setGuideLoading(true);
+    setGuideError("");
+    api(`/api/guides?language=${language}`)
+      .then((data) => {
+        if (!cancelled) {
           const nextArticles = data.articles || [];
           setGuideArticles(nextArticles);
           setGuideActiveSlug((current) => {
             if (nextArticles.some((item) => item.slug === current)) return current;
             return nextArticles[0]?.slug || "";
           });
-        })
-        .catch((err) => setGuideError(err.message))
-        .finally(() => setGuideLoading(false));
-    }
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setGuideError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setGuideLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [adminMode, language, t.systemOfflineMessage, userId]);
 
   React.useEffect(() => {
