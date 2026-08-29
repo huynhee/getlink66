@@ -185,15 +185,18 @@ function publicCover(model) {
   };
 }
 
-function publicFirstPreview(model) {
+function publicHoverPreview(model) {
   const previews = model.previewImages || [];
   const coverDriveFileId = String(model.coverImage?.driveFileId || "");
-  const index = previews.findIndex((image) => (
-    image?.driveFileId
-    && (!coverDriveFileId || String(image.driveFileId) !== coverDriveFileId)
-  ));
-  if (index < 0) return null;
-  const image = previews[index];
+  const candidates = previews
+    .map((image, index) => ({ image, index }))
+    .filter(({ image }) => (
+      image?.driveFileId
+      && (!coverDriveFileId || String(image.driveFileId) !== coverDriveFileId)
+    ));
+  const selected = candidates[1] || candidates[0];
+  if (!selected) return null;
+  const { image, index } = selected;
   const segment = normalizeAssetType(model.assetType) === "scene" ? "scenes" : "models";
   const version = model.updatedAt ? new Date(model.updatedAt).getTime().toString(36) : "";
   return {
@@ -271,7 +274,7 @@ export async function buildMarketplaceMeiliDocument(model, searchDocument = {}, 
     categorySourceId: model.categorySourceId || "",
     parentCategorySourceId: model.parentCategorySourceId || "",
     coverImage: publicCover(model),
-    previewImages: [publicFirstPreview(model)].filter(Boolean),
+    previewImages: [publicHoverPreview(model)].filter(Boolean),
     styles: model.styles || [],
     renderers: model.renderers || [],
     forms: model.forms || [],

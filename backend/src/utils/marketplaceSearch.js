@@ -10,7 +10,7 @@ import {
 } from "./marketplaceMeilisearch.js";
 import { enqueueMarketplaceRecommendationRefresh } from "./marketplaceRecommendationV3.js";
 
-export const MARKETPLACE_SEARCH_DOCUMENT_VERSION = 5;
+export const MARKETPLACE_SEARCH_DOCUMENT_VERSION = 6;
 
 const FACET_FIELDS = {
   styles: "style",

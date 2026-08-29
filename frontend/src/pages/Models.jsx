@@ -102,6 +102,13 @@ function previewImageSrc(image = {}) {
   return url.startsWith("/") ? buildApiUrl(url) : url;
 }
 
+function hoverPreviewImageSrc(images = [], coverUrl = "") {
+  const distinctImages = images
+    .map(previewImageSrc)
+    .filter((url, index, urls) => url && url !== coverUrl && urls.indexOf(url) === index);
+  return distinctImages[1] || distinctImages[0] || "";
+}
+
 function formatBytes(value) {
   const size = Number(value || 0);
   if (!size) return "-";
@@ -359,7 +366,7 @@ export function ModelCard({
   behaviorSource = "other",
 }) {
   const image = cover(model);
-  const indexedPreviewImage = previewImageSrc(model.previewImages?.[0]);
+  const indexedPreviewImage = hoverPreviewImageSrc(model.previewImages, image);
   const href = modelPath(model);
   const detailApiPath = `/api/marketplace/${catalogSegment(model.assetType)}/${encodeURIComponent(model.slug)}?includeRecommendations=false`;
   const sizeLabel = model.sizeText || formatBytes(model.fileSize);
@@ -409,9 +416,7 @@ export function ModelCard({
         return;
       }
       const detailAsset = data.asset || data.model || data.scene;
-      const nextPreview = (detailAsset?.previewImages || [])
-        .map(previewImageSrc)
-        .find((url) => url && url !== image);
+      const nextPreview = hoverPreviewImageSrc(detailAsset?.previewImages, image);
       if (nextPreview) setDetailPreviewImage(nextPreview);
       setDetailPreviewChecked(true);
     });
