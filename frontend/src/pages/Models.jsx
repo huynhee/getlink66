@@ -359,8 +359,7 @@ export function ModelCard({
   behaviorSource = "other",
 }) {
   const image = cover(model);
-  const firstPreviewImage = previewImageSrc(model.previewImages?.[0]);
-  const hasDistinctPreview = Boolean(firstPreviewImage && firstPreviewImage !== image);
+  const indexedPreviewImage = previewImageSrc(model.previewImages?.[0]);
   const href = modelPath(model);
   const detailApiPath = `/api/marketplace/${catalogSegment(model.assetType)}/${encodeURIComponent(model.slug)}?includeRecommendations=false`;
   const sizeLabel = model.sizeText || formatBytes(model.fileSize);
@@ -371,8 +370,11 @@ export function ModelCard({
   const openTimerRef = useRef(null);
   const closeTimerRef = useRef(null);
   const impressionKeyRef = useRef("");
+  const previewModelIdRef = useRef(String(model._id || ""));
   const previewId = useId();
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [detailPreviewImage, setDetailPreviewImage] = useState("");
+  const [detailPreviewChecked, setDetailPreviewChecked] = useState(false);
   const [previewImageStage, setPreviewImageStage] = useState("primary");
   const [previewPosition, setPreviewPosition] = useState({
     top: -9999,
@@ -388,16 +390,32 @@ export function ModelCard({
     model.assetType === "scene" ? "Thư viện scene" : "Thư viện model",
     model.assetType === "scene" ? "Scene library" : "Model library",
   );
+  const firstPreviewImage = detailPreviewImage
+    || (indexedPreviewImage && indexedPreviewImage !== image ? indexedPreviewImage : "");
+  const hasDistinctPreview = Boolean(firstPreviewImage);
   const quickPreviewImage = previewImageStage === "missing"
     ? ""
     : previewImageStage === "fallback"
       ? image
-      : firstPreviewImage || image;
+      : firstPreviewImage || (detailPreviewChecked ? image : "");
   const prioritizeCover = position > 0 && position <= 6;
 
   const warmDetail = useCallback(() => {
-    prefetchApi(detailApiPath);
-  }, [detailApiPath]);
+    const requestedModelId = String(model._id || "");
+    prefetchApi(detailApiPath).then((data) => {
+      if (previewModelIdRef.current !== requestedModelId) return;
+      if (!data) {
+        setDetailPreviewChecked(true);
+        return;
+      }
+      const detailAsset = data.asset || data.model || data.scene;
+      const nextPreview = (detailAsset?.previewImages || [])
+        .map(previewImageSrc)
+        .find((url) => url && url !== image);
+      if (nextPreview) setDetailPreviewImage(nextPreview);
+      setDetailPreviewChecked(true);
+    });
+  }, [detailApiPath, image, model._id]);
 
   const updatePreviewPosition = useCallback(() => {
     if (!cardRef.current || !previewRef.current) return;
@@ -457,8 +475,11 @@ export function ModelCard({
   }, []);
 
   useEffect(() => {
+    previewModelIdRef.current = String(model._id || "");
+    setDetailPreviewImage("");
+    setDetailPreviewChecked(false);
     setPreviewImageStage("primary");
-  }, [firstPreviewImage, image, model._id]);
+  }, [image, indexedPreviewImage, model._id]);
 
   useEffect(() => {
     if (!previewOpen) return undefined;

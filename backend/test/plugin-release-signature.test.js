@@ -45,7 +45,7 @@ test("plugin release v2 verifies independently signed desktop and bridge artifac
     const artifact = {
       component: name,
       channel: "production",
-      version: "0.3.0",
+      version: "0.3.1",
       downloadUrl: `https://3dipl.org/releases/${suffix}`,
       sha256: suffix.startsWith("desktop") ? "b".repeat(64) : "c".repeat(64),
       protocolMinimum: 1,
@@ -60,15 +60,15 @@ test("plugin release v2 verifies independently signed desktop and bridge artifac
   const manifest = {
     manifestVersion: 2,
     channel: "production",
-    version: "0.3.0",
+    version: "0.3.1",
     minimumVersion: "0.2.1",
     maxVersions: ["2026"],
-    downloadUrl: "https://3dipl.org/releases/3dipl-0.3.0.mzp",
+    downloadUrl: "https://3dipl.org/releases/3dipl-0.3.1.mzp",
     sha256: "a".repeat(64),
     signatureAlgorithm: "ES256",
     publishedAt: "2026-08-27T00:00:00.000Z",
-    desktopArtifact: component("desktop", false, "desktop-0.3.0.zip"),
-    maxBridge2026Artifact: component("maxBridge2026", true, "bridge-0.3.0.mzp"),
+    desktopArtifact: component("desktop", false, "desktop-0.3.1.zip"),
+    maxBridge2026Artifact: component("maxBridge2026", true, "bridge-0.3.1.mzp"),
   };
   manifest.signature = sign(canonicalPluginReleaseManifest(manifest));
   const spki = publicKey.export({ format: "der", type: "spki" }).toString("base64");

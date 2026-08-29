@@ -1,4 +1,5 @@
 import PluginChallenge from "../models/PluginChallenge.js";
+import crypto from "node:crypto";
 import {
   approveDeviceAuthorization,
   currentPluginUser,
@@ -26,8 +27,8 @@ export async function deviceStart(req, res, next) {
   }
 }
 
-export function releaseManifest(_req, res, next) {
-  const version = String(process.env.PLUGIN_RELEASE_VERSION || "0.3.0").trim();
+export function releaseManifest(req, res, next) {
+  const version = String(process.env.PLUGIN_RELEASE_VERSION || "0.3.1").trim();
   const downloadUrl = String(process.env.PLUGIN_RELEASE_URL || "").trim();
   const sha256 = String(process.env.PLUGIN_RELEASE_SHA256 || "").trim().toLowerCase();
   const manifest = {
@@ -70,7 +71,17 @@ export function releaseManifest(_req, res, next) {
       "Plugin release metadata is unavailable.",
     ));
   }
-  res.setHeader("cache-control", "public, max-age=300");
+  return sendPluginReleaseJsonWithEtag(req, res, manifest);
+}
+
+export function sendPluginReleaseJsonWithEtag(req, res, manifest) {
+  const serialized = JSON.stringify(manifest);
+  const etag = `"sha256:${crypto.createHash("sha256").update(serialized).digest("hex")}"`;
+  res.setHeader("etag", etag);
+  res.setHeader("cache-control", "public, max-age=300, must-revalidate");
+  if (String(req?.headers?.["if-none-match"] || "") === etag) {
+    return res.status(304).end();
+  }
   return res.json(manifest);
 }
 
