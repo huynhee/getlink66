@@ -1,5 +1,9 @@
 # 3DiPL 3ds Max Plugin Development Guide
 
+> **Contract hiện hành:** xem [`docs/PLUGIN_API.md`](docs/PLUGIN_API.md). Tài liệu
+> này mô tả kiến trúc sản phẩm ở mức cao; route, DTO, error code, security và release
+> feed phải tuân theo `PLUGIN_API.md` và các suite `backend/test/plugin-*.test.js`.
+
 ## 1. Mục tiêu
 
 Plugin cho phép người dùng đăng nhập 3DiPL, tìm Model/Scene, tải file vào cache cục bộ và:
@@ -19,17 +23,21 @@ Plugin cho phép người dùng đăng nhập 3DiPL, tìm Model/Scene, tải fil
 | Route download riêng cho plugin | Đã có |
 | Quota, Pro, log `clientType=plugin` | Đã có |
 | Download session 15 phút, SHA-256 | Đã có |
-| Device login/Bearer token cho plugin | Chưa có |
-| Turnstile challenge dành cho plugin | Chưa có |
-| API phiên bản plugin/update manifest | Chưa có |
+| Device login/Bearer token cho plugin | Đã có |
+| Turnstile challenge dành cho plugin | Đã có, one-time và gắn operation |
+| API phiên bản plugin/update manifest | Đã có manifest V2 + ETag + ES256 |
 
-Không phát hành plugin production bằng cách nhúng cookie web hoặc secret của server vào DLL. Cần hoàn thành device login ở mục 6 trước.
+Không phát hành plugin production bằng cách nhúng cookie web hoặc secret của server
+vào DLL. Production chỉ được bật sau Staging E2E, Authenticode và ES256 release
+signature hợp lệ.
 
 ## 3. Kiến trúc
 
 ```mermaid
 flowchart LR
-  UI["3ds Max dockable panel"] --> API["3DiPL API"]
+  Max["3ds Max button"] --> Bridge["Max Bridge DLL"]
+  Bridge -->|CurrentUser Named Pipe| UI["3DiPL Asset Manager EXE"]
+  UI --> API["3DiPL API"]
   API --> Atlas["Atlas Core: user, Pro, payment"]
   API --> VPS["MongoDB VPS: catalog, quota, history"]
   API --> Drive["Google Drive: archive, preview, metadata"]
@@ -43,7 +51,8 @@ flowchart LR
 ## 4. Công nghệ và phiên bản
 
 - Ngôn ngữ khuyến nghị: C#.
-- UI: WPF dockable panel.
+- UI: WPF Desktop EXE độc lập; trong Max chỉ giữ bridge DLL nhỏ, không chứa HTTP,
+  SQLite, token hoặc WPF shell.
 - HTTP: một `HttpClient` dùng xuyên suốt ứng dụng, không tạo mới cho từng request.
 - JSON: `System.Text.Json`.
 - Archive: SharpCompress hoặc thư viện đã được kiểm chứng; không tự viết parser ZIP/RAR/7z.
@@ -178,7 +187,9 @@ Access token sống khoảng 15 phút. Refresh token phải rotate, hash trong D
 
 CSRF chỉ dành cho cookie browser. Request có Bearer token hợp lệ phải đi qua middleware plugin riêng và không phụ thuộc cookie `csrfSecret`.
 
-Route `/api/plugin/*` hiện vẫn dùng `requireAuth` cookie và global CSRF. Đây là phần backend phải refactor trước khi phát hành.
+Route `/api/plugin/*` hiện dùng `pluginBearerAuth` riêng và được mount trước global
+CSRF. Route `/api/plugin-activation/*` tiếp tục dùng cookie web + CSRF cho thao tác
+approve/deny/revoke.
 
 ## 7. Catalog API
 
