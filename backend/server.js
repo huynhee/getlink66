@@ -16,6 +16,7 @@ import { csrfProtection } from "./src/middleware/csrf.js";
 import { requestGuard } from "./src/middleware/requestGuard.js";
 import logger from "./src/utils/logger.js";
 import { notifyServerError } from "./src/utils/telegramNotifier.js";
+import { isExpectedServiceUnavailable } from "./src/utils/operationalErrors.js";
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -395,6 +396,7 @@ function publicErrorMessage(message) {
 
 app.use((error, _req, res, _next) => {
   const status = error.status || 500;
+  const expectedUnavailable = isExpectedServiceUnavailable(error, status);
   if (status === 429 && String(_req.originalUrl || "").startsWith("/api/plugin/")) {
     const explicitSeconds = Number(error.publicDetails?.retryAfter || 0);
     const resetAt = error.publicDetails?.resetAt
@@ -405,7 +407,7 @@ app.use((error, _req, res, _next) => {
       : 0;
     res.setHeader("retry-after", String(Math.max(1, explicitSeconds, resetSeconds)));
   }
-  if (status >= 500) {
+  if (status >= 500 && !expectedUnavailable) {
     logger.error({ err: error, status, correlationId: _req.correlationId }, "Unhandled server error");
     notifyServerError({ error, req: _req, status });
   } else {
@@ -415,7 +417,7 @@ app.use((error, _req, res, _next) => {
       status,
       correlationId: _req.correlationId,
       message: error.message,
-    }, "Client error");
+    }, expectedUnavailable ? "Feature unavailable" : "Client error");
   }
   const isProduction = process.env.NODE_ENV === "production";
   res.status(status).json({
