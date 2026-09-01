@@ -61,12 +61,13 @@ function SessionList({ language, sessions, onRevoke }) {
   );
 }
 
-function DeviceActivation({ language, code, onChanged }) {
+function DeviceActivation({ language, code, appState, user, onChanged }) {
   const [device, setDevice] = useState(null);
   const [loading, setLoading] = useState(Boolean(code));
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [callbackUri, setCallbackUri] = useState("");
 
   useEffect(() => {
     if (!code) {
@@ -83,15 +84,19 @@ function DeviceActivation({ language, code, onChanged }) {
     setWorking(true);
     setError("");
     try {
-      await api(`/api/plugin-activation/device/${encodeURIComponent(code)}/${action}`, {
+      const result = await api(`/api/plugin-activation/device/${encodeURIComponent(code)}/${action}`, {
         method: "POST",
-        body: "{}",
+        body: JSON.stringify({ appState }),
       });
       setDevice((current) => ({ ...current, status: action === "approve" ? "approved" : "denied" }));
       setMessage(action === "approve"
         ? (language === "vi" ? "Đã kết nối thiết bị. Có thể quay lại 3ds Max." : "Device connected. You can return to 3ds Max.")
         : (language === "vi" ? "Đã từ chối thiết bị." : "Device denied."));
       onChanged?.();
+      if (result.callbackUri) {
+        setCallbackUri(result.callbackUri);
+        window.location.assign(result.callbackUri);
+      }
     } catch (reason) {
       setError(reason.message);
     } finally {
@@ -113,6 +118,11 @@ function DeviceActivation({ language, code, onChanged }) {
         <p className="eyebrow">3DiPL Asset Manager</p>
         <h2>{device.deviceName}</h2>
         <p className="muted">3ds Max {device.maxVersion} · Plugin {device.pluginVersion}</p>
+        {user && (
+          <p className="muted">
+            {language === "vi" ? "Tài khoản Google" : "Google account"}: <strong>{user.name || user.email}</strong>
+          </p>
+        )}
         <p><strong>{device.userCode}</strong></p>
       </div>
       {device.status === "pending" ? (
@@ -128,6 +138,11 @@ function DeviceActivation({ language, code, onChanged }) {
         <p className="muted">{message || device.status}</p>
       )}
       {message && <p className="success">{message}</p>}
+      {callbackUri && (
+        <a className="smallButton" href={callbackUri}>
+          {language === "vi" ? "Mở lại ứng dụng 3DiPL" : "Open 3DiPL app again"}
+        </a>
+      )}
     </section>
   );
 }
@@ -209,9 +224,10 @@ function ChallengeApproval({ language, code }) {
   );
 }
 
-export default function PluginAccess({ language = "vi", mode = "activate" }) {
+export default function PluginAccess({ language = "vi", mode = "activate", user = null }) {
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code") || "";
+  const appState = params.get("state") || "";
   const [sessions, setSessions] = useState([]);
   const [sessionError, setSessionError] = useState("");
 
@@ -246,7 +262,15 @@ export default function PluginAccess({ language = "vi", mode = "activate" }) {
         <ChallengeApproval language={language} code={code} />
       ) : (
         <>
-          {mode === "activate" && <DeviceActivation language={language} code={code} onChanged={loadSessions} />}
+          {mode === "activate" && (
+            <DeviceActivation
+              language={language}
+              code={code}
+              appState={appState}
+              user={user}
+              onChanged={loadSessions}
+            />
+          )}
           <section className="pluginSessionsSection">
             <h2>{language === "vi" ? "Thiết bị 3DiPL Plugin" : "3DiPL Plugin devices"}</h2>
             <p className="muted">

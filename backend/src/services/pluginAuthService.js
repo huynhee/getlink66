@@ -16,6 +16,8 @@ const DEVICE_TTL_MS = 10 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const ACCESS_TTL_SECONDS = 15 * 60;
 const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const APP_STATE_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
+const DEVICE_ID_PATTERN = /^[A-Za-z0-9._:-]{32,200}$/;
 
 function hash(value) {
   return crypto.createHash("sha256").update(String(value || "")).digest("hex");
@@ -147,11 +149,25 @@ export async function startDeviceAuthorization(req, input = {}) {
   const deviceName = clean(input.deviceName, 120);
   const pluginVersion = clean(input.pluginVersion, 40);
   const maxVersion = clean(input.maxVersion, 20);
+  const callbackMode = clean(input.callbackMode, 12).toLowerCase() || "poll";
+  const appState = clean(input.appState, 128);
+  const deviceId = clean(input.deviceId, 200);
   if (!deviceName || !pluginVersion || !maxVersion) {
     throw pluginError(
       400,
       "INVALID_DEVICE_REQUEST",
       "deviceName, pluginVersion and maxVersion are required.",
+    );
+  }
+  if (!new Set(["poll", "app"]).has(callbackMode)) {
+    throw pluginError(400, "INVALID_CALLBACK_MODE", "callbackMode must be app or poll.");
+  }
+  if (callbackMode === "app" &&
+      (!APP_STATE_PATTERN.test(appState) || !DEVICE_ID_PATTERN.test(deviceId))) {
+    throw pluginError(
+      400,
+      "INVALID_APP_CALLBACK_REQUEST",
+      "A valid appState and deviceId are required for app callback mode.",
     );
   }
 
@@ -167,12 +183,14 @@ export async function startDeviceAuthorization(req, input = {}) {
       deviceCodeHash: hash(deviceCode),
       userCodeHash: codeHash,
       deviceIdHash: hash(
-        clean(input.deviceId, 200)
+        deviceId
           || `${deviceName}|${ipHash(req)}`,
       ),
       deviceName,
       pluginVersion,
       maxVersion,
+      callbackMode,
+      appStateHash: callbackMode === "app" ? hash(appState) : "",
       status: "pending",
       intervalSeconds: 5,
       expiresAt,
@@ -193,11 +211,17 @@ export async function startDeviceAuthorization(req, input = {}) {
       || "https://3dipl.org",
   ).replace(/\/+$/, "");
   const verificationUri = `${origin}/plugin/activate`;
+  const activationParameters = new URLSearchParams({ code: allocatedUserCode });
+  if (callbackMode === "app") {
+    activationParameters.set("app", "1");
+    activationParameters.set("state", appState);
+  }
   return {
     deviceCode,
     userCode: allocatedUserCode,
     verificationUri,
-    verificationUriComplete: `${verificationUri}?code=${encodeURIComponent(allocatedUserCode)}`,
+    verificationUriComplete: `${verificationUri}?${activationParameters.toString()}`,
+    appCallbackUri: callbackMode === "app" ? "threedipl://auth/callback" : null,
     expiresIn: Math.floor(DEVICE_TTL_MS / 1000),
     interval: authorization.intervalSeconds,
   };
@@ -269,16 +293,46 @@ export async function pollDeviceAuthorization(req, deviceCode) {
   return tokenResponse(session, user, await createRefreshToken(session));
 }
 
-export async function approveDeviceAuthorization(user, rawCode) {
+function verifyAppState(authorization, rawState) {
+  if (authorization.callbackMode !== "app") return "";
+  const state = clean(rawState, 128);
+  if (!APP_STATE_PATTERN.test(state) || !authorization.appStateHash ||
+      !safeHashEqual(authorization.appStateHash, hash(state))) {
+    throw pluginError(400, "APP_STATE_MISMATCH", "The app callback state is invalid.");
+  }
+  return state;
+}
+
+function safeHashEqual(leftValue, rightValue) {
+  const left = Buffer.from(String(leftValue));
+  const right = Buffer.from(String(rightValue));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function appCallbackUri(authorization, status, code, state) {
+  if (authorization.callbackMode !== "app") return null;
+  const query = new URLSearchParams({ status, state, code });
+  return `threedipl://auth/callback?${query.toString()}`;
+}
+
+export async function approveDeviceAuthorization(user, rawCode, rawState = "") {
   const code = clean(rawCode, 16).toUpperCase();
   const now = new Date();
+  const pending = await PluginDeviceAuthorization.findOne({
+    userCodeHash: hash(code), status: "pending", expiresAt: { $gt: now },
+  });
+  if (!pending) {
+    throw pluginError(404, "DEVICE_CODE_NOT_FOUND", "Device code is invalid or expired.");
+  }
+  const state = verifyAppState(pending, rawState);
   const authorization = await PluginDeviceAuthorization.findOneAndUpdate(
-    { userCodeHash: hash(code), status: "pending", expiresAt: { $gt: now } },
+    { _id: pending._id, status: "pending", expiresAt: { $gt: now } },
     {
       $set: {
         status: "approved",
         userId: user._id,
         approvedAt: now,
+        ...(pending.callbackMode === "app" ? { callbackIssuedAt: now } : {}),
       },
     },
     { new: true },
@@ -286,20 +340,38 @@ export async function approveDeviceAuthorization(user, rawCode) {
   if (!authorization) {
     throw pluginError(404, "DEVICE_CODE_NOT_FOUND", "Device code is invalid or expired.");
   }
-  return authorization;
+  return {
+    authorization,
+    callbackUri: appCallbackUri(authorization, "approved", code, state),
+  };
 }
 
-export async function denyDeviceAuthorization(rawCode) {
+export async function denyDeviceAuthorization(rawCode, rawState = "") {
   const code = clean(rawCode, 16).toUpperCase();
+  const now = new Date();
+  const pending = await PluginDeviceAuthorization.findOne({
+    userCodeHash: hash(code), status: "pending", expiresAt: { $gt: now },
+  });
+  if (!pending) {
+    throw pluginError(404, "DEVICE_CODE_NOT_FOUND", "Device code is invalid or expired.");
+  }
+  const state = verifyAppState(pending, rawState);
   const authorization = await PluginDeviceAuthorization.findOneAndUpdate(
-    { userCodeHash: hash(code), status: "pending", expiresAt: { $gt: new Date() } },
-    { $set: { status: "denied", deniedAt: new Date() } },
+    { _id: pending._id, status: "pending", expiresAt: { $gt: now } },
+    { $set: {
+      status: "denied",
+      deniedAt: now,
+      ...(pending.callbackMode === "app" ? { callbackIssuedAt: now } : {}),
+    } },
     { new: true },
   );
   if (!authorization) {
     throw pluginError(404, "DEVICE_CODE_NOT_FOUND", "Device code is invalid or expired.");
   }
-  return authorization;
+  return {
+    authorization,
+    callbackUri: appCallbackUri(authorization, "denied", code, state),
+  };
 }
 
 export async function getDeviceAuthorization(rawCode) {
@@ -318,6 +390,8 @@ export async function getDeviceAuthorization(rawCode) {
     maxVersion: authorization.maxVersion,
     status: authorization.status,
     expiresAt: authorization.expiresAt,
+    callbackMode: authorization.callbackMode || "poll",
+    appStateRequired: authorization.callbackMode === "app",
   };
 }
 

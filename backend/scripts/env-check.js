@@ -128,8 +128,10 @@ if (production) {
     requireValue("TURNSTILE_EXPECTED_ACTION");
   }
   if (process.env.PLUGIN_API_ENABLED === "true") {
+    requireValue("PLUGIN_JWT_SECRET");
+  }
+  if (process.env.PLUGIN_RELEASE_ENABLED === "true") {
     [
-      "PLUGIN_JWT_SECRET",
       "PLUGIN_RELEASE_VERSION",
       "PLUGIN_MINIMUM_VERSION",
       "PLUGIN_RELEASE_URL",

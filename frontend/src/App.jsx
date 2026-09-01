@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MessageCircle } from "lucide-react";
-import { api } from "./api.js";
+import { API_URL, api } from "./api.js";
 import Navbar from "./components/Navbar.jsx";
 import Login from "./pages/Login.jsx";
 import Home from "./pages/Home.jsx";
@@ -412,6 +412,17 @@ function App() {
   }, [commitUser, refreshUser]);
 
   useEffect(() => {
+    if (loading || user || page !== "pluginActivate") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("app") !== "1" || !params.get("code") || !params.get("state")) return;
+    if (params.get("auth") === "state_error") return;
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    window.location.assign(
+      `${API_URL}/api/auth/google?returnTo=${encodeURIComponent(returnTo)}`,
+    );
+  }, [loading, page, user]);
+
+  useEffect(() => {
     const receiveSyncSignal = (payload) => {
       if (!payload || payload.type !== "refresh-user" || payload.source === userSyncTabIdRef.current) return;
       refreshUser().catch(() => {});
@@ -593,9 +604,9 @@ function App() {
         {page === "guide" && <Guide language={language} />}
         {page === "privacy" && <Privacy language={language} />}
         {page === "terms" && <Terms language={language} />}
-        {user && page === "pluginActivate" && <PluginAccess language={language} mode="activate" />}
-        {user && page === "pluginSessions" && <PluginAccess language={language} mode="sessions" />}
-        {user && page === "pluginChallenge" && <PluginAccess language={language} mode="challenge" />}
+        {user && page === "pluginActivate" && <PluginAccess language={language} mode="activate" user={user} />}
+        {user && page === "pluginSessions" && <PluginAccess language={language} mode="sessions" user={user} />}
+        {user && page === "pluginChallenge" && <PluginAccess language={language} mode="challenge" user={user} />}
         {user && page === "getlink" && <Home user={user} onUserChange={handleUserChange} language={language} />}
         {user && page === "topup" && <Topup user={user} onUserChange={handleUserChange} language={language} />}
         {user && page === "membership" && <Membership user={user} onUserChange={handleUserChange} language={language} />}

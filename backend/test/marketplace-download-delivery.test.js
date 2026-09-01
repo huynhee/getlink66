@@ -77,6 +77,22 @@ test("Drive redirect resolves the browser content link without streaming file by
   }
 });
 
+test("plugin downloads never expose a Google Drive redirect", async () => {
+  const originalMode = process.env.MARKETPLACE_DOWNLOAD_DELIVERY;
+  try {
+    process.env.MARKETPLACE_DOWNLOAD_DELIVERY = "drive_redirect";
+    const link = await getStorageBrowserDownloadLink({
+      clientType: "plugin",
+      storageProvider: "google_drive",
+      driveFileId: "must-not-be-resolved",
+    });
+    assert.equal(link, "");
+  } finally {
+    if (originalMode === undefined) delete process.env.MARKETPLACE_DOWNLOAD_DELIVERY;
+    else process.env.MARKETPLACE_DOWNLOAD_DELIVERY = originalMode;
+  }
+});
+
 test("Google Drive proxy forwards a single byte range and preserves partial response headers", async () => {
   const original = {
     accessToken: process.env.GOOGLE_DRIVE_ACCESS_TOKEN,

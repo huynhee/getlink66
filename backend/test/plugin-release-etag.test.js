@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sendPluginReleaseJsonWithEtag } from "../src/controllers/pluginAuthController.js";
+import {
+  releaseManifest,
+  sendPluginReleaseJsonWithEtag,
+} from "../src/controllers/pluginAuthController.js";
 
 function responseRecorder() {
   return {
@@ -49,4 +52,20 @@ test("plugin release emits stable ETag and returns 304", () => {
   assert.equal(second.statusCode, 304);
   assert.equal(second.ended, true);
   assert.equal(second.body, null);
+});
+
+test("plugin release feed is unavailable while release publishing is disabled", () => {
+  const previous = process.env.PLUGIN_RELEASE_ENABLED;
+  process.env.PLUGIN_RELEASE_ENABLED = "false";
+  let captured;
+  try {
+    releaseManifest({}, responseRecorder(), (error) => {
+      captured = error;
+    });
+  } finally {
+    if (previous === undefined) delete process.env.PLUGIN_RELEASE_ENABLED;
+    else process.env.PLUGIN_RELEASE_ENABLED = previous;
+  }
+  assert.equal(captured?.status, 503);
+  assert.equal(captured?.code, "PLUGIN_RELEASE_DISABLED");
 });

@@ -72,17 +72,35 @@ test("Drive redirect requires explicit public-link risk acceptance", () => {
   assert.ok(accepted.warnings.some((item) => item.includes("reusable Google Drive URL")));
 });
 
-test("plugin API configuration and automatic production migration are fail-closed", () => {
+test("plugin API can run before the signed release feed is enabled", () => {
   const blocked = productionReadinessIssues(readyEnvironment({
     PLUGIN_API_ENABLED: "true",
     MARKETPLACE_STARTUP_MIGRATIONS_ENABLED: "true",
   }));
   assert.ok(blocked.errors.some((item) => item.includes("PLUGIN_JWT_SECRET")));
-  assert.ok(blocked.errors.some((item) => item.includes("PLUGIN_RELEASE_URL")));
+  assert.ok(!blocked.errors.some((item) => item.includes("PLUGIN_RELEASE_URL")));
   assert.ok(blocked.errors.some((item) => item.includes("STARTUP_MIGRATIONS")));
+
+  const apiOnly = productionReadinessIssues(readyEnvironment({
+    PLUGIN_API_ENABLED: "true",
+    PLUGIN_JWT_SECRET: "x".repeat(48),
+    PLUGIN_DOWNLOAD_CHALLENGE_MODE: "risk",
+  }));
+  assert.equal(apiOnly.errors.length, 0);
+});
+
+test("plugin release feed remains fail-closed until signed artifacts are configured", () => {
+  const blocked = productionReadinessIssues(readyEnvironment({
+    PLUGIN_API_ENABLED: "true",
+    PLUGIN_RELEASE_ENABLED: "true",
+    PLUGIN_JWT_SECRET: "x".repeat(48),
+    PLUGIN_DOWNLOAD_CHALLENGE_MODE: "risk",
+  }));
+  assert.ok(blocked.errors.some((item) => item.includes("PLUGIN_RELEASE_URL")));
 
   const ready = productionReadinessIssues(readyEnvironment({
     PLUGIN_API_ENABLED: "true",
+    PLUGIN_RELEASE_ENABLED: "true",
     PLUGIN_JWT_SECRET: "x".repeat(48),
     PLUGIN_RELEASE_VERSION: "0.1.0",
     PLUGIN_MINIMUM_VERSION: "0.1.0",
@@ -96,14 +114,14 @@ test("plugin API configuration and automatic production migration are fail-close
     PLUGIN_DESKTOP_RELEASE_SHA256: "b".repeat(64),
     PLUGIN_DESKTOP_RELEASE_SIGNATURE: "B".repeat(88),
     PLUGIN_DESKTOP_RELEASE_PUBLISHED_AT: "2026-07-26T00:00:00.000Z",
-    PLUGIN_DESKTOP_RELEASE_PROTOCOL_MINIMUM: "1",
-    PLUGIN_DESKTOP_RELEASE_PROTOCOL_MAXIMUM: "1",
+    PLUGIN_DESKTOP_RELEASE_PROTOCOL_MINIMUM: "2",
+    PLUGIN_DESKTOP_RELEASE_PROTOCOL_MAXIMUM: "2",
     PLUGIN_MAX_BRIDGE_RELEASE_URL: "https://3dipl.org/downloads/3dipl-bridge-0.3.1.mzp",
     PLUGIN_MAX_BRIDGE_RELEASE_SHA256: "c".repeat(64),
     PLUGIN_MAX_BRIDGE_RELEASE_SIGNATURE: "C".repeat(88),
     PLUGIN_MAX_BRIDGE_RELEASE_PUBLISHED_AT: "2026-07-26T00:00:00.000Z",
-    PLUGIN_MAX_BRIDGE_RELEASE_PROTOCOL_MINIMUM: "1",
-    PLUGIN_MAX_BRIDGE_RELEASE_PROTOCOL_MAXIMUM: "1",
+    PLUGIN_MAX_BRIDGE_RELEASE_PROTOCOL_MINIMUM: "2",
+    PLUGIN_MAX_BRIDGE_RELEASE_PROTOCOL_MAXIMUM: "2",
     PLUGIN_DOWNLOAD_CHALLENGE_MODE: "risk",
   }));
   assert.equal(ready.errors.length, 0);

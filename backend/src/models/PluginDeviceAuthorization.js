@@ -10,6 +10,9 @@ const pluginDeviceAuthorizationSchema = new mongoose.Schema(
     deviceName: { type: String, default: "" },
     maxVersion: { type: String, default: "" },
     pluginVersion: { type: String, default: "" },
+    callbackMode: { type: String, enum: ["poll", "app"], default: "poll" },
+    appStateHash: { type: String, default: "" },
+    callbackIssuedAt: Date,
     status: {
       type: String,
       enum: ["pending", "approved", "denied", "exchanging", "consumed", "expired"],

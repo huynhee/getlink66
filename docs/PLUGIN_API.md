@@ -1,180 +1,138 @@
-# 3DiPL Plugin API
+# 3DiPL Plugin Contract V2
 
-Tài liệu này là contract chính thức cho `3DiPL Asset Manager` và các client plugin
-được 3DiPL cấp quyền. Contract hiện tại tương ứng release `0.3.1`, protocol bridge
-`1`, và 3ds Max `2026`.
+Tài liệu này là contract mục tiêu cho `3DiPL Asset Manager` và bridge 3ds Max.
+Nó thay thế mô tả đăng nhập và tải file cũ trong
+`3DS_MAX_PLUGIN_DEVELOPMENT_GUIDE.md`.
 
-Nguồn chuẩn khi tài liệu và implementation có khác biệt:
+Contract mục tiêu:
 
-1. `backend/src/routes/pluginRoutes.js` — Bearer API của plugin.
-2. `backend/src/routes/pluginActivationRoutes.js` — activation/challenge trên web.
-3. `backend/src/controllers/pluginAuthController.js` — auth, account và release feed.
-4. `backend/src/utils/marketplaceDownloadService.js` — quota, Credit, session và idempotency.
-5. `backend/test/plugin-*.test.js` — contract regression bắt buộc.
+- Desktop release: `0.4.0` trở lên.
+- Bridge protocol: `2`.
+- Đăng nhập: app mở trình duyệt, website đăng nhập Google, sau đó gọi ngược app.
+- Tải: người dùng chọn quota Free/Pro hoặc Credit, backend cấp download session.
+- Production: file đi qua endpoint tải của 3DiPL, không mở trang Google Drive.
 
-## 1. Phạm vi và base URL
+> **Trạng thái triển khai:** backend hiện đã có device authorization, Bearer token,
+> Google login trên web, download options, quota/Credit, idempotency, challenge và
+> download session. Phần callback `threedipl://` và việc giữ `appState` xuyên suốt
+> Google OAuth là contract mới, phải hoàn thiện ở backend/frontend/plugin trước khi
+> phát hành `0.4.0`.
 
-| Môi trường | Base URL | Ghi chú |
-|---|---|---|
-| Production | `https://3dipl.org` | Client Production khóa cứng origin này. |
-| Staging | `https://staging.3dipl.org` | Database, storage, secrets và release feed tách Production. |
-| Development | `http://127.0.0.1:<PORT>` | Chỉ Desktop/DevHost Debug được dùng HTTP localhost. |
+## 1. Nguồn chuẩn
 
-Desktop `0.3.1` chỉ hiển thị Models Online. Backend cũng đã có route Scene để giữ
-contract tương lai; client hiện tại không được suy diễn Scene là Model.
+Khi tài liệu và code hiện tại khác nhau:
 
-Plugin API bị fail-closed. Nếu `PLUGIN_API_ENABLED` khác `true`, mọi route dưới
-`/api/plugin` và `/api/plugin-activation` trả:
+1. Tài liệu này là contract mục tiêu của protocol `2`.
+2. `backend/src/routes/pluginRoutes.js` là route Bearer đã triển khai.
+3. `backend/src/routes/pluginActivationRoutes.js` là activation/challenge trên web.
+4. `backend/src/services/pluginAuthService.js` quản lý device session và token.
+5. `backend/src/utils/marketplaceDownloadService.js` quản lý quota, Credit và session.
+6. `backend/test/plugin-*.test.js` là regression contract hiện hành.
 
-```http
-HTTP/1.1 503 Service Unavailable
-Content-Type: application/json
+Mọi thay đổi contract phải cập nhật code, test và tài liệu trong cùng một PR.
 
-{
-  "message": "Plugin API is not enabled",
-  "code": "PLUGIN_API_DISABLED"
-}
+## 2. Kiến trúc
+
+```mermaid
+flowchart LR
+  Max["3ds Max bridge"] --> Desktop["3DiPL Desktop app"]
+  Desktop -->|Open default browser| Web["3dipl.org/plugin/activate"]
+  Web --> Google["Google OAuth"]
+  Google --> Web
+  Web -->|threedipl://auth/callback| Desktop
+  Desktop -->|deviceCode over HTTPS| API["3DiPL Plugin API"]
+  API --> Atlas["Atlas: account, Pro, Credit"]
+  API --> Catalog["Marketplace DB"]
+  API --> Storage["Storage provider"]
+  Storage -->|stream/proxy through 3DiPL| Desktop
+  Desktop --> Cache["Verified local cache"]
+  Cache --> Max
 ```
 
-## 2. Quy ước HTTP
+Plugin không được:
 
-### Header chung
+- nhúng Google OAuth secret, Drive credential hoặc server secret;
+- đăng nhập Google trong embedded WebView;
+- đọc cookie website;
+- nhận Google access token, Google ID token hoặc plugin refresh token qua deep link;
+- lưu signed download URL hoặc query token vào log.
+
+## 3. Base URL và header
+
+| Môi trường | Base URL |
+|---|---|
+| Production | `https://3dipl.org` |
+| Staging | `https://staging.3dipl.org` |
+| Development | `http://127.0.0.1:<PORT>` |
+
+Header chung:
 
 ```http
 Accept: application/json
-User-Agent: 3DiPL-AssetManager/0.3.1 (3ds Max 2026; Windows)
-X-Correlation-Id: <8-96 ký tự A-Z a-z 0-9 . _ : ->
+User-Agent: 3DiPL-AssetManager/0.4.0 (3ds Max 2026; Windows)
+X-Correlation-Id: <8-96 safe characters>
+X-3DiPL-Plugin-Version: 0.4.0
+X-3DiPL-Max-Version: 2026
 ```
 
-Server luôn trả `X-Correlation-Id`. Nếu client không gửi hoặc gửi sai format,
-server tự sinh UUID. Không log access token, refresh token, challenge token hoặc
-signed download URL.
-
-Route private dùng:
+Route private thêm:
 
 ```http
 Authorization: Bearer <accessToken>
 ```
 
-Access token là JWT HS256, audience `3dipl-plugin`, issuer `3dipl.org`, sống 900
-giây. Refresh token là opaque token, rotate ở mỗi lần refresh và có hạn tuyệt đối
-30 ngày. Access token chỉ giữ trong memory; refresh token phải được bảo vệ bằng
-DPAPI CurrentUser trên Windows.
+Plugin API fail-closed. Nếu `PLUGIN_API_ENABLED` khác `true`, route plugin trả
+`503 PLUGIN_API_DISABLED`.
 
-### Error envelope
+Error envelope:
 
 ```json
 {
-  "message": "Thông báo an toàn cho client",
+  "message": "Safe message",
   "code": "MACHINE_READABLE_CODE",
   "details": {},
-  "correlationId": "b7d7e7b6-..."
+  "correlationId": "uuid"
 }
 ```
 
-`details` chỉ có ở lỗi dưới 500 khi service cung cấp public details. Với `429`,
-client phải ưu tiên header `Retry-After` (giây), sau đó mới đọc
-`details.retryAfter`.
+Client xử lý theo `code`, không parse `message`.
 
-Các lỗi auth nền tảng:
+## 4. Đăng nhập bằng Google qua trình duyệt
 
-| HTTP | Code | Hành vi client |
-|---:|---|---|
-| 401 | `BEARER_TOKEN_REQUIRED` | Gửi Bearer token. |
-| 401 | `INVALID_ACCESS_TOKEN` | Thử refresh một lần. |
-| 401 | `SESSION_REVOKED` | Xóa toàn bộ session local và đăng nhập lại. |
-| 401 | `INVALID_REFRESH_TOKEN` | Xóa toàn bộ session local. |
-| 401 | `REFRESH_REPLAY` | Session thiết bị đã bị revoke; không retry token cũ. |
-| 403 | `ACCOUNT_BANNED` | Dừng download; vẫn cho dùng cache local. |
-| 429 | `RATE_LIMITED` | Chờ `Retry-After`. |
-| 503 | `PLUGIN_API_DISABLED` | Chuyển Online sang offline snapshot. |
+### 4.1 Nguyên tắc
 
-## 3. Catalog công khai
+Luồng đăng nhập là device authorization có app callback:
 
-Catalog không dùng Bearer token và nằm dưới marketplace API hiện hữu.
+1. App tạo `appState` ngẫu nhiên và gọi device start.
+2. App mở URL activation bằng trình duyệt mặc định.
+3. Nếu browser chưa đăng nhập website, website chuyển tới Google OAuth.
+4. Google callback trở lại đúng trang activation và giữ nguyên mã thiết bị.
+5. User xác nhận kết nối thiết bị.
+6. Website gọi `threedipl://auth/callback` để chuyển về app.
+7. App kiểm tra `appState`, sau đó đổi `deviceCode` lấy plugin token qua HTTPS.
 
-### Danh sách Models
+Deep link chỉ là tín hiệu đánh thức app. Token thật luôn đi qua HTTPS response.
 
-```http
-GET /api/marketplace/models?page=1&limit=24&sort=newest
-```
+### 4.2 Tạo yêu cầu đăng nhập
 
-Query được Desktop sử dụng:
+App tạo:
 
-| Query | Giá trị |
-|---|---|
-| `page` | Số trang, bắt đầu từ `1`. |
-| `limit` | `1..60`; Desktop mặc định `24`. |
-| `q` | Từ khóa. |
-| `category` | Taxonomy key. |
-| `render` | Renderer key. |
-| `style` | Style key. |
-| `accessType` | `free` hoặc `pro`. |
-| `sort` | `relevance`, `newest`, `popular`, `oldest`, `title_asc`, `title_desc`. |
-
-Response tối thiểu client phải chấp nhận:
-
-```json
-{
-  "models": [
-    {
-      "_id": "<asset-id>",
-      "assetType": "model",
-      "title": "Chair",
-      "description": "...",
-      "accessType": "free",
-      "fileSize": 104857600,
-      "assetRevision": "<revision>",
-      "sha256": "<64 hex>",
-      "renderers": ["corona"],
-      "styles": ["modern"],
-      "parentCategorySourceId": "furniture",
-      "categorySourceId": "chairs",
-      "coverImage": { "url": "/...", "width": 800, "height": 800 },
-      "previewImages": [{ "url": "/...", "width": 1200, "height": 900 }],
-      "updatedAt": "2026-08-30T00:00:00.000Z"
-    }
-  ],
-  "pagination": { "page": 1, "pageSize": 24, "total": 1 }
-}
-```
-
-Backend có thể dùng key `assets` thay cho `models`; client `0.3.1` hiểu cả hai.
-
-### Chi tiết Model
-
-```http
-GET /api/marketplace/models/:slug-or-id
-```
-
-Response có thể bọc asset trong `asset`, `model` hoặc `scene`. Client không được
-dựa vào URL ảnh đã ký để định danh asset.
-
-### Taxonomy
-
-```http
-GET /api/marketplace/taxonomy/export?assetType=model
-```
-
-Response chứa `taxonomyVersion`, `assets.model.categories` và
-`assets.model.filters`. Category có `key`, `parentKey`, `labelVi`, `labelEn`,
-`position`. Filter có `value`, `labelVi`, `labelEn`, `position` theo từng facet.
-
-Catalog, detail, taxonomy và release feed hỗ trợ `ETag`/`If-None-Match`. Client lưu
-snapshot JSON + ETag và được phép đọc snapshot khi offline.
-
-## 4. Device authentication
-
-### 4.1 Bắt đầu đăng nhập
+- `deviceId`: random 32 byte, ổn định theo lần cài và lưu bằng DPAPI;
+- `appState`: random 32 byte cho mỗi lần đăng nhập, chỉ giữ trong memory;
+- `deviceName`: tên hiển thị của máy;
+- version của Desktop và 3ds Max.
 
 ```http
 POST /api/plugin/auth/device/start
 Content-Type: application/json
 
 {
+  "deviceId": "<installation-id>",
   "deviceName": "WORKSTATION-01",
-  "pluginVersion": "0.3.1",
-  "maxVersion": "2026"
+  "pluginVersion": "0.4.0",
+  "maxVersion": "2026",
+  "callbackMode": "app",
+  "appState": "<base64url-random>"
 }
 ```
 
@@ -182,30 +140,89 @@ Response `201`:
 
 ```json
 {
-  "deviceCode": "<opaque>",
+  "deviceCode": "<opaque-secret>",
   "userCode": "ABCD-EFGH",
   "verificationUri": "https://3dipl.org/plugin/activate",
-  "verificationUriComplete": "https://3dipl.org/plugin/activate?code=ABCD-EFGH",
+  "verificationUriComplete": "https://3dipl.org/plugin/activate?code=ABCD-EFGH&app=1&state=<appState>",
+  "appCallbackUri": "threedipl://auth/callback",
   "expiresIn": 600,
   "interval": 5
 }
 ```
 
-Client mở `verificationUriComplete` bằng browser mặc định và poll không nhanh hơn
-`interval`.
+`deviceCode` là secret và không được đưa vào browser URL. `appState` là nonce công
+khai để chống callback nhầm/replay: browser mang state, backend chỉ cần lưu hash để
+đối chiếu với authorization trước khi hoàn tất.
 
-### 4.2 Poll token
+### 4.3 Google login trên web
+
+App mở `verificationUriComplete` bằng default browser. Trang activation phải giữ
+được `code`, `app=1` và state server-side khi chuyển qua:
+
+```http
+GET /api/auth/google?returnTo=%2Fplugin%2Factivate%3Fcode%3DABCD-EFGH%26app%3D1%26state%3D%3CappState%3E
+```
+
+Sau Google OAuth:
+
+- website tạo cookie phiên web như bình thường;
+- Google token không được gửi sang app;
+- website hiển thị tài khoản Google, thiết bị, phiên bản plugin và Max;
+- user phải bấm `Cho phép` hoặc `Từ chối`.
+
+Website không được tự approve chỉ vì Google login thành công.
+
+### 4.4 Callback về app
+
+Sau approve, website chuyển tới URI cố định:
+
+```text
+threedipl://auth/callback?status=approved&state=<appState>&code=ABCD-EFGH
+```
+
+Các trạng thái hợp lệ:
+
+- `approved`
+- `denied`
+- `expired`
+- `cancelled`
+
+Yêu cầu bảo mật:
+
+- chỉ cho phép scheme cố định `threedipl` và host `auth`;
+- không nhận callback URI tùy ý từ client;
+- callback không chứa access token, refresh token, email hoặc Google token;
+- app so sánh `state` bằng constant-time comparison;
+- state sai hoặc không còn login pending phải bị bỏ qua;
+- callback chỉ được xử lý một lần.
+
+Installer đăng ký protocol cho Desktop app theo user hiện tại. Không dùng
+`3dipl://` vì URI scheme chuẩn phải bắt đầu bằng chữ cái.
+
+Nếu protocol handler không mở được, trang web hiện nút `Mở 3DiPL app` và thông báo
+app vẫn đang chờ. App tiếp tục poll nên callback bị chặn không làm hỏng login.
+
+### 4.5 Đổi device code lấy token
+
+App poll từ lúc mở browser và gọi ngay khi nhận callback:
 
 ```http
 POST /api/plugin/auth/device/token
 Content-Type: application/json
 
-{ "deviceCode": "<opaque>" }
+{ "deviceCode": "<opaque-secret>" }
 ```
 
-Trong lúc chờ, server trả lỗi `AUTHORIZATION_PENDING`. Poll quá nhanh trả
-`SLOW_DOWN` cùng `Retry-After`. Các trạng thái kết thúc là `ACCESS_DENIED` hoặc
-`EXPIRED_TOKEN`.
+Không poll nhanh hơn `interval`.
+
+Trạng thái chờ:
+
+| Code | Hành vi |
+|---|---|
+| `AUTHORIZATION_PENDING` | Tiếp tục chờ. |
+| `SLOW_DOWN` | Tăng interval và tôn trọng `Retry-After`. |
+| `ACCESS_DENIED` | Dừng và xóa login pending. |
+| `EXPIRED_TOKEN` | Dừng, yêu cầu đăng nhập lại. |
 
 Response thành công:
 
@@ -214,193 +231,237 @@ Response thành công:
   "accessToken": "<jwt>",
   "expiresIn": 900,
   "refreshToken": "<opaque>",
-  "refreshExpiresAt": "2026-09-29T00:00:00.000Z",
-  "sessionId": "<session-id>",
+  "refreshExpiresAt": "2026-09-30T00:00:00.000Z",
+  "sessionId": "<id>",
   "user": {
-    "id": "<user-id>",
+    "id": "<id>",
     "name": "User",
-    "avatar": "",
-    "isPro": false,
-    "proUntil": null,
-    "credit": 0,
+    "avatar": "https://...",
+    "isPro": true,
+    "proUntil": "...",
+    "credit": 100,
     "downloadQuota": {
-      "used": 0,
-      "limit": 5,
-      "remaining": 5,
-      "resetAt": "2026-08-31T00:00:00+07:00"
+      "used": 3,
+      "limit": 100,
+      "remaining": 97,
+      "resetAt": "..."
     }
   }
 }
 ```
 
-### 4.3 Refresh
+Access token chỉ giữ trong memory. Refresh token lưu bằng Windows DPAPI
+`CurrentUser`, không lưu plaintext trong JSON, SQLite hoặc log.
+
+### 4.6 Refresh, account và logout
 
 ```http
-POST /api/plugin/auth/refresh
-Content-Type: application/json
-
-{ "refreshToken": "<current-refresh-token>" }
-```
-
-Response có cùng shape với token thành công và luôn trả refresh token mới. Sau khi
-persist token mới thành công, client phải loại token cũ. Replay token cũ revoke toàn
-bộ device session.
-
-### 4.4 Account và logout
-
-```http
+POST   /api/plugin/auth/refresh
 GET    /api/plugin/me
 DELETE /api/plugin/auth/session
-Authorization: Bearer <accessToken>
 ```
 
-`GET /me` trả object user như `user` trong token response. Logout thành công trả
-`204 No Content`.
+Refresh token rotate ở mỗi lần refresh. App phải persist token mới thành công rồi
+mới bỏ token cũ. Replay token cũ sẽ revoke device session.
 
-## 5. Activation và quản lý thiết bị trên web
+App gọi `/api/plugin/me` khi:
 
-Các route này dùng cookie login của website, không dùng plugin Bearer token. POST
-và DELETE phải đi qua CSRF middleware của web.
+- khởi động;
+- cửa sổ app được focus lại;
+- user vừa nạp Credit hoặc mua Pro trên web;
+- download hoàn tất;
+- tối đa mỗi 30-60 giây khi app đang mở.
+
+Như vậy số dư và Pro cập nhật mà không cần F5 hoặc đóng app.
+
+## 5. Catalog
+
+Catalog public dùng các route website hiện tại:
 
 ```http
-GET    /api/plugin-activation/device/:userCode
-POST   /api/plugin-activation/device/:userCode/approve
-POST   /api/plugin-activation/device/:userCode/deny
-GET    /api/plugin-activation/sessions
-DELETE /api/plugin-activation/sessions/:sessionId
-GET    /api/plugin-activation/challenge/:code
-POST   /api/plugin-activation/challenge/:code/approve
+GET /api/marketplace/models
+GET /api/marketplace/scenes
+GET /api/marketplace/models/:slug-or-id
+GET /api/marketplace/scenes/:slug-or-id
+GET /api/marketplace/categories
+GET /api/marketplace/scenes/categories
+GET /api/marketplace/filters
+GET /api/marketplace/scenes/filters
+GET /api/marketplace/taxonomy/export?assetType=all
 ```
 
-Trang frontend tương ứng:
+Client hỗ trợ URL ảnh tương đối và nối với base URL. Không dùng URL ảnh hoặc Drive
+ID làm định danh. ID chuẩn là `_id`; route detail có thể dùng slug.
 
-- `/plugin/activate?code=ABCD-EFGH`
-- `/plugin/sessions`
-- `/plugin/challenge?code=<challenge-code>`
+Wire value của quyền tài nguyên là:
 
-## 6. Download contract
+- `free`: tài nguyên Free;
+- `member`: tài nguyên Pro, UI hiển thị `PRO`.
 
-### 6.1 Xem phương thức tải
+Card dùng cover. Gallery và hover dùng `previewImages[0]`, tức preview đầu tiên sau
+khi backend đã loại cover khỏi danh sách preview.
+
+Cache catalog/taxonomy theo `ETag`. Khi offline chỉ cho xem snapshot và file cache,
+không tạo download session mới.
+
+## 6. Cơ chế tải mới
+
+### 6.1 Giá và phương thức
+
+Backend là nguồn giá duy nhất. Giá mặc định hiện tại:
+
+| Tài nguyên | Quota cost | Credit cost mặc định |
+|---|---:|---:|
+| Model | 1 | 5 |
+| Scene | 5 | 25 |
+
+Admin có thể thay đổi giá Credit. Plugin không hard-code giá để tính giao dịch.
+
+Phương thức:
+
+- `free_quota`: user Free tải tài nguyên Free;
+- `pro_quota`: user Pro tải tài nguyên Free hoặc Pro;
+- `credit`: user Free/Pro tải lẻ tài nguyên Free hoặc Pro.
+
+Credit không trừ quota. Quota không trừ Credit. Một lần charge Credit cho phép tải
+lại cùng asset trong đúng 24 giờ trên cả web và plugin.
+
+### 6.2 Lấy download options
 
 ```http
 GET /api/plugin/models/:id/download-options
+GET /api/plugin/scenes/:id/download-options
 Authorization: Bearer <accessToken>
 ```
 
-Response:
+Ví dụ Model Pro, user Free có 20 Credit:
 
 ```json
 {
   "assetType": "model",
-  "accessType": "free",
+  "accessType": "member",
   "quotaCost": 1,
-  "creditPrice": 0,
-  "creditBalance": 0,
+  "creditPrice": 5,
+  "creditBalance": 20,
   "entitlementUntil": null,
-  "defaultMethod": "free_quota",
-  "quota": { "used": 0, "limit": 5, "remaining": 5, "resetAt": "..." },
+  "defaultMethod": "credit",
+  "quota": {
+    "tier": "free",
+    "used": 0,
+    "limit": 5,
+    "remaining": 5,
+    "resetAt": "..."
+  },
   "options": [
     {
       "method": "free_quota",
-      "available": true,
+      "available": false,
       "cost": 1,
       "remaining": 5,
-      "reason": ""
+      "reason": "PRO_REQUIRED"
     },
     {
       "method": "credit",
       "available": true,
-      "cost": 0,
-      "configuredCost": 0,
-      "balance": 0,
+      "cost": 5,
+      "configuredCost": 5,
+      "balance": 20,
       "reason": ""
     }
   ]
 }
 ```
 
-Model tốn `1` quota unit; Scene contract hiện tại tốn `5`. Free account không được
-dùng quota cho asset Pro. Những lý do chính: `PRO_REQUIRED`,
-`DOWNLOAD_QUOTA_EXCEEDED`, `INSUFFICIENT_CREDIT`.
+Plugin phải render đúng `options`; không tự suy ra phương thức từ badge Free/Pro.
+Nếu entitlement 24 giờ còn hiệu lực, `credit.cost` bằng `0` và
+`defaultMethod="credit"`.
 
-### 6.2 Tạo download session
+### 6.3 Chọn phương thức
+
+- User Free + asset Free: chọn Free quota hoặc Credit.
+- User Free + asset Pro: chọn Credit hoặc mở `/topup?mode=pro`.
+- User Pro: mặc định Pro quota nhưng vẫn có thể chọn Credit.
+- Hết quota: vẫn tải bằng Credit nếu đủ số dư.
+- Thiếu Credit: mở `/topup?mode=credit` bằng browser.
+
+Plugin không được tự fallback sang phương thức khác sau khi user đã xác nhận.
+
+### 6.4 Tạo download session
 
 ```http
 POST /api/plugin/models/:id/download-session
+POST /api/plugin/scenes/:id/download-session
 Authorization: Bearer <accessToken>
-Idempotency-Key: 01HZY2R6N8Q6_MODEL_123
+Idempotency-Key: <operation-id>
 Content-Type: application/json
 
-{ "paymentMethod": "free_quota" }
+{
+  "paymentMethod": "credit"
+}
 ```
 
-`Idempotency-Key` bắt buộc, dài `8..128`, chỉ gồm `[A-Za-z0-9._:-]`. Một operation
-phải giữ nguyên key khi retry. Dùng cùng key cho asset khác trả
-`IDEMPOTENCY_KEY_REUSED`; operation đã hết hạn trả
-`IDEMPOTENCY_OPERATION_EXPIRED`.
+`Idempotency-Key`:
+
+- bắt buộc cho plugin;
+- dài `8..128`, chỉ gồm `[A-Za-z0-9._:-]`;
+- tạo mới cho mỗi thao tác user chủ động;
+- giữ nguyên khi retry cùng thao tác;
+- không dùng lại cho asset khác.
 
 Response:
 
 ```json
 {
   "session": {
-    "_id": "<download-session-id>",
+    "_id": "<session-id>",
     "expiresAt": "...",
     "fileName": "chair.zip",
     "fileSize": 104857600,
-    "sha256": "<64 hex>",
+    "sha256": "<64-hex>",
     "assetRevision": "<revision>",
     "mainMaxFile": "chair/chair.max",
     "archiveFormat": "zip"
   },
   "downloadUrl": "/api/plugin/download/session/<id>/file?t=<token>",
-  "remaining": 4,
-  "quotaCost": 1,
+  "remaining": 5,
+  "quotaCost": 0,
   "resetAt": "...",
-  "paymentMethod": "free_quota",
-  "billingStatus": "not_applicable",
-  "creditCost": 0,
+  "paymentMethod": "credit",
+  "billingStatus": "pending",
+  "creditCost": 5,
   "creditEntitlementUntil": null
 }
 ```
 
-Client chỉ được merge `mainMaxFile` sau khi verify `fileSize`, SHA-256, safe extract
-và xác nhận path vẫn nằm trong staging/content root.
+Thời điểm tính tiền:
 
-### 6.3 Browser challenge
+- Free/Pro quota được giữ và trừ khi tạo session thành công.
+- Credit mới chỉ là quote khi tạo session.
+- Credit được charge khi backend đã xác minh storage và bắt đầu cấp byte file.
+- Storage lỗi trước bước charge không làm mất Credit.
+- Retry dùng cùng operation/session không charge lần hai.
+- Entitlement 24 giờ là nguồn chống trừ lặp giữa web và plugin.
 
-Risk session hoặc mode `always` có thể trả:
+### 6.5 Browser challenge
 
-```http
-HTTP/1.1 403 Forbidden
+Session rủi ro có thể trả `403 CHALLENGE_REQUIRED`:
 
+```json
 {
   "code": "CHALLENGE_REQUIRED",
-  "message": "Approve this download in your browser.",
   "details": {
     "challengeToken": "<one-time-token>",
     "challengeUrl": "https://3dipl.org/plugin/challenge?code=<code>",
     "expiresIn": 600
-  },
-  "correlationId": "..."
+  }
 }
 ```
 
-Client mở `challengeUrl`. Sau khi user approve, retry đúng asset, session và
-`Idempotency-Key`, đồng thời gửi token một lần:
+App mở `challengeUrl`, user xác minh trên web, sau đó retry đúng asset,
+`Idempotency-Key`, payment method và gửi `challengeToken`. Token gắn với
+user/device/asset/operation và chỉ dùng một lần.
 
-```json
-{
-  "paymentMethod": "free_quota",
-  "challengeToken": "<one-time-token>"
-}
-```
-
-Hoặc gửi `X-3DiPL-Challenge-Token`. Token gắn với user/session/asset/operation và
-chuyển sang `consumed` khi dùng. Retry cùng operation sau khi consumed không yêu
-cầu challenge lại; replay token trả `CHALLENGE_INVALID`.
-
-### 6.4 Tải file và resume
+### 6.6 Nhận file qua 3DiPL
 
 ```http
 GET /api/plugin/download/session/:id/file?t=<download-token>
@@ -408,121 +469,204 @@ Authorization: Bearer <accessToken>
 Range: bytes=<offset>-
 ```
 
-Server có thể:
+Contract Production mới:
 
-- trả `206`, `Accept-Ranges: bytes`, `Content-Range` và `Content-Length`;
-- trả `200` nếu storage không hỗ trợ range — client phải tải lại `.partial` từ đầu;
-- trả `302` đến signed HTTPS URL — client không được log URL/query token.
+- app gọi endpoint 3DiPL, không mở browser để tải;
+- backend stream/proxy file từ storage về client;
+- response là `200` hoặc `206`;
+- không trả trang cảnh báo virus Google Drive;
+- không để lộ Drive file ID hoặc Drive URL cho UI/log;
+- filename lấy từ `Content-Disposition` hoặc `session.fileName`.
 
-Billing/quota được idempotent theo download session. Retry cùng operation không
-được trừ quota lần hai.
+Client vẫn phải xử lý việc session hết hạn bằng cách xin session mới với operation
+mới. Không nối URL storage thủ công.
 
-## 7. Release và Desktop update
+### 6.7 Download manager
+
+1. Ghi vào `<file>.partial`.
+2. Resume chỉ khi server trả `Accept-Ranges: bytes`.
+3. Nếu server trả `200` cho request Range, xóa partial và tải lại từ đầu.
+4. Sau khi hoàn tất, kiểm tra đúng `fileSize` và SHA-256.
+5. Chỉ rename file và giải nén sau khi verify thành công.
+6. Safe extract chặn Zip Slip, symlink, reparse point và path thoát cache.
+7. Giới hạn số file, kích thước giải nén và độ dài path.
+8. Không chạy `.exe`, `.bat`, `.cmd`, `.ps1` hoặc DLL lấy từ archive.
+9. Gọi `/api/plugin/me` để cập nhật ngay Credit/quota.
+
+Cache key:
+
+```text
+{assetType}/{assetId}/{assetRevision}/
+```
+
+`assetRevision` đổi thì không tái sử dụng archive cũ.
+
+## 7. Model và Scene sau khi tải
+
+Model:
+
+- verify và giải nén;
+- dùng `mainMaxFile` nếu có;
+- merge trên main thread của 3ds Max;
+- không tự sửa render setting hoặc move object nếu metadata không yêu cầu.
+
+Scene:
+
+- không merge mặc định;
+- cảnh báo nếu scene hiện tại chưa lưu;
+- copy file từ cache sang thư mục làm việc;
+- mở bản copy, không ghi đè cache.
+
+Nếu `mainMaxFile` trống:
+
+1. một file `.max`: dùng file đó;
+2. nhiều file: hiển thị selector;
+3. không đoán ngẫu nhiên.
+
+## 8. Error handling
+
+| HTTP/code | Hành vi client |
+|---|---|
+| `401 BEARER_TOKEN_REQUIRED` | Gửi Bearer token. |
+| `401 INVALID_ACCESS_TOKEN` | Refresh đúng một lần rồi retry. |
+| `401 INVALID_REFRESH_TOKEN` | Xóa session local, đăng nhập lại. |
+| `401 REFRESH_REPLAY` | Xóa session; device đã bị revoke. |
+| `401 SESSION_REVOKED` | Đăng nhập lại. |
+| `402 INSUFFICIENT_CREDIT` | Hiện số cần/còn và mở nạp Credit. |
+| `403 PRO_REQUIRED` | Mở mua Pro hoặc chọn Credit. |
+| `403 CHALLENGE_REQUIRED` | Mở browser challenge. |
+| `400 PAYMENT_METHOD_NOT_ALLOWED` | Tải lại options. |
+| `409 IDEMPOTENCY_KEY_REUSED` | Tạo operation mới. |
+| `409 IDEMPOTENCY_OPERATION_EXPIRED` | Tạo session mới. |
+| `410` session expired | Xin session mới. |
+| `429 DOWNLOAD_QUOTA_EXCEEDED` | Hiện reset time và phương thức Credit. |
+| `429 RATE_LIMITED` | Tôn trọng `Retry-After`. |
+| `5xx` | Backoff có jitter, tối đa 3 lần. |
+
+Không retry tự động lỗi thanh toán bằng phương thức khác.
+
+## 9. Release và update
 
 ```http
 GET /api/plugin/release
-If-None-Match: "sha256:..."
+If-None-Match: "<etag>"
 ```
 
-Manifest V2:
+Client chỉ nhận update khi:
 
-```json
-{
-  "manifestVersion": 2,
-  "channel": "production",
-  "version": "0.3.1",
-  "minimumVersion": "0.2.1",
-  "maxVersions": ["2026"],
-  "downloadUrl": "https://3dipl.org/.../3dipl-0.3.1.mzp",
-  "sha256": "<64 hex>",
-  "signature": "<ES256 P1363 base64>",
-  "signatureAlgorithm": "ES256",
-  "publishedAt": "2026-08-30T00:00:00.000Z",
-  "desktopArtifact": {
-    "component": "desktop",
-    "channel": "production",
-    "version": "0.3.1",
-    "downloadUrl": "https://3dipl.org/.../desktop-0.3.1.zip",
-    "sha256": "<64 hex>",
-    "protocolMinimum": 1,
-    "protocolMaximum": 1,
-    "requiresMaxRestart": false,
-    "signature": "<ES256 P1363 base64>",
-    "signatureAlgorithm": "ES256",
-    "publishedAt": "..."
-  },
-  "maxBridge2026Artifact": {
-    "component": "maxBridge2026",
-    "requiresMaxRestart": true
-  }
-}
-```
+- channel và semantic version hợp lệ;
+- Max version được hỗ trợ;
+- protocol range chứa protocol hiện tại;
+- URL là HTTPS đúng origin cho phép;
+- SHA-256 đúng;
+- ES256 signature của component và manifest đúng;
+- Desktop artifact có Authenticode hợp lệ.
 
-Client chỉ nhận update khi channel, semantic version, Max version, protocol range,
-HTTPS URL, SHA-256, component signature và manifest signature đều hợp lệ. Desktop
-artifact còn phải có Authenticode hợp lệ trước khi đổi `current.json`. Update
-Desktop tương thích không restart Max; update bridge yêu cầu cài MZP và restart Max.
+Update Desktop tương thích có thể không cần restart Max. Update bridge yêu cầu
+restart Max.
 
-## 8. Rate limits
+## 10. Biến môi trường server
 
-| Nhóm | Giới hạn mặc định |
-|---|---:|
-| Device start theo IP | 10/phút |
-| Device token poll theo IP + device code | 30/phút |
-| Refresh theo IP + refresh prefix | 20/phút |
-| Private `/me`, logout, options | 120/phút/user/session/IP |
-| Download session/file | 30/phút/user/session/IP |
-| Web activation | 30/phút/user/IP |
-
-Không loop retry ngay khi gặp `429`, `SLOW_DOWN` hoặc lỗi có `Retry-After`.
-
-## 9. Biến môi trường bắt buộc
-
-| Biến | Production |
+| Biến | Yêu cầu Production |
 |---|---|
-| `PLUGIN_API_ENABLED` | `true` chỉ sau khi Staging E2E pass. |
-| `PLUGIN_JWT_SECRET` | Secret riêng, tối thiểu 32 ký tự; không dùng `JWT_SECRET` web. |
+| `PLUGIN_API_ENABLED` | `true` sau khi Staging E2E pass. |
+| `PLUGIN_RELEASE_ENABLED` | `false` khi đang phát triển; chỉ bật sau khi mọi artifact đã ký. |
+| `PLUGIN_JWT_SECRET` | Secret riêng tối thiểu 32 ký tự. |
 | `PLUGIN_DOWNLOAD_CHALLENGE_MODE` | `risk`. |
-| `PLUGIN_RELEASE_CHANNEL` | `production` hoặc `staging`. |
-| `PLUGIN_RELEASE_VERSION` | Ví dụ `0.3.1`. |
-| `PLUGIN_MINIMUM_VERSION` | Phiên bản cảnh báo tối thiểu. |
+| `PLUGIN_RELEASE_CHANNEL` | `production`. |
+| `PLUGIN_RELEASE_VERSION` | Phiên bản phát hành. |
+| `PLUGIN_MINIMUM_VERSION` | Phiên bản tối thiểu. |
 | `PLUGIN_RELEASE_MANIFEST_VERSION` | `2`. |
-| `PLUGIN_RELEASE_URL` / `SHA256` / `SIGNATURE` | MZP legacy/combined đã ký. |
-| `PLUGIN_RELEASE_PUBLIC_KEY` | ES256 SPKI public key base64 được pin ở client. |
-| `PLUGIN_RELEASE_PUBLISHED_AT` | ISO-8601 UTC. |
-| `PLUGIN_DESKTOP_RELEASE_*` | URL, SHA, signature, time, protocol range của Desktop. |
-| `PLUGIN_MAX_BRIDGE_RELEASE_*` | URL, SHA, signature, time, protocol range của bridge. |
-| `PLUGIN_DEPLOYMENT_ENV` | `production` hoặc `staging`. |
-| `PLUGIN_QA_RISK_SECRET` | Chỉ Staging; để trống/không tồn tại ở Production. |
+| `PLUGIN_RELEASE_PUBLIC_KEY` | ES256 SPKI public key được pin. |
+| `PLUGIN_DESKTOP_RELEASE_*` | URL, SHA, signature, time, protocol range. |
+| `PLUGIN_MAX_BRIDGE_RELEASE_*` | URL, SHA, signature, time, protocol range. |
+| `PLUGIN_DEPLOYMENT_ENV` | `production`. |
+| `PLUGIN_QA_RISK_SECRET` | Không tồn tại ở Production. |
+| `MARKETPLACE_DOWNLOAD_DELIVERY` | Chế độ proxy/stream qua 3DiPL cho plugin Production. |
 
-Production phải chạy:
+Không commit `.env`, JWT secret, Google credential, refresh token, Turnstile secret,
+Authenticode certificate hoặc ES256 private key.
 
-```powershell
-$env:NODE_ENV = "production"
-npm run env:check
-npm run check
+## 11. Trạng thái triển khai protocol 2
+
+Source protocol 2 đã hoàn tất ở Desktop, backend, frontend và installer. Các mục
+dưới đây là contract đã được triển khai và được bảo vệ bằng unit/integration test.
+Trong giai đoạn tích hợp có thể bật `PLUGIN_API_ENABLED=true` để dùng auth/catalog/
+download và giữ `PLUGIN_RELEASE_ENABLED=false`. Khi đó riêng `/api/plugin/release`
+trả `503 PLUGIN_RELEASE_DISABLED`. Chỉ bật release feed sau khi hoàn tất ký artifact,
+Staging E2E và checklist phê duyệt triển khai.
+
+Backend đã triển khai:
+
+- nhận và validate `callbackMode`, `appState`, `deviceId` ở device start;
+- chỉ lưu hash của state/device ID khi phù hợp;
+- bảo toàn activation context qua Google OAuth;
+- trả callback state đúng authorization sau approve/deny;
+- không cho callback URI tùy ý;
+- bảo đảm plugin file endpoint dùng proxy/stream ở Production;
+- thêm test callback replay, state mismatch và OAuth return preservation.
+
+Frontend web đã triển khai:
+
+- trang activation tự đưa guest qua Google login và quay lại đúng code;
+- hiển thị tài khoản Google trước khi approve;
+- sau approve gọi `threedipl://auth/callback`;
+- có nút mở app lại và fallback khi protocol handler không tồn tại;
+- không hiển thị hoặc log token.
+
+Desktop app/installer đã triển khai:
+
+- đăng ký protocol `threedipl://` bằng installer;
+- chỉ chấp nhận `threedipl://auth/callback`;
+- single-instance chuyển callback vào process đang chạy;
+- kiểm tra state và login pending;
+- tiếp tục polling làm fallback;
+- lưu refresh token bằng DPAPI;
+- triển khai download options và payment selector;
+- stream vào partial, resume, SHA-256 và safe extract.
+
+## 12. Acceptance tests
+
+Authentication:
+
+- browser chưa login, Google login xong quay lại activation;
+- browser đã login, vẫn yêu cầu approve thiết bị;
+- approve gọi đúng app và app nhận đúng account;
+- deep link bị chặn nhưng polling vẫn đăng nhập được;
+- state sai/replay/expired không tạo session;
+- refresh rotate và replay revoke session;
+- logout/revoke trên web làm app mất quyền.
+
+Download:
+
+- Free tải Model Free bằng 1 quota;
+- Free tải Scene Free bằng 5 quota;
+- Free tải asset Pro bằng Credit;
+- Pro chọn được Pro quota hoặc Credit;
+- Model Credit dùng giá backend, mặc định 5;
+- Scene Credit dùng giá backend, mặc định 25;
+- entitlement 24 giờ không charge lại trên web/plugin;
+- thiếu Credit không tạo debit;
+- storage lỗi trước delivery không trừ Credit;
+- hai request đồng thời cùng operation chỉ charge một lần;
+- file tải qua 3DiPL, không mở hoặc lộ Google Drive;
+- resume, session expiry, SHA mismatch và safe extraction;
+- `/me` cập nhật số dư/quota sau tải và sau khi quay lại từ topup.
+
+Release:
+
+- ETag/304;
+- SHA-256, ES256, Authenticode;
+- protocol không tương thích bị từ chối;
+- test riêng từng phiên bản 3ds Max phát hành.
+
+Các test backend tối thiểu:
+
+```text
+backend/test/plugin-auth.test.js
+backend/test/plugin-download-challenge.test.js
+backend/test/plugin-download-idempotency.test.js
+backend/test/plugin-rate-limit-contract.test.js
+backend/test/plugin-release-etag.test.js
+backend/test/plugin-release-signature.test.js
 ```
-
-Không commit `.env`, JWT secret, refresh token, Turnstile secret, Authenticode
-certificate hoặc ES256 private key.
-
-## 10. Contract tests và acceptance
-
-```powershell
-npm run lint
-npm test
-npm run build:check
-```
-
-Các suite trực tiếp bảo vệ plugin contract:
-
-- `backend/test/plugin-auth.test.js`
-- `backend/test/plugin-download-challenge.test.js`
-- `backend/test/plugin-download-idempotency.test.js`
-- `backend/test/plugin-rate-limit-contract.test.js`
-- `backend/test/plugin-release-etag.test.js`
-- `backend/test/plugin-release-signature.test.js`
-- `backend/test/production-readiness.test.js`
-
-Thay đổi route, response field, error code, quota cost, signature canonicalization
-hoặc idempotency semantics phải cập nhật test và tài liệu này trong cùng PR.

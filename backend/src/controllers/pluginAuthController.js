@@ -28,11 +28,18 @@ export async function deviceStart(req, res, next) {
 }
 
 export function releaseManifest(req, res, next) {
-  const version = String(process.env.PLUGIN_RELEASE_VERSION || "0.3.1").trim();
+  if (process.env.PLUGIN_RELEASE_ENABLED !== "true") {
+    return next(pluginError(
+      503,
+      "PLUGIN_RELEASE_DISABLED",
+      "Plugin release feed is not enabled yet.",
+    ));
+  }
+  const version = String(process.env.PLUGIN_RELEASE_VERSION || "0.4.0").trim();
   const downloadUrl = String(process.env.PLUGIN_RELEASE_URL || "").trim();
   const sha256 = String(process.env.PLUGIN_RELEASE_SHA256 || "").trim().toLowerCase();
   const manifest = {
-    manifestVersion: Number(process.env.PLUGIN_RELEASE_MANIFEST_VERSION || 1),
+    manifestVersion: Number(process.env.PLUGIN_RELEASE_MANIFEST_VERSION || 2),
     channel: String(process.env.PLUGIN_RELEASE_CHANNEL || "beta"),
     version,
     minimumVersion: String(process.env.PLUGIN_MINIMUM_VERSION || version),
@@ -99,8 +106,8 @@ function releaseArtifactFromEnvironment({
     version: String(process.env[`${prefix}_VERSION`] || version),
     downloadUrl: String(process.env[`${prefix}_URL`] || ""),
     sha256: String(process.env[`${prefix}_SHA256`] || "").toLowerCase(),
-    protocolMinimum: Number(process.env[`${prefix}_PROTOCOL_MINIMUM`] || 1),
-    protocolMaximum: Number(process.env[`${prefix}_PROTOCOL_MAXIMUM`] || 1),
+    protocolMinimum: Number(process.env[`${prefix}_PROTOCOL_MINIMUM`] || 2),
+    protocolMaximum: Number(process.env[`${prefix}_PROTOCOL_MAXIMUM`] || 2),
     requiresMaxRestart,
     signature: String(process.env[`${prefix}_SIGNATURE`] || ""),
     signatureAlgorithm: "ES256",
@@ -158,10 +165,15 @@ export async function activationDetail(req, res, next) {
 
 export async function activationApprove(req, res, next) {
   try {
-    await approveDeviceAuthorization(req.user, req.params.userCode);
+    const result = await approveDeviceAuthorization(
+      req.user,
+      req.params.userCode,
+      req.body?.appState,
+    );
     return res.json({
       approved: true,
       userCode: String(req.params.userCode || "").toUpperCase(),
+      callbackUri: result.callbackUri,
     });
   } catch (error) {
     return next(error);
@@ -170,10 +182,14 @@ export async function activationApprove(req, res, next) {
 
 export async function activationDeny(req, res, next) {
   try {
-    await denyDeviceAuthorization(req.params.userCode);
+    const result = await denyDeviceAuthorization(
+      req.params.userCode,
+      req.body?.appState,
+    );
     return res.json({
       denied: true,
       userCode: String(req.params.userCode || "").toUpperCase(),
+      callbackUri: result.callbackUri,
     });
   } catch (error) {
     return next(error);

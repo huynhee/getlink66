@@ -76,16 +76,24 @@ export function productionReadinessIssues(env = process.env) {
   }
   if (isTrue(env, "PLUGIN_API_ENABLED")) {
     const pluginSecret = text(env, "PLUGIN_JWT_SECRET");
+    const challengeMode = text(env, "PLUGIN_DOWNLOAD_CHALLENGE_MODE").toLowerCase();
+    if (pluginSecret.length < 32) {
+      errors.push("PLUGIN_JWT_SECRET must contain at least 32 characters");
+    }
+    if (challengeMode !== "risk") {
+      errors.push("PLUGIN_DOWNLOAD_CHALLENGE_MODE must be risk in production");
+    }
+  }
+  if (isTrue(env, "PLUGIN_RELEASE_ENABLED")) {
+    if (!isTrue(env, "PLUGIN_API_ENABLED")) {
+      errors.push("PLUGIN_RELEASE_ENABLED requires PLUGIN_API_ENABLED=true");
+    }
     const releaseUrl = text(env, "PLUGIN_RELEASE_URL");
     const releaseSha256 = text(env, "PLUGIN_RELEASE_SHA256");
     const releaseSignature = text(env, "PLUGIN_RELEASE_SIGNATURE");
     const releasePublicKey = text(env, "PLUGIN_RELEASE_PUBLIC_KEY");
     const releasePublishedAt = text(env, "PLUGIN_RELEASE_PUBLISHED_AT");
     const releaseManifestVersion = Number(text(env, "PLUGIN_RELEASE_MANIFEST_VERSION") || 0);
-    const challengeMode = text(env, "PLUGIN_DOWNLOAD_CHALLENGE_MODE").toLowerCase();
-    if (pluginSecret.length < 32) {
-      errors.push("PLUGIN_JWT_SECRET must contain at least 32 characters");
-    }
     if (!/^https:\/\//i.test(releaseUrl)) {
       errors.push("PLUGIN_RELEASE_URL must be an HTTPS URL");
     }
@@ -124,12 +132,10 @@ export function productionReadinessIssues(env = process.env) {
       const protocolMinimum = Number(text(env, `${prefix}_PROTOCOL_MINIMUM`) || 0);
       const protocolMaximum = Number(text(env, `${prefix}_PROTOCOL_MAXIMUM`) || 0);
       if (!Number.isInteger(protocolMinimum) || !Number.isInteger(protocolMaximum)
-          || protocolMinimum < 1 || protocolMaximum < protocolMinimum) {
+          || protocolMinimum < 1 || protocolMaximum < protocolMinimum
+          || protocolMinimum > 2 || protocolMaximum < 2) {
         errors.push(`${prefix} protocol range is invalid`);
       }
-    }
-    if (challengeMode !== "risk") {
-      errors.push("PLUGIN_DOWNLOAD_CHALLENGE_MODE must be risk in production");
     }
     if (!/^[A-Za-z0-9+/=]{80,}$/.test(releasePublicKey)) {
       errors.push("PLUGIN_RELEASE_PUBLIC_KEY must contain the pinned ES256 SPKI public key");

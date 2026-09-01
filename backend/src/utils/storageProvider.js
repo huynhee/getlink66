@@ -377,6 +377,9 @@ export function marketplaceDownloadDeliveryMode() {
 }
 
 export async function getStorageBrowserDownloadLink(session) {
+  // Plugin/desktop downloads must remain on the authenticated 3DiPL endpoint.
+  // Never expose a Drive URL even when browser downloads use redirect mode.
+  if (String(session?.clientType || "").trim().toLowerCase() === "plugin") return "";
   if (marketplaceDownloadDeliveryMode() !== "drive_redirect") return "";
   if (String(session?.storageProvider || "").trim() !== "google_drive") return "";
 
