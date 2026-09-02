@@ -8,11 +8,25 @@ const { default: User } = await import("../src/models/User.js");
 const { default: PluginDeviceSession } = await import("../src/models/PluginDeviceSession.js");
 const {
   approveDeviceAuthorization,
+  pluginRequestIpHash,
   pollDeviceAuthorization,
   refreshPluginSession,
   startDeviceAuthorization,
   verifyPluginAccessToken,
 } = await import("../src/services/pluginAuthService.js");
+
+test("plugin risk identity uses the visitor IP instead of rotating Cloudflare edges", () => {
+  const first = {
+    ip: "162.158.193.114",
+    get: () => "203.0.113.42",
+  };
+  const second = {
+    ip: "162.159.98.221",
+    get: () => "203.0.113.42",
+  };
+
+  assert.equal(pluginRequestIpHash(first), pluginRequestIpHash(second));
+});
 
 function request(ip = "127.0.0.1") {
   return {

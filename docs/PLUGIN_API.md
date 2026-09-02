@@ -573,6 +573,7 @@ restart Max.
 | `PLUGIN_RELEASE_ENABLED` | `false` khi đang phát triển; chỉ bật sau khi mọi artifact đã ký. |
 | `PLUGIN_JWT_SECRET` | Secret riêng tối thiểu 32 ký tự. |
 | `PLUGIN_DOWNLOAD_CHALLENGE_MODE` | `risk`. |
+| `PLUGIN_DOWNLOAD_CHALLENGE_TRUST_HOURS` | `168`; session đã xác minh chỉ bị hỏi lại khi có rủi ro mới sau thời hạn. |
 | `PLUGIN_RELEASE_CHANNEL` | `production`. |
 | `PLUGIN_RELEASE_VERSION` | Phiên bản phát hành. |
 | `PLUGIN_MINIMUM_VERSION` | Phiên bản tối thiểu. |

@@ -39,9 +39,16 @@ function clean(value, maximum) {
   return String(value || "").trim().slice(0, maximum);
 }
 
-function ipHash(req) {
-  return hash(req.ip || req.get?.("cf-connecting-ip") || "");
+export function pluginRequestIpHash(req) {
+  // req.ip can be a rotating Cloudflare edge when Nginx is the trusted proxy hop.
+  // Cloudflare overwrites CF-Connecting-IP with the visitor address before origin delivery.
+  const clientIp = clean(req.get?.("cf-connecting-ip"), 80)
+    || clean(req.ip, 80)
+    || clean(req.socket?.remoteAddress, 80);
+  return hash(clientIp);
 }
+
+const ipHash = pluginRequestIpHash;
 
 function qaRiskRequested(req) {
   if (String(process.env.PLUGIN_DEPLOYMENT_ENV || "").toLowerCase() !== "staging") {
@@ -421,11 +428,13 @@ export async function refreshPluginSession(req, refreshToken) {
     throw pluginError(401, "REFRESH_REPLAY", "Refresh token replay revoked this device session.");
   }
   const currentIpHash = ipHash(req);
+  const challengeTrustActive = session.challengeTrustedUntil
+    && new Date(session.challengeTrustedUntil) > now;
   await PluginDeviceSession.findByIdAndUpdate(session._id, {
     $set: {
       lastUsedAt: now,
       lastIpHash: currentIpHash,
-      ...(session.lastIpHash && session.lastIpHash !== currentIpHash
+      ...(session.lastIpHash && session.lastIpHash !== currentIpHash && !challengeTrustActive
         ? { riskChallengeRequired: true }
         : {}),
     },

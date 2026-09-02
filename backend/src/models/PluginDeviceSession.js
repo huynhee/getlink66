@@ -14,6 +14,7 @@ const schema = new mongoose.Schema(
     revokedAt: Date,
     revokeReason: { type: String, default: "" },
     riskChallengeRequired: { type: Boolean, default: false },
+    challengeTrustedUntil: Date,
   },
   { timestamps: true },
 );

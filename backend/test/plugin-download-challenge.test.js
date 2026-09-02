@@ -74,3 +74,55 @@ test("plugin download challenge is single-use and bound to user, device and asse
   });
   assert.equal(otherOperation.code, "CHALLENGE_REQUIRED");
 });
+
+test("risk challenge trusts the approved device session for later downloads", async () => {
+  process.env.PLUGIN_DOWNLOAD_CHALLENGE_MODE = "risk";
+  process.env.PLUGIN_DOWNLOAD_CHALLENGE_TRUST_HOURS = "168";
+  const user = await User.create({ email: "plugin-trust@example.test", name: "Trusted" });
+  const session = await PluginDeviceSession.create({
+    userId: user._id,
+    deviceName: "Trusted Device",
+    pluginVersion: "0.4.0",
+    maxVersion: "2026",
+    absoluteExpiresAt: new Date(Date.now() + 60_000),
+    riskChallengeRequired: true,
+  });
+  const request = {
+    user,
+    pluginSession: session,
+    params: { id: "asset-trusted" },
+    body: {},
+    get(name) {
+      return String(name).toLowerCase() === "idempotency-key" ? "trusted-operation-1" : "";
+    },
+  };
+
+  const required = await runMiddleware(request);
+  const challenge = await PluginChallenge.findOne({
+    userId: user._id,
+    sessionId: session._id,
+    assetId: "asset-trusted",
+  });
+  await PluginChallenge.findByIdAndUpdate(challenge._id, {
+    $set: { status: "approved", approvedAt: new Date() },
+  });
+
+  assert.equal(await runMiddleware({
+    ...request,
+    body: { challengeToken: required.publicDetails.challengeToken },
+  }), null);
+
+  const trustedSession = await PluginDeviceSession.findById(session._id);
+  assert.equal(trustedSession.riskChallengeRequired, false);
+  assert.ok(new Date(trustedSession.challengeTrustedUntil) > new Date());
+
+  const laterDownload = await runMiddleware({
+    ...request,
+    get(name) {
+      return String(name).toLowerCase() === "idempotency-key" ? "trusted-operation-2" : "";
+    },
+  });
+  assert.equal(laterDownload, null);
+  assert.equal(await PluginChallenge.countDocuments({ sessionId: session._id }), 1);
+  process.env.PLUGIN_DOWNLOAD_CHALLENGE_MODE = "always";
+});

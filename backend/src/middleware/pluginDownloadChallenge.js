@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
 import PluginChallenge from "../models/PluginChallenge.js";
+import PluginDeviceSession from "../models/PluginDeviceSession.js";
 import { pluginError } from "../services/pluginAuthService.js";
 
 const CHALLENGE_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_CHALLENGE_TRUST_HOURS = 7 * 24;
 
 function hash(value) {
   return crypto.createHash("sha256").update(String(value || "")).digest("hex");
@@ -10,7 +12,36 @@ function hash(value) {
 
 function shouldRequireChallenge(req) {
   const mode = String(process.env.PLUGIN_DOWNLOAD_CHALLENGE_MODE || "risk").toLowerCase();
-  return mode === "always" || (mode !== "off" && Boolean(req.pluginSession?.riskChallengeRequired));
+  if (mode === "always") return true;
+  if (mode === "off") return false;
+  const trustedUntil = req.pluginSession?.challengeTrustedUntil
+    ? new Date(req.pluginSession.challengeTrustedUntil)
+    : null;
+  if (trustedUntil && trustedUntil > new Date()) return false;
+  return Boolean(req.pluginSession?.riskChallengeRequired);
+}
+
+function challengeTrustUntil() {
+  const configured = Number(process.env.PLUGIN_DOWNLOAD_CHALLENGE_TRUST_HOURS);
+  const hours = Number.isFinite(configured) && configured > 0
+    ? Math.min(configured, 30 * 24)
+    : DEFAULT_CHALLENGE_TRUST_HOURS;
+  return new Date(Date.now() + hours * 60 * 60 * 1000);
+}
+
+async function trustApprovedSession(req) {
+  if (String(process.env.PLUGIN_DOWNLOAD_CHALLENGE_MODE || "risk").toLowerCase() === "always") {
+    return;
+  }
+  const trustedUntil = challengeTrustUntil();
+  await PluginDeviceSession.findByIdAndUpdate(req.pluginSession._id, {
+    $set: {
+      riskChallengeRequired: false,
+      challengeTrustedUntil: trustedUntil,
+    },
+  });
+  req.pluginSession.riskChallengeRequired = false;
+  req.pluginSession.challengeTrustedUntil = trustedUntil;
 }
 
 export async function pluginDownloadChallenge(req, _res, next) {
@@ -47,6 +78,7 @@ export async function pluginDownloadChallenge(req, _res, next) {
           "Plugin download challenge is invalid, expired or already used.",
         );
       }
+      await trustApprovedSession(req);
       return next();
     }
 
