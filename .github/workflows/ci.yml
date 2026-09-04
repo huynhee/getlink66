@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 20.20.1
           cache: npm
@@ -45,7 +45,7 @@ jobs:
         run: npm run qa:smoke --prefix backend -- ../frontend/dist ../qa-report/screenshots ../qa-report/performance-results/smoke.json
       - name: Upload QA evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: qa-smoke-${{ github.sha }}
           path: |
@@ -54,8 +54,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
       - name: Audit root tooling
-        run: npm audit --audit-level=critical
+        run: node scripts/npm-audit-retry.js --audit-level=critical
       - name: Audit backend runtime
-        run: npm audit --omit=dev --audit-level=critical --prefix backend
+        run: node scripts/npm-audit-retry.js --omit=dev --audit-level=critical --prefix backend
       - name: Audit frontend toolchain
-        run: npm audit --audit-level=critical --prefix frontend
+        run: node scripts/npm-audit-retry.js --audit-level=critical --prefix frontend
