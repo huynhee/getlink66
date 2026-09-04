@@ -368,6 +368,29 @@ function App() {
     publishUserRefresh(resolved);
   }, [commitUser, publishUserRefresh]);
 
+  useEffect(() => {
+    if (!user?._id || typeof EventSource !== "function") return undefined;
+
+    const source = new EventSource(`${API_URL}/api/account/events`, {
+      withCredentials: true,
+    });
+    const handleAccountUpdated = (event) => {
+      try {
+        const payload = JSON.parse(event.data || "{}");
+        if (String(payload.userId || "") !== String(userRef.current?._id || "")) return;
+        handleUserChange((current) => current ? { ...current, ...(payload.user || {}) } : current);
+      } catch {
+        // EventSource reconnects automatically; periodic account refresh remains the fallback.
+      }
+    };
+
+    source.addEventListener("account.updated", handleAccountUpdated);
+    return () => {
+      source.removeEventListener("account.updated", handleAccountUpdated);
+      source.close();
+    };
+  }, [handleUserChange, user?._id]);
+
   const refreshUser = useCallback(async () => {
     if (userRefreshPromiseRef.current) return userRefreshPromiseRef.current;
     const mutationVersion = userMutationVersionRef.current;

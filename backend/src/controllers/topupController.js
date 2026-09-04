@@ -421,7 +421,10 @@ export async function topupHistory(req, res, next) {
       .sort({ createdAt: -1 })
       .limit(50)
       .lean();
-    res.json({ history });
+    res.json({
+      history,
+      userCredit: Number(req.user.credit || 0),
+    });
   } catch (error) {
     next(error);
   }

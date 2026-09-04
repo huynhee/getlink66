@@ -8,6 +8,7 @@ process.env.SEPAY_SECRET_KEY = "test-sepay-secret";
 const { default: User } = await import("../src/models/User.js");
 const { default: Topup } = await import("../src/models/Topup.js");
 const { sepayIpn } = await import("../src/controllers/paymentController.js");
+const { subscribeAccountEvents } = await import("../src/utils/accountEventBus.js");
 
 function sepayRequest(paymentCode, transactionId) {
   return {
@@ -67,11 +68,19 @@ test("a signed late SePay payment reopens an expired order exactly once", async 
     rejectionReason: "expired",
   });
 
+  const accountEvents = [];
+  const unsubscribe = subscribeAccountEvents(user._id, (event) => accountEvents.push(event));
+
   const first = await invokeIpn(sepayRequest(topup.paymentCode, "late-tx-1"));
+  unsubscribe();
   assert.equal(first.status, 200);
   assert.equal(first.payload.ok, true);
   assert.equal(first.payload.creditAdded, 10);
   assert.equal((await User.findById(user._id)).credit, 10);
+  assert.equal(accountEvents.length, 1);
+  assert.equal(accountEvents[0].type, "account.updated");
+  assert.equal(accountEvents[0].data.reason, "topup_approved");
+  assert.equal(accountEvents[0].data.user.credit, 10);
 
   const second = await invokeIpn(sepayRequest(topup.paymentCode, "late-tx-1"));
   assert.equal(second.payload.duplicate, true);

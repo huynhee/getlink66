@@ -6,6 +6,7 @@ import Voucher from "../models/Voucher.js";
 import VoucherRedemption from "../models/VoucherRedemption.js";
 import PaymentReceipt from "../models/PaymentReceipt.js";
 import { addCredit } from "./creditService.js";
+import { publishAccountEvent } from "./accountEventBus.js";
 import { notifyTopupApproved } from "./telegramNotifier.js";
 import { approvedVoucherUseCount } from "./voucherCheckoutService.js";
 
@@ -280,6 +281,25 @@ async function approvePendingTopupWithSession(topup, approvalFields = {}, sessio
 
 function notifyApproval(result, approvalFields = {}) {
   if (!result) return;
+  const userId = result.user?._id || result.topup?.userId?._id || result.topup?.userId;
+  publishAccountEvent(userId, {
+    type: "account.updated",
+    data: {
+      userId: String(userId || ""),
+      user: {
+        _id: String(userId || ""),
+        credit: Number(result.user?.credit || 0),
+      },
+      reason: "topup_approved",
+      topup: {
+        _id: String(result.topup?._id || ""),
+        credit: Number(result.topup?.credit || 0),
+        status: "approved",
+        paidAt: result.topup?.paidAt || null,
+      },
+      at: new Date().toISOString(),
+    },
+  });
   notifyTopupApproved({
     topup: result.topup,
     user: result.user,

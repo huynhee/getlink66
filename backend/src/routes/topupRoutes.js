@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { cancelTopup, createTopup, getCredit, getPackages, topupHistory, topupStatus } from "../controllers/topupController.js";
+import { accountEvents } from "../controllers/accountEventController.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
 
@@ -21,8 +22,15 @@ const topupCancelLimit = createRateLimit({
   windowMs: 60_000,
   max: 20,
 });
+const accountEventsLimit = createRateLimit({
+  keyPrefix: "account-events",
+  windowMs: 60_000,
+  max: 20,
+  keyGenerator: (req) => req.user?._id || req.ip,
+});
 
 router.get("/credit", requireAuth, getCredit);
+router.get("/account/events", requireAuth, accountEventsLimit, accountEvents);
 router.get("/topup/packages", getPackages);
 router.post("/topup", requireAuth, topupLimit, topupIpLimit, createTopup);
 router.get("/topup/history", requireAuth, topupHistory);

@@ -225,10 +225,15 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         .then((history) => {
           const latestApproved = recentApprovedTopup(history.history || []);
           if (!latestApproved) return;
+          const nextCredit = Number(history.userCredit);
+          if (Number.isFinite(nextCredit)) {
+            onUserChange((current) => current ? { ...current, credit: nextCredit } : current);
+          }
           setLastPaidPayment(latestApproved);
+          clearPaymentQuery();
           setMessage(language === "vi"
-            ? `Nạp thành công: +${latestApproved.credit} credit.`
-            : `Top-up successful: +${latestApproved.credit} credit.`);
+            ? `Nạp thành công: +${latestApproved.credit} credit.${Number.isFinite(nextCredit) ? ` Số dư hiện tại: ${nextCredit} credit` : ""}`
+            : `Top-up successful: +${latestApproved.credit} credit.${Number.isFinite(nextCredit) ? ` Current balance: ${nextCredit} credit` : ""}`);
         })
         .catch(() => { });
       return undefined;
@@ -242,6 +247,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         if (data.status === "approved") {
           setLastPaidPayment(data.topup);
           window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
+          clearPaymentQuery();
           onUserChange((current) => current ? { ...current, credit: data.userCredit } : current);
           setMessage(language === "vi"
             ? `Nạp thành công: +${data.topup.credit} credit. Số dư hiện tại: ${data.userCredit} credit`
@@ -273,6 +279,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           setLastPaidPayment(data.topup);
           setPayment(null);
           window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
+          clearPaymentQuery();
           onUserChange((current) => current ? { ...current, credit: data.userCredit } : current);
           setMessage(language === "vi"
             ? `Nạp thành công: +${data.topup.credit} credit. Số dư hiện tại: ${data.userCredit} credit`
