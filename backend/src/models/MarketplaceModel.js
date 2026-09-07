@@ -234,6 +234,16 @@ marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, 
 marketplaceModelSchema.index({ assetType: 1, isPublished: 1, metadataStatus: 1, fileStatus: 1, searchTokens: 1 });
 marketplaceModelSchema.index({ assetType: 1, categorySourceId: 1, isPublished: 1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, parentCategorySourceId: 1, isPublished: 1, createdAt: -1 });
+// Support sorted category candidates without scanning the entire parent category.
+for (const field of ["categorySourceId", "parentCategorySourceId"]) {
+  marketplaceModelSchema.index(
+    { assetType: 1, accessType: 1, [field]: 1, downloadCount: -1, sourceAssetIdSort: -1, createdAt: -1 },
+    {
+      name: `recommendation_${field}_rank`,
+      partialFilterExpression: { isPublished: true, metadataStatus: "complete", fileStatus: "ready" }
+    }
+  );
+}
 marketplaceModelSchema.index({ assetType: 1, accessType: 1, isPublished: 1, createdAt: -1 });
 marketplaceModelSchema.index({ assetType: 1, styles: 1, isPublished: 1 });
 marketplaceModelSchema.index({ assetType: 1, renderers: 1, isPublished: 1 });
