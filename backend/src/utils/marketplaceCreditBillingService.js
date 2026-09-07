@@ -6,6 +6,7 @@ import User from "../models/User.js";
 import { isMemoryDb } from "../config/memoryStore.js";
 import { addCredit, deductCredit } from "./creditService.js";
 import logger from "./logger.js";
+import { publishAccountInvalidation } from "./accountEventBus.js";
 
 const ENTITLEMENT_TTL_MS = 24 * 60 * 60 * 1000;
 const ENTITLEMENT_PURGE_DELAY_MS = 7 * 24 * 60 * 60 * 1000;
@@ -199,7 +200,7 @@ export async function ensureMarketplaceCreditBillingIndexes() {
   );
 }
 
-export async function ensureMarketplaceCreditEntitlement({
+async function ensureMarketplaceCreditEntitlementInternal({
   userId,
   model,
   cost,
@@ -230,4 +231,10 @@ export async function ensureMarketplaceCreditEntitlement({
     });
   }
   return chargeWithTransaction({ userId, model, cost: safeCost, now, operationId });
+}
+
+export async function ensureMarketplaceCreditEntitlement(input) {
+  const result = await ensureMarketplaceCreditEntitlementInternal(input);
+  if (result?.user) publishAccountInvalidation(input.userId, "marketplace_credit_charged");
+  return result;
 }

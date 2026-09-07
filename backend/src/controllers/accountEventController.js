@@ -4,7 +4,7 @@ const HEARTBEAT_INTERVAL_MS = 20_000;
 const CONNECTION_LIFETIME_MS = 10 * 60_000;
 
 function writeEvent(res, type, data) {
-  res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+  return res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
 export function accountEvents(req, res) {
@@ -24,7 +24,10 @@ export function accountEvents(req, res) {
 
   unsubscribe = subscribeAccountEvents(userId, (event = {}) => {
     if (closed || res.destroyed || res.writableEnded) return cleanup();
-    writeEvent(res, String(event.type || "account.updated"), event.data || {});
+    if (!writeEvent(res, String(event.type || "account.updated"), event.data || {})) {
+      cleanup();
+      res.destroy();
+    }
   });
 
   if (!unsubscribe) {
@@ -43,7 +46,10 @@ export function accountEvents(req, res) {
 
   heartbeat = setInterval(() => {
     if (res.destroyed || res.writableEnded) return cleanup();
-    res.write(": keep-alive\n\n");
+    if (!res.write(": keep-alive\n\n")) {
+      cleanup();
+      res.destroy();
+    }
   }, HEARTBEAT_INTERVAL_MS);
   heartbeat.unref?.();
 
@@ -53,7 +59,7 @@ export function accountEvents(req, res) {
   }, CONNECTION_LIFETIME_MS);
   lifetime.unref?.();
 
-  req.once("close", cleanup);
+  res.once("close", cleanup);
+  res.once("error", cleanup);
   return undefined;
 }
-

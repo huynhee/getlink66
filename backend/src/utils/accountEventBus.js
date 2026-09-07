@@ -16,7 +16,7 @@ export function subscribeAccountEvents(userId, listener) {
 
   return () => {
     subscribers.delete(listener);
-    if (!subscribers.size) subscribersByUser.delete(key);
+    if (!subscribers.size && subscribersByUser.get(key) === subscribers) subscribersByUser.delete(key);
   };
 }
 
@@ -34,7 +34,13 @@ export function publishAccountEvent(userId, event) {
       subscribers.delete(listener);
     }
   }
-  if (!subscribers.size) subscribersByUser.delete(key);
+  if (!subscribers.size && subscribersByUser.get(key) === subscribers) subscribersByUser.delete(key);
   return delivered;
 }
 
+export function publishAccountInvalidation(userId, reason) {
+  return publishAccountEvent(userId, {
+    type: "account.updated",
+    data: { userId: normalizedUserId(userId), reason, at: new Date().toISOString() },
+  });
+}

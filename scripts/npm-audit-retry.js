@@ -1,14 +1,34 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const MAX_ATTEMPTS = 2;
 const ATTEMPT_TIMEOUT_MS = 30_000;
-const TRANSIENT_ERROR_RE = /(?:\b(?:429|500|502|503|504)\b|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|ENOTFOUND|Service Unavailable)/i;
+const TRANSIENT_CODES = new Set([
+  "E429", "E500", "E502", "E503", "E504", "EAI_AGAIN", "ECONNRESET",
+  "ECONNREFUSED", "ETIMEDOUT", "ENETUNREACH", "ENOTFOUND",
+]);
+
+export function classifyAuditResult({ code, stdout = "", timedOut = false, errorCode = "" }) {
+  let report;
+  try { report = JSON.parse(stdout); } catch { /* Incomplete output is not a clean audit. */ }
+  const counts = report?.metadata?.vulnerabilities;
+  if (counts && Number.isInteger(counts.critical) && counts.critical >= 0) {
+    // Advisory titles/URLs may contain HTTP-like numbers; findings always win.
+    if (counts.critical > 0) return "failed";
+    return code === 0 && !timedOut ? "passed" : "failed";
+  }
+  if (timedOut || TRANSIENT_CODES.has(String(report?.error?.code || errorCode).toUpperCase())) {
+    return "unavailable";
+  }
+  return "failed";
+}
 
 function wait(delayMs) {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-function validAuditArgs(args) {
+export function validAuditArgs(args) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--audit-level=critical" || arg === "--omit=dev") continue;
@@ -24,7 +44,7 @@ function validAuditArgs(args) {
 function runAudit(args) {
   return new Promise((resolve) => {
     const isWindows = process.platform === "win32";
-    const child = spawn(isWindows ? "npm.cmd" : "npm", ["audit", ...args], {
+    const child = spawn(isWindows ? "npm.cmd" : "npm", ["audit", "--json", ...args], {
       env: {
         ...process.env,
         npm_config_fetch_retries: "1",
@@ -34,11 +54,11 @@ function runAudit(args) {
       },
       shell: isWindows,
     });
-    let output = "";
+    let stdout = "";
     let timedOut = false;
     const collect = (chunk, stream) => {
       const text = String(chunk);
-      output += text;
+      if (stream === process.stdout) stdout += text;
       stream.write(text);
     };
     child.stdout.on("data", (chunk) => collect(chunk, process.stdout));
@@ -52,19 +72,20 @@ function runAudit(args) {
 
     child.once("error", (error) => {
       clearTimeout(timeout);
-      const errorOutput = `${output}\n${error.message}`;
+      console.error(error.message);
       resolve({
         code: 1,
-        output: errorOutput,
-        transient: TRANSIENT_ERROR_RE.test(errorOutput),
+        stdout,
+        errorCode: error.code,
+        timedOut,
       });
     });
     child.once("close", (code) => {
       clearTimeout(timeout);
       resolve({
         code: Number.isInteger(code) ? code : 1,
-        output,
-        transient: timedOut || TRANSIENT_ERROR_RE.test(output),
+        stdout,
+        timedOut,
       });
     });
   });
@@ -80,14 +101,16 @@ async function main() {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     console.log(`npm audit attempt ${attempt}/${MAX_ATTEMPTS}`);
     const result = await runAudit(args);
-    if (result.code === 0) return;
-    if (!result.transient) {
-      process.exitCode = result.code;
+    const status = classifyAuditResult(result);
+    if (status === "passed") return;
+    if (status === "failed") {
+      console.error("Security audit failed or did not produce a valid report.");
+      process.exitCode = result.code || 1;
       return;
     }
     if (attempt === MAX_ATTEMPTS) {
       console.warn(
-        "::warning title=npm audit unavailable::The npm security audit service did not respond after retries. Application verification passed, but this audit must be retried later.",
+        "::warning title=npm audit unavailable::No security verdict: the npm audit service was unavailable after retries. Rerun this audit; this is not a clean vulnerability scan.",
       );
       return;
     }
@@ -98,4 +121,4 @@ async function main() {
   }
 }
 
-await main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

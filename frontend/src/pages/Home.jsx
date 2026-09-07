@@ -35,7 +35,7 @@ function redownloadUsageLabel(item, language = "vi") {
   return language === "vi" ? `${remaining}/${limit} lượt` : `${remaining}/${limit} times`;
 }
 
-export default function Home({ user, onUserChange, language = "vi" }) {
+export default function Home({ user, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const [getlinkHistory, setGetlinkHistory] = useState([]);
   const [creditHistory, setCreditHistory] = useState([]);
@@ -43,10 +43,6 @@ export default function Home({ user, onUserChange, language = "vi" }) {
   const [redownloadPreparingId, setRedownloadPreparingId] = useState("");
   const initialUrl = new URLSearchParams(window.location.search).get("url") || "";
   const redownloadText = language === "vi" ? "Tải lại" : "Redownload";
-
-  function updateCredit(credit) {
-    onUserChange((current) => current ? { ...current, credit } : current);
-  }
 
   function redownloadMeta(item) {
     if (item.canRedownload) {
@@ -144,7 +140,6 @@ export default function Home({ user, onUserChange, language = "vi" }) {
 
       <GetlinkBox
         userId={user._id}
-        onCreditChange={updateCredit}
         initialUrl={initialUrl}
         language={language}
         disabledReason={user.isBanned ? (user.banReason || "Tài khoản của bạn đã bị ban getlink.") : ""}

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.js";
 
 const GetlinkJobContext = createContext(null);
@@ -11,35 +11,55 @@ export function GetlinkJobProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
+  const identityRef = useRef("");
+  const versionRef = useRef(0);
+  const pendingRefreshRef = useRef(null);
+  const pendingActionRef = useRef(false);
+  const hasActiveJob = ACTIVE_STATUSES.has(job?.status);
+
+  useEffect(() => () => {
+    versionRef.current += 1;
+    pendingRefreshRef.current?.controller.abort();
+    pendingRefreshRef.current = null;
+  }, []);
 
   const refresh = useCallback(async () => {
-    if (!userId) {
-      setJob(null);
-      setError("");
-      return null;
-    }
+    if (!userId || identityRef.current !== userId || pendingActionRef.current) return null;
+    if (pendingRefreshRef.current) return null;
+    const version = versionRef.current;
+    const controller = new AbortController();
+    const request = api("/api/getlink/jobs/latest", { signal: controller.signal });
+    pendingRefreshRef.current = { promise: request, controller };
     try {
-      const data = await api("/api/getlink/jobs/latest");
+      const data = await request;
+      if (version !== versionRef.current) return null;
       setJob(data.job || null);
       setError("");
       return data.job || null;
     } catch (refreshError) {
+      if (version !== versionRef.current || controller.signal.aborted) return null;
       setError(refreshError.message || "Cannot load the getlink job.");
       return null;
+    } finally {
+      if (pendingRefreshRef.current?.promise === request) pendingRefreshRef.current = null;
     }
   }, [userId]);
 
   useEffect(() => {
     setLoading(Boolean(userId));
-    refresh().finally(() => setLoading(false));
+    let active = true;
+    refresh().finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [refresh, userId]);
 
   useEffect(() => {
     if (!userId) return undefined;
-    const delay = currentPage === "getlink" ? 2_000 : 10_000;
-    const timer = window.setInterval(refresh, delay);
+    const delay = hasActiveJob && currentPage === "getlink" ? 2_000 : 10_000;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") refresh().catch(() => {});
+    }, delay);
     return () => window.clearInterval(timer);
-  }, [currentPage, refresh, userId]);
+  }, [currentPage, hasActiveJob, refresh, userId]);
 
   useEffect(() => {
     function onVisibilityChange() {
@@ -50,18 +70,32 @@ export function GetlinkJobProvider({ children }) {
   }, [refresh]);
 
   const runAction = useCallback(async (path, options = {}) => {
+    const identity = identityRef.current;
+    const version = ++versionRef.current;
+    pendingRefreshRef.current?.controller.abort();
+    pendingRefreshRef.current = null;
+    pendingActionRef.current = true;
     setActionLoading(true);
     setError("");
     try {
       const data = await api(path, options);
+      if (version !== versionRef.current || identity !== identityRef.current) {
+        throw new DOMException("Account or job changed", "AbortError");
+      }
       setJob(data.job || null);
       return data.job || null;
     } catch (actionError) {
+      if (version !== versionRef.current || identity !== identityRef.current) {
+        throw new DOMException("Account or job changed", "AbortError");
+      }
       if (actionError.data?.job) setJob(actionError.data.job);
       setError(actionError.message || "Getlink job action failed.");
       throw actionError;
     } finally {
-      setActionLoading(false);
+      if (version === versionRef.current) {
+        pendingActionRef.current = false;
+        setActionLoading(false);
+      }
     }
   }, []);
 
@@ -105,7 +139,17 @@ export function GetlinkJobProvider({ children }) {
   }, [runAction]);
 
   const setIdentity = useCallback((nextUserId) => {
-    setUserId(String(nextUserId || ""));
+    const next = String(nextUserId || "");
+    if (next === identityRef.current) return;
+    identityRef.current = next;
+    versionRef.current += 1;
+    pendingRefreshRef.current?.controller.abort();
+    pendingRefreshRef.current = null;
+    pendingActionRef.current = false;
+    setJob(null);
+    setError("");
+    setActionLoading(false);
+    setUserId(next);
   }, []);
 
   const setRoute = useCallback((nextPage) => {

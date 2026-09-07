@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MessageCircle } from "lucide-react";
 import { API_URL, api } from "./api.js";
+import { createAccountRefresh } from "./utils/accountRefresh.js";
 import Navbar from "./components/Navbar.jsx";
 import Login from "./pages/Login.jsx";
 import Home from "./pages/Home.jsx";
@@ -11,7 +12,6 @@ import Scenes from "./pages/Scenes.jsx";
 import Membership from "./pages/Membership.jsx";
 import History from "./pages/History.jsx";
 import Invite from "./pages/Invite.jsx";
-import Admin from "./pages/Admin.jsx";
 import Guide from "./pages/Guide.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
@@ -20,6 +20,8 @@ import { GetlinkJobProvider, useGetlinkJob } from "./contexts/GetlinkJobContext.
 import { getInitialLanguage, setStoredLanguage, translations } from "./i18n.js";
 import "./styles.css";
 import "./design-system.css";
+
+const Admin = lazy(() => import("./pages/Admin.jsx"));
 
 const MESSENGER_URL = "https://m.me/1079508495252841";
 const THEME_STORAGE_KEY = "3dipl-theme";
@@ -302,8 +304,7 @@ function App() {
   const [banOverlayClosed, setBanOverlayClosed] = useState(false);
   const previousUserIdRef = useRef("");
   const userRef = useRef(null);
-  const userMutationVersionRef = useRef(0);
-  const userRefreshPromiseRef = useRef(null);
+  const accountRefreshRef = useRef(null);
   const userSyncChannelRef = useRef(null);
   const userSyncTabIdRef = useRef(
     globalThis.crypto?.randomUUID?.() || `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -340,13 +341,16 @@ function App() {
       ? { ...current, ...candidate }
       : candidate;
 
-    if (localMutation) userMutationVersionRef.current += 1;
+    if (localMutation) accountRefreshRef.current?.invalidate();
+    if (String(current?._id || "") !== String(resolved?._id || "")) {
+      setGetlinkJobIdentity(resolved?._id || "");
+    }
     userRef.current = resolved || null;
     setUser((previous) => (
       userStateSignature(previous) === userStateSignature(resolved) ? previous : (resolved || null)
     ));
     return resolved || null;
-  }, []);
+  }, [setGetlinkJobIdentity]);
 
   const publishUserRefresh = useCallback((nextUser) => {
     const payload = {
@@ -368,6 +372,16 @@ function App() {
     publishUserRefresh(resolved);
   }, [commitUser, publishUserRefresh]);
 
+  const refreshUser = useCallback((options) => {
+    if (!accountRefreshRef.current) {
+      accountRefreshRef.current = createAccountRefresh({
+        load: () => api("/api/auth/user", { cache: "no-store" }),
+        commit: (data) => commitUser(data.user, { merge: false }),
+      });
+    }
+    return accountRefreshRef.current.refresh(options);
+  }, [commitUser]);
+
   useEffect(() => {
     if (!user?._id || typeof EventSource !== "function") return undefined;
 
@@ -378,34 +392,20 @@ function App() {
       try {
         const payload = JSON.parse(event.data || "{}");
         if (String(payload.userId || "") !== String(userRef.current?._id || "")) return;
-        handleUserChange((current) => current ? { ...current, ...(payload.user || {}) } : current);
+        refreshUser({ fresh: true }).catch(() => {});
       } catch {
         // EventSource reconnects automatically; periodic account refresh remains the fallback.
       }
     };
 
     source.addEventListener("account.updated", handleAccountUpdated);
+    source.addEventListener("ready", handleAccountUpdated);
     return () => {
       source.removeEventListener("account.updated", handleAccountUpdated);
+      source.removeEventListener("ready", handleAccountUpdated);
       source.close();
     };
-  }, [handleUserChange, user?._id]);
-
-  const refreshUser = useCallback(async () => {
-    if (userRefreshPromiseRef.current) return userRefreshPromiseRef.current;
-    const mutationVersion = userMutationVersionRef.current;
-    const request = api("/api/auth/user", { cache: "no-store" })
-      .then((data) => {
-        // A response started before a local debit/credit must not overwrite it.
-        if (mutationVersion !== userMutationVersionRef.current) return userRef.current;
-        return commitUser(data.user, { merge: false });
-      })
-      .finally(() => {
-        if (userRefreshPromiseRef.current === request) userRefreshPromiseRef.current = null;
-      });
-    userRefreshPromiseRef.current = request;
-    return request;
-  }, [commitUser]);
+  }, [refreshUser, user?._id]);
 
   function navigate(nextPath) {
     window.history.pushState({}, "", nextPath);
@@ -448,7 +448,7 @@ function App() {
   useEffect(() => {
     const receiveSyncSignal = (payload) => {
       if (!payload || payload.type !== "refresh-user" || payload.source === userSyncTabIdRef.current) return;
-      refreshUser().catch(() => {});
+      refreshUser({ fresh: true }).catch(() => {});
     };
     const handleStorage = (event) => {
       if (event.key !== USER_SYNC_STORAGE_KEY || !event.newValue) return;
@@ -563,10 +563,9 @@ function App() {
   }, [page, setGetlinkJobRoute]);
 
   useEffect(() => {
-    const nextCredit = Number(getlinkJob?.result?.credit);
-    if (!user?._id || !Number.isFinite(nextCredit) || Number(user.credit) === nextCredit) return;
-    handleUserChange((current) => current?._id === user._id ? { ...current, credit: nextCredit } : current);
-  }, [getlinkJob?.result?.credit, handleUserChange, user?._id, user?.credit]);
+    if (!user?._id || !getlinkJob?.id || getlinkJob.status !== "completed") return;
+    refreshUser({ fresh: true }).catch(() => {});
+  }, [getlinkJob?.id, getlinkJob?.status, refreshUser, user?._id]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -586,7 +585,11 @@ function App() {
         <main className="shell shell-admin">
           {user?.requires2FA && <TwoFactorModal onVerify={refreshUser} language={language} />}
           {!user && <Login onLogin={refreshUser} adminMode returnTo="/admin" language={language} />}
-          {user?.role === "admin" && !user?.requires2FA && <Admin user={user} language={language} />}
+          {user?.role === "admin" && !user?.requires2FA && (
+            <Suspense fallback={<div role="status">{t.loading}</div>}>
+              <Admin user={user} language={language} />
+            </Suspense>
+          )}
           {user && user.role !== "admin" && (
             <section className="panel emptyState">
               <h2>{t.adminRequiredTitle}</h2>
@@ -630,7 +633,7 @@ function App() {
         {user && page === "pluginActivate" && <PluginAccess language={language} mode="activate" user={user} />}
         {user && page === "pluginSessions" && <PluginAccess language={language} mode="sessions" user={user} />}
         {user && page === "pluginChallenge" && <PluginAccess language={language} mode="challenge" user={user} />}
-        {user && page === "getlink" && <Home user={user} onUserChange={handleUserChange} language={language} />}
+        {user && page === "getlink" && <Home user={user} language={language} />}
         {user && page === "topup" && <Topup user={user} onUserChange={handleUserChange} language={language} />}
         {user && page === "membership" && <Membership user={user} onUserChange={handleUserChange} language={language} />}
         {user && page === "history" && <History language={language} />}

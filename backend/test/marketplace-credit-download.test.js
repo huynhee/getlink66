@@ -19,6 +19,7 @@ const {
 } = await import("../src/utils/marketplaceDownloadService.js");
 
 let sequence = 0;
+const { subscribeAccountEvents } = await import("../src/utils/accountEventBus.js");
 
 function requestFor(user, paymentMethod = "credit") {
   sequence += 1;
@@ -202,4 +203,43 @@ test("a retry repairs the VPS download log after Atlas already charged Credit", 
   assert.equal(repairedDownload.creditCost, 5);
   assert.equal((await User.findById(user._id)).credit, 15);
   assert.equal(await CreditLedgerEntry.countDocuments({ userId: user._id }), 1);
+});
+
+test("an abandoned billing claim is recovered without a second debit after Atlas committed", async () => {
+  await setPrices();
+  const user = await User.create({ email: `credit-crash-${sequence}@example.test`, credit: 20 });
+  const model = await createAsset("model");
+  const created = await createMarketplaceDownloadSession({ req: requestFor(user), modelId: model._id });
+  const events = [];
+  const unsubscribe = subscribeAccountEvents(user._id, (event) => events.push(event));
+  try {
+    await finalizeMarketplaceDownloadBilling(created.session);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].data.reason, "marketplace_credit_charged");
+    await DownloadSession.findByIdAndUpdate(created.session._id, { $set: {
+      billingStatus: "pending",
+      creditTransactionId: "pending:crashed-worker",
+      creditBillingLockedAt: new Date(Date.now() - 180_000),
+    } });
+    const recovered = await finalizeMarketplaceDownloadBilling(created.session);
+    assert.equal(recovered.billingStatus, "charged");
+    assert.equal(recovered.creditCost, 5);
+    assert.equal(recovered.creditBillingLockedAt, null);
+    assert.equal((await User.findById(user._id)).credit, 15);
+    assert.equal(await CreditLedgerEntry.countDocuments({ userId: user._id }), 1);
+    assert.equal(events.length, 1);
+  } finally { unsubscribe(); }
+});
+
+test("a fresh billing claim cannot be stolen by another request", async () => {
+  await setPrices();
+  const user = await User.create({ email: `credit-lease-${sequence}@example.test`, credit: 20 });
+  const model = await createAsset("model");
+  const created = await createMarketplaceDownloadSession({ req: requestFor(user), modelId: model._id });
+  await DownloadSession.findByIdAndUpdate(created.session._id, { $set: {
+    creditTransactionId: "pending:active-worker", creditBillingLockedAt: new Date(),
+  } });
+  await assert.rejects(finalizeMarketplaceDownloadBilling(created.session), { code: "CREDIT_BILLING_IN_PROGRESS" });
+  assert.equal((await User.findById(user._id)).credit, 20);
+  assert.equal(await CreditLedgerEntry.countDocuments({ userId: user._id }), 0);
 });

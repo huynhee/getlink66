@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { optionalSearchWithin } from "../utils/searchDeadline.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import DailyImageSearchQuota from "../models/DailyImageSearchQuota.js";
 import { isMemoryDb } from "../config/memoryStore.js";
@@ -1121,12 +1122,13 @@ export async function listMarketplaceSearchSuggestions(req, res, next) {
   try {
     const assetType = normalizeAssetType(req.query.assetType || requestAssetType(req));
     const q = String(req.query.q || "").trim().slice(0, 120);
-    const limit = Math.min(8, Math.max(1, Number(req.query.limit || 8)));
+    const requestedLimit = Number(req.query.limit || 8);
+    const limit = Number.isFinite(requestedLimit) ? Math.min(8, Math.max(1, Math.floor(requestedLimit))) : 8;
     if (q.length < 2) return res.json({ suggestions: [], engine: "none" });
     try {
       const [suggestions, popular] = await Promise.all([
         marketplaceMeiliSuggestions({ assetType, q, limit }),
-        popularMarketplaceSearchSuggestions({ assetType, query: q, limit: 3 }),
+        optionalSearchWithin(popularMarketplaceSearchSuggestions({ assetType, query: q, limit: 3 }), 150, []),
       ]);
       if (suggestions) {
         const combined = [...popular, ...suggestions]
@@ -1137,22 +1139,25 @@ export async function listMarketplaceSearchSuggestions(req, res, next) {
     } catch {
       // Continue with the small Mongo prefix fallback.
     }
-    const normalized = marketplaceSearchQuery(q);
-    const models = await MarketplaceModel.find({
+    const tokens = marketplaceSearchTokens(marketplaceSearchQuery(q));
+    if (!tokens.length) return res.json({ suggestions: [], engine: "none" });
+    let request = MarketplaceModel.find({
       assetType: marketplaceQueryAssetType(assetType),
       isPublished: true,
       metadataStatus: "complete",
       fileStatus: "ready",
       ...marketplacePublicDeletionQuery(),
-      $or: [
-        { title: new RegExp(`^${escapeSearchRegex(q)}`, "i") },
-        { searchTokens: new RegExp(`^${escapeSearchRegex(normalized)}`, "i") },
-      ],
+      $and: tokens.map((token, index) => ({
+        searchTokens: index === tokens.length - 1 ? new RegExp(`^${escapeSearchRegex(token)}`) : token,
+      })),
     })
       .select("title slug assetType")
-      .sort({ downloadCount: -1, sourceAssetIdSort: -1 })
-      .limit(limit)
-      .lean();
+      .limit(limit);
+    if (!isMemoryDb()) request = request.hint(MARKETPLACE_SEARCH_TOKEN_INDEX_HINT).maxTimeMS(200);
+    const models = await optionalSearchWithin(request.lean(), 250);
+    if (!models) {
+      return res.json({ suggestions: [], engine: "mongo_prefix_fallback", degraded: true });
+    }
     return res.json({
       engine: "mongo_prefix_fallback",
       suggestions: models.map((model) => ({

@@ -37,3 +37,11 @@ test("unsubscribed account listeners receive no later events", () => {
   assert.equal(events.length, 0);
 });
 
+test("an old unsubscribe cannot remove a new subscriber group for the same account", () => {
+  const old = subscribeAccountEvents("reconnect", () => {});
+  old();
+  const current = subscribeAccountEvents("reconnect", () => {});
+  old();
+  assert.equal(publishAccountEvent("reconnect", {}), 1);
+  current();
+});

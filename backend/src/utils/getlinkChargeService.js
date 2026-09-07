@@ -3,6 +3,7 @@ import { isMemoryDb } from "../config/memoryStore.js";
 import Getlink from "../models/Getlink.js";
 import { addCredit, deductCredit } from "./creditService.js";
 import logger from "./logger.js";
+import { publishAccountInvalidation } from "./accountEventBus.js";
 
 function transactionUnsupported(error) {
   const text = String(error?.message || error || "").toLowerCase();
@@ -40,7 +41,7 @@ async function createWithCompensation(
   }
 }
 
-export async function chargeAndCreateGetlink(
+async function chargeAndCreateGetlinkInternal(
   { userId, creditCost, historyPayload },
   {
     getlinkModel = Getlink,
@@ -74,4 +75,10 @@ export async function chargeAndCreateGetlink(
   } finally {
     await session.endSession();
   }
+}
+
+export async function chargeAndCreateGetlink(input, dependencies) {
+  const result = await chargeAndCreateGetlinkInternal(input, dependencies);
+  if (result?.user) publishAccountInvalidation(result.user._id, "getlink_charged");
+  return result;
 }

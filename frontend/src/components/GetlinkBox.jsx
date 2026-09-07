@@ -86,7 +86,7 @@ function draftStorageKey(userId) {
   return `3dipl-getlink-draft:${String(userId || "anonymous")}`;
 }
 
-export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "", language = "vi", disabledReason = "" }) {
+export default function GetlinkBox({ userId = "", initialUrl = "", language = "vi", disabledReason = "" }) {
   const t = translations[language] || translations.vi;
   const [url, setUrl] = useState(initialUrl);
   const [result, setResult] = useState("");
@@ -108,7 +108,6 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
   const resetTimerRef = useRef(null);
   const formatDialogDismissedRef = useRef("");
   const acknowledgeInFlightRef = useRef(false);
-  const completedJobAppliedRef = useRef("");
   const [draftOwner, setDraftOwner] = useState("");
   const {
     job,
@@ -210,10 +209,6 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
         selectedFormat: job.selectedFormat || current?.selectedFormat || null,
       }));
       setError("");
-      if (completedJobAppliedRef.current !== job.id) {
-        completedJobAppliedRef.current = job.id;
-        onCreditChange(Number(job.result?.credit || 0));
-      }
       return;
     }
     if (job.status === "failed") {
@@ -225,7 +220,7 @@ export default function GetlinkBox({ userId = "", onCreditChange, initialUrl = "
       setPendingFormatSelection(null);
       setError("");
     }
-  }, [job, language, onCreditChange]);
+  }, [job, language]);
 
   useEffect(() => {
     api("/api/system/3d66-status")

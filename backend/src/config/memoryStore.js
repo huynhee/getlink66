@@ -69,7 +69,12 @@ function matches(document, query = {}) {
     if (key === "$or") return expected.some((item) => matches(document, item));
     if (key === "$and") return expected.every((item) => matches(document, item));
     const actual = getByPath(document, key);
-    if (expected instanceof RegExp) return expected.test(String(actual || ""));
+    if (expected instanceof RegExp) {
+      return (Array.isArray(actual) ? actual : [actual]).some((value) => {
+        expected.lastIndex = 0;
+        return expected.test(String(value ?? ""));
+      });
+    }
     if (expected && typeof expected === "object" && !Array.isArray(expected)) {
       if (expected instanceof Date) {
         return new Date(actual).valueOf() === expected.valueOf();

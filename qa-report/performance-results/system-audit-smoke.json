@@ -1,0 +1,50 @@
+{
+  "ok": true,
+  "routes": 6,
+  "viewports": 2,
+  "liveAccountBalance": true,
+  "completedGetlinkBalanceReplay": false,
+  "externalFailures": 0,
+  "externalFailureSamples": [],
+  "load": {
+    "total": 300,
+    "concurrency": 20,
+    "medianMs": 17.1,
+    "p95Ms": 22.85,
+    "maximumMs": 32.67
+  },
+  "memory": {
+    "beforeHeapBytes": 29469328,
+    "afterHeapBytes": 30211984,
+    "heapDeltaBytes": 742656,
+    "beforeRssBytes": 127864832,
+    "afterRssBytes": 134098944
+  },
+  "slowest": [
+    {
+      "viewport": "desktop",
+      "route": "/",
+      "durationMs": 439
+    },
+    {
+      "viewport": "mobile",
+      "route": "/",
+      "durationMs": 332
+    },
+    {
+      "viewport": "mobile",
+      "route": "/models",
+      "durationMs": 192
+    },
+    {
+      "viewport": "mobile",
+      "route": "/scenes",
+      "durationMs": 153
+    },
+    {
+      "viewport": "desktop",
+      "route": "/privacy",
+      "durationMs": 145
+    }
+  ]
+}

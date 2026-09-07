@@ -9,6 +9,7 @@ import Voucher from "../models/Voucher.js";
 import { approvedVoucherUseCount } from "./voucherCheckoutService.js";
 import { synchronizeMarketplaceQuotaGrant } from "./marketplaceQuotaGrantService.js";
 import { notifyMembershipApproved } from "./telegramNotifier.js";
+import { publishAccountInvalidation } from "./accountEventBus.js";
 
 export const DEFAULT_MEMBERSHIP_PLANS = [
   {
@@ -342,6 +343,7 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
 
 function notifyMembershipApproval(result, approvalFields = {}) {
   if (!result) return;
+  publishAccountInvalidation(result.user?._id || result.order?.userId, "membership_approved");
   notifyMembershipApproved({
     order: result.order,
     user: result.user,

@@ -528,13 +528,21 @@ export async function finalizeMarketplaceDownloadBilling(session) {
   }
 
   const billingClaim = `pending:${crypto.randomUUID()}`;
+  const now = new Date();
+  const staleBefore = new Date(now.getTime() - 120_000);
   const claimed = await DownloadSession.findOneAndUpdate(
     {
       _id: fresh._id,
       billingStatus: "pending",
-      $or: [{ creditTransactionId: "" }, { creditTransactionId: { $exists: false } }],
+      // Atlas entitlement idempotency makes an abandoned VPS claim recoverable.
+      $or: [
+        { creditTransactionId: "" },
+        { creditTransactionId: { $exists: false } },
+        { creditTransactionId: /^pending:/, creditBillingLockedAt: { $lte: staleBefore } },
+        { creditTransactionId: /^pending:/, creditBillingLockedAt: null, updatedAt: { $lte: staleBefore } },
+      ],
     },
-    { $set: { creditTransactionId: billingClaim } },
+    { $set: { creditTransactionId: billingClaim, creditBillingLockedAt: now } },
     { new: true },
   );
   if (!claimed) return waitForCreditBilling(fresh._id);
@@ -567,6 +575,7 @@ export async function finalizeMarketplaceDownloadBilling(session) {
       creditCost: actualCost,
       creditTransactionId: transactionId,
       creditEntitlementUntil: entitlementUntil,
+      creditBillingLockedAt: null,
     };
     const updated = await DownloadSession.findOneAndUpdate(
       { _id: claimed._id, billingStatus: "pending", creditTransactionId: billingClaim },
@@ -579,7 +588,7 @@ export async function finalizeMarketplaceDownloadBilling(session) {
   } catch (error) {
     await DownloadSession.findOneAndUpdate(
       { _id: claimed._id, billingStatus: "pending", creditTransactionId: billingClaim },
-      { $set: { creditTransactionId: "" } },
+      { $set: { creditTransactionId: "", creditBillingLockedAt: null } },
     ).catch(() => {});
     throw error;
   }

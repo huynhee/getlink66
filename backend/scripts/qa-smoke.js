@@ -68,6 +68,7 @@ function proxyApi(req, res) {
     upstreamResponse.pipe(res);
   });
   upstream.on("error", (error) => {
+    if (res.destroyed) return;
     if (res.headersSent || res.writableEnded) {
       res.destroy(error);
       return;
@@ -75,6 +76,7 @@ function proxyApi(req, res) {
     res.writeHead(502, { "content-type": "application/json" });
     res.end(JSON.stringify({ message: error.message }));
   });
+  res.once("close", () => upstream.destroy());
   req.pipe(upstream);
 }
 
@@ -101,6 +103,33 @@ function staticServer() {
     });
     fs.createReadStream(file).pipe(res);
   });
+}
+
+async function verifyLiveAccountBalance(page, context) {
+  const before = await (await context.request.get(`${frontendOrigin}/api/auth/user`)).json();
+  const fixture = { id: "qa-completed-job", status: "completed", title: "QA completed job", result: { credit: 1 } };
+  await page.route("**/api/getlink/jobs/latest", (route) => route.fulfill({ json: { job: fixture } }));
+  const stream = page.waitForResponse((response) => response.url().endsWith("/api/account/events") && response.status() === 200);
+  await page.goto(`${frontendOrigin}/getlink`, { waitUntil: "domcontentloaded" });
+  await stream;
+  const balanceIs = (expected) => Number(globalThis.document.querySelector(".accountCreditPill .coinAmount")?.textContent?.trim()) === expected;
+  await page.waitForFunction(balanceIs, Number(before.user.credit), { timeout: 5_000 });
+
+  // Use a separate HTTP client: no component callback can fake the SSE update.
+  const csrf = await (await context.request.get(`${frontendOrigin}/api/auth/csrf`)).json();
+  const response = await context.request.post(`${frontendOrigin}/api/admin/add-credit`, {
+    headers: { "x-csrf-token": csrf.csrfToken, origin: frontendOrigin },
+    data: { userId: before.user._id, credit: 37 },
+  });
+  if (!response.ok()) throw new Error(`QA credit grant failed: ${response.status()} ${await response.text()}`);
+  const expected = Number(before.user.credit) + 37;
+  await page.waitForFunction(balanceIs, expected, { timeout: 4_000 });
+  // A persisted completed job must not replay its historical balance on remount.
+  await page.goto(`${frontendOrigin}/getlink`, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(balanceIs, expected, { timeout: 5_000 });
+  await page.waitForTimeout(300);
+  if (!await page.evaluate(balanceIs, expected)) throw new Error("Completed Getlink job overwrote the live balance");
+  await page.unroute("**/api/getlink/jobs/latest");
 }
 
 async function waitForBackend(timeoutMs = 20_000) {
@@ -214,6 +243,14 @@ async function main() {
       MARKETPLACE_QUOTA_GRANT_JOB_ENABLED: "false",
       MARKETPLACE_DRIVE_CHANGES_ENABLED: "false",
       MARKETPLACE_DRIVE_WRITE_ENABLED: "false",
+      MARKETPLACE_DRIVE_RECONCILE_WORKER_ENABLED: "false",
+      MARKETPLACE_POPULARITY_WORKER_ENABLED: "false",
+      MARKETPLACE_RECOMMENDATION_WORKER_ENABLED: "false",
+      STORAGE_HEALTH_JOB_ENABLED: "false",
+      TELEGRAM_BOT_TOKEN: "",
+      MARKETPLACE_SEARCH_ENGINE: "mongo",
+      MARKETPLACE_DISCOVERY_URL: "",
+      MARKETPLACE_COVER_CACHE_ENABLED: "false",
       MARKETPLACE_BILINGUAL_SEARCH_ENABLED: "false",
       PLUGIN_API_ENABLED: "true",
       PLUGIN_JWT_SECRET: "qa-only-plugin-secret-with-more-than-32-characters",
@@ -312,6 +349,8 @@ async function main() {
       { name: "mobile", width: 390, height: 844 },
     ]) {
       const context = await browser.newContext({ viewport });
+      await context.route(/^https:\/\/(?:pagead2\.googlesyndication\.com|googleads\.g\.doubleclick\.net)\//,
+        (route) => route.fulfill({ status: 204, body: "" }));
       const page = await context.newPage();
       page.on("console", (message) => {
         if (
@@ -360,13 +399,14 @@ async function main() {
         { waitUntil: "domcontentloaded" },
       );
       await page.waitForURL(`${frontendOrigin}/admin`);
-      await page.waitForSelector("#root", { state: "visible" });
+      await page.waitForSelector(".adminPage", { state: "visible" });
       const adminText = (await page.locator("#root").innerText()).trim();
       if (!adminText) throw new Error(`${viewport.name} admin rendered an empty root after dev login`);
       await page.screenshot({
         path: path.join(screenshotRoot, `${viewport.name}-admin.png`),
         fullPage: true,
       });
+      await verifyLiveAccountBalance(page, context);
       await context.close();
     }
 
@@ -378,6 +418,8 @@ async function main() {
       ok: true,
       routes: routeSet.length,
       viewports: 2,
+      liveAccountBalance: true,
+      completedGetlinkBalanceReplay: false,
       externalFailures: externalFailures.length,
       externalFailureSamples: externalFailures.slice(0, 10),
       load,
@@ -395,7 +437,10 @@ async function main() {
     console.log(JSON.stringify(summary, null, 2));
   } finally {
     await browser?.close().catch(() => {});
-    await new Promise((resolve) => frontend.close(resolve));
+    await new Promise((resolve) => {
+      frontend.close(resolve);
+      frontend.closeAllConnections();
+    });
     await stopChild(backend);
     if (backend.exitCode && backend.exitCode !== 0) {
       console.error(backendLogs.join("").slice(-4_000));

@@ -34,6 +34,7 @@ const downloadSessionSchema = new mongoose.Schema(
     },
     creditCost: { type: Number, default: 0, min: 0 },
     creditTransactionId: { type: String, default: "" },
+    creditBillingLockedAt: { type: Date, default: null },
     creditEntitlementUntil: Date,
     // `guest` is retained only so historical sessions remain readable.
     accessTier: { type: String, enum: ["guest", "free", "member", "admin"], default: "free" },

@@ -3,6 +3,7 @@ import { isMemoryDb } from "../config/memoryStore.js";
 import Topup from "../models/Topup.js";
 import User from "../models/User.js";
 import logger from "./logger.js";
+import { publishAccountInvalidation } from "./accountEventBus.js";
 
 function transactionUnsupported(error) {
   const text = String(error?.message || error || "").toLowerCase();
@@ -112,7 +113,7 @@ async function setWithCompensation(
   }
 }
 
-export async function grantManualCredit(
+async function grantManualCreditInternal(
   input,
   {
     userModel = User,
@@ -166,7 +167,7 @@ export async function grantManualCredit(
   }
 }
 
-export async function setManualCredit(
+async function setManualCreditInternal(
   input,
   {
     userModel = User,
@@ -220,4 +221,16 @@ export async function setManualCredit(
   } finally {
     await session.endSession();
   }
+}
+
+export async function grantManualCredit(input, dependencies) {
+  const result = await grantManualCreditInternal(input, dependencies);
+  if (result?.topup) publishAccountInvalidation(input.userId, "manual_credit_granted");
+  return result;
+}
+
+export async function setManualCredit(input, dependencies) {
+  const result = await setManualCreditInternal(input, dependencies);
+  if (result?.topup) publishAccountInvalidation(input.userId, "manual_credit_adjusted");
+  return result;
 }

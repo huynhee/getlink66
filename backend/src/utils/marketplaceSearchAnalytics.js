@@ -3,6 +3,7 @@ import MarketplaceSearchQueryStat from "../models/MarketplaceSearchQueryStat.js"
 import MarketplaceBehaviorEvent from "../models/MarketplaceBehaviorEvent.js";
 import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { normalizeMarketplaceSearchText } from "./marketplaceSearch.js";
+import { isMemoryDb } from "../config/memoryStore.js";
 
 const QUERY_TTL_MS = 90 * 86_400_000;
 
@@ -50,14 +51,15 @@ export async function recordMarketplaceSearchQuery({
 export async function popularMarketplaceSearchSuggestions({ assetType = "model", query = "", limit = 3 } = {}) {
   const normalized = normalizeMarketplaceSearchText(query);
   if (normalized.length < 2) return [];
-  const rows = await MarketplaceSearchQueryStat.find({
+  let request = MarketplaceSearchQueryStat.find({
     assetType: normalizeAssetType(assetType),
     timeBucket: { $exists: true },
-    normalizedQuery: new RegExp(`^${normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i"),
+    normalizedQuery: new RegExp(`^${normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
   })
-    .sort({ count: -1, lastSearchedAt: -1 })
-    .limit(80)
-    .lean();
+    .select("normalizedQuery displayQuery count lastSearchedAt")
+    .limit(80);
+  if (!isMemoryDb()) request = request.hint({ assetType: 1, normalizedQuery: 1, timeBucket: -1 }).maxTimeMS(150);
+  const rows = await request.lean();
   const grouped = new Map();
   for (const row of rows) {
     const key = String(row.normalizedQuery || "");
