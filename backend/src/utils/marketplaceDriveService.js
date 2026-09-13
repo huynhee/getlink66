@@ -435,11 +435,25 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
   };
   existing = existing || await findModelForFolder(folder, metadata, normalizedType);
   assertMarketplaceAssetSyncable(existing);
+  let replacingTrashedFolder = false;
   if (existing?.driveFolderId && existing.driveFolderId !== folderId) {
-    const error = new Error(`Source ${normalizedType} ${metadata.sourceAssetId || metadata.sourceModelId || fallbackSourceId} is already attached to another Drive folder.`);
-    error.status = 409;
-    error.code = "MARKETPLACE_SOURCE_MODEL_CONFLICT";
-    throw error;
+    const sourceId = clean(metadata.sourceAssetId || metadata.sourceModelId, 160);
+    const existingSourceId = clean(existing.source?.assetId || existing.metadataSourceModelId, 160);
+    if (metadataFile && !syncError && metadataResult.errors.length === 0 && sourceId && sourceId === existingSourceId) {
+      try {
+        const previousFolder = await getGoogleDriveFileMetadata(existing.driveFolderId, { fields: "id,trashed" });
+        replacingTrashedFolder = previousFolder.trashed === true;
+      } catch (error) {
+        // A missing old folder does not prove it was trashed, nor that the new one is missing.
+        if (error?.status !== 404) throw error;
+      }
+    }
+    if (!replacingTrashedFolder) {
+      const error = new Error(`Source ${normalizedType} ${metadata.sourceAssetId || metadata.sourceModelId || fallbackSourceId} is already attached to another Drive folder.`);
+      error.status = 409;
+      error.code = "MARKETPLACE_SOURCE_MODEL_CONFLICT";
+      throw error;
+    }
   }
   const categories = await categoryFields(metadata.sourceCategoryId, normalizedType, { currentModel: existing });
   const blockers = publicationBlockers({
@@ -454,6 +468,12 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
   const desiredPublished = typeof existing?.desiredPublished === "boolean"
     ? existing.desiredPublished
     : typeof existing?.isPublished === "boolean" ? existing.isPublished : true;
+  if (replacingTrashedFolder && blockers.length) {
+    const error = new Error("Replacement Drive folder is incomplete.");
+    error.status = 409;
+    error.code = "MARKETPLACE_SOURCE_MODEL_CONFLICT";
+    throw error;
+  }
   const now = new Date();
   const sha256 = metadata.sha256 || await readChecksum(checksumFile).catch(() => "") || existing?.sha256 || "";
   const payload = {
@@ -522,13 +542,24 @@ export async function syncMarketplaceDriveFolder({ driveFolderId, folderSnapshot
     );
   }
   const query = existing?._id ? { _id: existing._id } : { assetType: normalizedType, "source.provider": "drive", "source.modelId": folderId };
+  if (replacingTrashedFolder) {
+    // Compare the old binding so a concurrent replacement cannot be overwritten.
+    query.driveFolderId = existing.driveFolderId;
+    query.deletionStatus = existing.deletionStatus === undefined ? { $exists: false } : existing.deletionStatus;
+  }
   let model = await MarketplaceModel.findOneAndUpdate(query, {
     $set: payload,
     $unset: {
       "source.raw": "", "source.url": "", formats: "", format: "", version: "", polygons: "",
       fileName: "", mainMaxFile: "", description: "", tags: "", creditPrice: "", sizeText: "",
     },
-  }, { upsert: true, new: true, setDefaultsOnInsert: true });
+  }, { upsert: !replacingTrashedFolder, new: true, setDefaultsOnInsert: true });
+  if (!model) {
+    const error = new Error("Model changed while replacing its Drive folder; retry synchronization.");
+    error.status = 409;
+    error.code = "MARKETPLACE_SOURCE_MODEL_CONFLICT";
+    throw error;
+  }
   model = await queueMarketplaceCoverCache(model, model.coverImage);
   return {
     model,

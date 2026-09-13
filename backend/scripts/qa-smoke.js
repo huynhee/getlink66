@@ -208,6 +208,47 @@ async function stopChild(child) {
   if (child.exitCode === null) child.kill("SIGKILL");
 }
 
+async function verifyConfiguredCreditCopy(page, context, viewport) {
+  let scenePrice = 20;
+  const pattern = "**/api/settings";
+  const handler = async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: {
+      ...body,
+      settings: { ...body.settings, marketplaceModelCreditPrice: 7, marketplaceSceneCreditPrice: scenePrice },
+    } });
+  };
+  await context.route(pattern, handler);
+  const detailPattern = "**/api/marketplace/scenes/qa-price-scene?*";
+  const detailHandler = (route) => route.fulfill({ json: {
+    scene: {
+      _id: "000000000000000000000123", slug: "qa-price-scene", title: "QA Scene",
+      assetType: "scene", accessType: "member", fileStatus: "ready", isPublished: true,
+      previewImages: [], coverImage: {}, styles: [], renderers: [], platforms: [],
+    },
+  } });
+  await context.route(detailPattern, detailHandler);
+  try {
+    await page.goto(`${frontendOrigin}/topup?mode=credit`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => globalThis.document.body.innerText.includes("Scene 20 Credit"));
+    await page.waitForFunction(() => globalThis.document.body.innerText.includes("Model 7 Credit"));
+    scenePrice = 18;
+    await page.evaluate(() => globalThis.dispatchEvent(new globalThis.Event("focus")));
+    await page.waitForFunction(() => globalThis.document.body.innerText.includes("Scene 18 Credit"));
+    await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-credit-prices.png`), fullPage: true });
+    await page.goto(`${frontendOrigin}/scenes/qa-price-scene`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => {
+      const text = globalThis.document.body.innerText;
+      return text.includes("5 lượt hằng ngày hoặc 18 Credit") || text.includes("5 daily downloads or 18 Credits");
+    });
+    await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-scene-price.png`), fullPage: true });
+  } finally {
+    await context.unroute(pattern, handler);
+    await context.unroute(detailPattern, detailHandler);
+  }
+}
+
 async function main() {
   if (!fs.existsSync(path.join(buildRoot, "index.html"))) {
     throw new Error(`Build is missing: ${buildRoot}`);
@@ -406,6 +447,7 @@ async function main() {
         path: path.join(screenshotRoot, `${viewport.name}-admin.png`),
         fullPage: true,
       });
+      await verifyConfiguredCreditCopy(page, context, viewport.name);
       await verifyLiveAccountBalance(page, context);
       await context.close();
     }
@@ -419,6 +461,7 @@ async function main() {
       routes: routeSet.length,
       viewports: 2,
       liveAccountBalance: true,
+      configuredCreditCopy: true,
       completedGetlinkBalanceReplay: false,
       externalFailures: externalFailures.length,
       externalFailureSamples: externalFailures.slice(0, 10),

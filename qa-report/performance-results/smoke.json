@@ -2,47 +2,50 @@
   "ok": true,
   "routes": 6,
   "viewports": 2,
+  "liveAccountBalance": true,
+  "configuredCreditCopy": true,
+  "completedGetlinkBalanceReplay": false,
   "externalFailures": 0,
   "externalFailureSamples": [],
   "load": {
     "total": 300,
     "concurrency": 20,
-    "medianMs": 12.62,
-    "p95Ms": 21.44,
-    "maximumMs": 25.55
+    "medianMs": 25.19,
+    "p95Ms": 39.37,
+    "maximumMs": 53.54
   },
   "memory": {
-    "beforeHeapBytes": 27490264,
-    "afterHeapBytes": 28124480,
-    "heapDeltaBytes": 634216,
-    "beforeRssBytes": 113168384,
-    "afterRssBytes": 124313600
+    "beforeHeapBytes": 29911384,
+    "afterHeapBytes": 30646384,
+    "heapDeltaBytes": 735000,
+    "beforeRssBytes": 130994176,
+    "afterRssBytes": 139014144
   },
   "slowest": [
     {
       "viewport": "desktop",
       "route": "/",
-      "durationMs": 225
+      "durationMs": 668
     },
     {
       "viewport": "mobile",
       "route": "/",
-      "durationMs": 211
-    },
-    {
-      "viewport": "desktop",
-      "route": "/models",
-      "durationMs": 110
+      "durationMs": 434
     },
     {
       "viewport": "mobile",
-      "route": "/privacy",
-      "durationMs": 73
+      "route": "/scenes",
+      "durationMs": 417
+    },
+    {
+      "viewport": "mobile",
+      "route": "/models",
+      "durationMs": 356
     },
     {
       "viewport": "desktop",
       "route": "/scenes",
-      "durationMs": 68
+      "durationMs": 272
     }
   ]
 }

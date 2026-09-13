@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Check, Copy, Gift, CreditCard, Sparkles, Wallet } from "lucide-react";
 import { api } from "../api.js";
+import { useMarketplacePrices } from "../utils/useMarketplacePrices.js";
 import { translations } from "../i18n.js";
 import { membershipBenefitLabels, membershipDurationLabel } from "../utils/membershipPresentation.js";
 
@@ -94,7 +95,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   const [voucherMessage, setVoucherMessage] = useState("");
   const [voucherError, setVoucherError] = useState("");
   const [topupMode, setTopupModeState] = useState(modeFromLocation);
-  const [marketplacePrices, setMarketplacePrices] = useState({ model: 5, scene: 25 });
+  const marketplacePrices = useMarketplacePrices();
 
   function changeTopupMode(nextMode) {
     const normalizedMode = nextMode === "credit" ? "credit" : "pro";
@@ -127,18 +128,6 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         setSelectedPackageId(packageId);
       }
     });
-  }, []);
-
-  useEffect(() => {
-    api("/api/settings")
-      .then((data) => {
-        const settings = data.settings || {};
-        setMarketplacePrices({
-          model: Number(settings.marketplaceModelCreditPrice || 5),
-          scene: Number(settings.marketplaceSceneCreditPrice || 25),
-        });
-      })
-      .catch(() => {});
   }, []);
 
   useEffect(() => {

@@ -6,6 +6,7 @@ import Pagination from "../components/Pagination.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
 import MarketplaceFacetIcon from "../components/MarketplaceFacetIcon.jsx";
 import { triggerBackgroundDownload } from "../utils/downloadWindow.js";
+import { useMarketplacePrices } from "../utils/useMarketplacePrices.js";
 
 const EMPTY_FILTERS = {
   style: [],
@@ -2050,6 +2051,7 @@ function DownloadPaymentModal({
 }
 
 function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, assetType = "model" }) {
+  const marketplacePrices = useMarketplacePrices();
   const segment = catalogSegment(assetType);
   const noun = catalogNoun(assetType, language);
   const [model, setModel] = useState(null);
@@ -2405,8 +2407,8 @@ function ModelDetailPage({ slug, user, language, onNavigate, onUserChange, asset
           <div className="marketDetailActions">
             <p className="marketQuotaCost">
               {assetType === "scene"
-                ? textFor(language, `Tải bằng 5 lượt hằng ngày hoặc ${downloadOptions?.creditPrice ?? 25} Credit.`, `Use 5 daily downloads or ${downloadOptions?.creditPrice ?? 25} Credits.`)
-                : textFor(language, `Tải bằng 1 lượt hằng ngày hoặc ${downloadOptions?.creditPrice ?? 5} Credit.`, `Use 1 daily download or ${downloadOptions?.creditPrice ?? 5} Credits.`)}
+                ? textFor(language, `Tải bằng 5 lượt hằng ngày hoặc ${marketplacePrices.scene} Credit.`, `Use 5 daily downloads or ${marketplacePrices.scene} Credits.`)
+                : textFor(language, `Tải bằng 1 lượt hằng ngày hoặc ${marketplacePrices.model} Credit.`, `Use 1 daily download or ${marketplacePrices.model} Credits.`)}
             </p>
             {requiresDownloadVerification ? (
               <TurnstileDownloadGate
