@@ -339,6 +339,7 @@ export default function Admin({ user, language = "vi" }) {
   const [userSort, setUserSort] = useState("created-desc");
   const [userPage, setUserPage] = useState(1);
   const [userPagination, setUserPagination] = useState({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
+  const [cookieLabel, setCookieLabel] = useState("");
   const [cookie, setCookie] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -940,8 +941,9 @@ export default function Admin({ user, language = "vi" }) {
     try {
       await api("/api/admin/cookie", {
         method: "POST",
-        body: JSON.stringify({ value: cookie })
+        body: JSON.stringify({ value: cookie, label: cookieLabel })
       });
+      setCookieLabel("");
       setCookie("");
       await loadData();
       setMessage(l("Cookie 3D66 đã được lưu.", "3D66 cookie saved."));
@@ -3006,6 +3008,13 @@ export default function Admin({ user, language = "vi" }) {
             <div className="runtimeSettingGroup">
               <h3>{l("Cookie tài khoản nguồn", "Source account cookies")}</h3>
               <form className="inputRow" onSubmit={saveCookie}>
+                <input
+                  value={cookieLabel}
+                  onChange={(event) => setCookieLabel(event.target.value)}
+                  placeholder={l("Tên nick 3D66", "3D66 account label")}
+                  maxLength={80}
+                  style={{ flex: "0 1 220px" }}
+                />
                 <input value={cookie} onChange={(event) => setCookie(event.target.value)} placeholder={l("Dán cookie 3D66 VIP vào đây...", "Paste 3D66 VIP cookie here...")} />
                 <button disabled={!cookie || loading}>
                   {loading ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />}
@@ -3036,7 +3045,9 @@ export default function Admin({ user, language = "vi" }) {
             <div className="table" style={{ marginTop: 16 }}>
               {cookieRecords.map((item, index) => (
                 <div className="tableRow" key={item._id}>
-                  <span>{item.status === "cooldown" ? l("Tạm nghỉ", "Cooldown") : index === 0 ? l("Ưu tiên", "Primary") : l("Dự phòng", "Backup")}</span>
+                  <span>
+                    {item.label || (item.status === "cooldown" ? l("Tạm nghỉ", "Cooldown") : index === 0 ? l("Ưu tiên", "Primary") : l("Dự phòng", "Backup"))}
+                  </span>
                   <code>{item.preview || "cookie"}</code>
                   <span>{item.keyCount || 0} keys</span>
                   <span className={item.hasRequiredKeys ? "success" : "error"}>

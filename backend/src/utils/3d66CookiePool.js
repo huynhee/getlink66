@@ -168,6 +168,7 @@ export function isSwitchable3D66Error(error) {
   const status = Number(error?.status || error?.statusCode || 0);
   const text = `${error?.message || ""} ${JSON.stringify(error?.details || {})}`.toLowerCase();
 
+  if (isAccountScoped3D66Miss(error)) return true;
   if ([401, 403, 419].includes(status)) return true;
   if (status === 400 && text.includes("cookie")) return true;
   if (
@@ -200,6 +201,24 @@ export function isSwitchable3D66Error(error) {
     "không đủ số dư",
     "khong du so du"
   ].some((pattern) => text.includes(pattern));
+}
+
+export function isAccountScoped3D66Miss(error) {
+  const code = String(error?.code || "").trim().toUpperCase();
+  const stage = String(error?.details?.stage || "").trim().toLowerCase();
+  const message = String(error?.message || "").trim().toLowerCase();
+  return (
+    code === "THREED66_FOOTPRINT_MODEL_NOT_FOUND" ||
+    code === "THREED66_FOOTPRINT_MODEL_MISMATCH" ||
+    stage === "footprint-history" ||
+    stage === "footprint-opened-model" ||
+    message.includes("không tìm thấy đúng model vừa mở trong lịch sử truy cập 3d66") ||
+    message.includes("3d66 opened a different model than the selected footprint item")
+  );
+}
+
+export function shouldDegrade3D66Cookie(error) {
+  return isSwitchable3D66Error(error) && !isAccountScoped3D66Miss(error);
 }
 
 export async function getUsable3D66Cookies() {
@@ -282,6 +301,7 @@ export async function with3D66Cookie(task) {
   }
 
   let lastError;
+  let sawDegradingFailure = false;
   for (const cookie of cookies) {
     try {
       await throttle3D66Request();
@@ -291,10 +311,15 @@ export async function with3D66Cookie(task) {
     } catch (error) {
       lastError = error;
       if (!isSwitchable3D66Error(error)) throw error;
-      await mark3D66CookieFailure(cookie, error);
+      if (shouldDegrade3D66Cookie(error)) {
+        sawDegradingFailure = true;
+        await mark3D66CookieFailure(cookie, error);
+      }
     }
   }
 
-  await alert3D66CookiesUnavailable("All usable 3D66 cookies failed", lastError);
+  if (sawDegradingFailure) {
+    await alert3D66CookiesUnavailable("All usable 3D66 cookies failed", lastError);
+  }
   throw lastError || httpError("All 3D66 cookies are unavailable.", 503);
 }
