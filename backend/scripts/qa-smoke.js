@@ -418,12 +418,28 @@ async function main() {
 
       for (const route of routeSet) {
         const startedAt = Date.now();
-        const response = await page.goto(`${frontendOrigin}${route}`, {
-          waitUntil: "domcontentloaded",
-          timeout: 15_000,
-        });
+        const catalogResponse = route === "/models"
+          ? page.waitForResponse((candidate) => {
+              const url = new URL(candidate.url());
+              return url.pathname === "/api/marketplace/models"
+                && url.searchParams.get("sort") === "newest";
+            }, { timeout: 15_000 })
+          : Promise.resolve(null);
+        const [response, modelResponse] = await Promise.all([
+          page.goto(`${frontendOrigin}${route}`, {
+            waitUntil: "domcontentloaded",
+            timeout: 15_000,
+          }),
+          catalogResponse,
+        ]);
         if (!response?.ok()) throw new Error(`${viewport.name} ${route} returned HTTP ${response?.status()}`);
+        if (modelResponse && !modelResponse.ok()) {
+          throw new Error(`${viewport.name} Model catalog returned HTTP ${modelResponse.status()}`);
+        }
         await page.waitForSelector("#root", { state: "visible" });
+        if (route === "/models") {
+          await page.waitForFunction(() => globalThis.document.querySelector(".marketSortControl select")?.value === "newest");
+        }
         const text = (await page.locator("#root").innerText()).trim();
         if (!text) throw new Error(`${viewport.name} ${route} rendered an empty root`);
         slowest.push({ viewport: viewport.name, route, durationMs: Date.now() - startedAt });
@@ -435,12 +451,35 @@ async function main() {
         fullPage: true,
       });
 
+      const adminDataPaths = [
+        "/api/admin/overview",
+        "/api/admin/dashboard",
+        "/api/admin/storage-health",
+        "/api/admin/topup-packages",
+        "/api/admin/membership-plans",
+        "/api/admin/vouchers",
+        "/api/admin/cookies",
+        "/api/admin/cookies/status",
+        "/api/admin/system-logs",
+        "/api/admin/articles",
+        "/api/admin/notifications",
+        "/api/admin/referrals",
+        "/api/admin/users",
+        "/api/admin/getlinks",
+        "/api/admin/transactions",
+        "/api/admin/audit-logs",
+      ];
+      const adminResponses = adminDataPaths.map((endpoint) => page.waitForResponse(
+        (response) => new URL(response.url()).pathname === endpoint,
+        { timeout: 15_000 },
+      ));
       await page.goto(
         `${frontendOrigin}/api/auth/dev-login?role=admin&pro=true&returnTo=%2Fadmin`,
         { waitUntil: "domcontentloaded" },
       );
       await page.waitForURL(`${frontendOrigin}/admin`);
       await page.waitForSelector(".adminPage", { state: "visible" });
+      await Promise.all(adminResponses);
       const adminText = (await page.locator("#root").innerText()).trim();
       if (!adminText) throw new Error(`${viewport.name} admin rendered an empty root after dev login`);
       await page.screenshot({

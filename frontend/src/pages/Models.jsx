@@ -1135,8 +1135,8 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   const [categoriesExpanded, setCategoriesExpanded] = useState(true);
   const [activeFilters, setActiveFilters] = useState(EMPTY_FILTERS);
   const [accessType, setAccessType] = useState("");
-  const [sortMode, setSortMode] = useState(assetType === "model" ? "featured" : "newest");
-  const [effectiveSort, setEffectiveSort] = useState(assetType === "model" ? "featured" : "newest");
+  const [sortMode, setSortMode] = useState(() => search.trim().length >= 2 ? "relevance" : "newest");
+  const [effectiveSort, setEffectiveSort] = useState(() => search.trim().length >= 2 ? "relevance" : "newest");
   const [imageSearchMeta, setImageSearchMeta] = useState(null);
   const [imageSearchPreview, setImageSearchPreview] = useState("");
   const [imageSearching, setImageSearching] = useState(false);
@@ -1236,7 +1236,7 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
         && !search.trim()
         && !category
         && !accessType
-        && sortMode === "featured"
+        && sortMode === "newest"
         && !Object.values(activeFilters).some((values) => values?.length);
       const data = canUseWarmCatalog
         ? await apiCached(requestPath, { ttlMs: 15_000 })
@@ -1352,9 +1352,8 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
       setSortMode("relevance");
       setEffectiveSort("relevance");
     } else {
-      const nextSort = assetType === "model" ? "featured" : "newest";
-      setSortMode(nextSort);
-      setEffectiveSort(nextSort);
+      setSortMode("newest");
+      setEffectiveSort("newest");
     }
   }, [assetType, search]);
 
