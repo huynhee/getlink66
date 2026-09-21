@@ -8,6 +8,7 @@ const getlinkJobSchema = new mongoose.Schema(
     clientRequestId: { type: String, required: true, trim: true },
     input: { type: String, required: true, trim: true },
     includePreviewImage: { type: Boolean, default: false },
+    confirmedCreditCost: { type: Number, min: 0, default: null },
     requestedFormat: { type: mongoose.Schema.Types.Mixed, default: null },
     status: {
       type: String,

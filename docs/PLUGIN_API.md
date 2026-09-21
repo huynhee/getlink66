@@ -6,7 +6,7 @@ Nó thay thế mô tả đăng nhập và tải file cũ trong
 
 Contract mục tiêu:
 
-- Desktop release: `0.4.0` trở lên.
+- Desktop RC hiện tại: `0.5.0`; tương thích protocol `2`.
 - Bridge protocol: `2`.
 - Đăng nhập: app mở trình duyệt, website đăng nhập Google, sau đó gọi ngược app.
 - Tải: người dùng chọn quota Free/Pro hoặc Credit, backend cấp download session.
@@ -14,9 +14,24 @@ Contract mục tiêu:
 
 > **Trạng thái triển khai:** backend hiện đã có device authorization, Bearer token,
 > Google login trên web, download options, quota/Credit, idempotency, challenge và
-> download session. Phần callback `threedipl://` và việc giữ `appState` xuyên suốt
-> Google OAuth là contract mới, phải hoàn thiện ở backend/frontend/plugin trước khi
-> phát hành `0.4.0`.
+> download session. Callback `threedipl://` và `appState` phải được kiểm thử trên
+> staging với bản cài thực tế trước khi công bố Production. RC không phải bản đã ký.
+
+## Account Events (0.5.0)
+
+`GET /api/plugin/account/events` dùng `Authorization: Bearer <access-token>` và
+`Accept: text/event-stream`. Không truyền token trong URL. Server trả `ready`,
+`account.updated` và heartbeat. `account.updated` chỉ là tín hiệu invalidation:
+plugin phải đọc lại `GET /api/plugin/me`, không tự tính số dư từ sự kiện.
+
+Server kiểm tra lại phiên/tài khoản trước khi gửi invalidation và mỗi heartbeat
+(20 giây); đóng stream khi token hết hạn, phiên bị thu hồi hoặc tài khoản bị cấm.
+Kết nối tối đa 10 phút, sau đó client reconnect. Desktop reconnect có backoff,
+không dùng lại token SSE bị từ chối; khi logout phải đóng kết nối.
+
+Plugin đọc lại tài khoản mỗi 30 giây khi cửa sổ hoạt động và khi quay lại app.
+Polling vẫn cần thiết vì event bus hiện là in-process, không phát chéo các backend
+replica. Chưa có phép đo staging để khẳng định mục tiêu cập nhật dưới 3 giây.
 
 ## 1. Nguồn chuẩn
 
@@ -69,9 +84,9 @@ Header chung:
 
 ```http
 Accept: application/json
-User-Agent: 3DiPL-AssetManager/0.4.0 (3ds Max 2026; Windows)
+User-Agent: 3DiPL-AssetManager/0.5.0 (3ds Max 2026; Windows)
 X-Correlation-Id: <8-96 safe characters>
-X-3DiPL-Plugin-Version: 0.4.0
+X-3DiPL-Plugin-Version: 0.5.0
 X-3DiPL-Max-Version: 2026
 ```
 
@@ -129,7 +144,7 @@ Content-Type: application/json
 {
   "deviceId": "<installation-id>",
   "deviceName": "WORKSTATION-01",
-  "pluginVersion": "0.4.0",
+  "pluginVersion": "0.5.0",
   "maxVersion": "2026",
   "callbackMode": "app",
   "appState": "<base64url-random>"
@@ -663,6 +678,18 @@ Release:
 
 Các test backend tối thiểu:
 
+Contract taxonomy dùng chung với Desktop:
+`docs/contracts/plugin-taxonomy-v1.json` và
+`backend/test/plugin-taxonomy-contract.test.js`. Bản fixture tương ứng trong repo
+plugin là `tests/ThreeDiPL.Core.Tests/Fixtures/plugin-taxonomy-v1.json`.
+Giữ hai bản giống nhau khi sửa contract. Test chỉ dùng memory DB.
+
+Desktop Debug mới hỗ trợ `--mode development --api-base http://127.0.0.1:5001`,
+tách dữ liệu/token và single-instance theo port. Bản Release không cho dùng mode
+này. Không cần đổi cấu hình Production để chạy harness; backend local phải dùng
+DB/storage/secret test riêng. Hướng dẫn đầy đủ nằm trong
+`D:/LTinh/plugin/docs/PLUGIN_COMPLETION_2026-09-08.md`.
+
 ```text
 backend/test/plugin-auth.test.js
 backend/test/plugin-download-challenge.test.js
@@ -671,3 +698,54 @@ backend/test/plugin-rate-limit-contract.test.js
 backend/test/plugin-release-etag.test.js
 backend/test/plugin-release-signature.test.js
 ```
+
+## Getlink Desktop (2026-09-09, pending staging verification)
+
+All routes below use the existing plugin Bearer session and private rate limit.
+A session requiring risk reauthentication receives `403 DEVICE_REAUTH_REQUIRED`.
+Download ownership is checked against the authenticated user; web query tokens
+are not accepted as an ownership bypass on these plugin routes.
+
+| Method | Route under `/api/plugin/getlink` | Purpose |
+| --- | --- | --- |
+| POST | `/preview` | Inspect `{modelId}`; returns title, productId and creditCost |
+| POST | `/jobs` | Create the existing asynchronous Getlink job |
+| GET | `/jobs/latest` | Resume the user's latest job |
+| GET | `/jobs/:id` | Poll job status |
+| POST | `/jobs/:id/format` | Submit `{formatKey}` |
+| POST | `/jobs/:id/retry` | Retry an eligible failed job |
+| POST | `/jobs/:id/cancel` | Cancel an eligible job |
+| POST | `/jobs/:id/acknowledge` | Acknowledge after local download succeeds |
+| POST | `/redownload/:id` | Existing history-based redownload policy |
+| GET | `/download/:id` | Authenticated history file stream |
+| GET | `/preview-image/:id` | Authenticated history preview image |
+| GET | `/preview-cache/:productId` | Cached JPEG preview |
+
+Create body:
+
+```json
+{
+  "modelId": "123456",
+  "confirmedCreditCost": 28,
+  "clientRequestId": "a-unique-request-id",
+  "includePreviewImage": true
+}
+```
+
+`Idempotency-Key` is used if `clientRequestId` is absent. Reuse the same key
+when retrying an uncertain create request. The backend requires a nonnegative
+integer confirmation and forces preview inclusion. It computes the actual price
+itself: a changed price returns `GETLINK_PRICE_CHANGED` before debit and must be
+inspected and confirmed again, not automatically retried. Creating a job does
+not itself debit Credit; the existing Getlink worker performs billing.
+
+Public job DTO includes `historyId` once available. Desktop persists that ID,
+not an expiring web download URL. Only acknowledge the job after the local file
+is stored. An image failure does not invalidate the downloaded file; retry the
+JPEG endpoint independently without creating another paid job.
+
+Getlink downloads currently compute a local SHA-256 for cache integrity. This is
+not a server-attested checksum. Marketplace Model/Scene downloads keep their
+existing server checksum verification. ZIP extraction follows the existing safe
+archive policy; RAR and other unextracted formats are available as local files,
+not advertised as directly mergeable scenes.

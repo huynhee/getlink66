@@ -15,6 +15,59 @@ function response() {
   return res;
 }
 
+test("plugin invalidation arriving during authorization is not lost", async () => {
+  const res = response();
+  let release;
+  let checks = 0;
+  accountEvents({ user: { _id: "busy-stream" } }, res, {
+    authorize: async () => {
+      if (++checks === 1) await new Promise((resolve) => { release = resolve; });
+      return true;
+    },
+  });
+  try {
+    publishAccountInvalidation("busy-stream", "first");
+    publishAccountInvalidation("busy-stream", "second");
+    release();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(checks, 2);
+    assert.equal(res.chunks.filter((chunk) => chunk.includes("event: account.updated")).length, 2);
+  } finally { res.end(); }
+});
+
+test("plugin stream closes when access expires", async () => {
+  const res = response();
+  accountEvents({ user: { _id: "expiring-stream" } }, res, {
+    authorize: async () => true,
+    expiresAt: Date.now() - 1,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(res.writableEnded, true);
+  assert.equal(publishAccountInvalidation("expiring-stream", "later"), 0);
+});
+
+test("plugin stream stops on revocation before emitting account data", async () => {
+  const req = { user: { _id: "revoked-stream" } };
+  const res = response();
+  accountEvents(req, res, { authorize: async () => false });
+  publishAccountInvalidation("revoked-stream", "topup_approved");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(res.writableEnded, true);
+  assert.doesNotMatch(res.chunks.join(""), /event: account.updated/);
+  assert.equal(publishAccountInvalidation("revoked-stream", "again"), 0);
+});
+
+test("plugin stream emits invalidation only while authorization is valid", async () => {
+  const res = response();
+  accountEvents({ user: { _id: "authorized-stream" } }, res, { authorize: async () => true });
+  try {
+    publishAccountInvalidation("authorized-stream", "secret-reason");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(res.chunks.join(""), /event: account.updated/);
+    assert.doesNotMatch(res.chunks.join(""), /secret-reason/);
+  } finally { res.end(); }
+});
+
 test("account stream lives until the response closes, not until the incoming request finishes", () => {
   const req = new EventEmitter();
   req.user = { _id: "stream-user" };

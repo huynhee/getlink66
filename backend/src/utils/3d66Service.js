@@ -2391,6 +2391,7 @@ export async function request3D66File(fileUrl, cookieValue, options = {}) {
   const headers = {
     accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
     "accept-language": "vi,en-US;q=0.9,en;q=0.8,zh-CN;q=0.7,zh;q=0.6",
+    "accept-encoding": "identity",
     "cache-control": "no-cache",
     cookie: cookieValue,
     pragma: "no-cache",
@@ -2410,7 +2411,13 @@ export async function request3D66File(fileUrl, cookieValue, options = {}) {
     headers.origin = origin;
   }
 
-  if (options.range) headers.range = options.range;
+  if (options.range) {
+    headers.range = options.range;
+    const ifRange = String(options.ifRange || "").trim();
+    if (ifRange.length <= 256 && ifRange.startsWith('"') && ifRange.endsWith('"')) {
+      headers["if-range"] = ifRange;
+    }
+  }
 
   return fetch3D66DownloadWithRedirects(fileUrl, {
     signal: options.signal,

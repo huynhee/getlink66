@@ -26,12 +26,22 @@ async function sendJob(req, res, job, status = 200) {
 
 export async function createJob(req, res, next) {
   try {
-    const unknownKey = rejectUnknownKeys(req.body, ["url", "modelId", "includePreviewImage", "downloadFormat", "clientRequestId"]);
+    const unknownKey = rejectUnknownKeys(req.body, ["url", "modelId", "includePreviewImage", "downloadFormat", "clientRequestId", ...(req.pluginSession ? ["confirmedCreditCost"] : [])]);
     if (unknownKey) return res.status(400).json({ message: "Invalid getlink job request." });
+    if (req.pluginSession) {
+      if (!Number.isSafeInteger(req.body.confirmedCreditCost) || req.body.confirmedCreditCost < 0) {
+        return res.status(400).json({ code: "PRICE_CONFIRMATION_REQUIRED", message: "Confirm the Getlink price first." });
+      }
+      req.body.includePreviewImage = true;
+      req.body.clientRequestId ||= req.get("Idempotency-Key");
+    }
     const result = await createGetlinkJob({ userId: req.user._id, body: req.body });
     return sendJob(req, res, result.job, result.created ? 202 : 200);
   } catch (error) {
     if (error.code === "GETLINK_JOB_ACTIVE" && error.activeJob) {
+      if (req.pluginSession) {
+        return sendJob(req, res, error.activeJob);
+      }
       return res.status(409).json({
         message: error.message,
         code: error.code,
@@ -82,6 +92,9 @@ export async function retryJob(req, res, next) {
     return sendJob(req, res, await retryGetlinkJob(req.user._id, id));
   } catch (error) {
     if (error.code === "GETLINK_JOB_ACTIVE" && error.activeJob) {
+      if (req.pluginSession) {
+        return sendJob(req, res, error.activeJob);
+      }
       return res.status(409).json({ message: error.message, code: error.code, job: await publicGetlinkJob(req, error.activeJob) });
     }
     next(error);

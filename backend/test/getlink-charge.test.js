@@ -2,6 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { chargeAndCreateGetlink } from "../src/utils/getlinkChargeService.js";
 
+test("plugin confirmed price cannot change before debit", async () => {
+  let charged = false;
+  await assert.rejects(chargeAndCreateGetlink(
+    { userId: "price-test", creditCost: 28, confirmedCreditCost: 25, historyPayload: {} },
+    { forceNonTransactional: true, deduct: async () => { charged = true; } },
+  ), (error) => error.code === "GETLINK_PRICE_CHANGED" && error.status === 409);
+  assert.equal(charged, false);
+});
+
 test("restores credit when a non-transactional history insert fails", async () => {
   const calls = [];
   const insertError = new Error("history insert failed");
