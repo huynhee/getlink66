@@ -8,6 +8,7 @@ process.env.PUBLIC_BASE_URL = "http://localhost:5000";
 const { default: Getlink } = await import("../src/models/Getlink.js");
 const {
   getlinkHistory,
+  hasUsablePreviewSource,
   resolvePreviewImageUrl,
 } = await import("../src/controllers/getlinkController.js");
 const { request3D66File } = await import("../src/utils/3d66Service.js");
@@ -51,6 +52,14 @@ test("preview images reject non-3D66 hosts and unsafe protocols", () => {
     resolvePreviewImageUrl("https://respic.3d66.com/image.jpg"),
     "https://respic.3d66.com/image.jpg",
   );
+});
+
+test("preview cache rejects its own proxy URL and accepts upstream images", () => {
+  assert.equal(hasUsablePreviewSource("https://respic.3d66.com/image.jpg"), true);
+  assert.equal(hasUsablePreviewSource("https://3dipl.org/api/plugin/getlink/preview-cache/123"), false);
+  assert.equal(hasUsablePreviewSource("/api/getlink/preview-cache/123"), false);
+  assert.equal(hasUsablePreviewSource(""), false);
+  assert.equal(hasUsablePreviewSource(undefined), false);
 });
 
 test("file proxy rejects a non-3D66 download host before fetching", async () => {

@@ -1210,6 +1210,15 @@ async function resolveProductCache(productId, url, downloadFormat = null) {
   return productLocks.get(productId);
 }
 
+export function hasUsablePreviewSource(value) {
+  try {
+    if (!value || String(value).startsWith("/api/")) return false;
+    return Boolean(resolvePreviewImageUrl(value));
+  } catch {
+    return false;
+  }
+}
+
 export async function previewGetlink(req, res, next) {
   try {
     const url = readUrlRequest(req, res);
@@ -1229,7 +1238,7 @@ export async function previewGetlink(req, res, next) {
     const hasReliableCachedPrice = Number(cache?.creditCost || 0) > 1;
     const hasKnownCachedPrice = Boolean(cache?.priceKnown || hasReliableCachedPrice);
     const hasPreviewMetadata = Boolean(
-      cacheMatchesCurrentUrl && hasRealCachedTitle && hasKnownCachedPrice,
+      cacheMatchesCurrentUrl && hasRealCachedTitle && hasKnownCachedPrice && hasUsablePreviewSource(cache?.imageUrl),
     );
     if (hasPreviewMetadata) {
       return res.json({
@@ -1260,7 +1269,7 @@ export async function previewGetlink(req, res, next) {
       productId: resolvedProductId,
       sourceUrl: preview.sourceUrl || url,
       title: preview.title,
-      imageUrl: preview.imageUrl ? publicCachedPreviewImageUrl(req, resolvedProductId) : "",
+      imageUrl: preview.imageUrl,
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
       priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
     };
@@ -1268,7 +1277,7 @@ export async function previewGetlink(req, res, next) {
     res.json({
       productId: resolvedProductId,
       title: preview.title,
-      imageUrl: preview.imageUrl,
+      imageUrl: preview.imageUrl ? publicCachedPreviewImageUrl(req, resolvedProductId) : "",
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
       cached: false,
       metadataIncomplete: isFallbackMetadata(
