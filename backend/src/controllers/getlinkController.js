@@ -540,21 +540,24 @@ function publicBaseUrl(req) {
 }
 
 function publicDownloadUrl(req, historyId) {
+  if (req.pluginSession) return `${publicBaseUrl(req)}/api/plugin/getlink/download/${historyId}`;
   const userId = String(req.user?._id || "");
   const token = signDownloadToken(String(historyId), userId);
   return `${publicBaseUrl(req)}/api/getlink/download/${historyId}?t=${token}`;
 }
 
 function publicPreviewImageUrl(req, historyId) {
+  if (req.pluginSession) return `${publicBaseUrl(req)}/api/plugin/getlink/preview-image/${historyId}`;
   const userId = String(req.user?._id || "");
   const token = signDownloadToken(String(historyId), userId);
   return `${publicBaseUrl(req)}/api/getlink/preview-image/${historyId}?t=${token}`;
 }
 
-function publicCachedPreviewImageUrl(req, productId) {
+export function publicCachedPreviewImageUrl(req, productId) {
   const normalizedProductId = String(productId || "").trim();
   if (!normalizedProductId) return "";
-  return `${publicBaseUrl(req)}/api/getlink/preview-cache/${encodeURIComponent(normalizedProductId)}`;
+  const routePrefix = req.pluginSession ? "/api/plugin/getlink" : "/api/getlink";
+  return `${publicBaseUrl(req)}${routePrefix}/preview-cache/${encodeURIComponent(normalizedProductId)}`;
 }
 
 export function publicHistoryItem(req, item) {
@@ -1057,18 +1060,21 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
   };
 }
 
-function setProxyHeaders(res, upstream, history) {
-  const passthrough = [
-    "content-type",
-    "content-length",
-    "content-range",
-    "accept-ranges",
-    "content-encoding",
-  ];
+export function setProxyHeaders(res, upstream, history) {
+  const encoding = String(upstream.headers.get("content-encoding") || "").toLowerCase();
+  const identityEncoding = !encoding || encoding === "identity";
+  const passthrough = ["content-type"];
+  if (identityEncoding) {
+    passthrough.push("content-range", "accept-ranges", "content-length");
+  }
   passthrough.forEach((key) => {
     const value = upstream.headers.get(key);
     if (value) res.setHeader(key, value);
   });
+  const etag = upstream.headers.get("etag");
+  if (identityEncoding && etag?.startsWith('"') && etag.endsWith('"')) {
+    res.setHeader("etag", etag);
+  }
 
   if (!res.getHeader("content-type")) {
     res.setHeader("content-type", "application/octet-stream");
@@ -1612,6 +1618,7 @@ export async function getLink(req, res, next) {
       ({ user, history } = await chargeAndCreateGetlink({
         userId: req.user._id,
         creditCost,
+        confirmedCreditCost: req.confirmedCreditCost,
         historyPayload: {
           userId: req.user._id,
           productId: cache.productId,
@@ -1702,7 +1709,8 @@ export async function executeGetlinkForJob({ user, body, onProgress } = {}) {
     }
 
     const req = {
-      body: body || {},
+      body: Object.fromEntries(Object.entries(body || {}).filter(([key]) => key !== "confirmedCreditCost")),
+      confirmedCreditCost: body?.confirmedCreditCost ?? null,
       user,
       ip: "getlink-job-worker",
       path: "/api/getlink/jobs/worker",
@@ -2001,6 +2009,7 @@ async function openDownloadResponse(history, req, signal) {
     let upstream = await request3D66File(activeHistory.fileUrl, cookieValue, {
       sourceUrl: activeHistory.resolvedSourceUrl || activeHistory.sourceUrl,
       range: req.get("range"),
+      ifRange: req.get("if-range"),
       signal,
     });
 
@@ -2012,6 +2021,7 @@ async function openDownloadResponse(history, req, signal) {
       upstream = await request3D66File(activeHistory.fileUrl, cookieValue, {
         sourceUrl: activeHistory.resolvedSourceUrl || activeHistory.sourceUrl,
         range: req.get("range"),
+        ifRange: req.get("if-range"),
         signal,
       });
     }

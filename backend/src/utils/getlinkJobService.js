@@ -2,7 +2,11 @@ import crypto from "node:crypto";
 import Getlink from "../models/Getlink.js";
 import GetlinkJob from "../models/GetlinkJob.js";
 import User from "../models/User.js";
-import { executeGetlinkForJob, publicHistoryItem } from "../controllers/getlinkController.js";
+import {
+  executeGetlinkForJob,
+  publicCachedPreviewImageUrl,
+  publicHistoryItem,
+} from "../controllers/getlinkController.js";
 import logger from "./logger.js";
 
 const ACTIVE_STATUSES = ["queued", "processing", "awaiting_format"];
@@ -72,7 +76,7 @@ function publicError(error = {}) {
     message: raw || "Getlink failed.",
     code: String(error.code || "").slice(0, 80),
     status,
-    retryable: status === 409 || status === 429 || status >= 500,
+    retryable: error.code !== "GETLINK_PRICE_CHANGED" && (status === 409 || status === 429 || status >= 500),
   };
 }
 
@@ -88,6 +92,7 @@ function jobPayload(job) {
   return {
     modelId: job.input,
     includePreviewImage: Boolean(job.includePreviewImage),
+    ...(job.confirmedCreditCost != null ? { confirmedCreditCost: job.confirmedCreditCost } : {}),
     ...(job.requestedFormat ? { downloadFormat: job.requestedFormat } : {}),
   };
 }
@@ -345,6 +350,7 @@ export async function createGetlinkJob({ userId, body = {} }) {
       clientRequestId,
       input,
       includePreviewImage: Boolean(body.includePreviewImage),
+      confirmedCreditCost: body.confirmedCreditCost ?? null,
       requestedFormat: normalizeRequestedFormat(body.downloadFormat),
       status: "queued",
       stage: "queued",
@@ -507,12 +513,15 @@ export async function publicGetlinkJob(req, job) {
   }
   return {
     id: String(doc._id),
+    historyId: doc.historyId ? String(doc.historyId) : null,
     status: doc.status,
     stage: doc.stage,
     progress: Number(doc.progress || 0),
     productId: doc.productId || "",
     title: doc.title || "",
-    imageUrl: download?.previewImageDownloadUrl || "",
+    imageUrl:
+      download?.previewImageDownloadUrl ||
+      (doc.productId ? publicCachedPreviewImageUrl(req, doc.productId) : ""),
     creditCost: Number(doc.creditCost || 0),
     includePreviewImage: Boolean(doc.includePreviewImage),
     formatOptions: Array.isArray(doc.formatOptions) ? doc.formatOptions : [],

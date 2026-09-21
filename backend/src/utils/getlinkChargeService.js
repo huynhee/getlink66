@@ -78,6 +78,11 @@ async function chargeAndCreateGetlinkInternal(
 }
 
 export async function chargeAndCreateGetlink(input, dependencies) {
+  if (input.confirmedCreditCost != null && input.confirmedCreditCost !== input.creditCost) {
+    throw Object.assign(new Error("Getlink price changed. Check the price and confirm again."), {
+      status: 409, code: "GETLINK_PRICE_CHANGED", creditRequired: input.creditCost,
+    });
+  }
   const result = await chargeAndCreateGetlinkInternal(input, dependencies);
   if (result?.user) publishAccountInvalidation(result.user._id, "getlink_charged");
   return result;
