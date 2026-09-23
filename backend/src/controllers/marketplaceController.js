@@ -907,7 +907,7 @@ export async function listMarketplaceModels(req, res, next) {
       Boolean(search || searchInput.externalUrl),
     );
     const accessType = String(req.query.accessType || "").trim();
-    const prioritizePro = shouldPrioritizeMarketplaceModelPro(assetType, accessType);
+    const prioritizePro = shouldPrioritizeMarketplaceModelPro(assetType, accessType, sortSelection.effective);
     if (searchInput.externalUrl) {
       const queryId = marketplaceSearchQueryId("external-url", {
         assetType,
@@ -929,7 +929,7 @@ export async function listMarketplaceModels(req, res, next) {
           correctedQuery: "",
         },
         sort: sortSelection,
-        ranking: marketplaceRankingMetadata({ applied: prioritizePro, accessType }),
+        ranking: marketplaceRankingMetadata({ applied: prioritizePro, assetType, accessType, sort: sortSelection.effective }),
       });
     }
     const fileStatus = String(req.query.fileStatus || "").trim();
@@ -1017,7 +1017,7 @@ export async function listMarketplaceModels(req, res, next) {
               correctedQuery: meili.correctedQuery,
             },
             sort: sortSelection,
-            ranking: marketplaceRankingMetadata({ applied: prioritizePro, accessType }),
+            ranking: marketplaceRankingMetadata({ applied: prioritizePro, assetType, accessType, sort: sortSelection.effective }),
           });
         }
       } catch {
@@ -1080,7 +1080,7 @@ export async function listMarketplaceModels(req, res, next) {
         ...sortSelection,
         ...(sortSelection.effective === "featured" ? { mode } : {}),
       },
-      ranking: marketplaceRankingMetadata({ applied: prioritizePro, accessType }),
+      ranking: marketplaceRankingMetadata({ applied: prioritizePro, assetType, accessType, sort: sortSelection.effective }),
     }, { private: personalizedFeatured });
   } catch (error) {
     const rawSearch = String(req.query.q || req.query.search || "").trim();
@@ -1109,8 +1109,10 @@ export async function listMarketplaceModels(req, res, next) {
         },
         sort: sortSelection,
         ranking: marketplaceRankingMetadata({
-          applied: shouldPrioritizeMarketplaceModelPro(assetType, accessType),
+          applied: shouldPrioritizeMarketplaceModelPro(assetType, accessType, sortSelection.effective),
+          assetType,
           accessType,
+          sort: sortSelection.effective,
         }),
       });
     }

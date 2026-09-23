@@ -6,17 +6,21 @@ export function hasMarketplaceAccessFilter(value) {
   return ["free", "pro", "member"].includes(String(value || "").trim().toLowerCase());
 }
 
-export function shouldPrioritizeMarketplaceModelPro(assetType, accessType = "") {
-  return normalizeAssetType(assetType) === "model" && !hasMarketplaceAccessFilter(accessType);
+export function shouldPrioritizeMarketplaceModelPro(assetType, accessType = "", sort = "") {
+  return normalizeAssetType(assetType) === "model"
+    && !hasMarketplaceAccessFilter(accessType)
+    && sort !== "newest";
 }
 
-export function marketplaceRankingMetadata({ applied, accessType = "" } = {}) {
+export function marketplaceRankingMetadata({ applied, assetType = "model", accessType = "", sort = "" } = {}) {
   return {
     policy: MARKETPLACE_MODEL_RANKING_POLICY,
     ...(applied ? { proFirst: true } : {}),
     bypassed: !applied,
     ...(applied
       ? {}
-      : { reason: hasMarketplaceAccessFilter(accessType) ? "access_filter" : "asset_type" }),
+      : { reason: hasMarketplaceAccessFilter(accessType)
+        ? "access_filter"
+        : (normalizeAssetType(assetType) === "model" && sort === "newest" ? "sort_order" : "asset_type") }),
   };
 }

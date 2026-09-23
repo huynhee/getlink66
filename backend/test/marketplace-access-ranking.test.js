@@ -21,3 +21,14 @@ test("explicit access filters and Scene discovery bypass the Model default", () 
   assert.equal(marketplaceRankingMetadata({ applied: false, accessType: "free" }).reason, "access_filter");
   assert.equal(marketplaceRankingMetadata({ applied: false }).reason, "asset_type");
 });
+
+test("newest Model ordering mixes Free and Pro by source ID", () => {
+  assert.equal(shouldPrioritizeMarketplaceModelPro("model", "", "newest"), false);
+  assert.equal(shouldPrioritizeMarketplaceModelPro("model", "", "popular"), true);
+  assert.deepEqual(marketplaceRankingMetadata({ applied: false, sort: "newest" }), {
+    policy: "model_pro_first_v3",
+    bypassed: true,
+    reason: "sort_order",
+  });
+  assert.equal(marketplaceRankingMetadata({ applied: false, assetType: "scene", sort: "newest" }).reason, "asset_type");
+});

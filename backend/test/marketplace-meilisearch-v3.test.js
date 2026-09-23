@@ -74,6 +74,37 @@ test("Meilisearch model results keep the complete Pro set before Free", async ()
   }
 });
 
+test("Meilisearch newest models use one mixed source ID ordering", async () => {
+  const previousFetch = globalThis.fetch;
+  const bodies = [];
+  globalThis.fetch = async (_url, options = {}) => {
+    const body = JSON.parse(options.body || "{}");
+    bodies.push(body);
+    return new Response(JSON.stringify({
+      estimatedTotalHits: 3,
+      hits: [hit("free-300", "free"), hit("pro-200", "member"), hit("free-100", "free")],
+    }), { status: 200 });
+  };
+
+  try {
+    const result = await searchMarketplaceMeili({
+      assetType: "model",
+      q: "",
+      page: 1,
+      limit: 3,
+      prioritizePro: false,
+      facets: {},
+      sort: "newest",
+    });
+    assert.deepEqual(result.assets.map((item) => item._id), ["free-300", "pro-200", "free-100"]);
+    assert.equal(bodies.length, 1);
+    assert.ok(bodies[0].filter.every((filter) => !filter.includes("accessType")));
+    assert.deepEqual(bodies[0].sort, ["sourceAssetIdSort:desc", "createdAtEpoch:desc"]);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("Meilisearch rollout bucket is stable and shadow only applies outside rollout", () => {
   process.env.MARKETPLACE_MEILI_ROLLOUT_PERCENT = "0";
   process.env.MARKETPLACE_MEILI_SHADOW_ENABLED = "true";

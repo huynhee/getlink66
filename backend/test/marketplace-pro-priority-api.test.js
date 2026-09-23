@@ -33,6 +33,7 @@ function catalogAsset(index, accessType = "member", assetType = "model", title =
       modelId: `${assetType}-${accessType}-${index}`,
       assetId: `${assetType}-${accessType}-${index}`,
     },
+    sourceAssetIdSort: index,
     title: resolvedTitle,
     titleSort: resolvedTitle.toLowerCase(),
     slug: resolvedTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
@@ -80,6 +81,29 @@ test("unfiltered Model pages return Pro first and Free afterward", async () => {
     new Set([...first.models, ...second.models, ...third.models].map((item) => item._id)).size,
     first.models.length + second.models.length + third.models.length,
   );
+});
+
+test("newest Model pages mix Free and Pro by descending source ID", async () => {
+  await MarketplaceModel.deleteMany({});
+  await MarketplaceModel.insertMany([
+    catalogAsset(10, "member"),
+    catalogAsset(20, "free"),
+    catalogAsset(30, "member"),
+    catalogAsset(40, "free"),
+  ]);
+
+  const first = await list({ page: "1", limit: "2", sort: "newest" });
+  const second = await list({ page: "2", limit: "2", sort: "newest" });
+
+  assert.deepEqual([...first.models, ...second.models].map((item) => item.title), [
+    "Free model 40",
+    "Pro model 30",
+    "Free model 20",
+    "Pro model 10",
+  ]);
+  assert.equal(first.ranking.proFirst, undefined);
+  assert.equal(first.ranking.reason, "sort_order");
+  assert.equal(first.pagination.total, 4);
 });
 
 test("explicit Free and Pro filters bypass the access mix", async () => {
