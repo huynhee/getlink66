@@ -1,26 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { marketplaceRankingMetadata } from "../src/utils/marketplaceAccessRanking.js";
+import {
+  marketplaceRankingMetadata,
+  shouldPrioritizeMarketplaceModelPro,
+} from "../src/utils/marketplaceAccessRanking.js";
 
-test("unfiltered Model discovery ranks Free and Pro together", () => {
-  assert.deepEqual(marketplaceRankingMetadata(), {
-    policy: "model_mixed_access_v4",
-    proFirst: false,
-    bypassed: false,
-  });
-});
-
-test("explicit access filters and Scene discovery report their scope", () => {
-  assert.equal(marketplaceRankingMetadata({ accessType: "free" }).reason, "access_filter");
-  assert.equal(marketplaceRankingMetadata({ accessType: "member" }).reason, "access_filter");
-  assert.equal(marketplaceRankingMetadata({ assetType: "scene" }).reason, "asset_type");
-});
-
-test("newest Model reports the ten-page Pro window only when it is applied", () => {
-  assert.deepEqual(marketplaceRankingMetadata({ reservedProPages: 10 }), {
-    policy: "model_newest_first_ten_pro_v1",
+test("unfiltered Model discovery prioritizes Pro while keeping Free", () => {
+  assert.equal(shouldPrioritizeMarketplaceModelPro("model", ""), true);
+  assert.deepEqual(marketplaceRankingMetadata({ applied: true }), {
+    policy: "model_pro_first_v3",
     proFirst: true,
-    reservedProPages: 10,
     bypassed: false,
   });
+});
+
+test("explicit access filters and Scene discovery bypass the Model default", () => {
+  assert.equal(shouldPrioritizeMarketplaceModelPro("model", "free"), false);
+  assert.equal(shouldPrioritizeMarketplaceModelPro("model", "member"), false);
+  assert.equal(shouldPrioritizeMarketplaceModelPro("scene", ""), false);
+  assert.equal(marketplaceRankingMetadata({ applied: false, accessType: "free" }).reason, "access_filter");
+  assert.equal(marketplaceRankingMetadata({ applied: false }).reason, "asset_type");
 });

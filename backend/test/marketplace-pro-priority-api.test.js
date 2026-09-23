@@ -33,7 +33,6 @@ function catalogAsset(index, accessType = "member", assetType = "model", title =
       modelId: `${assetType}-${accessType}-${index}`,
       assetId: `${assetType}-${accessType}-${index}`,
     },
-    sourceAssetIdSort: index,
     title: resolvedTitle,
     titleSort: resolvedTitle.toLowerCase(),
     slug: resolvedTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
@@ -56,92 +55,37 @@ async function list(query = {}, assetType = "model") {
   return capture.state.body;
 }
 
-test("popular Model pages rank Free and Pro together before pagination", async () => {
+test("unfiltered Model pages return Pro first and Free afterward", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
-    catalogAsset(1, "member"),
-    catalogAsset(2, "free"),
-    catalogAsset(3, "member"),
-    catalogAsset(4, "free"),
+    ...Array.from({ length: 18 }, (_, index) => catalogAsset(index, "member")),
+    ...Array.from({ length: 4 }, (_, index) => catalogAsset(index, "free")),
   ]);
 
-  const first = await list({ page: "1", limit: "2", sort: "popular" });
-  const second = await list({ page: "2", limit: "2", sort: "popular" });
+  const first = await list({ page: "1", limit: "10", sort: "popular" });
+  const second = await list({ page: "2", limit: "10", sort: "popular" });
+  const third = await list({ page: "3", limit: "10", sort: "popular" });
 
-  assert.deepEqual([...first.models, ...second.models].map((item) => item.accessType), [
-    "member", "free", "member", "free",
+  assert.ok(first.models.every((item) => item.accessType === "member"));
+  assert.deepEqual(second.models.map((item) => item.accessType), [
+    ...Array(8).fill("member"),
+    ...Array(2).fill("free"),
   ]);
-  assert.equal(first.ranking.policy, "model_mixed_access_v4");
-  assert.equal(first.ranking.proFirst, false);
+  assert.ok(third.models.every((item) => item.accessType === "free"));
+  assert.equal(first.ranking.policy, "model_pro_first_v3");
+  assert.equal(first.ranking.proFirst, true);
   assert.equal(first.ranking.bypassed, false);
-  assert.equal(first.pagination.total, 4);
+  assert.equal(first.pagination.total, 22);
   assert.equal(
-    new Set([...first.models, ...second.models].map((item) => item._id)).size,
-    first.models.length + second.models.length,
+    new Set([...first.models, ...second.models, ...third.models].map((item) => item._id)).size,
+    first.models.length + second.models.length + third.models.length,
   );
-});
-
-test("newest Model pages stay mixed when fewer than ten Pro pages exist", async () => {
-  await MarketplaceModel.deleteMany({});
-  await MarketplaceModel.insertMany([
-    catalogAsset(10, "member"),
-    catalogAsset(20, "free"),
-    catalogAsset(30, "member"),
-    catalogAsset(40, "free"),
-  ]);
-
-  const first = await list({ page: "1", limit: "2", sort: "newest" });
-  const second = await list({ page: "2", limit: "2", sort: "newest" });
-
-  assert.deepEqual([...first.models, ...second.models].map((item) => item.title), [
-    "Free model 40",
-    "Pro model 30",
-    "Free model 20",
-    "Pro model 10",
-  ]);
-  assert.equal(first.ranking.proFirst, false);
-  assert.equal(first.ranking.bypassed, false);
-  assert.equal(first.pagination.total, 4);
-});
-
-test("newest Model reserves ten Pro pages then merges remaining assets by source ID", async () => {
-  await MarketplaceModel.deleteMany({});
-  await MarketplaceModel.insertMany([
-    ...Array.from({ length: 24 }, (_, index) => catalogAsset((index + 1) * 2, "member")),
-    ...[101, 100, 9, 3].map((index) => catalogAsset(index, "free")),
-  ]);
-
-  const firstTen = [];
-  for (let page = 1; page <= 10; page += 1) {
-    const result = await list({ page: String(page), limit: "2", sort: "newest" });
-    assert.deepEqual(result.models.map((model) => model.accessType), ["member", "member"]);
-    assert.equal(result.pagination.total, 28);
-    assert.equal(result.ranking.reservedProPages, 10);
-    firstTen.push(...result.models);
-  }
-
-  const tail = [];
-  for (let page = 11; page <= 14; page += 1) {
-    const result = await list({ page: String(page), limit: "2", sort: "newest" });
-    tail.push(...result.models);
-  }
-  assert.deepEqual(tail.map((model) => model.title), [
-    "Free model 101",
-    "Free model 100",
-    "Free model 9",
-    "Pro model 8",
-    "Pro model 6",
-    "Pro model 4",
-    "Free model 3",
-    "Pro model 2",
-  ]);
-  assert.equal(new Set([...firstTen, ...tail].map((model) => model._id)).size, 28);
 });
 
 test("explicit Free and Pro filters bypass the access mix", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
-    ...Array.from({ length: 24 }, (_, index) => catalogAsset(index, "member")),
+    ...Array.from({ length: 12 }, (_, index) => catalogAsset(index, "member")),
     ...Array.from({ length: 5 }, (_, index) => catalogAsset(index, "free")),
   ]);
 
@@ -152,11 +96,11 @@ test("explicit Free and Pro filters bypass the access mix", async () => {
   assert.ok(free.models.every((item) => item.accessType === "free"));
   assert.equal(free.ranking.bypassed, true);
   assert.equal(free.ranking.reason, "access_filter");
-  assert.equal(pro.models.length, 24);
+  assert.equal(pro.models.length, 12);
   assert.ok(pro.models.every((item) => item.accessType === "member"));
 });
 
-test("an exact Free title can rank ahead of less relevant Pro models", async () => {
+test("an exact Free title remains in results after matching Pro models", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
     catalogAsset(1, "free", "model", "Ghe banh"),
@@ -167,8 +111,8 @@ test("an exact Free title can rank ahead of less relevant Pro models", async () 
   const result = await list({ q: "ghế bành", sort: "relevance", limit: "10" });
 
   assert.equal(result.models.length, 3);
-  assert.deepEqual(result.models.map((item) => item.accessType), ["free", "member", "member"]);
-  assert.equal(result.models[0].title, "Ghe banh");
+  assert.deepEqual(result.models.map((item) => item.accessType), ["member", "member", "free"]);
+  assert.equal(result.models.at(-1).title, "Ghe banh");
   assert.equal(result.search.engine, "mongo_hybrid_v3");
 });
 

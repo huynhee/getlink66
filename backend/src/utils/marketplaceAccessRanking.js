@@ -1,19 +1,22 @@
 import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
 
-export const MARKETPLACE_MODEL_RANKING_POLICY = "model_mixed_access_v4";
+export const MARKETPLACE_MODEL_RANKING_POLICY = "model_pro_first_v3";
 
 export function hasMarketplaceAccessFilter(value) {
   return ["free", "pro", "member"].includes(String(value || "").trim().toLowerCase());
 }
 
-export function marketplaceRankingMetadata({ assetType = "model", accessType = "", reservedProPages = 0 } = {}) {
-  const filtered = hasMarketplaceAccessFilter(accessType);
-  const isModel = normalizeAssetType(assetType) === "model";
+export function shouldPrioritizeMarketplaceModelPro(assetType, accessType = "") {
+  return normalizeAssetType(assetType) === "model" && !hasMarketplaceAccessFilter(accessType);
+}
+
+export function marketplaceRankingMetadata({ applied, accessType = "" } = {}) {
   return {
-    policy: reservedProPages ? "model_newest_first_ten_pro_v1" : MARKETPLACE_MODEL_RANKING_POLICY,
-    proFirst: Boolean(reservedProPages),
-    ...(reservedProPages ? { reservedProPages } : {}),
-    bypassed: filtered || !isModel,
-    ...(filtered ? { reason: "access_filter" } : (!isModel ? { reason: "asset_type" } : {})),
+    policy: MARKETPLACE_MODEL_RANKING_POLICY,
+    ...(applied ? { proFirst: true } : {}),
+    bypassed: !applied,
+    ...(applied
+      ? {}
+      : { reason: hasMarketplaceAccessFilter(accessType) ? "access_filter" : "asset_type" }),
   };
 }

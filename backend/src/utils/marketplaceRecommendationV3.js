@@ -162,6 +162,7 @@ async function semanticCandidates(model) {
       sort: "relevance",
       page: 1,
       limit: 60,
+      prioritizePro: false,
     });
     return result?.assets || [];
   } catch {

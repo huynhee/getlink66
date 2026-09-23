@@ -34,16 +34,23 @@ function hit(id, accessType, score = 0.9) {
   };
 }
 
-test("Meilisearch relevance searches Free and Pro in one request", async () => {
+test("Meilisearch model results keep the complete Pro set before Free", async () => {
   const previousFetch = globalThis.fetch;
   const bodies = [];
   globalThis.fetch = async (_url, options = {}) => {
     const body = JSON.parse(options.body || "{}");
     bodies.push(body);
+    const filter = Array.isArray(body.filter) ? body.filter.join(" ") : String(body.filter || "");
+    const isMember = filter.includes('accessType = "member"');
+    if (body.limit === 0) {
+      return new Response(JSON.stringify({ estimatedTotalHits: isMember ? 65 : 20, hits: [] }), { status: 200 });
+    }
+    const prefix = isMember ? "pro" : "free";
+    const accessType = isMember ? "member" : "free";
     return new Response(JSON.stringify({
-      estimatedTotalHits: 3,
+      estimatedTotalHits: isMember ? 65 : 20,
       processingTimeMs: 4,
-      hits: [hit("free-exact", "free"), hit("pro-related", "member"), hit("free-related", "free")],
+      hits: Array.from({ length: body.limit }, (_, index) => hit(`${prefix}-${body.offset + index}`, accessType)),
     }), { status: 200 });
   };
 
@@ -51,46 +58,17 @@ test("Meilisearch relevance searches Free and Pro in one request", async () => {
     const result = await searchMarketplaceMeili({
       assetType: "model",
       q: "ghe bamh",
-      page: 1,
+      page: 2,
       limit: 60,
+      prioritizePro: true,
       facets: {},
       sort: "relevance",
     });
-    assert.equal(result.total, 3);
-    assert.deepEqual(result.assets.map((item) => item.accessType), ["free", "member", "free"]);
-    assert.equal(bodies.length, 1);
-    assert.ok(bodies[0].filter.every((filter) => !filter.includes("accessType")));
+    assert.equal(result.total, 85);
+    assert.equal(result.assets.length, 25);
+    assert.deepEqual(result.assets.slice(0, 5).map((item) => item.accessType), Array(5).fill("member"));
+    assert.deepEqual(result.assets.slice(5).map((item) => item.accessType), Array(20).fill("free"));
     assert.ok(bodies.every((body) => body.hybrid?.semanticRatio === 0.15));
-  } finally {
-    globalThis.fetch = previousFetch;
-  }
-});
-
-test("Meilisearch newest models use one mixed source ID ordering", async () => {
-  const previousFetch = globalThis.fetch;
-  const bodies = [];
-  globalThis.fetch = async (_url, options = {}) => {
-    const body = JSON.parse(options.body || "{}");
-    bodies.push(body);
-    return new Response(JSON.stringify({
-      estimatedTotalHits: 3,
-      hits: [hit("free-300", "free"), hit("pro-200", "member"), hit("free-100", "free")],
-    }), { status: 200 });
-  };
-
-  try {
-    const result = await searchMarketplaceMeili({
-      assetType: "model",
-      q: "",
-      page: 1,
-      limit: 3,
-      facets: {},
-      sort: "newest",
-    });
-    assert.deepEqual(result.assets.map((item) => item._id), ["free-300", "pro-200", "free-100"]);
-    assert.equal(bodies.length, 1);
-    assert.ok(bodies[0].filter.every((filter) => !filter.includes("accessType")));
-    assert.deepEqual(bodies[0].sort, ["sourceAssetIdSort:desc", "createdAtEpoch:desc"]);
   } finally {
     globalThis.fetch = previousFetch;
   }
