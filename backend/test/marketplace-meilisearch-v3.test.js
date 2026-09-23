@@ -34,23 +34,16 @@ function hit(id, accessType, score = 0.9) {
   };
 }
 
-test("Meilisearch model results keep the complete Pro set before Free", async () => {
+test("Meilisearch relevance searches Free and Pro in one request", async () => {
   const previousFetch = globalThis.fetch;
   const bodies = [];
   globalThis.fetch = async (_url, options = {}) => {
     const body = JSON.parse(options.body || "{}");
     bodies.push(body);
-    const filter = Array.isArray(body.filter) ? body.filter.join(" ") : String(body.filter || "");
-    const isMember = filter.includes('accessType = "member"');
-    if (body.limit === 0) {
-      return new Response(JSON.stringify({ estimatedTotalHits: isMember ? 65 : 20, hits: [] }), { status: 200 });
-    }
-    const prefix = isMember ? "pro" : "free";
-    const accessType = isMember ? "member" : "free";
     return new Response(JSON.stringify({
-      estimatedTotalHits: isMember ? 65 : 20,
+      estimatedTotalHits: 3,
       processingTimeMs: 4,
-      hits: Array.from({ length: body.limit }, (_, index) => hit(`${prefix}-${body.offset + index}`, accessType)),
+      hits: [hit("free-exact", "free"), hit("pro-related", "member"), hit("free-related", "free")],
     }), { status: 200 });
   };
 
@@ -58,16 +51,15 @@ test("Meilisearch model results keep the complete Pro set before Free", async ()
     const result = await searchMarketplaceMeili({
       assetType: "model",
       q: "ghe bamh",
-      page: 2,
+      page: 1,
       limit: 60,
-      prioritizePro: true,
       facets: {},
       sort: "relevance",
     });
-    assert.equal(result.total, 85);
-    assert.equal(result.assets.length, 25);
-    assert.deepEqual(result.assets.slice(0, 5).map((item) => item.accessType), Array(5).fill("member"));
-    assert.deepEqual(result.assets.slice(5).map((item) => item.accessType), Array(20).fill("free"));
+    assert.equal(result.total, 3);
+    assert.deepEqual(result.assets.map((item) => item.accessType), ["free", "member", "free"]);
+    assert.equal(bodies.length, 1);
+    assert.ok(bodies[0].filter.every((filter) => !filter.includes("accessType")));
     assert.ok(bodies.every((body) => body.hybrid?.semanticRatio === 0.15));
   } finally {
     globalThis.fetch = previousFetch;
@@ -92,7 +84,6 @@ test("Meilisearch newest models use one mixed source ID ordering", async () => {
       q: "",
       page: 1,
       limit: 3,
-      prioritizePro: false,
       facets: {},
       sort: "newest",
     });

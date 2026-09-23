@@ -47,10 +47,7 @@ import {
   marketplaceSearchTokens,
 } from "../utils/marketplaceSearch.js";
 import { marketplacePublicDeletionQuery } from "../utils/marketplaceDeletionService.js";
-import {
-  marketplaceRankingMetadata,
-  shouldPrioritizeMarketplaceModelPro,
-} from "../utils/marketplaceAccessRanking.js";
+import { marketplaceRankingMetadata } from "../utils/marketplaceAccessRanking.js";
 import {
   marketplaceMeiliTrafficDecision,
   marketplaceMeiliSuggestions,
@@ -421,18 +418,10 @@ function compareMarketplaceValue(left, right, field) {
   return String(a).localeCompare(String(b), "en", { numeric: true, sensitivity: "base" });
 }
 
-function marketplaceAccessPriority(model) {
-  return String(model?.accessType || "member") === "member" ? 1 : 0;
-}
-
-function sortMarketplaceDocuments(models, effectiveSort, search = "", prioritizePro = false) {
-  const compareAccess = (left, right) => prioritizePro
-    ? marketplaceAccessPriority(right) - marketplaceAccessPriority(left)
-    : 0;
+function sortMarketplaceDocuments(models, effectiveSort, search = "") {
   if (effectiveSort === "relevance") {
     return [...models].sort((left, right) => (
-      compareAccess(left, right)
-      || marketplaceSearchScore(right, search) - marketplaceSearchScore(left, search)
+      marketplaceSearchScore(right, search) - marketplaceSearchScore(left, search)
       || Number(right.downloadCount || 0) - Number(left.downloadCount || 0)
       || new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()
       || String(left._id).localeCompare(String(right._id))
@@ -440,8 +429,6 @@ function sortMarketplaceDocuments(models, effectiveSort, search = "", prioritize
   }
   const sortSpec = marketplaceSortSpec(effectiveSort);
   return [...models].sort((left, right) => {
-    const accessCompared = compareAccess(left, right);
-    if (accessCompared) return accessCompared;
     for (const [field, direction] of Object.entries(sortSpec)) {
       const compared = compareMarketplaceValue(left, right, field);
       if (compared) return direction < 0 ? -compared : compared;
@@ -565,7 +552,6 @@ async function fuzzyMarketplacePage({
   sortSelection,
   page,
   limit,
-  prioritizePro = false,
 }) {
   const candidateLimit = searchCandidateLimit();
   const loadCandidates = async (broad = false) => {
@@ -603,7 +589,7 @@ async function fuzzyMarketplacePage({
       candidateToken === token || candidateToken.startsWith(token)
     )));
   });
-  const sorted = sortMarketplaceDocuments(matched, sortSelection.effective, search, prioritizePro);
+  const sorted = sortMarketplaceDocuments(matched, sortSelection.effective, search);
   const total = sorted.length;
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const safePage = Math.min(page, totalPages);
@@ -618,92 +604,20 @@ async function fuzzyMarketplacePage({
   };
 }
 
-async function prioritizedMarketplaceBrowsePage({ query, sortSelection, page, limit }) {
-  const memberQuery = { ...query, accessType: "member" };
-  const freeQuery = { ...query, accessType: "free" };
-  const [memberTotal, freeTotal] = await Promise.all([
-    MarketplaceModel.countDocuments(memberQuery),
-    MarketplaceModel.countDocuments(freeQuery),
-  ]);
-  const total = memberTotal + freeTotal;
-  const totalPages = Math.max(1, Math.ceil(total / limit));
-  const safePage = Math.min(page, totalPages);
-  const offset = (safePage - 1) * limit;
-  const sortSpec = marketplaceSortSpec(sortSelection.effective);
-  const memberTake = offset < memberTotal ? Math.min(limit, memberTotal - offset) : 0;
-  const freeOffset = Math.max(0, offset - memberTotal);
-  const freeTake = Math.min(limit - memberTake, Math.max(0, freeTotal - freeOffset));
-  const memberPromise = memberTake
-    ? MarketplaceModel.find(memberQuery)
-      .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
-      .sort(sortSpec)
-      .skip(offset)
-      .limit(memberTake)
-      .lean()
-    : Promise.resolve([]);
-  const freePromise = freeTake
-    ? MarketplaceModel.find(freeQuery)
-      .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
-      .sort(sortSpec)
-      .skip(freeOffset)
-      .limit(freeTake)
-      .lean()
-    : Promise.resolve([]);
-  const [members, free] = await Promise.all([memberPromise, freePromise]);
-  return {
-    models: [...members, ...free],
-    total,
-    totalPages,
-    safePage,
-    engine: "catalog",
-    mode: "browse",
-    truncated: false,
-  };
-}
-
-async function marketplaceBrowseSlice({ query, sortSpec, offset, limit, prioritizePro }) {
+async function marketplaceBrowseSlice({ query, sortSpec, offset, limit }) {
   if (limit <= 0) return [];
-  if (!prioritizePro) {
-    return MarketplaceModel.find(query)
-      .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
-      .sort(sortSpec)
-      .skip(offset)
-      .limit(limit)
-      .lean();
-  }
-
-  const memberQuery = { ...query, accessType: "member" };
-  const freeQuery = { ...query, accessType: "free" };
-  const memberTotal = await MarketplaceModel.countDocuments(memberQuery);
-  const memberTake = offset < memberTotal ? Math.min(limit, memberTotal - offset) : 0;
-  const freeOffset = Math.max(0, offset - memberTotal);
-  const freeTake = limit - memberTake;
-  const [members, free] = await Promise.all([
-    memberTake
-      ? MarketplaceModel.find(memberQuery)
-        .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
-        .sort(sortSpec)
-        .skip(offset)
-        .limit(memberTake)
-        .lean()
-      : Promise.resolve([]),
-    freeTake
-      ? MarketplaceModel.find(freeQuery)
-        .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
-        .sort(sortSpec)
-        .skip(freeOffset)
-        .limit(freeTake)
-        .lean()
-      : Promise.resolve([]),
-  ]);
-  return [...members, ...free];
+  return MarketplaceModel.find(query)
+    .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
+    .sort(sortSpec)
+    .skip(offset)
+    .limit(limit)
+    .lean();
 }
 
 async function featuredMarketplaceBrowsePage({
   query,
   page,
   limit,
-  prioritizePro,
   userId,
   actorKey,
 }) {
@@ -761,7 +675,6 @@ async function featuredMarketplaceBrowsePage({
     sortSpec: marketplaceSortSpec("featured"),
     offset: globalOffset,
     limit: remaining,
-    prioritizePro,
   });
   return {
     models: [...pinnedPage, ...globalModels],
@@ -780,7 +693,6 @@ async function bilingualMarketplacePage({
   sortSelection,
   page,
   limit,
-  prioritizePro = false,
   assetType = "model",
   userId = null,
   actorKey = "",
@@ -791,13 +703,9 @@ async function bilingualMarketplacePage({
         query,
         page,
         limit,
-        prioritizePro,
         userId,
         actorKey,
       });
-    }
-    if (prioritizePro) {
-      return prioritizedMarketplaceBrowsePage({ query, sortSelection, page, limit });
     }
     const totalPromise = MarketplaceModel.countDocuments(query);
     const requestedModelsPromise = MarketplaceModel.find(query)
@@ -831,7 +739,7 @@ async function bilingualMarketplacePage({
     const matched = exactMatches.length
       ? exactMatches
       : candidates.filter((candidate) => marketplaceSearchMatches(candidate, search, { fuzzy: true }));
-    const sorted = sortMarketplaceDocuments(matched, sortSelection.effective, search, prioritizePro);
+    const sorted = sortMarketplaceDocuments(matched, sortSelection.effective, search);
     const total = sorted.length;
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const safePage = Math.min(page, totalPages);
@@ -856,8 +764,8 @@ async function bilingualMarketplacePage({
         const relevance = sortSelection.effective === "relevance";
         const projection = relevance ? { relevance: { $meta: "textScore" } } : undefined;
         const sortSpec = relevance
-          ? { ...(prioritizePro ? { accessType: -1 } : {}), relevance: { $meta: "textScore" }, downloadCount: -1, createdAt: -1, _id: 1 }
-          : { ...(prioritizePro ? { accessType: -1 } : {}), ...marketplaceSortSpec(sortSelection.effective) };
+          ? { relevance: { $meta: "textScore" }, downloadCount: -1, createdAt: -1, _id: 1 }
+          : marketplaceSortSpec(sortSelection.effective);
         const totalPages = Math.max(1, Math.ceil(total / limit));
         const safePage = Math.min(page, totalPages);
         const models = await withMarketplaceFallbackBudget(MarketplaceModel.find(textQuery, projection))
@@ -886,7 +794,6 @@ async function bilingualMarketplacePage({
     sortSelection,
     page,
     limit,
-    prioritizePro,
   });
 }
 
@@ -907,7 +814,6 @@ export async function listMarketplaceModels(req, res, next) {
       Boolean(search || searchInput.externalUrl),
     );
     const accessType = String(req.query.accessType || "").trim();
-    const prioritizePro = shouldPrioritizeMarketplaceModelPro(assetType, accessType, sortSelection.effective);
     if (searchInput.externalUrl) {
       const queryId = marketplaceSearchQueryId("external-url", {
         assetType,
@@ -929,7 +835,7 @@ export async function listMarketplaceModels(req, res, next) {
           correctedQuery: "",
         },
         sort: sortSelection,
-        ranking: marketplaceRankingMetadata({ applied: prioritizePro, assetType, accessType, sort: sortSelection.effective }),
+        ranking: marketplaceRankingMetadata({ assetType, accessType }),
       });
     }
     const fileStatus = String(req.query.fileStatus || "").trim();
@@ -971,7 +877,6 @@ export async function listMarketplaceModels(req, res, next) {
       sort: sortSelection.effective,
       page,
       limit,
-      prioritizePro,
     };
     const trafficSeed = marketplaceActorKeyFromRequest(req)
       || `${req.ip || ""}|${req.get?.("user-agent") || ""}|${queryId}`;
@@ -1017,7 +922,7 @@ export async function listMarketplaceModels(req, res, next) {
               correctedQuery: meili.correctedQuery,
             },
             sort: sortSelection,
-            ranking: marketplaceRankingMetadata({ applied: prioritizePro, assetType, accessType, sort: sortSelection.effective }),
+            ranking: marketplaceRankingMetadata({ assetType, accessType }),
           });
         }
       } catch {
@@ -1033,7 +938,6 @@ export async function listMarketplaceModels(req, res, next) {
         sortSelection,
         page,
         limit,
-        prioritizePro,
         assetType,
         userId: req.user?._id || null,
         actorKey: marketplaceActorKeyFromRequest(req),
@@ -1080,7 +984,7 @@ export async function listMarketplaceModels(req, res, next) {
         ...sortSelection,
         ...(sortSelection.effective === "featured" ? { mode } : {}),
       },
-      ranking: marketplaceRankingMetadata({ applied: prioritizePro, assetType, accessType, sort: sortSelection.effective }),
+      ranking: marketplaceRankingMetadata({ assetType, accessType }),
     }, { private: personalizedFeatured });
   } catch (error) {
     const rawSearch = String(req.query.q || req.query.search || "").trim();
@@ -1108,12 +1012,7 @@ export async function listMarketplaceModels(req, res, next) {
           correctedQuery: "",
         },
         sort: sortSelection,
-        ranking: marketplaceRankingMetadata({
-          applied: shouldPrioritizeMarketplaceModelPro(assetType, accessType, sortSelection.effective),
-          assetType,
-          accessType,
-          sort: sortSelection.effective,
-        }),
+        ranking: marketplaceRankingMetadata({ assetType, accessType }),
       });
     }
     next(error);
@@ -1278,13 +1177,11 @@ export async function searchMarketplaceByImage(req, res, next) {
     const requestedLimit = Number(req.body.limit || PAGE_SIZE);
     const limit = Math.min(60, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : PAGE_SIZE));
     const accessType = String(req.body.accessType || "").trim();
-    const prioritizePro = shouldPrioritizeMarketplaceModelPro(assetType, accessType);
-    const providerLimit = prioritizePro ? Math.min(300, Math.max(limit, limit * 3)) : limit;
     await assertImageSearchQuotaAvailable(req, tier);
     const searchResult = await searchMarketplaceImage({
       imageData: image.imageData,
       imageHash: image.imageHash,
-      limit: providerLimit,
+      limit,
       assetType,
     });
     const matchedIds = searchResult.matches.map((match) => match.modelId);
@@ -1306,7 +1203,7 @@ export async function searchMarketplaceByImage(req, res, next) {
 
     const models = matchedIds.length
       ? await MarketplaceModel.find(query)
-          .limit(providerLimit)
+          .limit(limit)
           .lean()
       : [];
     await hydrateMarketplaceCategoryRefs(models);
@@ -1318,10 +1215,7 @@ export async function searchMarketplaceByImage(req, res, next) {
       }
       return { index: Number.MAX_SAFE_INTEGER, score: 0 };
     }
-    models.sort((left, right) => (
-      (prioritizePro ? marketplaceAccessPriority(right) - marketplaceAccessPriority(left) : 0)
-      || modelRank(left).index - modelRank(right).index
-    ));
+    models.sort((left, right) => modelRank(left).index - modelRank(right).index);
     const visibleModels = models.slice(0, limit);
     const quota = await chargeImageSearchQuota(req, tier, image.imageHash);
 
@@ -1334,7 +1228,7 @@ export async function searchMarketplaceByImage(req, res, next) {
       assets,
       ...(assetType === "scene" ? { scenes: assets } : { models: assets }),
       pagination: { page: 1, pageSize: limit, total: visibleModels.length, totalPages: 1 },
-      ranking: marketplaceRankingMetadata({ applied: prioritizePro, accessType }),
+      ranking: marketplaceRankingMetadata({ assetType, accessType }),
       imageSearch: {
         tier: tier === "member" ? "pro" : tier,
         limit: quota.limit,

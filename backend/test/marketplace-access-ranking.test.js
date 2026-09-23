@@ -1,34 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  marketplaceRankingMetadata,
-  shouldPrioritizeMarketplaceModelPro,
-} from "../src/utils/marketplaceAccessRanking.js";
+import { marketplaceRankingMetadata } from "../src/utils/marketplaceAccessRanking.js";
 
-test("unfiltered Model discovery prioritizes Pro while keeping Free", () => {
-  assert.equal(shouldPrioritizeMarketplaceModelPro("model", ""), true);
-  assert.deepEqual(marketplaceRankingMetadata({ applied: true }), {
-    policy: "model_pro_first_v3",
-    proFirst: true,
+test("unfiltered Model discovery ranks Free and Pro together", () => {
+  assert.deepEqual(marketplaceRankingMetadata(), {
+    policy: "model_mixed_access_v4",
+    proFirst: false,
     bypassed: false,
   });
 });
 
-test("explicit access filters and Scene discovery bypass the Model default", () => {
-  assert.equal(shouldPrioritizeMarketplaceModelPro("model", "free"), false);
-  assert.equal(shouldPrioritizeMarketplaceModelPro("model", "member"), false);
-  assert.equal(shouldPrioritizeMarketplaceModelPro("scene", ""), false);
-  assert.equal(marketplaceRankingMetadata({ applied: false, accessType: "free" }).reason, "access_filter");
-  assert.equal(marketplaceRankingMetadata({ applied: false }).reason, "asset_type");
-});
-
-test("newest Model ordering mixes Free and Pro by source ID", () => {
-  assert.equal(shouldPrioritizeMarketplaceModelPro("model", "", "newest"), false);
-  assert.equal(shouldPrioritizeMarketplaceModelPro("model", "", "popular"), true);
-  assert.deepEqual(marketplaceRankingMetadata({ applied: false, sort: "newest" }), {
-    policy: "model_pro_first_v3",
-    bypassed: true,
-    reason: "sort_order",
-  });
-  assert.equal(marketplaceRankingMetadata({ applied: false, assetType: "scene", sort: "newest" }).reason, "asset_type");
+test("explicit access filters and Scene discovery report their scope", () => {
+  assert.equal(marketplaceRankingMetadata({ accessType: "free" }).reason, "access_filter");
+  assert.equal(marketplaceRankingMetadata({ accessType: "member" }).reason, "access_filter");
+  assert.equal(marketplaceRankingMetadata({ assetType: "scene" }).reason, "asset_type");
 });

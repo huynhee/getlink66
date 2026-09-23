@@ -110,7 +110,7 @@ test("unconfigured image search does not charge daily quota", async () => {
   }
 });
 
-test("Model image search returns Pro first and keeps Free afterward", async () => {
+test("Model image search keeps provider relevance across Free and Pro", async () => {
   const previousUrl = process.env.MARKETPLACE_IMAGE_SEARCH_URL;
   const previousFetch = globalThis.fetch;
   process.env.MARKETPLACE_IMAGE_SEARCH_URL = "https://image-search.example.test/query";
@@ -178,11 +178,11 @@ test("Model image search returns Pro first and keeps Free afterward", async () =
       },
     }, capture.response, (error) => { throw error; });
 
-    assert.equal(providerLimit, 42);
-    assert.notEqual(capture.state.body.models[0]._id, freeClosest._id);
+    assert.equal(providerLimit, 14);
+    assert.equal(capture.state.body.models[0]._id, freeClosest._id);
     assert.deepEqual(capture.state.body.models.map((model) => model.accessType), [
-      ...Array(12).fill("member"),
       ...Array(2).fill("free"),
+      ...Array(12).fill("member"),
     ]);
     assert.equal(capture.state.body.ranking.bypassed, false);
   } finally {
