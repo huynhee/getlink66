@@ -81,7 +81,7 @@ test("popular Model pages rank Free and Pro together before pagination", async (
   );
 });
 
-test("newest Model pages mix Free and Pro by descending source ID", async () => {
+test("newest Model pages stay mixed when fewer than ten Pro pages exist", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
     catalogAsset(10, "member"),
@@ -104,10 +104,44 @@ test("newest Model pages mix Free and Pro by descending source ID", async () => 
   assert.equal(first.pagination.total, 4);
 });
 
+test("newest Model reserves ten Pro pages then merges remaining assets by source ID", async () => {
+  await MarketplaceModel.deleteMany({});
+  await MarketplaceModel.insertMany([
+    ...Array.from({ length: 24 }, (_, index) => catalogAsset((index + 1) * 2, "member")),
+    ...[101, 100, 9, 3].map((index) => catalogAsset(index, "free")),
+  ]);
+
+  const firstTen = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const result = await list({ page: String(page), limit: "2", sort: "newest" });
+    assert.deepEqual(result.models.map((model) => model.accessType), ["member", "member"]);
+    assert.equal(result.pagination.total, 28);
+    assert.equal(result.ranking.reservedProPages, 10);
+    firstTen.push(...result.models);
+  }
+
+  const tail = [];
+  for (let page = 11; page <= 14; page += 1) {
+    const result = await list({ page: String(page), limit: "2", sort: "newest" });
+    tail.push(...result.models);
+  }
+  assert.deepEqual(tail.map((model) => model.title), [
+    "Free model 101",
+    "Free model 100",
+    "Free model 9",
+    "Pro model 8",
+    "Pro model 6",
+    "Pro model 4",
+    "Free model 3",
+    "Pro model 2",
+  ]);
+  assert.equal(new Set([...firstTen, ...tail].map((model) => model._id)).size, 28);
+});
+
 test("explicit Free and Pro filters bypass the access mix", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
-    ...Array.from({ length: 12 }, (_, index) => catalogAsset(index, "member")),
+    ...Array.from({ length: 24 }, (_, index) => catalogAsset(index, "member")),
     ...Array.from({ length: 5 }, (_, index) => catalogAsset(index, "free")),
   ]);
 
@@ -118,7 +152,7 @@ test("explicit Free and Pro filters bypass the access mix", async () => {
   assert.ok(free.models.every((item) => item.accessType === "free"));
   assert.equal(free.ranking.bypassed, true);
   assert.equal(free.ranking.reason, "access_filter");
-  assert.equal(pro.models.length, 12);
+  assert.equal(pro.models.length, 24);
   assert.ok(pro.models.every((item) => item.accessType === "member"));
 });
 

@@ -61,6 +61,7 @@ import {
 } from "../utils/marketplaceSearchAnalytics.js";
 
 const PAGE_SIZE = 60;
+const NEWEST_PRO_ONLY_PAGES = 10;
 const IMAGE_SEARCH_FREE_LIMIT = 10;
 const IMAGE_SEARCH_PRO_LIMIT = 150;
 const MAX_IMAGE_SEARCH_BYTES = 512 * 1024;
@@ -614,6 +615,52 @@ async function marketplaceBrowseSlice({ query, sortSpec, offset, limit }) {
     .lean();
 }
 
+async function newestMarketplacePageWithProWindow({ query, page, limit }) {
+  const sortSpec = marketplaceSortSpec("newest");
+  const reservedCount = NEWEST_PRO_ONLY_PAGES * limit;
+  const proQuery = { ...query, accessType: "member" };
+  const [total, lastReservedPro] = await Promise.all([
+    MarketplaceModel.countDocuments(query),
+    MarketplaceModel.find(proQuery)
+      .select("_id")
+      .sort(sortSpec)
+      .skip(reservedCount - 1)
+      .limit(1)
+      .lean(),
+  ]);
+  if (!lastReservedPro.length) return null;
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const safePage = Math.min(page, totalPages);
+  const offset = (safePage - 1) * limit;
+  let models;
+  if (safePage <= NEWEST_PRO_ONLY_PAGES) {
+    models = await marketplaceBrowseSlice({ query: proQuery, sortSpec, offset, limit });
+  } else {
+    const reserved = await MarketplaceModel.find(proQuery)
+      .select("_id")
+      .sort(sortSpec)
+      .limit(reservedCount)
+      .lean();
+    models = await marketplaceBrowseSlice({
+      query: { $and: [query, { _id: { $nin: reserved.map((model) => model._id) } }] },
+      sortSpec,
+      offset: offset - reservedCount,
+      limit,
+    });
+  }
+  return {
+    models,
+    total,
+    totalPages,
+    safePage,
+    engine: "catalog",
+    mode: "newest_pro_window",
+    truncated: false,
+    reservedProPages: NEWEST_PRO_ONLY_PAGES,
+  };
+}
+
 async function featuredMarketplaceBrowsePage({
   query,
   page,
@@ -696,8 +743,13 @@ async function bilingualMarketplacePage({
   assetType = "model",
   userId = null,
   actorKey = "",
+  reserveNewestPro = false,
 }) {
   if (!search) {
+    if (reserveNewestPro) {
+      const reservedPage = await newestMarketplacePageWithProWindow({ query, page, limit });
+      if (reservedPage) return reservedPage;
+    }
     if (normalizeAssetType(assetType) === "model" && sortSelection.effective === "featured") {
       return featuredMarketplaceBrowsePage({
         query,
@@ -884,10 +936,17 @@ export async function listMarketplaceModels(req, res, next) {
     const personalizedFeatured = assetType === "model"
       && !search
       && sortSelection.effective === "featured";
-    if (traffic.shadow && !personalizedFeatured) {
+    const reserveNewestPro = assetType === "model"
+      && !search
+      && sortSelection.effective === "newest"
+      && !meiliAccessType
+      && !fileStatus
+      && !req.query.category
+      && Object.values(meiliFacets).every((values) => !values.length);
+    if (traffic.shadow && !personalizedFeatured && !reserveNewestPro) {
       searchMarketplaceMeili(meiliOptions).catch(() => {});
     }
-    if (traffic.useMeili && !personalizedFeatured) {
+    if (traffic.useMeili && !personalizedFeatured && !reserveNewestPro) {
       try {
         const meili = await searchMarketplaceMeili({
           ...meiliOptions,
@@ -941,6 +1000,7 @@ export async function listMarketplaceModels(req, res, next) {
         assetType,
         userId: req.user?._id || null,
         actorKey: marketplaceActorKeyFromRequest(req),
+        reserveNewestPro,
       });
     } catch (error) {
       if (!search || !isMarketplaceSearchTimeoutError(error)) throw error;
@@ -954,7 +1014,7 @@ export async function listMarketplaceModels(req, res, next) {
         truncated: true,
       };
     }
-    const { models, total, totalPages, safePage, engine, mode, truncated } = marketplacePage;
+    const { models, total, totalPages, safePage, engine, mode, truncated, reservedProPages } = marketplacePage;
     await hydrateMarketplaceCategoryRefs(models);
     const assets = models.map((model) => publicModel(model, { previewLimit: 1 }));
     const fallbackTimingMs = Math.round((performance.now() - startedAt) * 10) / 10;
@@ -984,7 +1044,7 @@ export async function listMarketplaceModels(req, res, next) {
         ...sortSelection,
         ...(sortSelection.effective === "featured" ? { mode } : {}),
       },
-      ranking: marketplaceRankingMetadata({ assetType, accessType }),
+      ranking: marketplaceRankingMetadata({ assetType, accessType, reservedProPages }),
     }, { private: personalizedFeatured });
   } catch (error) {
     const rawSearch = String(req.query.q || req.query.search || "").trim();

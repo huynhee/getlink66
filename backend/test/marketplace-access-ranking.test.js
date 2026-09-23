@@ -15,3 +15,12 @@ test("explicit access filters and Scene discovery report their scope", () => {
   assert.equal(marketplaceRankingMetadata({ accessType: "member" }).reason, "access_filter");
   assert.equal(marketplaceRankingMetadata({ assetType: "scene" }).reason, "asset_type");
 });
+
+test("newest Model reports the ten-page Pro window only when it is applied", () => {
+  assert.deepEqual(marketplaceRankingMetadata({ reservedProPages: 10 }), {
+    policy: "model_newest_first_ten_pro_v1",
+    proFirst: true,
+    reservedProPages: 10,
+    bypassed: false,
+  });
+});
