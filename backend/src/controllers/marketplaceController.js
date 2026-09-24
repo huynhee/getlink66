@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import logger from "../utils/logger.js";
 import { optionalSearchWithin } from "../utils/searchDeadline.js";
 import MarketplaceModel from "../models/MarketplaceModel.js";
 import DailyImageSearchQuota from "../models/DailyImageSearchQuota.js";
@@ -47,6 +48,7 @@ import {
   marketplaceSearchTokens,
 } from "../utils/marketplaceSearch.js";
 import { marketplacePublicDeletionQuery } from "../utils/marketplaceDeletionService.js";
+import { pipeMarketplaceDownloadStream } from "../utils/marketplaceDownloadStream.js";
 import {
   marketplaceRankingMetadata,
   shouldPrioritizeMarketplaceModelPro,
@@ -1564,6 +1566,10 @@ export async function downloadSessionFile(req, res, next) {
       if (String(process.env.MARKETPLACE_DOWNLOAD_REDIRECT_FALLBACK_PROXY || "true").toLowerCase() === "true") {
         return "";
       }
+      if (!error.status && session.storageProvider === "google_drive") {
+        error.status = 502;
+        error.code = "DOWNLOAD_UPSTREAM_FAILED";
+      }
       throw error;
     });
     if (redirectUrl) {
@@ -1572,7 +1578,20 @@ export async function downloadSessionFile(req, res, next) {
       return res.redirect(302, redirectUrl);
     }
 
-    const file = await openStorageStream(session, { range: req.get("range") || "" });
+    let file;
+    try {
+      file = await openStorageStream(session, { range: req.get("range") || "" });
+    } catch (error) {
+      if (!error.status && session.storageProvider === "google_drive") {
+        error.status = 502;
+        error.code = "DOWNLOAD_UPSTREAM_FAILED";
+      }
+      throw error;
+    }
+    if (res.destroyed) {
+      file.stream.destroy();
+      return;
+    }
     let billedSession;
     try {
       billedSession = await finalizeMarketplaceDownloadBilling(session);
@@ -1590,9 +1609,22 @@ export async function downloadSessionFile(req, res, next) {
     if (file.contentRange) res.setHeader("content-range", file.contentRange);
     if (file.contentLength) res.setHeader("content-length", file.contentLength);
     res.status(file.statusCode === 206 ? 206 : 200);
-    file.stream.on("error", next);
-    file.stream.pipe(res);
+    pipeMarketplaceDownloadStream(file.stream, res, (error) => {
+      const upstreamError = new Error("Marketplace download stream interrupted.", { cause: error });
+      upstreamError.status = 502;
+      upstreamError.code = "DOWNLOAD_UPSTREAM_INTERRUPTED";
+      if (res.headersSent) {
+        logger.error({ err: error, correlationId: req.correlationId, sessionId: req.params.id }, "Marketplace download stream interrupted");
+        res.destroy();
+        return;
+      }
+      for (const header of ["content-type", "content-disposition", "content-length", "content-range", "accept-ranges"]) {
+        res.removeHeader(header);
+      }
+      next(upstreamError);
+    });
   } catch (error) {
+    if (res.destroyed) return;
     next(error);
   }
 }
