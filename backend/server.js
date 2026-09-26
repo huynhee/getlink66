@@ -97,15 +97,6 @@ function requireProductionHttpsUrl(name, value) {
   }
 }
 
-function adminEmails() {
-  return new Set(
-    String(process.env.ADMIN_EMAILS || "")
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
-
 function pluginApiEnabled(_req, res, next) {
   if (process.env.PLUGIN_API_ENABLED === "true") return next();
   return res.status(503).json({
@@ -139,9 +130,9 @@ if (process.env.SEPAY_ENABLED !== "false") {
 assertProductionReadiness();
 
 await connectDb();
+const { upsertGoogleAccount } = await import("./src/utils/googleAccountService.js");
 
 const { jwtAuth } = await import("./src/middleware/jwtAuth.js");
-const { default: User } = await import("./src/models/User.js");
 const { currentUser } = await import("./src/controllers/authController.js");
 const { default: authRoutes } = await import("./src/routes/authRoutes.js");
 const { default: topupRoutes } = await import("./src/routes/topupRoutes.js");
@@ -166,7 +157,6 @@ const { ensureNotificationReceiptIndexes } = await import("./src/models/Notifica
 const { ensureMarketplaceReportIndexes } = await import("./src/models/MarketplaceReport.js");
 const { ensureBackupRunIndexes } = await import("./src/models/BackupRun.js");
 const { ensureMarketplaceCreditBillingIndexes } = await import("./src/utils/marketplaceCreditBillingService.js");
-const { awardReferralSignup, ensureReferralCode } = await import("./src/utils/referralService.js");
 const { initializeMarketplaceCategories } = await import("./src/utils/marketplaceSeed.js");
 const { ensureMarketplaceAssetMigration } = await import("./src/utils/marketplaceMigration.js");
 const { initializeMembershipPlans } = await import("./src/utils/membershipService.js");
@@ -289,39 +279,15 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         try {
           const email = profile.emails?.[0]?.value;
           if (!email) return done(new Error("Google account has no email"));
-          const normalizedEmail = email.toLowerCase();
-          const role = adminEmails().has(normalizedEmail) ? "admin" : "user";
-
-          let isNewUser = false;
-          let user = await User.findOne({ email: normalizedEmail });
-          if (!user) {
-            isNewUser = true;
-            user = await User.create({
-              email: normalizedEmail,
-              role,
-              name: profile.displayName,
-              avatar: profile.photos?.[0]?.value || "",
-              credit: 0
-            });
-          } else {
-            user = await User.findByIdAndUpdate(
-              user._id,
-              {
-                $set: {
-                  role,
-                  name: profile.displayName,
-                  avatar: profile.photos?.[0]?.value || ""
-                }
-              },
-              { new: true }
-            );
-          }
-
-          await ensureReferralCode(user);
-          if (isNewUser) {
-            await awardReferralSignup(user, req.cookies?.oauthReferralCode);
-            user = await User.findById(user._id);
-          }
+          const user = await upsertGoogleAccount({
+            subject: profile.id,
+            email,
+            name: profile.displayName,
+            avatar: profile.photos?.[0]?.value || "",
+            referralCode: req.cookies?.oauthReferralCode,
+            allowUnhostedEmailLink: true,
+            hostedDomain: profile._json?.hd || "",
+          });
 
           done(null, user);
         } catch (error) {

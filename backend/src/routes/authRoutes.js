@@ -5,6 +5,8 @@ import {
   devLogin,
   googleCallback,
   googleLogin,
+  googleOneTapConfig,
+  googleOneTapLogin,
   logout,
   setup2FA,
   verifyAndEnable2FA,
@@ -36,6 +38,8 @@ const twoFaVerifyLimit = createRateLimit({
 
 router.get("/google", authLimit, googleLogin);
 router.get("/google/callback", googleCallback);
+router.get("/google/one-tap/config", googleOneTapConfig);
+router.post("/google/one-tap", authLimit, googleOneTapLogin);
 router.get("/dev-login", authLimit, devLogin);
 router.get("/csrf", csrfToken);
 router.post("/logout", logout);
