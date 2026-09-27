@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { api } from "../api.js";
 
-const PROMPTED_KEY = "3dipl-google-one-tap-prompted";
+const SIGNED_OUT_KEY = "3dipl-google-one-tap-signed-out";
 const SCRIPT_URL = "https://accounts.google.com/gsi/client";
 let scriptPromise;
 let initializedClientId = "";
@@ -33,7 +33,7 @@ function loadGoogleIdentity() {
 export function suppressGoogleOneTap() {
   window.google?.accounts?.id?.disableAutoSelect?.();
   try {
-    window.sessionStorage.setItem(PROMPTED_KEY, "1");
+    window.sessionStorage.setItem(SIGNED_OUT_KEY, "1");
   } catch {
     // Browser storage may be unavailable in private mode.
   }
@@ -43,9 +43,9 @@ export function useGoogleOneTap({ enabled, onAuthenticated }) {
   useEffect(() => {
     if (!enabled) return undefined;
     try {
-      if (window.sessionStorage.getItem(PROMPTED_KEY) === "1") return undefined;
+      if (window.sessionStorage.getItem(SIGNED_OUT_KEY) === "1") return undefined;
     } catch {
-      // Continue without per-tab suppression when storage is unavailable.
+      // Continue without sign-out suppression when storage is unavailable.
     }
 
     let cancelled = false;
@@ -77,11 +77,6 @@ export function useGoogleOneTap({ enabled, onAuthenticated }) {
             cancel_on_tap_outside: true,
           });
           initializedClientId = config.clientId;
-        }
-        try {
-          window.sessionStorage.setItem(PROMPTED_KEY, "1");
-        } catch {
-          // Google manages its own prompt cooldown when storage is unavailable.
         }
         googleIdentity.prompt();
       } catch {
