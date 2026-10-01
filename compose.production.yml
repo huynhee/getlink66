@@ -68,6 +68,7 @@ services:
       args:
         VITE_API_URL: ""
         VITE_3DSMAX_PLUGIN_DOWNLOAD_URL: ${PLUGIN_DOWNLOAD_URL:-}
+        VITE_3DSMAX_PLUGIN_DEMO_GIF_URL: ${PLUGIN_DEMO_GIF_URL:-}
         VITE_MARKETPLACE_IMAGE_SEARCH_ENABLED: "false"
     image: 3dipl-frontend:${APP_VERSION:-local}
     container_name: 3dipl-frontend

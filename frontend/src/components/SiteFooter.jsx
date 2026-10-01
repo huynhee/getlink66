@@ -8,6 +8,7 @@ const FOOTER_COPY = {
     support: "Hỗ trợ",
     legal: "Pháp lý",
     models: "Thư viện model",
+    plugin: "Plugin 3ds Max",
     topup: "Gói nạp",
     guide: "Hướng dẫn",
     history: "Lịch sử",
@@ -23,6 +24,7 @@ const FOOTER_COPY = {
     support: "Support",
     legal: "Legal",
     models: "Model library",
+    plugin: "3ds Max plugin",
     topup: "Top-up plans",
     guide: "Guides",
     history: "History",
@@ -45,6 +47,7 @@ export default function SiteFooter({ language = "vi", tagline = "", className = 
         <h3>{copy.product}</h3>
         <a href="/models">{copy.models}</a>
         <a href="/scenes">{language === "vi" ? "Thư viện scene" : "Scene library"}</a>
+        <a href="/plugin">{copy.plugin}</a>
         <a href="/getlink">Getlink</a>
         <a href="/topup">{copy.topup}</a>
         <a href="/guide">{copy.guide}</a>

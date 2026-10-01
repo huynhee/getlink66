@@ -16,6 +16,7 @@ import Guide from "./pages/Guide.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
 import PluginAccess from "./pages/PluginAccess.jsx";
+import PluginDownload from "./pages/PluginDownload.jsx";
 import { GetlinkJobProvider, useGetlinkJob } from "./contexts/GetlinkJobContext.jsx";
 import { getInitialLanguage, setStoredLanguage, translations } from "./i18n.js";
 import "./styles.css";
@@ -74,6 +75,10 @@ function seoMetadata(pathname = "/", language = "vi") {
     "/guide": {
       vi: ["Hướng dẫn sử dụng | 3DIPL", "Hướng dẫn sử dụng Model, Scene, Getlink, Credit và gói Pro trên 3DIPL."],
       en: ["User Guides | 3DIPL", "Guides for Models, Scenes, Getlink, Credit, and Pro plans on 3DIPL."],
+    },
+    "/plugin": {
+      vi: ["Plugin 3ds Max | 3DIPL", "Tải ứng dụng 3DIPL cho 3ds Max để duyệt, tải và đưa Model hoặc Scene vào quy trình làm việc."],
+      en: ["3ds Max Plugin | 3DIPL", "Download the 3DIPL desktop app for 3ds Max to browse, download, and use Models and Scenes."],
     },
     "/privacy": {
       vi: ["Chính sách bảo mật | 3DIPL", "Chính sách bảo mật và xử lý dữ liệu của 3DIPL."],
@@ -290,6 +295,7 @@ function pageFromPath(pathname) {
   if (cleanPath === "/plugin/activate") return "pluginActivate";
   if (cleanPath === "/plugin/sessions") return "pluginSessions";
   if (cleanPath === "/plugin/challenge") return "pluginChallenge";
+  if (cleanPath === "/plugin") return "plugin";
   if (cleanPath === "/") return "";
   return "getlink";
 }
@@ -423,7 +429,8 @@ function App() {
       membership: "/membership",
       history: "/history",
       invite: "/invite",
-      guide: "/guide"
+      guide: "/guide",
+      plugin: "/plugin"
     };
     navigate(routes[nextPage] || "/getlink");
   }
@@ -624,10 +631,11 @@ function App() {
       <Navbar user={user} page={page} setPage={navigateByPage} onUserChange={handleUserChange} onNavigate={navigate} language={language} onLanguageChange={changeLanguage} theme={theme} onThemeToggle={toggleTheme} />
       <FacebookGroupBanner language={language} />
       <main className={`shell shell-${page || "getlink"}${page === "scenes" && path.startsWith("/scenes/") ? " shell-scene-detail" : ""}`}>
-        {!user && !["guide", "privacy", "terms", "models", "scenes"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo={path || "/"} language={language} />}
+        {!user && !["guide", "privacy", "terms", "models", "scenes", "plugin"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo={path || "/"} language={language} />}
         {page === "models" && <Models user={user} language={language} path={path} onNavigate={navigate} onUserChange={handleUserChange} />}
         {page === "scenes" && <Scenes user={user} language={language} path={path} onNavigate={navigate} onUserChange={handleUserChange} />}
         {page === "guide" && <Guide language={language} />}
+        {page === "plugin" && <PluginDownload language={language} />}
         {page === "privacy" && <Privacy language={language} />}
         {page === "terms" && <Terms language={language} />}
         {user && page === "pluginActivate" && <PluginAccess language={language} mode="activate" user={user} />}

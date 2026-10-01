@@ -367,6 +367,11 @@ textarea:focus-visible,
   padding-top: 0;
 }
 
+.shell.shell-plugin {
+  width: 100%;
+  padding: 0;
+}
+
 .shell-admin {
   width: min(1440px, 100%);
 }

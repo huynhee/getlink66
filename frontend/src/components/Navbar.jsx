@@ -61,34 +61,11 @@ function ThemeToggle({ theme = "dark", language = "vi", onThemeToggle }) {
 }
 
 function PluginDownloadButton({ language = "vi" }) {
-  const downloadUrl = String(import.meta.env.VITE_3DSMAX_PLUGIN_DOWNLOAD_URL || "").trim();
-  const availableLabel = language === "vi" ? "Tải plugin 3ds Max" : "Download 3ds Max plugin";
-  const unavailableLabel = language === "vi"
-    ? "Plugin 3ds Max chưa được phát hành"
-    : "The 3ds Max plugin is not released yet";
-
-  if (!downloadUrl) {
-    return (
-      <button
-        type="button"
-        className="pluginDownloadButton unavailable"
-        title={unavailableLabel}
-        aria-label={unavailableLabel}
-      disabled
-      >
-        <Download size={16} />
-        <span>{language === "vi" ? "Tải plugin" : "Download plugin"}</span>
-      </button>
-    );
-  }
-
   return (
     <a
       className="pluginDownloadButton"
-      href={downloadUrl}
-      title={availableLabel}
-      aria-label={availableLabel}
-      download
+      href="/plugin"
+      title={language === "vi" ? "Xem và tải plugin 3ds Max" : "Explore and download the 3ds Max plugin"}
     >
       <Download size={16} />
       <span>{language === "vi" ? "Tải plugin" : "Download plugin"}</span>
