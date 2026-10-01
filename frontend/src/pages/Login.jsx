@@ -3,6 +3,7 @@ import { AlertCircle, ArrowRight, BookOpen, CheckCircle2, ChevronRight, Chrome, 
 import { API_URL, api } from "../api.js";
 import GuideContent from "../components/GuideContent.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
+import PluginHero from "../components/PluginHero.jsx";
 import { ModelCard } from "./Models.jsx";
 import { translations } from "../i18n.js";
 import { membershipBenefitLabels } from "../utils/membershipPresentation.js";
@@ -684,6 +685,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
           </div>
         </section>
       )}
+
+      {!adminMode && <PluginHero language={language} embedded />}
 
       {adminMode && (
         <section className="loginPage adminLoginPage">

@@ -1,18 +1,11 @@
 import React from "react";
-import { ArrowDown, ArrowRight, Check, Download, FolderDown, Layers3, Monitor, ShieldCheck } from "lucide-react";
+import { ArrowRight, FolderDown, Layers3, Monitor, ShieldCheck } from "lucide-react";
+import PluginHero, { PluginDownloadAction } from "../components/PluginHero.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
 import "./plugin-download.css";
 
 const COPY = {
   vi: {
-    eyebrow: "CÔNG CỤ CHO 3DS MAX",
-    title: "3DIPL Plugin",
-    hero: "Duyệt thư viện Model và Scene, tải về máy và làm việc trong 3ds Max từ một ứng dụng duy nhất.",
-    download: "Tải plugin cho Windows",
-    unavailable: "Bản tải chưa sẵn sàng",
-    unavailableNote: "Bản cài đang được chuẩn bị. Bạn vẫn có thể xem hướng dẫn và duyệt thư viện trên web.",
-    setup: "Xem cách cài đặt",
-    badges: ["Dành cho 3ds Max", "Đăng nhập bằng tài khoản 3DIPL", "Model và Scene trong cùng thư viện"],
     workflowLabel: "QUY TRÌNH GỌN HƠN",
     workflowTitle: "Từ thư viện đến bản vẽ, không phải đổi công cụ liên tục.",
     workflowBody: "Tìm đúng tài nguyên, xem thông tin và chọn cách tải phù hợp với tài khoản của bạn.",
@@ -34,14 +27,6 @@ const COPY = {
     note: "Yêu cầu Windows và 3ds Max để dùng chức năng kết nối Max. Bạn vẫn có thể duyệt, tải Model/Scene trên website."
   },
   en: {
-    eyebrow: "BUILT FOR 3DS MAX",
-    title: "3DIPL Plugin",
-    hero: "Browse Models and Scenes, download them to your computer, and work in 3ds Max from one desktop app.",
-    download: "Download for Windows",
-    unavailable: "Download not available yet",
-    unavailableNote: "The installer is being prepared. You can still read the guide and browse the library online.",
-    setup: "How to get started",
-    badges: ["For 3ds Max", "Sign in with your 3DIPL account", "Models and Scenes in one library"],
     workflowLabel: "A SHORTER WORKFLOW",
     workflowTitle: "From library to project, without switching tools all day.",
     workflowBody: "Find the right asset, inspect its details, and choose the download method that fits your account.",
@@ -66,70 +51,20 @@ const COPY = {
 
 const FEATURE_ICONS = [Layers3, FolderDown, Monitor];
 
-function getDownloadUrl() {
-  const url = String(import.meta.env.VITE_3DSMAX_PLUGIN_DOWNLOAD_URL || "").trim();
-  return url.startsWith("https://") || (url.startsWith("/") && !url.startsWith("//")) ? url : "";
-}
-
-function getDemoGifUrl() {
-  const url = String(import.meta.env.VITE_3DSMAX_PLUGIN_DEMO_GIF_URL || "").trim();
-  return url.startsWith("https://") || (url.startsWith("/") && !url.startsWith("//")) ? url : "";
-}
-
-function DownloadAction({ copy, url, className = "" }) {
-  if (!url) {
-    return (
-      <span className={`pluginCta pluginCtaDisabled ${className}`.trim()} aria-disabled="true">
-        <Download size={19} aria-hidden="true" /> {copy.unavailable}
-      </span>
-    );
-  }
-
-  return (
-    <a className={`pluginCta ${className}`.trim()} href={url}>
-      <Download size={19} aria-hidden="true" /> {copy.download}
-    </a>
-  );
-}
-
 export default function PluginDownload({ language = "vi" }) {
   const copy = COPY[language] || COPY.vi;
-  const downloadUrl = getDownloadUrl();
-  const demoGifUrl = getDemoGifUrl();
+
+  React.useEffect(() => {
+    if (window.location.hash !== "#plugin-setup") return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById("plugin-setup")?.scrollIntoView({ block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   return (
     <div className="pluginPage">
-      <section className="pluginHero" aria-labelledby="plugin-title">
-        <div className="pluginHeroContent">
-          <div className="pluginHeroCopy">
-            <div className="pluginEyebrow"><span aria-hidden="true" />{copy.eyebrow}</div>
-            <h1 id="plugin-title" aria-label={copy.title}>3DIPL <span>Plugin</span></h1>
-            <p>{copy.hero}</p>
-            <div className="pluginHeroActions">
-              <DownloadAction copy={copy} url={downloadUrl} />
-              <a className="pluginTextLink" href="#plugin-setup">{copy.setup} <ArrowDown size={17} aria-hidden="true" /></a>
-            </div>
-            {!downloadUrl && <p className="pluginReleaseNote" role="status">{copy.unavailableNote}</p>}
-            <ul className="pluginHeroBadges">
-              {copy.badges.map((badge) => <li key={badge}><Check size={15} aria-hidden="true" />{badge}</li>)}
-            </ul>
-          </div>
-          <div className="pluginHeroMedia" aria-hidden={!demoGifUrl}>
-            {demoGifUrl ? (
-              <img src={demoGifUrl} alt={language === "vi" ? "Giới thiệu plugin 3DIPL" : "3DIPL plugin demonstration"} />
-            ) : (
-              <div className="pluginMediaEmpty">
-                <div className="pluginMediaToolbar">
-                  <strong>3DiPL</strong>
-                  <span className="pluginMediaLights"><i /><i /><i /></span>
-                </div>
-                <div className="pluginMediaSymbol"><Layers3 size={44} strokeWidth={1.2} /></div>
-                <div className="pluginMediaMeta"><span>MODEL / SCENE</span><span>3DS MAX</span></div>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
+      <PluginHero language={language} />
 
       <section className="pluginWorkflow" aria-labelledby="plugin-workflow-title">
         <div className="pluginInner">
@@ -183,7 +118,7 @@ export default function PluginDownload({ language = "vi" }) {
             <p>{copy.finalBody}</p>
           </div>
           <div className="pluginEndActions">
-            <DownloadAction copy={copy} url={downloadUrl} />
+            <PluginDownloadAction language={language} />
             <a className="pluginTextLink" href="/guide">{copy.guide} <ArrowRight size={17} aria-hidden="true" /></a>
           </div>
           <p className="pluginCompatibility">{copy.note}</p>
