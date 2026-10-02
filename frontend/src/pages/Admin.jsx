@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, Archive, ArrowDown, ArrowUp, Ban, BarChart3, B
 import AdminArticles from "../components/AdminArticles.jsx";
 import AdminDownloadHistory from "../components/AdminDownloadHistory.jsx";
 import AdminMarketplace from "../components/AdminMarketplace.jsx";
+import AdminPluginReleases from "../components/AdminPluginReleases.jsx";
 import CoinAmount from "../components/CoinAmount.jsx";
 import Pagination from "../components/Pagination.jsx";
 import { api } from "../api.js";
@@ -377,23 +378,27 @@ export default function Admin({ user, language = "vi" }) {
   const [transactionMsgError, setTransactionMsgError] = useState(false);
   const [reviewingTransactionId, setReviewingTransactionId] = useState("");
 
-  const loadData = React.useCallback(async () => {
+  const loadData = React.useCallback(async (signal) => {
     const dashboardPeriod = revenuePeriod === "day" ? "day" : revenuePeriod === "month" ? "month" : "month";
     const [oRes, dRes, storageRes, pRes, planRes, vRes, cRes, sRes, lRes, aRes, nRes, rRes, settingRes] = await Promise.all([
-      api(`/api/admin/overview?period=${revenuePeriod}`),
-      api(`/api/admin/dashboard?period=${dashboardPeriod}`),
-      api("/api/admin/storage-health").catch(() => ({ storage: null })),
-      api("/api/admin/topup-packages"),
-      api("/api/admin/membership-plans"),
-      api("/api/admin/vouchers"),
-      api("/api/admin/cookies"),
-      api("/api/admin/cookies/status"),
-      api("/api/admin/system-logs"),
-      api("/api/admin/articles"),
-      api("/api/admin/notifications"),
-      api("/api/admin/referrals"),
-      api("/api/settings")
+      api(`/api/admin/overview?period=${revenuePeriod}`, { signal }),
+      api(`/api/admin/dashboard?period=${dashboardPeriod}`, { signal }),
+      api("/api/admin/storage-health", { signal }).catch((error) => {
+        if (signal?.aborted) throw error;
+        return { storage: null };
+      }),
+      api("/api/admin/topup-packages", { signal }),
+      api("/api/admin/membership-plans", { signal }),
+      api("/api/admin/vouchers", { signal }),
+      api("/api/admin/cookies", { signal }),
+      api("/api/admin/cookies/status", { signal }),
+      api("/api/admin/system-logs", { signal }),
+      api("/api/admin/articles", { signal }),
+      api("/api/admin/notifications", { signal }),
+      api("/api/admin/referrals", { signal }),
+      api("/api/settings", { signal })
     ]);
+    if (signal?.aborted) return;
     setOverview(oRes.overview || null);
     setDashboard(dRes.dashboard || null);
     setStorageHealth(storageRes.storage || null);
@@ -409,14 +414,15 @@ export default function Admin({ user, language = "vi" }) {
     setSiteSettings({ ...defaultSiteSettings, ...(settingRes.settings || {}) });
   }, [revenuePeriod]);
 
-  const loadUsers = React.useCallback(async () => {
+  const loadUsers = React.useCallback(async (signal) => {
     const query = new URLSearchParams({
       page: String(userPage),
       sort: userSort,
       filter: userFilter,
     });
     if (userSearch.trim()) query.set("search", userSearch.trim());
-    const data = await api(`/api/admin/users?${query.toString()}`);
+    const data = await api(`/api/admin/users?${query.toString()}`, { signal });
+    if (signal?.aborted) return;
     setUsers(data.users || []);
     const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
     setUserPagination(pagination);
@@ -442,34 +448,37 @@ export default function Admin({ user, language = "vi" }) {
     }
   }
 
-  const loadGetlinks = React.useCallback(async () => {
+  const loadGetlinks = React.useCallback(async (signal) => {
     const query = new URLSearchParams({ page: String(getlinkPage) });
     if (getlinkSearch.trim()) query.set("search", getlinkSearch.trim());
-    const data = await api(`/api/admin/getlinks?${query.toString()}`);
+    const data = await api(`/api/admin/getlinks?${query.toString()}`, { signal });
+    if (signal?.aborted) return;
     setGetlinkRecords(data.getlinks || []);
     const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
     setGetlinkPagination(pagination);
     if (pagination.page !== getlinkPage) setGetlinkPage(pagination.page);
   }, [getlinkPage, getlinkSearch]);
 
-  const loadTopups = React.useCallback(async () => {
+  const loadTopups = React.useCallback(async (signal) => {
     const query = new URLSearchParams({
       page: String(topupPage),
       kind: transactionKind,
     });
     if (topupStatus !== "all") query.set("status", topupStatus);
     if (topupSearch.trim()) query.set("search", topupSearch.trim());
-    const data = await api(`/api/admin/transactions?${query.toString()}`);
+    const data = await api(`/api/admin/transactions?${query.toString()}`, { signal });
+    if (signal?.aborted) return;
     setTopupRecords(data.transactions || data.topups || []);
     const pagination = data.pagination || { page: 1, pageSize: 10, total: 0, totalPages: 1 };
     setTopupPagination(pagination);
     if (pagination.page !== topupPage) setTopupPage(pagination.page);
   }, [topupPage, topupSearch, topupStatus, transactionKind]);
 
-  const loadAuditLogs = React.useCallback(async () => {
+  const loadAuditLogs = React.useCallback(async (signal) => {
     const query = new URLSearchParams({ page: String(auditPage), limit: "30" });
     if (auditSearch.trim()) query.set("search", auditSearch.trim());
-    const data = await api(`/api/admin/audit-logs?${query.toString()}`);
+    const data = await api(`/api/admin/audit-logs?${query.toString()}`, { signal });
+    if (signal?.aborted) return;
     setAuditLogs(data.logs || []);
     const pagination = data.pagination || { page: 1, pageSize: 30, total: 0, totalPages: 1 };
     setAuditPagination(pagination);
@@ -512,35 +521,51 @@ export default function Admin({ user, language = "vi" }) {
   }
 
   useEffect(() => {
-    loadData().catch(console.error);
+    const controller = new AbortController();
+    loadData(controller.signal).catch((error) => {
+      if (!controller.signal.aborted) console.error(error);
+    });
+    return () => controller.abort();
   }, [loadData]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      loadUsers().catch(console.error);
+      loadUsers(controller.signal).catch((error) => {
+        if (!controller.signal.aborted) console.error(error);
+      });
     }, 250);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [loadUsers]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      loadGetlinks().catch(console.error);
+      loadGetlinks(controller.signal).catch((error) => {
+        if (!controller.signal.aborted) console.error(error);
+      });
     }, 250);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [loadGetlinks]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      loadTopups().catch(console.error);
+      loadTopups(controller.signal).catch((error) => {
+        if (!controller.signal.aborted) console.error(error);
+      });
     }, 250);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [loadTopups]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      loadAuditLogs().catch(console.error);
+      loadAuditLogs(controller.signal).catch((error) => {
+        if (!controller.signal.aborted) console.error(error);
+      });
     }, 250);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [loadAuditLogs]);
 
   function fillPackageForm(pack) {
@@ -1260,6 +1285,7 @@ export default function Admin({ user, language = "vi" }) {
     { key: "security", label: l("Bảo mật", "Security"), icon: ShieldAlert },
   ];
   const websiteSections = [
+    { key: "pluginReleases", label: l("Bản phát hành plugin", "Plugin releases"), icon: Package },
     { key: "packages", label: l("Gói nạp", "Top-up packages"), icon: CreditCard, count: packages.length + membershipPlans.length },
     { key: "vouchers", label: t.adminVouchers, icon: Gift, count: vouchers.length },
     { key: "notifications", label: t.notifications, icon: Megaphone, count: notifications.length },
@@ -2007,6 +2033,10 @@ export default function Admin({ user, language = "vi" }) {
           language={language}
           assetType={activeSection === "scenes" ? "scene" : "model"}
         />
+      )}
+
+      {activeSection === "website" && websiteSection === "pluginReleases" && (
+        <AdminPluginReleases language={language} />
       )}
 
       {activeSection === "website" && websiteSection === "packages" && (

@@ -1,4 +1,8 @@
 import { Router, raw } from "express";
+import {
+  createPluginRelease, deletePluginRelease, getPluginRelease, getPluginReleaseUpload,
+  listPluginReleases, publishPluginRelease, uploadPluginReleaseChunk, verifyPluginRelease, withdrawPluginRelease,
+} from "../controllers/pluginReleaseController.js";
 import { 
   adminAddCredit, 
   adminSetCredit,
@@ -140,6 +144,16 @@ router.post(
 );
 
 router.use(requireAuth, requireNotBanned, adminOnly);
+const pluginUploadLimit = createRateLimit({ keyPrefix: "admin-plugin-upload", windowMs: 60_000, max: 300, keyGenerator: (req) => req.user._id });
+router.get("/plugin/releases", listPluginReleases);
+router.post("/plugin/releases", adminWriteLimit, auditAdmin("CREATE_PLUGIN_RELEASE"), createPluginRelease);
+router.get("/plugin/releases/:id", getPluginRelease);
+router.get("/plugin/releases/:id/files/:name/upload", getPluginReleaseUpload);
+router.put("/plugin/releases/:id/files/:name/chunks/:index", pluginUploadLimit, raw({ type: "application/octet-stream", limit: "8mb" }), uploadPluginReleaseChunk);
+router.post("/plugin/releases/:id/verify", adminWriteLimit, auditAdmin("VERIFY_PLUGIN_RELEASE"), verifyPluginRelease);
+router.post("/plugin/releases/:id/publish", adminWriteLimit, auditAdmin("PUBLISH_PLUGIN_RELEASE"), publishPluginRelease);
+router.post("/plugin/releases/:id/withdraw", adminWriteLimit, auditAdmin("WITHDRAW_PLUGIN_RELEASE"), withdrawPluginRelease);
+router.delete("/plugin/releases/:id", adminWriteLimit, auditAdmin("DELETE_PLUGIN_RELEASE_DRAFT"), deletePluginRelease);
 router.get("/dashboard", adminDashboard);
 router.get("/storage-health", adminStorageHealth);
 router.post("/marketplace/search/rebuild", adminWriteLimit, auditAdmin("REBUILD_MARKETPLACE_SEARCH"), adminRebuildMarketplaceSearch);

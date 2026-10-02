@@ -41,7 +41,7 @@ test("plugin release emits stable ETag and returns 304", () => {
   assert.equal(first.statusCode, 200);
   assert.deepEqual(first.body, manifest);
   assert.match(first.headers.etag, /^"sha256:[a-f0-9]{64}"$/);
-  assert.equal(first.headers["cache-control"], "public, max-age=300, must-revalidate");
+  assert.equal(first.headers["cache-control"], "no-cache");
 
   const second = responseRecorder();
   sendPluginReleaseJsonWithEtag(
@@ -68,4 +68,16 @@ test("plugin release feed is unavailable while release publishing is disabled", 
   }
   assert.equal(captured?.status, 503);
   assert.equal(captured?.code, "PLUGIN_RELEASE_DISABLED");
+});
+
+test("ETags isolate manifest contract and channel and change on publish", () => {
+  const base = { manifestVersion: 2, channel: "live-test", version: "1.0.1" };
+  const first = responseRecorder();
+  sendPluginReleaseJsonWithEtag({ headers: {} }, first, base);
+  for (const manifest of [{ ...base, manifestVersion: 3 }, { ...base, channel: "staging" }, { ...base, version: "1.0.2" }]) {
+    const next = responseRecorder();
+    sendPluginReleaseJsonWithEtag({ headers: { "if-none-match": first.headers.etag } }, next, manifest);
+    assert.equal(next.statusCode, 200);
+    assert.notEqual(next.headers.etag, first.headers.etag);
+  }
 });

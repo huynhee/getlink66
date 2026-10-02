@@ -1,5 +1,5 @@
-const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
-export const API_URL = configuredApiUrl || (import.meta.env.PROD ? "" : "http://localhost:5000");
+const configuredApiUrl = String(import.meta.env?.VITE_API_URL || "").replace(/\/+$/, "");
+export const API_URL = configuredApiUrl || (import.meta.env?.PROD ? "" : "http://localhost:5000");
 let csrfToken = "";
 const publicGetCache = new Map();
 const PUBLIC_GET_CACHE_MAX_ENTRIES = 100;
@@ -25,12 +25,15 @@ function isMutatingMethod(method = "GET") {
   return !["GET", "HEAD", "OPTIONS"].includes(String(method).toUpperCase());
 }
 
-async function getCsrfToken() {
+async function getCsrfToken(signal) {
+  signal?.throwIfAborted();
   if (csrfToken) return csrfToken;
   const response = await fetch(`${API_URL}/api/auth/csrf`, {
-    credentials: "include"
+    credentials: "include",
+    signal,
   });
   const data = await response.json().catch(() => ({}));
+  signal?.throwIfAborted();
   if (!response.ok || !data.csrfToken) {
     throw new Error(data.message || "Cannot initialize security token");
   }
@@ -74,15 +77,17 @@ export async function api(path, options = {}) {
     };
 
     if (mutating) {
-      headers["x-csrf-token"] = await getCsrfToken();
+      headers["x-csrf-token"] = await getCsrfToken(options.signal);
     }
 
+    options.signal?.throwIfAborted();
     const response = await fetch(`${API_URL}${path}`, {
       ...options,
       credentials: "include",
       headers
     });
     const data = await readResponseData(response);
+    options.signal?.throwIfAborted();
     return { response, data };
   }
 
@@ -109,7 +114,8 @@ export async function apiBinary(path, body, options = {}) {
 
   async function send() {
     const headers = { ...(options.headers || {}) };
-    headers["x-csrf-token"] = await getCsrfToken();
+    headers["x-csrf-token"] = await getCsrfToken(options.signal);
+    options.signal?.throwIfAborted();
     const response = await fetch(`${API_URL}${path}`, {
       ...options,
       method,
@@ -118,6 +124,7 @@ export async function apiBinary(path, body, options = {}) {
       headers,
     });
     const data = await readResponseData(response);
+    options.signal?.throwIfAborted();
     return { response, data };
   }
 
@@ -154,6 +161,7 @@ export function apiCached(path, { ttlMs = 60_000, force = false } = {}) {
 
   const promise = api(key)
     .then((data) => {
+      if (publicGetCache.get(key)?.promise !== promise) return data;
       publicGetCache.delete(key);
       publicGetCache.set(key, {
         data,

@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 const TURNSTILE_TEST_SITE_KEYS = new Set([
   "1x00000000000000000000AA",
   "2x00000000000000000000AB",
@@ -88,6 +90,27 @@ export function productionReadinessIssues(env = process.env) {
     if (!isTrue(env, "PLUGIN_API_ENABLED")) {
       errors.push("PLUGIN_RELEASE_ENABLED requires PLUGIN_API_ENABLED=true");
     }
+    const databaseSource = text(env, "PLUGIN_RELEASE_SOURCE") === "database";
+    if (databaseSource) {
+      const channel = text(env, "PLUGIN_RELEASE_CHANNEL") || "production";
+      const publicChannel = text(env, "PLUGIN_PUBLIC_DOWNLOAD_CHANNEL") || channel;
+      if (!["production", "staging", "live-test"].includes(channel) || !["production", "staging", "live-test"].includes(publicChannel)) {
+        errors.push("Plugin release channels must be production, staging or live-test");
+      }
+      for (const keyChannel of new Set([channel, publicChannel])) {
+        const keyName = `PLUGIN_${keyChannel.replaceAll("-", "_").toUpperCase()}_RELEASE_PUBLIC_KEY`;
+        const keyText = text(env, keyName) || (keyChannel === channel ? text(env, "PLUGIN_RELEASE_PUBLIC_KEY") : "");
+        try {
+          const key = crypto.createPublicKey({ key: Buffer.from(keyText, "base64"), format: "der", type: "spki" });
+          if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1") throw new Error("Wrong curve");
+        } catch { errors.push(`${keyName} must contain the pinned ES256 SPKI public key`); }
+      }
+      const storage = text(env, "PLUGIN_RELEASE_STORAGE_DIR");
+      if (!storage.startsWith("/") || storage === "/" || storage.split("/").includes("..")) {
+        errors.push("PLUGIN_RELEASE_STORAGE_DIR must be an absolute, dedicated storage directory");
+      }
+      if (channel !== "production") warnings.push("Only the signed test release channel is configured; production publication remains gated");
+    } else {
     const releaseUrl = text(env, "PLUGIN_RELEASE_URL");
     const releaseSha256 = text(env, "PLUGIN_RELEASE_SHA256");
     const releaseSignature = text(env, "PLUGIN_RELEASE_SIGNATURE");
@@ -140,6 +163,10 @@ export function productionReadinessIssues(env = process.env) {
     if (!/^[A-Za-z0-9+/=]{80,}$/.test(releasePublicKey)) {
       errors.push("PLUGIN_RELEASE_PUBLIC_KEY must contain the pinned ES256 SPKI public key");
     }
+    }
+  }
+  if (text(env, "PLUGIN_RELEASE_SOURCE") && !["env", "database"].includes(text(env, "PLUGIN_RELEASE_SOURCE"))) {
+    errors.push("PLUGIN_RELEASE_SOURCE must be env or database");
   }
   if (
     text(env, "PLUGIN_DEPLOYMENT_ENV").toLowerCase() === "production"

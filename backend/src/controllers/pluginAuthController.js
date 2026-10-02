@@ -18,6 +18,8 @@ import {
   verifyMarketplaceTurnstile,
 } from "../utils/turnstile.js";
 import { verifyPluginReleaseManifest } from "../utils/pluginReleaseManifest.js";
+import { pluginReleaseFromEnvironment } from "../utils/pluginReleaseEnvironment.js";
+import { pluginReleaseService, releaseError } from "../services/pluginReleaseService.js";
 
 export async function deviceStart(req, res, next) {
   try {
@@ -35,39 +37,16 @@ export function releaseManifest(req, res, next) {
       "Plugin release feed is not enabled yet.",
     ));
   }
-  const version = String(process.env.PLUGIN_RELEASE_VERSION || "0.4.0").trim();
-  const downloadUrl = String(process.env.PLUGIN_RELEASE_URL || "").trim();
-  const sha256 = String(process.env.PLUGIN_RELEASE_SHA256 || "").trim().toLowerCase();
-  const manifest = {
-    manifestVersion: Number(process.env.PLUGIN_RELEASE_MANIFEST_VERSION || 2),
-    channel: String(process.env.PLUGIN_RELEASE_CHANNEL || "beta"),
-    version,
-    minimumVersion: String(process.env.PLUGIN_MINIMUM_VERSION || version),
-    maxVersions: ["2026"],
-    downloadUrl,
-    sha256,
-    signature: String(process.env.PLUGIN_RELEASE_SIGNATURE || ""),
-    signatureAlgorithm: "ES256",
-    publishedAt: process.env.PLUGIN_RELEASE_PUBLISHED_AT || null,
-  };
-  if (manifest.manifestVersion >= 2) {
-    manifest.desktopArtifact = releaseArtifactFromEnvironment({
-      prefix: "PLUGIN_DESKTOP_RELEASE",
-      component: "desktop",
-      version,
-      channel: manifest.channel,
-      requiresMaxRestart: false,
-      publishedAt: manifest.publishedAt,
-    });
-    manifest.maxBridge2026Artifact = releaseArtifactFromEnvironment({
-      prefix: "PLUGIN_MAX_BRIDGE_RELEASE",
-      component: "maxBridge2026",
-      version,
-      channel: manifest.channel,
-      requiresMaxRestart: true,
-      publishedAt: manifest.publishedAt,
-    });
+  const requestedVersion = Number(req.query?.manifestVersion || 2);
+  if (![2, 3].includes(requestedVersion)) return next(releaseError(400, "PLUGIN_RELEASE_MANIFEST_VERSION_INVALID"));
+  if (process.env.PLUGIN_RELEASE_SOURCE === "database") {
+    return pluginReleaseService.feed(String(req.query?.channel || process.env.PLUGIN_RELEASE_CHANNEL || "production"), requestedVersion)
+      .then((manifest) => sendPluginReleaseJsonWithEtag(req, res, manifest)).catch(next);
   }
+  if (requestedVersion !== 2 || (req.query?.channel && req.query.channel !== process.env.PLUGIN_RELEASE_CHANNEL)) {
+    return next(releaseError(503, "PLUGIN_RELEASE_DISABLED"));
+  }
+  const manifest = pluginReleaseFromEnvironment();
   if (
     process.env.NODE_ENV === "production"
     && !verifyPluginReleaseManifest(manifest, process.env.PLUGIN_RELEASE_PUBLIC_KEY)
@@ -85,34 +64,11 @@ export function sendPluginReleaseJsonWithEtag(req, res, manifest) {
   const serialized = JSON.stringify(manifest);
   const etag = `"sha256:${crypto.createHash("sha256").update(serialized).digest("hex")}"`;
   res.setHeader("etag", etag);
-  res.setHeader("cache-control", "public, max-age=300, must-revalidate");
+  res.setHeader("cache-control", "no-cache");
   if (String(req?.headers?.["if-none-match"] || "") === etag) {
     return res.status(304).end();
   }
   return res.json(manifest);
-}
-
-function releaseArtifactFromEnvironment({
-  prefix,
-  component,
-  version,
-  channel,
-  requiresMaxRestart,
-  publishedAt,
-}) {
-  return {
-    component,
-    channel,
-    version: String(process.env[`${prefix}_VERSION`] || version),
-    downloadUrl: String(process.env[`${prefix}_URL`] || ""),
-    sha256: String(process.env[`${prefix}_SHA256`] || "").toLowerCase(),
-    protocolMinimum: Number(process.env[`${prefix}_PROTOCOL_MINIMUM`] || 2),
-    protocolMaximum: Number(process.env[`${prefix}_PROTOCOL_MAXIMUM`] || 2),
-    requiresMaxRestart,
-    signature: String(process.env[`${prefix}_SIGNATURE`] || ""),
-    signatureAlgorithm: "ES256",
-    publishedAt: process.env[`${prefix}_PUBLISHED_AT`] || publishedAt,
-  };
 }
 
 export async function deviceToken(req, res, next) {

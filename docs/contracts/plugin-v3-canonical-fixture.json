@@ -1,0 +1,91 @@
+{
+  "description": "Node and .NET V3 canonicalization/signature fixture. Public test key only.",
+  "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHQFWVz9NZ95jfoVbwqnZDGQQeU/eYPhFNwDH/7BVWiOl/BNY4tx7oIoRWGpuxOOT88Dy0eqTH9bGcj+avUYSkg==",
+  "canonicalSha256": "b3dd0c6a09086a9356d785aa2d5833ea013f7b514f483f37c5ae8dbf1acc1973",
+  "manifest": {
+    "manifestVersion": 3,
+    "channel": "live-test",
+    "version": "1.0.2",
+    "minimumVersion": "1.0.1",
+    "maxVersions": [
+      "2020",
+      "2021",
+      "2022",
+      "2023",
+      "2024",
+      "2025",
+      "2026",
+      "2027"
+    ],
+    "publishedAt": "2026-10-01T08:00:00.123Z",
+    "signatureAlgorithm": "ES256",
+    "desktopArtifact": {
+      "component": "desktop",
+      "maxFamily": "",
+      "maxVersions": [
+        "2020",
+        "2021",
+        "2022",
+        "2023",
+        "2024",
+        "2025",
+        "2026",
+        "2027"
+      ],
+      "channel": "live-test",
+      "version": "1.0.2",
+      "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.2/desktop.zip",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "protocolMinimum": 2,
+      "protocolMaximum": 2,
+      "requiresMaxRestart": false,
+      "signatureAlgorithm": "ES256",
+      "publishedAt": "2026-10-01T08:00:00.123Z"
+    },
+    "bridgeArtifacts": [
+      {
+        "component": "maxBridgeLegacy",
+        "maxFamily": "2020-2025",
+        "maxVersions": [
+          "2020",
+          "2021",
+          "2022",
+          "2023",
+          "2024",
+          "2025"
+        ],
+        "channel": "live-test",
+        "version": "1.0.2",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.2/maxBridgeLegacy.mzp",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolMinimum": 2,
+        "protocolMaximum": 2,
+        "requiresMaxRestart": true,
+        "signatureAlgorithm": "ES256",
+        "publishedAt": "2026-10-01T08:00:00.123Z"
+      },
+      {
+        "component": "maxBridgeModern",
+        "maxFamily": "2026-2027",
+        "maxVersions": [
+          "2026",
+          "2027"
+        ],
+        "channel": "live-test",
+        "version": "1.0.2",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.2/maxBridgeModern.mzp",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocolMinimum": 2,
+        "protocolMaximum": 2,
+        "requiresMaxRestart": true,
+        "signatureAlgorithm": "ES256",
+        "publishedAt": "2026-10-01T08:00:00.123Z"
+      }
+    ],
+    "releaseNotes": {
+      "vi": "Cập nhật đã sẵn sàng 🚀\n\"An toàn\"\t<&>\\",
+      "en": "Ready\n\"quoted\"\t<&>\\\b\f\u0001  "
+    },
+    "signature": "rKAWsAaIb220f/vzBLRK+M5FfxCJlM9ERjxQtkJvTaUp7VQp8WHS83HijEnxSbBkx2ykpyWPQkwVAuNorYzw0g=="
+  }
+}

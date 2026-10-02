@@ -1,7 +1,7 @@
 staging.3dipl.org {
     encode zstd gzip
 
-    @api path /api/* /ready /health
+    @api path /api/* /plugin-releases/* /ready /health
     handle @api {
         reverse_proxy 127.0.0.1:15000
     }

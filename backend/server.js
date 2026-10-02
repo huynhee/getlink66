@@ -165,6 +165,7 @@ const { ensurePaymentReceiptIndexes } = await import("./src/models/PaymentReceip
 const { ensureNotificationReceiptIndexes } = await import("./src/models/NotificationReceipt.js");
 const { ensureMarketplaceReportIndexes } = await import("./src/models/MarketplaceReport.js");
 const { ensureBackupRunIndexes } = await import("./src/models/BackupRun.js");
+const { ensurePluginReleaseIndexes } = await import("./src/models/PluginRelease.js");
 const { ensureMarketplaceCreditBillingIndexes } = await import("./src/utils/marketplaceCreditBillingService.js");
 const { awardReferralSignup, ensureReferralCode } = await import("./src/utils/referralService.js");
 const { initializeMarketplaceCategories } = await import("./src/utils/marketplaceSeed.js");
@@ -182,6 +183,7 @@ const { startMarketplaceCoverCacheJob, stopMarketplaceCoverCacheJob } = await im
 const { marketplaceCoverCacheConfig } = await import("./src/utils/marketplaceCoverCache.js");
 const { startHistoryRetentionJob, stopHistoryRetentionJob } = await import("./src/utils/historyRetentionJob.js");
 const { startStorageHealthJob, stopStorageHealthJob } = await import("./src/utils/storageHealthJob.js");
+const { startPluginReleaseCleanupJob, stopPluginReleaseCleanupJob } = await import("./src/utils/pluginReleaseCleanupJob.js");
 const { startGetlinkJobWorker, stopGetlinkJobWorker } = await import("./src/utils/getlinkJobService.js");
 const { close3D66Browser } = await import("./src/utils/3d66BrowserService.js");
 const { close3D66ProxyAgents } = await import("./src/utils/3d66Service.js");
@@ -191,6 +193,7 @@ await ensurePaymentReceiptIndexes();
 await ensureNotificationReceiptIndexes();
 await ensureMarketplaceReportIndexes();
 await ensureBackupRunIndexes();
+await ensurePluginReleaseIndexes();
 await ensureMarketplaceCreditBillingIndexes();
 if (
   process.env.NODE_ENV !== "production"
@@ -216,6 +219,7 @@ startMarketplaceDeletionJob();
 startMarketplaceCoverCacheJob();
 startHistoryRetentionJob();
 startStorageHealthJob();
+startPluginReleaseCleanupJob();
 startGetlinkJobWorker();
 
 app.disable("x-powered-by");
@@ -335,6 +339,9 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 app.use(passport.initialize());
 app.use(jwtAuth);
 app.use(requestGuard);
+const { publicPluginDownloads, publicPluginReleaseFile } = await import("./src/controllers/pluginReleaseController.js");
+app.get("/api/plugin/downloads", publicPluginDownloads);
+app.get("/plugin-releases/:channel/:version/:name", publicPluginReleaseFile);
 app.use("/api/plugin", pluginApiEnabled, (req, res, next) => {
   const startedAt = process.hrtime.bigint();
   res.once("finish", () => {
@@ -421,7 +428,7 @@ app.use((error, _req, res, _next) => {
   }
   const isProduction = process.env.NODE_ENV === "production";
   res.status(status).json({
-    message: status >= 500 && isProduction
+    message: status >= 500 && isProduction && !expectedUnavailable
       ? "Internal server error"
       : publicErrorMessage(error.message),
     ...(typeof error.code === "string" && error.code ? { code: error.code } : {}),
@@ -466,6 +473,7 @@ async function gracefulShutdown(signal) {
   stopMarketplaceCoverCacheJob();
   stopHistoryRetentionJob();
   stopStorageHealthJob();
+  await stopPluginReleaseCleanupJob();
   const getlinkWorkerStop = stopGetlinkJobWorker({ timeoutMs: 25_000 });
   logger.info({ signal }, "Graceful shutdown started");
 

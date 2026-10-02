@@ -130,7 +130,7 @@ if (production) {
   if (process.env.PLUGIN_API_ENABLED === "true") {
     requireValue("PLUGIN_JWT_SECRET");
   }
-  if (process.env.PLUGIN_RELEASE_ENABLED === "true") {
+  if (process.env.PLUGIN_RELEASE_ENABLED === "true" && process.env.PLUGIN_RELEASE_SOURCE !== "database") {
     [
       "PLUGIN_RELEASE_VERSION",
       "PLUGIN_MINIMUM_VERSION",

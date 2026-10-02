@@ -27,7 +27,7 @@ services:
     volumes:
       - /var/lib/3dipl-staging/media/covers:/var/lib/3dipl/media/covers
       - /var/lib/3dipl-staging/backup-work:/var/lib/3dipl/backup-work
-      - /var/lib/3dipl-staging/plugin-releases:/var/lib/3dipl/plugin-releases:ro
+      - /var/lib/3dipl-staging/plugin-releases:/var/lib/3dipl/plugin-releases
     networks: [staging-private]
     depends_on:
       mongo-staging:
@@ -46,7 +46,6 @@ services:
     ports: ["127.0.0.1:18080:8080"]
     volumes:
       - /var/lib/3dipl-staging/media/covers:/var/lib/3dipl/media/covers:ro
-      - /var/lib/3dipl-staging/plugin-releases:/usr/share/nginx/html/plugin-releases:ro
     networks: [staging-private]
 
 networks:

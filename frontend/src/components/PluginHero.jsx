@@ -1,5 +1,6 @@
 import React from "react";
-import { ArrowDown, ArrowRight, Check, Download, Layers3 } from "lucide-react";
+import { ArrowDown, ArrowRight, Check, Download, Layers3, Loader2 } from "lucide-react";
+import usePluginDownloads from "../hooks/usePluginDownloads.js";
 import "../pages/plugin-download.css";
 
 const COPY = {
@@ -7,7 +8,8 @@ const COPY = {
     eyebrow: "CÔNG CỤ CHO 3DS MAX",
     title: "3DIPL Plugin",
     hero: "Duyệt thư viện Model và Scene, tải về máy và làm việc trong 3ds Max từ một ứng dụng duy nhất.",
-    download: "Tải plugin cho Windows",
+    download: "Chọn bản cài cho 3ds Max",
+    loading: "Đang kiểm tra bản tải",
     unavailable: "Bản tải chưa sẵn sàng",
     unavailableNote: "Bản cài đang được chuẩn bị. Bạn vẫn có thể xem hướng dẫn và duyệt thư viện trên web.",
     setup: "Xem cách cài đặt",
@@ -18,7 +20,8 @@ const COPY = {
     eyebrow: "BUILT FOR 3DS MAX",
     title: "3DIPL Plugin",
     hero: "Browse Models and Scenes, download them to your computer, and work in 3ds Max from one desktop app.",
-    download: "Download for Windows",
+    download: "Choose your 3ds Max installer",
+    loading: "Checking downloads",
     unavailable: "Download not available yet",
     unavailableNote: "The installer is being prepared. You can still read the guide and browse the library online.",
     setup: "How to get started",
@@ -27,37 +30,31 @@ const COPY = {
   }
 };
 
-function getDownloadUrl() {
-  const url = String(import.meta.env.VITE_3DSMAX_PLUGIN_DOWNLOAD_URL || "").trim();
-  return url.startsWith("https://") || (url.startsWith("/") && !url.startsWith("//")) ? url : "";
-}
-
 function getDemoGifUrl() {
   const url = String(import.meta.env.VITE_3DSMAX_PLUGIN_DEMO_GIF_URL || "").trim();
   return url.startsWith("https://") || (url.startsWith("/") && !url.startsWith("//")) ? url : "";
 }
 
-export function PluginDownloadAction({ language = "vi", className = "" }) {
+export function PluginDownloadAction({ language = "vi", className = "", available = false, loading = false }) {
   const copy = COPY[language] || COPY.vi;
-  const url = getDownloadUrl();
-  if (!url) {
+  if (!available || loading) {
     return (
       <span className={`pluginCta pluginCtaDisabled ${className}`.trim()} aria-disabled="true">
-        <Download size={19} aria-hidden="true" /> {copy.unavailable}
+        {loading ? <Loader2 className="spin" size={19} aria-hidden="true" /> : <Download size={19} aria-hidden="true" />}
+        {loading ? copy.loading : copy.unavailable}
       </span>
     );
   }
 
   return (
-    <a className={`pluginCta ${className}`.trim()} href={url}>
+    <a className={`pluginCta ${className}`.trim()} href="/plugin#plugin-download">
       <Download size={19} aria-hidden="true" /> {copy.download}
     </a>
   );
 }
 
-export default function PluginHero({ language = "vi", embedded = false }) {
+export function PluginHeroContent({ language = "vi", embedded = false, downloads }) {
   const copy = COPY[language] || COPY.vi;
-  const downloadUrl = getDownloadUrl();
   const demoGifUrl = getDemoGifUrl();
   const Heading = embedded ? "h2" : "h1";
   const titleId = embedded ? "home-plugin-title" : "plugin-title";
@@ -71,12 +68,12 @@ export default function PluginHero({ language = "vi", embedded = false }) {
           <Heading className="pluginHeroTitle" id={titleId} aria-label={copy.title}>3DIPL <span>Plugin</span></Heading>
           <p>{copy.hero}</p>
           <div className="pluginHeroActions">
-            <PluginDownloadAction language={language} />
+            <PluginDownloadAction language={language} available={downloads.available} loading={downloads.loading} />
             <a className="pluginTextLink" href={embedded ? "/plugin#plugin-setup" : "#plugin-setup"}>
               {copy.setup} <SetupIcon size={17} aria-hidden="true" />
             </a>
           </div>
-          {!downloadUrl && <p className="pluginReleaseNote" role="status">{copy.unavailableNote}</p>}
+          {!downloads.loading && !downloads.available && <p className="pluginReleaseNote" role="status">{copy.unavailableNote}</p>}
           <ul className="pluginHeroBadges">
             {copy.badges.map((badge) => <li key={badge}><Check size={15} aria-hidden="true" />{badge}</li>)}
           </ul>
@@ -98,4 +95,9 @@ export default function PluginHero({ language = "vi", embedded = false }) {
       </div>
     </section>
   );
+}
+
+export default function PluginHero(props) {
+  const downloads = usePluginDownloads();
+  return <PluginHeroContent {...props} downloads={downloads} />;
 }

@@ -1,0 +1,50 @@
+{
+  "ok": true,
+  "routes": 7,
+  "viewports": 2,
+  "liveAccountBalance": true,
+  "completedGetlinkBalanceReplay": false,
+  "externalFailures": 0,
+  "externalFailureSamples": [],
+  "load": {
+    "total": 300,
+    "concurrency": 20,
+    "medianMs": 39.09,
+    "p95Ms": 113.91,
+    "maximumMs": 152.29
+  },
+  "memory": {
+    "beforeHeapBytes": 29777192,
+    "afterHeapBytes": 30581376,
+    "heapDeltaBytes": 804184,
+    "beforeRssBytes": 124805120,
+    "afterRssBytes": 131436544
+  },
+  "slowest": [
+    {
+      "viewport": "desktop",
+      "route": "/",
+      "durationMs": 737
+    },
+    {
+      "viewport": "mobile",
+      "route": "/",
+      "durationMs": 590
+    },
+    {
+      "viewport": "desktop",
+      "route": "/models",
+      "durationMs": 351
+    },
+    {
+      "viewport": "desktop",
+      "route": "/scenes",
+      "durationMs": 294
+    },
+    {
+      "viewport": "desktop",
+      "route": "/plugin",
+      "durationMs": 293
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "scope": "Packaged Desktop EXE startup and local health, without a real Max host or installed auto-update chain",
+  "cases": [
+    {
+      "version": "1.0.1",
+      "channel": "live-test",
+      "exitCode": 0,
+      "healthVersionValid": true,
+      "healthPidValid": true,
+      "healthNonceValid": true,
+      "isolatedData": true,
+      "ui": "DESKTOP_UI_OK tabs=6 autodeskLoaded=False singleInstance=True bridgePing=n/a bridgeMerge=n/a bridgeMergeNodes=0"
+    },
+    {
+      "version": "1.0.2",
+      "channel": "live-test",
+      "exitCode": 0,
+      "healthVersionValid": true,
+      "healthPidValid": true,
+      "healthNonceValid": true,
+      "isolatedData": true,
+      "ui": "DESKTOP_UI_OK tabs=6 autodeskLoaded=False singleInstance=True bridgePing=n/a bridgeMerge=n/a bridgeMergeNodes=0"
+    }
+  ]
+}

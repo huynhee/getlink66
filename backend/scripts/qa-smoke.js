@@ -11,7 +11,7 @@ const frontendOrigin = `http://127.0.0.1:${frontendPort}`;
 const buildRoot = path.resolve(process.argv[2] || "../qa-report/test-results/release-dist");
 const screenshotRoot = path.resolve(process.argv[3] || "../qa-report/screenshots");
 const resultPath = path.resolve(process.argv[4] || "../qa-report/performance-results/smoke.json");
-const routeSet = ["/", "/models", "/scenes", "/guide", "/privacy", "/terms"];
+const routeSet = ["/", "/models", "/scenes", "/plugin", "/guide", "/privacy", "/terms"];
 const systemBrowsers = [
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
@@ -132,7 +132,7 @@ async function verifyLiveAccountBalance(page, context) {
   await page.unroute("**/api/getlink/jobs/latest");
 }
 
-async function waitForBackend(timeoutMs = 20_000) {
+async function waitForBackend(timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -253,6 +253,8 @@ async function main() {
       MARKETPLACE_COVER_CACHE_ENABLED: "false",
       MARKETPLACE_BILINGUAL_SEARCH_ENABLED: "false",
       PLUGIN_API_ENABLED: "true",
+      PLUGIN_RELEASE_SOURCE: "env",
+      PLUGIN_RELEASE_ENABLED: "false",
       PLUGIN_JWT_SECRET: "qa-only-plugin-secret-with-more-than-32-characters",
       QA_DIAGNOSTICS_ENABLED: "true",
       LOG_LEVEL: "warn",
@@ -394,12 +396,23 @@ async function main() {
         fullPage: true,
       });
 
+      const adminReady = Promise.all([
+        "/api/admin/overview", "/api/admin/dashboard", "/api/admin/topup-packages",
+        "/api/admin/membership-plans", "/api/admin/vouchers", "/api/admin/cookies",
+        "/api/admin/system-logs", "/api/admin/articles", "/api/admin/notifications",
+        "/api/admin/referrals", "/api/admin/users", "/api/admin/getlinks",
+        "/api/admin/transactions", "/api/admin/audit-logs",
+      ].map((endpoint) => page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.pathname === endpoint && response.ok();
+      }, { timeout: 15_000 })));
       await page.goto(
         `${frontendOrigin}/api/auth/dev-login?role=admin&pro=true&returnTo=%2Fadmin`,
         { waitUntil: "domcontentloaded" },
       );
       await page.waitForURL(`${frontendOrigin}/admin`);
       await page.waitForSelector(".adminPage", { state: "visible" });
+      await adminReady;
       const adminText = (await page.locator("#root").innerText()).trim();
       if (!adminText) throw new Error(`${viewport.name} admin rendered an empty root after dev login`);
       await page.screenshot({
@@ -435,6 +448,9 @@ async function main() {
     fs.mkdirSync(path.dirname(resultPath), { recursive: true });
     fs.writeFileSync(resultPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
     console.log(JSON.stringify(summary, null, 2));
+  } catch (error) {
+    console.error(backendLogs.join("").slice(-4_000));
+    throw error;
   } finally {
     await browser?.close().catch(() => {});
     await new Promise((resolve) => {

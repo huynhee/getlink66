@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "taxonomyVersion": "contract-v1",
+  "assets": {
+    "model": {
+      "categories": [
+        {"key":"94","parentKey":"","labelVi":"N\u1ed9i th\u1ea5t","labelEn":"Furniture","aliasesVi":[],"aliasesEn":[],"position":1},
+        {"key":"98","parentKey":"94","labelVi":"Gh\u1ebf \u0111\u01a1n","labelEn":"Arm chair","aliasesVi":[],"aliasesEn":["armchair"],"position":2}
+      ],
+      "filters": {
+        "render": [
+          {"value":"corona","facet":"render","labelVi":"Corona","labelEn":"Corona","aliasesVi":[],"aliasesEn":[],"position":1,"iconKey":"corona","iconUrl":"/icons/marketplace/corona.svg"},
+          {"value":"vray","facet":"render","labelVi":"Vray","labelEn":"V-Ray","aliasesVi":[],"aliasesEn":[],"position":2,"iconKey":"vray"}
+        ]
+      }
+    }
+  }
+}

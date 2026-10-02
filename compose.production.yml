@@ -53,6 +53,7 @@ services:
     volumes:
       - /var/lib/3dipl/media/covers:/var/lib/3dipl/media/covers
       - /var/lib/3dipl/backup-work:/var/lib/3dipl/backup-work
+      - /var/lib/3dipl/plugin-releases:/var/lib/3dipl/plugin-releases
     networks:
       - private
     depends_on:
