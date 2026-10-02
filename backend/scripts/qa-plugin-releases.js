@@ -12,7 +12,7 @@ const server = http.createServer(async (req, res) => {
   if (!file.startsWith(buildRoot + path.sep)) file = path.join(buildRoot, "index.html");
   let data;
   try { data = await fs.readFile(file); } catch { file = path.join(buildRoot, "index.html"); data = await fs.readFile(file); }
-  const types = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml", ".png": "image/png" };
+  const types = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml", ".png": "image/png", ".gif": "image/gif" };
   res.setHeader("content-type", types[path.extname(file)] || "application/octet-stream");
   res.end(data);
 });
@@ -234,6 +234,20 @@ try {
     assert.equal(await finalCta.getAttribute("href"), "/plugin#plugin-download");
     assert.equal(await page.locator(".pluginReleaseNote").count(), 0);
 
+    const demo = page.locator(".pluginHeroMedia img");
+    await demo.scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => {
+      const image = globalThis.document.querySelector(".pluginHeroMedia img");
+      return image?.complete && image.naturalWidth > 0;
+    });
+    const demoSrc = await demo.getAttribute("src");
+    assert.equal(await demo.getAttribute("loading"), "eager");
+    assert.equal(await demo.evaluate((image) => globalThis.getComputedStyle(image).objectFit), "contain");
+    const demoBounds = await page.locator(".pluginHeroMedia").boundingBox();
+    assert.ok(Math.abs(demoBounds.width / demoBounds.height - 16 / 9) < 0.02, "Demo frame keeps its aspect ratio");
+    await page.evaluate(() => globalThis.scrollTo(0, 0));
+    await page.screenshot({ path: path.join(evidenceRoot, `demo-${language}-${theme}-${width}.png`), fullPage: true });
+
     downloadsError = true;
     await refreshDownloads.click();
     await page.locator("#plugin-download").getByText(l("Không thể kiểm tra bản tải. Vui lòng thử lại.", "Could not check downloads. Please try again."), { exact: true }).waitFor();
@@ -260,11 +274,22 @@ try {
     await started;
     await page.locator(".brandButton").click();
     await page.waitForURL(origin + "/");
+    const homeDemo = page.locator(".homePluginHero .pluginHeroMedia img");
+    await homeDemo.scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => {
+      const image = globalThis.document.querySelector(".homePluginHero .pluginHeroMedia img");
+      return image?.complete && image.naturalWidth > 0;
+    });
+    assert.equal(await homeDemo.getAttribute("src"), demoSrc);
+    assert.equal(await homeDemo.getAttribute("loading"), "lazy");
+    assert.equal(await page.evaluate(() => globalThis.document.documentElement.scrollWidth > globalThis.innerWidth + 1), false, "Home page overflow");
+    await page.evaluate(() => globalThis.scrollTo(0, 0));
+    await page.screenshot({ path: path.join(evidenceRoot, `home-demo-${language}-${theme}-${width}.png`), fullPage: true });
     releaseRequest();
     await page.waitForTimeout(200);
     await context.unroute("**/api/admin/users?*", delayedAdminRequest);
     assert.deepEqual(errors, []);
-    cases.push({ language, theme, width, uploadPauseResume: true, expiredUploadDeleteRecreate: true, uploadAndVerification410Recovery: true, sharedDownloadRefresh: true, verifyPublishWithdrawReselect: true, correctMaxDownload: true, adminRequestCancelledOnNavigation: true });
+    cases.push({ language, theme, width, uploadPauseResume: true, expiredUploadDeleteRecreate: true, uploadAndVerification410Recovery: true, sharedDownloadRefresh: true, verifyPublishWithdrawReselect: true, correctMaxDownload: true, responsiveDemoGif: true, lazyHomeDemoGif: true, adminRequestCancelledOnNavigation: true });
     await context.close();
   }
   await fs.writeFile(path.join(evidenceRoot, "browser-results.json"), JSON.stringify({ ok: true, api: "isolated browser fixtures; real HTTP authorization and service behavior covered separately", cases }, null, 2));

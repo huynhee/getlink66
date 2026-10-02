@@ -32,7 +32,7 @@ const COPY = {
 
 function getDemoGifUrl() {
   const url = String(import.meta.env.VITE_3DSMAX_PLUGIN_DEMO_GIF_URL || "").trim();
-  return url.startsWith("https://") || (url.startsWith("/") && !url.startsWith("//")) ? url : "";
+  return url.startsWith("https://") || (url.startsWith("/") && !url.startsWith("//")) ? url : "/media/plugin/3dipl-demo.gif";
 }
 
 export function PluginDownloadAction({ language = "vi", className = "", available = false, loading = false }) {
@@ -78,9 +78,9 @@ export function PluginHeroContent({ language = "vi", embedded = false, downloads
             {copy.badges.map((badge) => <li key={badge}><Check size={15} aria-hidden="true" />{badge}</li>)}
           </ul>
         </div>
-        <div className="pluginHeroMedia" aria-hidden={!demoGifUrl}>
+        <div className={`pluginHeroMedia${demoGifUrl ? " pluginHeroMediaHasDemo" : ""}`} aria-hidden={!demoGifUrl}>
           {demoGifUrl ? (
-            <img src={demoGifUrl} alt={copy.demo} loading={embedded ? "lazy" : "eager"} decoding="async" />
+            <img src={demoGifUrl} alt={copy.demo} width={800} height={450} loading={embedded ? "lazy" : "eager"} decoding="async" />
           ) : (
             <div className="pluginMediaEmpty">
               <div className="pluginMediaToolbar">

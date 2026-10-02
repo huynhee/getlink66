@@ -48,6 +48,11 @@
   object-fit: contain;
 }
 
+.pluginHeroMedia.pluginHeroMediaHasDemo {
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
 .pluginMediaEmpty {
   display: flex;
   flex-direction: column;
