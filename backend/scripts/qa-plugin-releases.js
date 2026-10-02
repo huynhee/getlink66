@@ -203,6 +203,16 @@ try {
     await page.screenshot({ path: path.join(evidenceRoot, `admin-${language}-${theme}-${width}.png`), fullPage: true });
     assert.equal(await page.evaluate(() => globalThis.document.documentElement.scrollWidth > globalThis.innerWidth + 1), false, "Page overflow");
     await page.goto(origin + "/plugin#plugin-download");
+    const setupSteps = page.locator("#plugin-setup .pluginSteps li");
+    assert.equal(await setupSteps.count(), 3, "Installation has three steps");
+    assert.deepEqual(await setupSteps.locator("p").allTextContents(), [
+      l("Tải file 3DiPL-Asset-Manager.mzp phù hợp với phiên bản 3ds Max của bạn.", "Download the 3DiPL-Asset-Manager.mzp file for your 3ds Max version."),
+      l("Trong 3ds Max, chọn Scripting > Run Script rồi mở file MZP vừa tải.", "In 3ds Max, choose Scripting > Run Script and open the downloaded MZP file."),
+      l("Làm theo các bước cài đặt, khởi động lại 3ds Max và bắt đầu sử dụng plugin.", "Follow the installation steps, restart 3ds Max, and start working.")
+    ], "Installation uses the MZP and Run Script workflow");
+    await page.locator("#plugin-setup").scrollIntoViewIfNeeded();
+    assert.equal(await page.evaluate(() => globalThis.document.documentElement.scrollWidth > globalThis.innerWidth + 1), false, "Installation page overflow");
+    await page.screenshot({ path: path.join(evidenceRoot, `setup-${language}-${theme}-${width}.png`) });
     await page.getByRole("tab", { name: "3ds Max 2026-2027" }).click();
     assert.equal(await page.locator("#plugin-release-details a").getAttribute("href"), manifest.bridgeArtifacts[1].downloadUrl);
 
@@ -289,7 +299,7 @@ try {
     await page.waitForTimeout(200);
     await context.unroute("**/api/admin/users?*", delayedAdminRequest);
     assert.deepEqual(errors, []);
-    cases.push({ language, theme, width, uploadPauseResume: true, expiredUploadDeleteRecreate: true, uploadAndVerification410Recovery: true, sharedDownloadRefresh: true, verifyPublishWithdrawReselect: true, correctMaxDownload: true, responsiveDemoGif: true, lazyHomeDemoGif: true, adminRequestCancelledOnNavigation: true });
+    cases.push({ language, theme, width, uploadPauseResume: true, expiredUploadDeleteRecreate: true, uploadAndVerification410Recovery: true, sharedDownloadRefresh: true, verifyPublishWithdrawReselect: true, correctMaxDownload: true, mzpInstallationGuide: true, responsiveDemoGif: true, lazyHomeDemoGif: true, adminRequestCancelledOnNavigation: true });
     await context.close();
   }
   await fs.writeFile(path.join(evidenceRoot, "browser-results.json"), JSON.stringify({ ok: true, api: "isolated browser fixtures; real HTTP authorization and service behavior covered separately", cases }, null, 2));

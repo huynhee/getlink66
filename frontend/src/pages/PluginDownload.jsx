@@ -18,9 +18,9 @@ const COPY = {
     stepsLabel: "BẮT ĐẦU",
     stepsTitle: "Sẵn sàng trong ba bước",
     steps: [
-      { title: "Tải ứng dụng", body: "Tải bản dành cho Windows và làm theo hướng dẫn trong gói cài đặt." },
-      { title: "Đăng nhập an toàn", body: "Mở ứng dụng, đăng nhập trên trình duyệt bằng tài khoản 3DIPL hoặc Google rồi trở về ứng dụng." },
-      { title: "Kết nối 3ds Max", body: "Chọn phiên 3ds Max đang chạy, tìm tài nguyên và tải hoặc merge vào dự án." }
+      { title: "Tải file MZP", body: "Tải file 3DiPL-Asset-Manager.mzp phù hợp với phiên bản 3ds Max của bạn." },
+      { title: "Chạy file trong 3ds Max", body: "Trong 3ds Max, chọn Scripting > Run Script rồi mở file MZP vừa tải." },
+      { title: "Hoàn tất cài đặt", body: "Làm theo các bước cài đặt, khởi động lại 3ds Max và bắt đầu sử dụng plugin." }
     ],
     finalTitle: "Bắt đầu làm việc với thư viện 3DIPL",
     finalBody: "Một tài khoản cho website và ứng dụng. Quyền Pro, Credit và lượt tải được dùng chung.",
@@ -39,9 +39,9 @@ const COPY = {
     stepsLabel: "GET STARTED",
     stepsTitle: "Ready in three steps",
     steps: [
-      { title: "Download the app", body: "Download the Windows release and follow the instructions included in the package." },
-      { title: "Sign in securely", body: "Open the app, sign in through your browser with 3DIPL or Google, then return to the app." },
-      { title: "Connect 3ds Max", body: "Choose a running 3ds Max instance, find an asset, and download or merge it into your project." }
+      { title: "Download the MZP", body: "Download the 3DiPL-Asset-Manager.mzp file for your 3ds Max version." },
+      { title: "Run the MZP in 3ds Max", body: "In 3ds Max, choose Scripting > Run Script and open the downloaded MZP file." },
+      { title: "Complete installation", body: "Follow the installation steps, restart 3ds Max, and start working." }
     ],
     finalTitle: "Get to work with the 3DIPL library",
     finalBody: "One account for the website and app. Pro access, Credit, and download quota stay in sync.",

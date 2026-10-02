@@ -1,0 +1,50 @@
+{
+  "ok": true,
+  "routes": 7,
+  "viewports": 2,
+  "liveAccountBalance": true,
+  "completedGetlinkBalanceReplay": false,
+  "externalFailures": 0,
+  "externalFailureSamples": [],
+  "load": {
+    "total": 300,
+    "concurrency": 20,
+    "medianMs": 13.94,
+    "p95Ms": 17.19,
+    "maximumMs": 22.06
+  },
+  "memory": {
+    "beforeHeapBytes": 29766568,
+    "afterHeapBytes": 30510320,
+    "heapDeltaBytes": 743752,
+    "beforeRssBytes": 125927424,
+    "afterRssBytes": 132022272
+  },
+  "slowest": [
+    {
+      "viewport": "desktop",
+      "route": "/",
+      "durationMs": 313
+    },
+    {
+      "viewport": "mobile",
+      "route": "/",
+      "durationMs": 249
+    },
+    {
+      "viewport": "mobile",
+      "route": "/models",
+      "durationMs": 165
+    },
+    {
+      "viewport": "desktop",
+      "route": "/plugin",
+      "durationMs": 154
+    },
+    {
+      "viewport": "mobile",
+      "route": "/plugin",
+      "durationMs": 153
+    }
+  ]
+}

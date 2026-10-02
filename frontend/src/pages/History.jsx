@@ -44,6 +44,13 @@ const FILTER_GROUPS = [
   { vi: "Tài khoản", en: "Account", items: [["referral", "Giới thiệu", "Referral"]] },
 ];
 const FILTERS = FILTER_GROUPS.flatMap((group) => group.items);
+const FILTER_KEYS = new Set(FILTERS.map(([key]) => key));
+
+function initialHistoryFilter() {
+  if (typeof window === "undefined") return "all";
+  const requested = new URLSearchParams(window.location.search).get("type");
+  return FILTER_KEYS.has(requested) ? requested : "all";
+}
 
 const TYPE_ICON = {
   credit: Wallet,
@@ -222,7 +229,7 @@ function metadataLines(event, language) {
 export default function History({ language = "vi" }) {
   const t = translations[language] || translations.vi;
   const [events, setEvents] = useState([]);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(initialHistoryFilter);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
