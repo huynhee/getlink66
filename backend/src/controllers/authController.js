@@ -10,6 +10,8 @@ import { securityEvent } from "../utils/logger.js";
 import { SESSION_EXPIRED_MESSAGE } from "../utils/authMessages.js";
 import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
 import { endOfVietnamDay, normalizeProUntil } from "../utils/membershipService.js";
+import { verifyGoogleOneTapCredential } from "../utils/googleOneTap.js";
+import { upsertGoogleAccount } from "../utils/googleAccountService.js";
 
 const SAFE_RETURN_PATH = /^\/[a-zA-Z0-9\-_/]*(?:\?[a-zA-Z0-9._~%=&-]*)?$/;
 const SAFE_REFERRAL_CODE = /^[a-zA-Z0-9]{6,24}$/;
@@ -195,6 +197,42 @@ export const googleCallback = [
     res.redirect(`${clientUrl}${safePath}`);
   },
 ];
+
+export function googleOneTapConfig(_req, res) {
+  res.set("Cache-Control", "no-store");
+  const clientId = String(process.env.GOOGLE_CLIENT_ID || "").trim();
+  return res.json({ enabled: Boolean(clientId), clientId });
+}
+
+export async function googleOneTapLogin(req, res, next) {
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    return res.status(503).json({ message: "Google sign-in is unavailable" });
+  }
+  if (req.user) {
+    return res.status(409).json({ message: "Already signed in" });
+  }
+
+  let identity;
+  try {
+    identity = await verifyGoogleOneTapCredential(req.body?.credential);
+  } catch {
+    securityEvent("GOOGLE_ONE_TAP_FAILED", { ip: req.ip, path: req.path });
+    return res.status(401).json({ message: "Google sign-in could not be verified" });
+  }
+
+  try {
+    const referralCode = String(req.body?.ref || "").trim().toUpperCase();
+    const user = await upsertGoogleAccount({
+      ...identity,
+      referralCode: SAFE_REFERRAL_CODE.test(referralCode) ? referralCode : "",
+    });
+    generateTokens(req, res, user);
+    res.set("Cache-Control", "no-store");
+    return res.json({ ok: true });
+  } catch (error) {
+    return next(error);
+  }
+}
 
 export async function devLogin(req, res, next) {
   try {

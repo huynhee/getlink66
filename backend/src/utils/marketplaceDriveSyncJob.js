@@ -18,6 +18,7 @@ import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
 let syncRunning = false;
 let syncTimer = null;
 let initialSyncTimer = null;
+let configuredRootsRunning = false;
 const SYNC_LOCK_TIMEOUT_MS = 15 * 60 * 1000;
 
 function syncEnabled() {
@@ -374,8 +375,10 @@ export async function runMarketplaceDriveSyncOnce({ trigger = "interval", rootFo
     throw error;
   }
   syncRunning = true;
+  let lockClaimed = false;
   try {
     await claimSyncState(rootId, assetType);
+    lockClaimed = true;
     const poll = await pollMarketplaceDriveChanges({ rootId });
     const queue = await processMarketplaceDriveChangeQueue({ rootId });
     const state = await MarketplaceDriveSyncState.findOneAndUpdate(
@@ -398,6 +401,8 @@ export async function runMarketplaceDriveSyncOnce({ trigger = "interval", rootFo
       cycleCompleted: !poll.hasMore,
     };
   } catch (error) {
+    // A rejected claim must never release or overwrite another worker's lock.
+    if (!lockClaimed) throw error;
     await MarketplaceDriveSyncState.findOneAndUpdate(
       { rootFolderId: rootId },
       {
@@ -447,16 +452,26 @@ export function startMarketplaceDriveSyncJob() {
 }
 
 async function runConfiguredRootSyncs(trigger) {
-  for (const root of configuredRoots()) {
-    try {
-      await runMarketplaceDriveSyncOnce({ trigger, rootFolderId: root.rootFolderId });
-    } catch (error) {
-      if (error?.code === "MARKETPLACE_RECONCILIATION_ACTIVE") {
-        logger.debug({ assetType: root.assetType }, "Drive Changes sync paused during full reconciliation");
-        continue;
+  if (configuredRootsRunning) return;
+  configuredRootsRunning = true;
+  try {
+    for (const root of configuredRoots()) {
+      try {
+        await runMarketplaceDriveSyncOnce({ trigger, rootFolderId: root.rootFolderId });
+      } catch (error) {
+        if (error?.status === 409) {
+          logger.debug({ assetType: root.assetType }, "Drive Changes sync already owned by another worker");
+          continue;
+        }
+        if (error?.code === "MARKETPLACE_RECONCILIATION_ACTIVE") {
+          logger.debug({ assetType: root.assetType }, "Drive Changes sync paused during full reconciliation");
+          continue;
+        }
+        logger.error({ err: error, assetType: root.assetType }, "Marketplace Drive changes sync failed");
       }
-      logger.error({ err: error, assetType: root.assetType }, "Marketplace Drive changes sync failed");
     }
+  } finally {
+    configuredRootsRunning = false;
   }
 }
 

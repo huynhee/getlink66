@@ -73,6 +73,14 @@ http://localhost:5173
 https://3dipl.org
 ```
 
+Google One Tap dung cung Web client ID voi OAuth hien tai. Neu website phuc vu
+`https://www.3dipl.org` truc tiep (khong redirect ve domain chinh), them origin do
+vao Google Cloud Console nua. Frontend lay public client ID tu
+`GET /api/auth/google/one-tap/config`; khong dua `GOOGLE_CLIENT_SECRET` ra frontend.
+One Tap chi duoc goi khi khach chua dang nhap. Backend xac minh Google ID token,
+kiem tra CSRF va tao session cookie nhu OAuth. Google/trinh duyet co the khong hien
+loi nhac sau khi nguoi dung da dong no; nut dang nhap Google van la fallback.
+
 Sau khi sua `.env`, khoi dong lai backend.
 
 ## 3. Google Drive tu gia han token

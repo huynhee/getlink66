@@ -6,6 +6,10 @@ import {
   modelIdsShareAssetIdentity,
   resolvedFootprintUrlMatches,
 } from "../src/utils/3d66BrowserService.js";
+import {
+  accountModelUrlMatches,
+  isFootprintResolutionMiss,
+} from "../src/utils/3d66Service.js";
 
 test("matches a footprint model when account markers have different lengths", () => {
   assert.equal(
@@ -45,6 +49,32 @@ test("accepts the opened footprint URL with or without a sign", () => {
   assert.equal(resolvedFootprintUrlMatches(signed, "HCH03190181994617"), true);
   assert.equal(
     resolvedFootprintUrlMatches(unsigned, "HCI03190181994617"),
+    false,
+  );
+});
+
+test("accepts the same model URL after 3D66 rewrites its account marker", () => {
+  const accountUrl =
+    "https://3d.3d66.com/reshtmla/model/items/id/model.html?sof=ACH89635771994617&sign=abc";
+
+  assert.equal(accountModelUrlMatches(accountUrl, "HCH03190181994617"), true);
+  assert.equal(accountModelUrlMatches(accountUrl, "HCI03190181994617"), false);
+});
+
+test("recognizes account-scoped footprint failures for safe search fallback", () => {
+  assert.equal(
+    isFootprintResolutionMiss({
+      status: 502,
+      code: "THREED66_FOOTPRINT_MODEL_NOT_FOUND",
+      details: { stage: "footprint-history" },
+    }),
+    true,
+  );
+  assert.equal(
+    isFootprintResolutionMiss({
+      status: 502,
+      message: "3D66 upstream request failed: read ECONNRESET",
+    }),
     false,
   );
 });

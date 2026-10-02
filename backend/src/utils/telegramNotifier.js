@@ -141,7 +141,13 @@ export function notifyTopupRejected({ topup, actor } = {}) {
 }
 
 export function notifyServerError({ error, req, status } = {}) {
-  const path = `${req?.method || ""} ${req?.originalUrl || req?.url || ""}`.trim();
+  let pathname = "/";
+  try {
+    pathname = new URL(String(req?.originalUrl || req?.url || "/"), "http://localhost").pathname;
+  } catch {
+    // Do not include malformed request targets or their query parameters in alerts.
+  }
+  const path = `${req?.method || ""} ${pathname}`.trim();
   const normalizedMessage = String(error?.message || "Unknown error")
     .replace(/\s*\([A-Z0-9]{12,}\)\s*$/i, "")
     .trim();
@@ -150,6 +156,7 @@ export function notifyServerError({ error, req, status } = {}) {
     `Status: ${Number(status || 500)}`,
     `Path: <code>${escapeHtml(path)}</code>`,
     `Message: ${escapeHtml(error?.message || "Unknown error")}`,
+    `Correlation: <code>${escapeHtml(req?.correlationId || "-")}</code>`,
     `IP: ${escapeHtml(req?.ip || "-")}`,
   ];
 

@@ -4,6 +4,7 @@ import {
   download3D66WithBrowser,
   fetch3D66PageWithBrowser,
   inspect3D66DownloadFormatsWithBrowser,
+  modelIdsShareAssetIdentity,
   resolve3D66ModelUrlFromFootprint,
 } from "./3d66BrowserService.js";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
@@ -298,7 +299,7 @@ function safeAccountModelUrl(rawUrl, productId) {
   return next.toString();
 }
 
-function isExactModelPageUrl(candidateUrl = "", productId = "") {
+export function accountModelUrlMatches(candidateUrl = "", productId = "") {
   const keyword = safeSearchKeyword(productId);
   if (!keyword) return false;
   try {
@@ -310,7 +311,7 @@ function isExactModelPageUrl(candidateUrl = "", productId = "") {
       parsed.searchParams.get("id") ||
       parsed.searchParams.get("kw") ||
       productIdFromPath(parsed.pathname);
-    return String(candidateId || "").trim() === keyword;
+    return modelIdsShareAssetIdentity(candidateId, keyword);
   } catch {
     return false;
   }
@@ -344,7 +345,7 @@ function exactModelUrlFromAny(value, productId, baseUrl = "https://www.3d66.com/
   if (depth > 6 || value === null || value === undefined) return "";
   if (typeof value === "string") {
     for (const candidate of candidateUrlsFromText(value, baseUrl)) {
-      if (isExactModelPageUrl(candidate, productId)) return candidate;
+      if (accountModelUrlMatches(candidate, productId)) return candidate;
     }
     return "";
   }
@@ -362,7 +363,7 @@ function exactModelUrlFromAny(value, productId, baseUrl = "https://www.3d66.com/
     if (!raw || typeof raw !== "string") continue;
     try {
       const candidate = new URL(raw.replaceAll("\\/", "/"), baseUrl).toString();
-      if (isExactModelPageUrl(candidate, productId)) return candidate;
+      if (accountModelUrlMatches(candidate, productId)) return candidate;
     } catch {
       // Keep scanning nested data.
     }
@@ -467,6 +468,20 @@ async function requestAccountSearchUrl(productId, cookieValue, sourceUrl) {
   }
 }
 
+export function isFootprintResolutionMiss(error) {
+  const code = String(error?.code || "").trim().toUpperCase();
+  const stage = String(error?.details?.stage || "").trim().toLowerCase();
+  const message = String(error?.message || "").trim().toLowerCase();
+  return (
+    code === "THREED66_FOOTPRINT_MODEL_NOT_FOUND" ||
+    code === "THREED66_FOOTPRINT_MODEL_MISMATCH" ||
+    stage === "footprint-history" ||
+    stage === "footprint-opened-model" ||
+    message.includes("không tìm thấy đúng model vừa mở trong lịch sử truy cập 3d66") ||
+    message.includes("3d66 opened a different model than the selected footprint item")
+  );
+}
+
 function searchContextFromUrl(sourceUrl = "") {
   try {
     const parsed = new URL(sourceUrl);
@@ -535,21 +550,50 @@ async function resolveAccountModelUrl(
   if (mode === "footprint" && stage !== "preview" && !generatedFromModelId) {
     const cacheKey = footprintCacheKey(productIds, cookieValue);
     const cached = cachedFootprintModelUrl(cacheKey);
-    const footprint = cached || await resolve3D66ModelUrlFromFootprint(
-      normalized.toString(),
-      cookieValue,
-      productIds,
-    );
-    if (!cached) cacheFootprintModelUrl(cacheKey, footprint);
-    return {
-      productId,
-      resolvedProductId: footprint.productId || productId,
-      url: markFootprintResolvedUrl(footprint.url, productId),
-      usedAccountSearch: false,
-      usedFootprint: true,
-      cookieValue: footprint.cookieValue || cookieValue,
-      cookies,
-    };
+    let footprintError = null;
+    try {
+      const footprint = cached || await resolve3D66ModelUrlFromFootprint(
+        normalized.toString(),
+        cookieValue,
+        productIds,
+      );
+      if (!cached) cacheFootprintModelUrl(cacheKey, footprint);
+      return {
+        productId,
+        resolvedProductId: footprint.productId || productId,
+        url: markFootprintResolvedUrl(footprint.url, productId),
+        usedAccountSearch: false,
+        usedFootprint: true,
+        cookieValue: footprint.cookieValue || cookieValue,
+        cookies,
+      };
+    } catch (error) {
+      if (!isFootprintResolutionMiss(error)) throw error;
+      footprintError = error;
+    }
+
+    for (const candidate of productIds) {
+      const candidateSafeUrl = safeAccountModelUrl(normalized.toString(), candidate);
+      const searchUrl = await requestAccountSearchUrl(
+        candidate,
+        cookieValue,
+        candidateSafeUrl,
+      );
+      if (searchUrl) {
+        return {
+          productId: candidate,
+          resolvedProductId: requestedProductIdFromUrl(searchUrl) || candidate,
+          url: searchUrl,
+          safeUrl: candidateSafeUrl,
+          usedAccountSearch: true,
+          usedFootprint: false,
+          footprintFallback: true,
+          cookies,
+        };
+      }
+    }
+
+    throw footprintError;
   }
 
   let safeUrl = safeAccountModelUrl(normalized.toString(), productId);

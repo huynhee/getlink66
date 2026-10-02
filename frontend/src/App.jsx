@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { MessageCircle } from "lucide-react";
 import { API_URL, api } from "./api.js";
 import { createAccountRefresh } from "./utils/accountRefresh.js";
+import { useGoogleOneTap } from "./utils/useGoogleOneTap.js";
 import Navbar from "./components/Navbar.jsx";
 import Login from "./pages/Login.jsx";
 import Home from "./pages/Home.jsx";
@@ -387,6 +388,16 @@ function App() {
     }
     return accountRefreshRef.current.refresh(options);
   }, [commitUser]);
+
+  const onGoogleOneTapAuthenticated = useCallback(async () => {
+    const account = await refreshUser({ fresh: true });
+    publishUserRefresh(account?.user);
+  }, [publishUserRefresh, refreshUser]);
+
+  useGoogleOneTap({
+    enabled: !loading && !user && !["admin", "pluginActivate", "pluginSessions", "pluginChallenge"].includes(page),
+    onAuthenticated: onGoogleOneTapAuthenticated,
+  });
 
   useEffect(() => {
     if (!user?._id || typeof EventSource !== "function") return undefined;

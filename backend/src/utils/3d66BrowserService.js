@@ -775,10 +775,11 @@ function evaluateMetadata() {
   };
 }
 
-function browserHttpError(message, status = 502, details = {}) {
+function browserHttpError(message, status = 502, details = {}, code = "") {
   const error = new Error(message);
   error.status = status;
   error.details = details;
+  if (code) error.code = code;
   return error;
 }
 
@@ -1094,7 +1095,9 @@ export async function resolve3D66ModelUrlFromFootprint(
           expectedProductIds: expectedIds,
           footprintProductIds: cards.slice(0, 10).map((card) => card.productId),
           footprintRefreshAttempts: attemptsUsed,
+          stage: "footprint-history",
         },
+        "THREED66_FOOTPRINT_MODEL_NOT_FOUND",
       );
     }
 
@@ -1154,6 +1157,7 @@ export async function resolve3D66ModelUrlFromFootprint(
           resolvedProductId,
           stage: "footprint-opened-model",
         },
+        "THREED66_FOOTPRINT_MODEL_MISMATCH",
       );
     }
 

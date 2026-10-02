@@ -224,6 +224,53 @@ async function createLeafCategory(suffix = "") {
 
 await createLeafCategory();
 
+for (const scenario of ["trashed", "active", "incomplete", "concurrent", "missing"]) {
+  test(`Drive folder replacement preserves identity and rejects unsafe state: ${scenario}`, async (t) => {
+    const fixture = createDriveFixture();
+    const restoreFetch = fixture.install();
+    try {
+      const initial = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id });
+      const previousId = `old-${fixture.folder.id}`;
+      await MarketplaceModel.findByIdAndUpdate(initial.model._id, {
+        $set: { driveFolderId: previousId, "source.modelId": previousId, downloadCount: 42 }
+      });
+      const fixtureFetch = globalThis.fetch;
+      globalThis.fetch = async (input, options) => {
+        if (new URL(String(input)).pathname === `/drive/v3/files/${previousId}`) {
+          if (scenario === "missing") return jsonResponse({ error: { message: "Not found" } }, 404);
+          return jsonResponse({ id: previousId, trashed: scenario !== "active" });
+        }
+        return fixtureFetch(input, options);
+      };
+      if (scenario === "incomplete") fixture.files = fixture.files.filter((file) => file.name !== "model.zip");
+      if (scenario === "concurrent") {
+        const update = MarketplaceModel.findOneAndUpdate.bind(MarketplaceModel);
+        t.mock.method(MarketplaceModel, "findOneAndUpdate", (query, ...args) => (
+          query.driveFolderId === previousId ? Promise.resolve(null) : update(query, ...args)
+        ));
+      }
+      if (scenario !== "trashed") {
+        await assert.rejects(syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id }), {
+          code: "MARKETPLACE_SOURCE_MODEL_CONFLICT"
+        });
+        const unchanged = await MarketplaceModel.findById(initial.model._id).lean();
+        assert.equal(unchanged.driveFolderId, previousId);
+        assert.equal(unchanged.downloadCount, 42);
+        return;
+      }
+      const result = await syncMarketplaceDriveFolder({ driveFolderId: fixture.folder.id });
+      assert.equal(String(result.model._id), String(initial.model._id));
+      assert.equal(result.model.slug, initial.model.slug);
+      assert.equal(result.model.downloadCount, 42);
+      assert.equal(result.model.driveFolderId, fixture.folder.id);
+      assert.equal(result.model.isPublished, true);
+      assert.equal(fixture.patchCount, 0);
+    } finally {
+      restoreFetch();
+    }
+  });
+}
+
 test("metadata V2 rejects values outside the controlled vocabulary", () => {
   const { metadata, errors } = normalizeMarketplaceMetadata(metadataInput({ forms: ["rectangle", "made-up-shape"] }));
   assert.deepEqual(metadata.forms, ["rectangle"]);
