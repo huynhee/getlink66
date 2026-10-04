@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { chromium } from "playwright";
+import { defaultLanguageFromCountry } from "../src/utils/requestLanguage.js";
 
 const buildRoot = path.resolve(process.argv[2] || "../qa-report/plugin-release-dist-v3-final");
 const evidenceRoot = path.resolve(process.argv[3] || "../qa-report/plugin-update-v3");
@@ -22,6 +23,7 @@ await fs.mkdir(evidenceRoot, { recursive: true });
 const executablePath = process.platform === "win32" ? "C:/Program Files/Google/Chrome/Application/chrome.exe" : undefined;
 const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
 const cases = [];
+const languageDefaults = [];
 try {
   for (const [language, theme, width] of [["en", "light", 1440], ["vi", "dark", 1440], ["vi", "light", 390], ["en", "dark", 390]]) {
     const context = await browser.newContext({ viewport: { width, height: 960 }, serviceWorkers: "block" });
@@ -302,8 +304,60 @@ try {
     cases.push({ language, theme, width, uploadPauseResume: true, expiredUploadDeleteRecreate: true, uploadAndVerification410Recovery: true, sharedDownloadRefresh: true, verifyPublishWithdrawReselect: true, correctMaxDownload: true, mzpInstallationGuide: true, responsiveDemoGif: true, lazyHomeDemoGif: true, adminRequestCancelledOnNavigation: true });
     await context.close();
   }
-  await fs.writeFile(path.join(evidenceRoot, "browser-results.json"), JSON.stringify({ ok: true, api: "isolated browser fixtures; real HTTP authorization and service behavior covered separately", cases }, null, 2));
-  console.log(JSON.stringify({ ok: true, cases }, null, 2));
+  const languageFixtures = [
+    { name: "vietnam", country: "VN", locale: "en-US", expected: "vi" },
+    { name: "international", country: "US", locale: "vi-VN", expected: "en" },
+    { name: "saved-vietnamese", country: "US", locale: "en-US", saved: "vi", expected: "vi" },
+    { name: "saved-english", country: "VN", locale: "vi-VN", saved: "en", expected: "en" },
+    { name: "unknown-browser-english", country: "XX", locale: "en-US", expected: "en" },
+    { name: "unknown-browser-vietnamese", country: "", locale: "vi-VN", expected: "vi" },
+    { name: "invalid-preference", country: "JP", locale: "vi-VN", saved: "fr", expected: "en" },
+  ];
+  for (const fixture of languageFixtures) {
+    const context = await browser.newContext({ locale: fixture.locale, viewport: { width: 1440, height: 960 }, serviceWorkers: "block" });
+    await context.addInitScript((saved) => {
+      if (saved) localStorage.setItem("language", saved);
+    }, fixture.saved);
+    let country = fixture.country;
+    await context.route("**/api/**", (route) => {
+      const pathname = new URL(route.request().url()).pathname;
+      return route.fulfill({ json: pathname === "/api/auth/user"
+        ? { user: null, defaultLanguage: defaultLanguageFromCountry(country) }
+        : pathname === "/api/plugin/downloads" ? { available: false, releases: [] } : {} });
+    });
+    const page = await context.newPage();
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(origin + "/plugin");
+    await page.locator(".pluginHero").waitFor();
+    await page.waitForFunction((expected) => globalThis.document.documentElement.lang === expected, fixture.expected);
+    const toggle = page.locator(".languageToggle button:visible").first();
+    assert.equal((await toggle.textContent()).trim(), fixture.expected.toUpperCase(), fixture.name);
+    assert.equal(await page.evaluate(() => localStorage.getItem("language")), fixture.saved || null, "Automatic defaults do not replace an explicit preference");
+    await page.screenshot({ path: path.join(evidenceRoot, `language-${fixture.name}.png`) });
+    const selected = fixture.expected === "vi" ? "en" : "vi";
+    await toggle.click();
+    await page.waitForFunction((expected) => globalThis.document.documentElement.lang === expected, selected);
+    assert.equal(await page.evaluate(() => localStorage.getItem("language")), selected);
+    country = selected === "vi" ? "US" : "VN";
+    const refreshed = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/auth/user");
+    await page.evaluate(() => {
+      globalThis.dispatchEvent(new globalThis.StorageEvent("storage", {
+        key: "3dipl-user-sync-event",
+        newValue: JSON.stringify({ type: "refresh-user", source: "language-fixture" }),
+      }));
+    });
+    await refreshed;
+    assert.equal(await page.locator("html").getAttribute("lang"), selected, "Account refresh keeps the user's choice");
+    await page.reload();
+    await page.locator(".pluginHero").waitFor();
+    await page.waitForFunction((expected) => globalThis.document.documentElement.lang === expected, selected);
+    assert.deepEqual(errors, []);
+    languageDefaults.push({ ...fixture, manualChoicePersists: true, accountRefreshKeepsChoice: true });
+    await context.close();
+  }
+  await fs.writeFile(path.join(evidenceRoot, "browser-results.json"), JSON.stringify({ ok: true, api: "isolated browser fixtures; real HTTP authorization and service behavior covered separately", cases, languageDefaults }, null, 2));
+  console.log(JSON.stringify({ ok: true, cases, languageDefaults }, null, 2));
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));

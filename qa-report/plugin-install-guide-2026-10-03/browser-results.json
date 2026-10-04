@@ -1,0 +1,66 @@
+{
+  "ok": true,
+  "api": "isolated browser fixtures; real HTTP authorization and service behavior covered separately",
+  "cases": [
+    {
+      "language": "en",
+      "theme": "light",
+      "width": 1440,
+      "uploadPauseResume": true,
+      "expiredUploadDeleteRecreate": true,
+      "uploadAndVerification410Recovery": true,
+      "sharedDownloadRefresh": true,
+      "verifyPublishWithdrawReselect": true,
+      "correctMaxDownload": true,
+      "mzpInstallationGuide": true,
+      "responsiveDemoGif": true,
+      "lazyHomeDemoGif": true,
+      "adminRequestCancelledOnNavigation": true
+    },
+    {
+      "language": "vi",
+      "theme": "dark",
+      "width": 1440,
+      "uploadPauseResume": true,
+      "expiredUploadDeleteRecreate": true,
+      "uploadAndVerification410Recovery": true,
+      "sharedDownloadRefresh": true,
+      "verifyPublishWithdrawReselect": true,
+      "correctMaxDownload": true,
+      "mzpInstallationGuide": true,
+      "responsiveDemoGif": true,
+      "lazyHomeDemoGif": true,
+      "adminRequestCancelledOnNavigation": true
+    },
+    {
+      "language": "vi",
+      "theme": "light",
+      "width": 390,
+      "uploadPauseResume": true,
+      "expiredUploadDeleteRecreate": true,
+      "uploadAndVerification410Recovery": true,
+      "sharedDownloadRefresh": true,
+      "verifyPublishWithdrawReselect": true,
+      "correctMaxDownload": true,
+      "mzpInstallationGuide": true,
+      "responsiveDemoGif": true,
+      "lazyHomeDemoGif": true,
+      "adminRequestCancelledOnNavigation": true
+    },
+    {
+      "language": "en",
+      "theme": "dark",
+      "width": 390,
+      "uploadPauseResume": true,
+      "expiredUploadDeleteRecreate": true,
+      "uploadAndVerification410Recovery": true,
+      "sharedDownloadRefresh": true,
+      "verifyPublishWithdrawReselect": true,
+      "correctMaxDownload": true,
+      "mzpInstallationGuide": true,
+      "responsiveDemoGif": true,
+      "lazyHomeDemoGif": true,
+      "adminRequestCancelledOnNavigation": true
+    }
+  ]
+}

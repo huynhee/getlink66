@@ -19,7 +19,7 @@ import Terms from "./pages/Terms.jsx";
 import PluginAccess from "./pages/PluginAccess.jsx";
 import PluginDownload from "./pages/PluginDownload.jsx";
 import { GetlinkJobProvider, useGetlinkJob } from "./contexts/GetlinkJobContext.jsx";
-import { getInitialLanguage, setStoredLanguage, translations } from "./i18n.js";
+import { getInitialLanguage, getStoredLanguage, setStoredLanguage, translations } from "./i18n.js";
 import "./styles.css";
 import "./design-system.css";
 
@@ -307,6 +307,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [path, setPath] = useState(`${window.location.pathname}${window.location.search}`);
   const [language, setLanguage] = useState(getInitialLanguage);
+  const languageResolvedRef = useRef(Boolean(getStoredLanguage()));
   const [theme, setTheme] = useState(getInitialTheme);
   const [banOverlayClosed, setBanOverlayClosed] = useState(false);
   const previousUserIdRef = useRef("");
@@ -322,6 +323,8 @@ function App() {
   const { job: getlinkJob, setIdentity: setGetlinkJobIdentity, setRoute: setGetlinkJobRoute } = useGetlinkJob();
 
   function changeLanguage(nextLanguage) {
+    if (nextLanguage !== "en" && nextLanguage !== "vi") return;
+    languageResolvedRef.current = true;
     setLanguage(nextLanguage);
     setStoredLanguage(nextLanguage);
   }
@@ -383,7 +386,14 @@ function App() {
     if (!accountRefreshRef.current) {
       accountRefreshRef.current = createAccountRefresh({
         load: () => api("/api/auth/user", { cache: "no-store" }),
-        commit: (data) => commitUser(data.user, { merge: false }),
+        commit: (data) => {
+          if (!languageResolvedRef.current) {
+            languageResolvedRef.current = true;
+            const preferred = getStoredLanguage() || data.defaultLanguage;
+            if (preferred === "en" || preferred === "vi") setLanguage(preferred);
+          }
+          commitUser(data.user, { merge: false });
+        },
       });
     }
     return accountRefreshRef.current.refresh(options);
@@ -518,6 +528,7 @@ function App() {
   useEffect(() => {
     const pathname = window.location.pathname || "/";
     const metadata = seoMetadata(pathname, language);
+    document.documentElement.lang = language;
     document.title = metadata.title;
 
     let canonical = document.head.querySelector('link[rel="canonical"]');

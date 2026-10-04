@@ -291,12 +291,26 @@ export function text(language, vi, en) {
   return language === "en" ? en : vi;
 }
 
-export function getInitialLanguage() {
-  const saved = localStorage.getItem("language");
-  if (saved === "en" || saved === "vi") return saved;
-  return "vi";
+export function getStoredLanguage(storage) {
+  try {
+    const saved = (storage || globalThis.localStorage)?.getItem("language");
+    return saved === "en" || saved === "vi" ? saved : null;
+  } catch {
+    return null;
+  }
 }
 
-export function setStoredLanguage(language) {
-  localStorage.setItem("language", language);
+export function getInitialLanguage({ storage, browserLanguage = globalThis.navigator?.language } = {}) {
+  const saved = getStoredLanguage(storage);
+  if (saved) return saved;
+  return /^vi(?:-|$)/i.test(String(browserLanguage || "")) ? "vi" : "en";
+}
+
+export function setStoredLanguage(language, storage) {
+  if (language !== "en" && language !== "vi") return;
+  try {
+    (storage || globalThis.localStorage)?.setItem("language", language);
+  } catch {
+    // The user's choice still applies for this session when storage is blocked.
+  }
 }

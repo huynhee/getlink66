@@ -12,6 +12,7 @@ import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
 import { endOfVietnamDay, normalizeProUntil } from "../utils/membershipService.js";
 import { verifyGoogleOneTapCredential } from "../utils/googleOneTap.js";
 import { upsertGoogleAccount } from "../utils/googleAccountService.js";
+import { defaultLanguageFromCountry } from "../utils/requestLanguage.js";
 
 const SAFE_RETURN_PATH = /^\/[a-zA-Z0-9\-_/]*(?:\?[a-zA-Z0-9._~%=&-]*)?$/;
 const SAFE_REFERRAL_CODE = /^[a-zA-Z0-9]{6,24}$/;
@@ -314,7 +315,8 @@ export async function logout(req, res, next) {
 export async function currentUser(req, res, next) {
   try {
     res.set("Cache-Control", "private, no-store");
-    if (!req.user) return res.json({ user: null });
+    const defaultLanguage = defaultLanguageFromCountry(req.headers?.["cf-ipcountry"]);
+    if (!req.user) return res.json({ user: null, defaultLanguage });
 
     const normalizedProUntil = normalizeProUntil(req.user.proUntil);
     if (normalizedProUntil && normalizedProUntil.getTime() !== new Date(req.user.proUntil).getTime()) {
@@ -344,7 +346,7 @@ export async function currentUser(req, res, next) {
       requires2FA,
       downloadQuota: await downloadQuotaSnapshot(req.user),
     };
-    res.json({ user: safeUser });
+    res.json({ user: safeUser, defaultLanguage });
   } catch (error) {
     next(error);
   }
