@@ -19,6 +19,12 @@ const server = http.createServer(async (req, res) => {
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
+async function isolateExternalRequests(context) {
+  await context.route("**/*", (route) => {
+    if (new URL(route.request().url()).origin === origin) return route.continue();
+    return route.fulfill({ contentType: "text/javascript", body: "" });
+  });
+}
 await fs.mkdir(evidenceRoot, { recursive: true });
 const executablePath = process.platform === "win32" ? "C:/Program Files/Google/Chrome/Application/chrome.exe" : undefined;
 const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
@@ -27,6 +33,7 @@ const languageDefaults = [];
 try {
   for (const [language, theme, width] of [["en", "light", 1440], ["vi", "dark", 1440], ["vi", "light", 390], ["en", "dark", 390]]) {
     const context = await browser.newContext({ viewport: { width, height: 960 }, serviceWorkers: "block" });
+    await isolateExternalRequests(context);
     await context.addInitScript(({ language, theme }) => { localStorage.setItem("language", language); localStorage.setItem("3dipl-theme", theme); }, { language, theme });
     const page = await context.newPage();
     const errors = [];
@@ -315,8 +322,12 @@ try {
   ];
   for (const fixture of languageFixtures) {
     const context = await browser.newContext({ locale: fixture.locale, viewport: { width: 1440, height: 960 }, serviceWorkers: "block" });
+    await isolateExternalRequests(context);
     await context.addInitScript((saved) => {
-      if (saved) localStorage.setItem("language", saved);
+      if (!sessionStorage.getItem("language-fixture-initialized")) {
+        if (saved) localStorage.setItem("language", saved);
+        sessionStorage.setItem("language-fixture-initialized", "1");
+      }
     }, fixture.saved);
     let country = fixture.country;
     await context.route("**/api/**", (route) => {
