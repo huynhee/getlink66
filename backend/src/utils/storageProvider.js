@@ -181,7 +181,7 @@ export async function openGoogleDriveFileStream(fileId, fallbackFileName = "file
   const range = normalizedByteRange(options.range);
   const response = await fetchGoogleDrive(
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(normalizedFileId)}?alt=media&supportsAllDrives=true`,
-    range ? { headers: { range } } : {},
+    { signal: options.signal, ...(range ? { headers: { range } } : {}) },
   );
   if (!response.ok || !response.body) {
     const body = await response.text().catch(() => "");

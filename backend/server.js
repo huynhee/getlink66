@@ -374,7 +374,7 @@ function publicErrorMessage(message) {
 app.use((error, _req, res, _next) => {
   const status = error.status || 500;
   const expectedUnavailable = isExpectedServiceUnavailable(error, status);
-  if (status === 429 && String(_req.originalUrl || "").startsWith("/api/plugin/")) {
+  if (!res.headersSent && status === 429 && String(_req.originalUrl || "").startsWith("/api/plugin/")) {
     const explicitSeconds = Number(error.publicDetails?.retryAfter || 0);
     const resetAt = error.publicDetails?.resetAt
       ? new Date(error.publicDetails.resetAt).getTime()
@@ -396,6 +396,7 @@ app.use((error, _req, res, _next) => {
       message: error.message,
     }, expectedUnavailable ? "Feature unavailable" : "Client error");
   }
+  if (res.headersSent) return _next(error);
   const isProduction = process.env.NODE_ENV === "production";
   res.status(status).json({
     message: status >= 500 && isProduction && !expectedUnavailable

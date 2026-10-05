@@ -18,7 +18,6 @@ import {
 import { isProActive } from "../utils/membershipService.js";
 import {
   getStorageBrowserDownloadLink,
-  openGoogleDriveFileStream,
   openStorageStream,
 } from "../utils/storageProvider.js";
 import { marketplaceTurnstileConfig, verifyMarketplaceTurnstile } from "../utils/turnstile.js";
@@ -49,6 +48,7 @@ import {
 } from "../utils/marketplaceSearch.js";
 import { marketplacePublicDeletionQuery } from "../utils/marketplaceDeletionService.js";
 import { pipeMarketplaceDownloadStream } from "../utils/marketplaceDownloadStream.js";
+import { sendMarketplaceImage } from "../utils/marketplaceImageDelivery.js";
 import {
   marketplaceRankingMetadata,
   shouldPrioritizeMarketplaceModelPro,
@@ -1413,24 +1413,9 @@ export async function listMarketplaceModelRecommendations(req, res, next) {
   }
 }
 
-function streamImageRef(res, next, image, defaultFileName) {
-  let contentType;
-  try {
-    contentType = imageContentType(image.fileName || defaultFileName);
-  } catch (error) {
-    return Promise.reject(error).catch(next);
-  }
-  const openStream = openGoogleDriveFileStream(image.driveFileId, image.fileName || defaultFileName);
-  return openStream.then((file) => {
-    const etag = crypto.createHash("sha1").update(String(image.driveFileId || "")).digest("hex");
-    res.setHeader("cache-control", "public, max-age=31536000, immutable");
-    res.setHeader("etag", `"${etag}"`);
-    res.setHeader("cross-origin-resource-policy", "cross-origin");
-    res.setHeader("content-type", contentType);
-    if (file.contentLength || image.size) res.setHeader("content-length", file.contentLength || image.size);
-    file.stream.on("error", next);
-    file.stream.pipe(res);
-  });
+function streamImageRef(req, res, image, defaultFileName) {
+  const fileName = image.fileName || defaultFileName;
+  return sendMarketplaceImage(req, res, image, fileName, imageContentType(fileName));
 }
 
 export async function streamMarketplaceCover(req, res, next) {
@@ -1455,10 +1440,13 @@ export async function streamMarketplaceCover(req, res, next) {
       res.setHeader("cross-origin-resource-policy", "cross-origin");
       res.setHeader("content-type", cached.contentType);
       if (cached.contentLength) res.setHeader("content-length", cached.contentLength);
-      cached.stream.on("error", next);
-      return cached.stream.pipe(res);
+      if (res.destroyed) {
+        cached.stream.destroy();
+        return;
+      }
+      return pipeMarketplaceDownloadStream(cached.stream, res, next);
     }
-    await streamImageRef(res, next, cover, "cover.jpg");
+    await streamImageRef(req, res, cover, "cover.jpg");
   } catch (error) {
     next(error);
   }
@@ -1480,7 +1468,7 @@ export async function streamMarketplacePreview(req, res, next) {
     if (!model) return res.status(404).json({ message: "Model not found" });
     const preview = model.previewImages?.[index];
     if (!preview?.driveFileId) return res.status(404).json({ message: "Preview not found" });
-    await streamImageRef(res, next, preview, `preview-${index + 1}.jpg`);
+    await streamImageRef(req, res, preview, `preview-${index + 1}.jpg`);
   } catch (error) {
     next(error);
   }
