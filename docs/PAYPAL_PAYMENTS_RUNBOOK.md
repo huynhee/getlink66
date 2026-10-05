@@ -195,6 +195,25 @@ cặp Client ID/Secret cùng App và đúng môi trường. OAuth đạt nhưng 
 kết nối/đọc response, khác với PayPal trả HTTP từ chối. Không retry capture thủ
 công để né timeout; để luồng đối soát kiểm tra kết quả trước.
 
+### Lỗi `PAYEE_ACCOUNT_INVALID`
+
+PayPal không chấp nhận tài khoản nhận tiền trong `payee.merchant_id`. Kiểm tra
+`PAYPAL_MERCHANT_ID`, không bỏ kiểm tra merchant hoặc tự chuyển môi trường để né
+lỗi. [Mô tả lỗi chính thức](https://developer.paypal.com/api/orders/v2/error-messages).
+
+- Sandbox: mở REST app Sandbox trong Apps & Credentials, xác định Business
+  Sandbox account gắn với app. Đăng nhập tài khoản đó tại `sandbox.paypal.com`,
+  vào Account Settings > Business information và lấy PayPal Merchant ID. Không
+  dùng ID tài khoản Live, buyer, email hoặc Client ID.
+- Live: dùng Merchant ID tài khoản Business Live nhận tiền của REST app Live.
+  [Cách lấy Merchant ID cho Sandbox/Live](https://developer.paypal.com/platforms/checkout/save-payment-methods/onboarding/platform/).
+- Sau khi sửa `/etc/3dipl/production/backend.env`, recreate backend để đọc env mới.
+  `paypal:check` chỉ xác minh OAuth/Webhook ID; đạt không chứng minh Merchant ID
+  nhận được thanh toán.
+- Operation PayPal lưu snapshot merchant ngay khi tạo. Không sửa hàng loạt đơn
+  cũ trong DB. Dùng luồng hủy cho đơn test chưa thu tiền rồi tạo đơn mới; không
+  xóa/hủy đơn đã capture hoặc đang chờ xác nhận kết quả.
+
 Lệnh dưới không in secret, token, link thanh toán hoặc raw webhook; không sửa đơn:
 
 ```bash

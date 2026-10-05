@@ -25,6 +25,8 @@ test("Getlink proxy forwards a strong ETag and byte-range identity", () => {
   assert.equal(headers.get("etag"), '"file-v1"');
   assert.equal(headers.get("content-range"), "bytes 3-6/7");
   assert.equal(headers.get("content-length"), "4");
+  assert.equal(headers.get("cache-control"), "no-store, no-transform");
+  assert.equal(headers.get("x-accel-buffering"), "no");
 });
 
 test("Getlink proxy does not advertise weak or transformed transfer identity", () => {

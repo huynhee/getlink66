@@ -1,5 +1,3 @@
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
 import Getlink from "../models/Getlink.js";
 import ProductCache from "../models/ProductCache.js";
@@ -30,8 +28,9 @@ import {
   signDownloadToken,
   verifyDownloadToken,
 } from "../utils/downloadToken.js";
-import { securityEvent } from "../utils/logger.js";
+import logger, { securityEvent } from "../utils/logger.js";
 import { writeSystemLog } from "../utils/systemLog.js";
+import { createGetlinkDownloadLimiter, streamGetlinkFile } from "../utils/getlinkDownloadTransfer.js";
 
 const productLocks = new Map();
 const historyRefreshLocks = new Map();
@@ -41,11 +40,7 @@ const MAX_PREVIEW_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_PREVIEW_IMAGE_REDIRECTS = 5;
 const PREVIEW_IMAGE_TIMEOUT_MS = 15_000;
 const DOWNLOAD_FORMAT_OPTIONS_VERSION = 2;
-const downloadCounters = {
-  global: 0,
-  user: new Map(),
-  ip: new Map(),
-};
+const downloadLimiter = createGetlinkDownloadLimiter();
 
 // Per-user-per-product in-flight set: chong race condition double-charge credit
 // JS event loop la single-threaded → Set.has()/add()/delete() la atomic giua cac await.
@@ -81,63 +76,12 @@ async function hasEnoughCredit(userId, creditCost) {
   };
 }
 
-function downloadLimit(name, fallback) {
-  const limit = Number(process.env[name] || fallback);
-  return Number.isFinite(limit) && limit > 0 ? limit : fallback;
-}
-
-function mapCount(map, key) {
-  return Number(map.get(String(key)) || 0);
-}
-
-function decrementMap(map, key) {
-  const normalized = String(key);
-  const next = Math.max(0, mapCount(map, normalized) - 1);
-  if (next <= 0) map.delete(normalized);
-  else map.set(normalized, next);
-}
-
-function acquireDownloadSlot(req, ownerUserId = "") {
-  const userId = String(ownerUserId || req.user?._id || "anonymous");
-  const ip = String(req.ip || "unknown");
-  const maxGlobal = downloadLimit("MAX_GLOBAL_DOWNLOADS", 20);
-  const maxUser = downloadLimit("MAX_DOWNLOADS_PER_USER", 2);
-  const maxIp = downloadLimit("MAX_DOWNLOADS_PER_IP", 4);
-
-  if (downloadCounters.global >= maxGlobal) {
-    return {
-      ok: false,
-      status: 429,
-      message: "He thong dang co nhieu file dang tai. Vui long thu lai sau.",
-    };
-  }
-  if (mapCount(downloadCounters.user, userId) >= maxUser) {
-    return {
-      ok: false,
-      status: 429,
-      message: `Tai khoan chi duoc tai toi da ${maxUser} file cung luc.`,
-    };
-  }
-  if (mapCount(downloadCounters.ip, ip) >= maxIp) {
-    return {
-      ok: false,
-      status: 429,
-      message: `IP chi duoc tai toi da ${maxIp} file cung luc.`,
-    };
-  }
-
-  downloadCounters.global += 1;
-  downloadCounters.user.set(userId, mapCount(downloadCounters.user, userId) + 1);
-  downloadCounters.ip.set(ip, mapCount(downloadCounters.ip, ip) + 1);
-
-  return {
-    ok: true,
-    release() {
-      downloadCounters.global = Math.max(0, downloadCounters.global - 1);
-      decrementMap(downloadCounters.user, userId);
-      decrementMap(downloadCounters.ip, ip);
-    },
-  };
+function acquireDownloadSlot(req, ownerUserId = "", range = "") {
+  return downloadLimiter.acquire({
+    userId: ownerUserId || req.user?._id,
+    ip: req.ip,
+    range,
+  });
 }
 
 function redownloadExpiresAt(history) {
@@ -1086,7 +1030,7 @@ export function setProxyHeaders(res, upstream, history) {
     contentDispositionFrom3D66(upstreamDisposition, history) ||
       `attachment; filename="${fileNameFromUrl(history.fileUrl, history.productId).replace(/"/g, "")}"`,
   );
-  res.setHeader("cache-control", "no-store");
+  res.setHeader("cache-control", "no-store, no-transform");
   res.setHeader("x-accel-buffering", "no");
 }
 
@@ -2109,7 +2053,7 @@ export async function downloadGetlink(req, res, next) {
       });
     }
 
-    downloadSlot = acquireDownloadSlot(req, ownerUserId);
+    downloadSlot = acquireDownloadSlot(req, ownerUserId, req.get("range"));
     if (!downloadSlot.ok) {
       securityEvent("DOWNLOAD_CONCURRENCY_LIMIT", {
         userId: ownerUserId,
@@ -2234,11 +2178,13 @@ export async function downloadGetlink(req, res, next) {
       }
     }
 
+    const upstreamStartedAt = performance.now();
     const { history: activeHistory, upstream } = await openDownloadResponse(
       reservedHistory,
       req,
       controller.signal,
     );
+    const upstreamOpenMs = Math.round(performance.now() - upstreamStartedAt);
 
     if (!upstream.ok && upstream.status !== 206) {
       if (reservedInitialDownload && reservedHistoryId) {
@@ -2284,7 +2230,18 @@ export async function downloadGetlink(req, res, next) {
     }
 
     res.flushHeaders();
-    await pipeline(Readable.fromWeb(upstream.body), res);
+    res.socket?.setNoDelay(true);
+    await streamGetlinkFile(upstream.body, res, {
+      signal: controller.signal,
+      onMetrics(metrics) {
+        logger.info({
+          type: "GETLINK_DOWNLOAD_TRANSFER",
+          partial: upstream.status === 206,
+          upstreamOpenMs,
+          ...metrics,
+        }, "Getlink file transfer");
+      },
+    });
     reservedInitialDownload = false;
     reservedDownloadCount = false;
   } catch (error) {
