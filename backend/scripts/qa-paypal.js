@@ -37,7 +37,7 @@ try {
       { _id: "000000000000000000000004", code: "TRIAL", name: "Trial", price: 0, durationDays: 7, dailyDownloadLimit: 100, features: [] },
       { _id: "000000000000000000000005", code: "SILVER", name: "Silver", price: 199000, paypalPriceCents: 599, durationDays: 30, dailyDownloadLimit: 100, features: [] },
     ];
-    const state = { admin: false, paid: false, enabled: true, credit: 50 };
+    const state = { admin: false, paid: false, enabled: true, credit: 50, checkoutError: false };
     const submissions = [];
     await context.route("**/api/**", async (route) => {
       const request = route.request();
@@ -58,6 +58,7 @@ try {
         const body = request.postDataJSON();
         submissions.push(body);
         assert.equal(body.paymentProvider, language === "en" ? "paypal" : "sepay");
+        if (state.checkoutError) return route.fulfill({ status: 502, json: { code: "PAYPAL_API_ERROR", message: "Internal server error", correlationId: "qa-paypal-failed" } });
         json = { status: "pending", topup: { _id: "000000000000000000000009", credit: 100, amount: language === "en" ? 12.34 : 50000, currency: language === "en" ? "USD" : "VND", status: "pending", gatewayProvider: body.paymentProvider } };
       } else if (pathname === "/api/membership/checkout") {
         const body = request.postDataJSON();
@@ -95,6 +96,17 @@ try {
     await page.waitForFunction(() => globalThis.document.querySelector(".result"));
     assert.equal(submissions.at(-1).paymentProvider, language === "en" ? "paypal" : "sepay");
     if (language === "en") {
+      state.checkoutError = true;
+      await page.goto(origin + "/topup?mode=credit&packageId=" + packages[0]._id);
+      await page.getByRole("button", { name: "Pay with PayPal", exact: true }).click();
+      await page.getByText("PayPal payment could not be processed. Please try again later or contact support.", { exact: true }).waitFor();
+      assert.equal(state.credit, 50);
+      assert.doesNotMatch(await page.locator(".error").innerText(), /Gateway|Internal server error/);
+      await checkLayout("checkout-error");
+      state.checkoutError = false;
+      await page.getByRole("button", { name: "Pay with PayPal", exact: true }).click();
+      await page.locator(".result").waitFor();
+      assert.equal(await page.locator(".error").count(), 0);
       await page.goto(origin + "/topup?mode=credit&packageId=" + packages[1]._id);
       await page.getByText("USD price is not available for this package yet.").waitFor();
       assert.equal(await page.getByRole("button", { name: "Pay with PayPal", exact: true }).isDisabled(), true);

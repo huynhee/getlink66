@@ -10,6 +10,7 @@
     "dev": "node --watch server.js",
     "start": "node server.js",
     "env:check": "node scripts/env-check.js",
+    "paypal:check": "node scripts/paypal-check.js",
     "drive:auth": "node scripts/google-drive-auth.js",
     "drive:check": "node scripts/google-drive-check.js",
     "backup:databases": "node scripts/database-backup.js --database=all",

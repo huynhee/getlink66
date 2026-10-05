@@ -26,33 +26,55 @@ export function paypalRequestId(operation, id) {
   return createHash("sha256").update(`${operation}:${id}`).digest("hex").slice(0, 36);
 }
 
-async function readResponse(response) {
+function safeDiagnosticCode(value, fallback = "") {
+  return typeof value === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(value) ? value : fallback;
+}
+
+async function readResponse(response, stage) {
   let data;
-  try { data = await response.json(); } catch { data = {}; }
+  try { data = await response.json(); } catch (error) {
+    if (error.name !== "SyntaxError") throw error;
+    data = {};
+  }
   if (!response.ok) {
-    const issue = data.details?.[0]?.issue || data.name || "API_ERROR";
-    const error = paymentError(`PayPal request failed (${issue})`, "PAYPAL_API_ERROR", 502);
+    const issue = safeDiagnosticCode(data?.details?.[0]?.issue || data?.name || data?.error, "API_ERROR");
+    const error = paymentError(`PayPal ${stage} request failed (HTTP ${response.status}: ${issue})`, "PAYPAL_API_ERROR", 502);
+    error.paypalStage = stage;
     error.paypalIssue = issue;
     error.paypalStatus = response.status;
+    error.paypalDebugId = safeDiagnosticCode(data?.debug_id);
     throw error;
   }
   return data;
 }
 
+async function requestPaypal(url, options, stage) {
+  try {
+    const response = await fetch(url, { ...options, redirect: "error", signal: AbortSignal.timeout(10000) });
+    if (stage === "api" && response.status === 401) tokenCache = null;
+    return await readResponse(response, stage);
+  } catch (error) {
+    if (error.code === "PAYPAL_API_ERROR") throw error;
+    const timeout = ["TimeoutError", "AbortError"].includes(error.name);
+    throw Object.assign(paymentError(
+      `PayPal ${stage} ${timeout ? "request timed out" : "connection failed"}`,
+      timeout ? "PAYPAL_API_TIMEOUT" : "PAYPAL_CONNECTION_FAILED",
+      timeout ? 504 : 502,
+    ), { paypalStage: stage, paypalIssue: safeDiagnosticCode(error.cause?.code || error.code, timeout ? "TIMEOUT" : "NETWORK_ERROR") });
+  }
+}
+
 async function accessToken(config) {
   const key = createHash("sha256").update(`${config.environment}:${config.clientId}:${config.secret}`).digest("hex");
   if (tokenCache?.key === key && tokenCache.expiresAt > Date.now()) return tokenCache.token;
-  const response = await fetch(`${config.host}/v1/oauth2/token`, {
+  const data = await requestPaypal(`${config.host}/v1/oauth2/token`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.secret}`).toString("base64")}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: "grant_type=client_credentials",
-    redirect: "error",
-    signal: AbortSignal.timeout(10000),
-  });
-  const data = await readResponse(response);
+  }, "oauth");
   if (!data.access_token) throw paymentError("PayPal authentication failed", "PAYPAL_AUTH_FAILED", 502);
   tokenCache = { key, token: data.access_token, expiresAt: Date.now() + Math.max(0, Number(data.expires_in || 0) - 60) * 1000 };
   return data.access_token;
@@ -65,7 +87,7 @@ export async function paypalApi(path, { method = "GET", body, requestId, environ
   }
   if (!/^\/v[12]\/[a-z0-9/-]+$/i.test(path)) throw paymentError("Invalid PayPal API path", "PAYPAL_PATH_INVALID");
   const token = await accessToken(config);
-  const response = await fetch(config.host + path, {
+  return requestPaypal(config.host + path, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -74,11 +96,7 @@ export async function paypalApi(path, { method = "GET", body, requestId, environ
       ...(requestId ? { "PayPal-Request-Id": requestId } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
-    redirect: "error",
-    signal: AbortSignal.timeout(10000),
-  });
-  if (response.status === 401) tokenCache = null;
-  return readResponse(response);
+  }, "api");
 }
 
 export function paypalApprovalUrl(data, environment) {

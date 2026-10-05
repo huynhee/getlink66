@@ -175,6 +175,26 @@ Các index mới được tạo khi backend khởi động; không chạy migrat
 
 ## Kiểm tra tồn đọng chỉ đọc
 
+Kiểm tra OAuth và quyền truy cập Webhook ID mà không tạo đơn/capture, không kết
+nối database và không in credential/token:
+
+```bash
+sudo docker compose -f compose.production.yml run --rm --no-deps backend npm run paypal:check
+sudo docker compose -f compose.production.yml exec -T backend npm run paypal:check
+```
+
+`run` đọc env mới trong file, còn `exec` dùng env của container đang chạy. Nếu
+`run` đạt nhưng `exec` báo OAuth `401 invalid_client`, credentials trong container
+có thể chưa được cập nhật. Sau khi xác nhận đúng môi trường/credentials, recreate
+backend để nạp env mới; `restart` không đủ. Không đổi Sandbox thành Live để né lỗi.
+
+Lỗi mới ghi rõ `oauth` hoặc `api`, HTTP, issue và debug ID an toàn; không ghi raw
+response, secret, token hoặc Authorization. `401 invalid_client` ở OAuth: kiểm tra
+cặp Client ID/Secret cùng App và đúng môi trường. OAuth đạt nhưng API webhook
+`404`: kiểm tra Webhook ID cùng App/môi trường. `PAYPAL_API_TIMEOUT` là timeout
+kết nối/đọc response, khác với PayPal trả HTTP từ chối. Không retry capture thủ
+công để né timeout; để luồng đối soát kiểm tra kết quả trước.
+
 Lệnh dưới không in secret, token, link thanh toán hoặc raw webhook; không sửa đơn:
 
 ```bash

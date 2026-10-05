@@ -53,10 +53,22 @@ async function readResponseData(response) {
 }
 
 function responseErrorMessage(response, data = {}) {
+  if (["PAYPAL_API_ERROR", "PAYPAL_API_TIMEOUT", "PAYPAL_CONNECTION_FAILED"].includes(data.code)) {
+    let english = false;
+    try { english = typeof window !== "undefined" && window.localStorage.getItem("language") === "en"; } catch { /* Keep the fallback locale when storage is unavailable. */ }
+    if (data.code === "PAYPAL_API_TIMEOUT") {
+      return english
+        ? "PayPal did not respond in time. Check your payment history before trying again."
+        : "PayPal chưa phản hồi kịp thời. Kiểm tra lịch sử thanh toán trước khi thử lại.";
+    }
+    return english
+      ? "PayPal payment could not be processed. Please try again later or contact support."
+      : "Chưa thể xử lý thanh toán PayPal. Vui lòng thử lại sau hoặc liên hệ hỗ trợ.";
+  }
   if (data.message) return data.message;
 
   if ([502, 503, 504].includes(response.status)) {
-    return `HTTP ${response.status}: Gateway không nhận được phản hồi kịp thời từ backend.`;
+    return `HTTP ${response.status}: Gateway hoặc dịch vụ phía sau đang gặp lỗi. Vui lòng thử lại sau.`;
   }
 
   const statusText = String(response.statusText || "").trim();
