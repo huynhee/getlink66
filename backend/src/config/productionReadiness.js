@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { paypalConfigurationIssues } from "./paypalConfig.js";
 
 const TURNSTILE_TEST_SITE_KEYS = new Set([
   "1x00000000000000000000AA",
@@ -34,6 +35,7 @@ export function productionReadinessIssues(env = process.env) {
   }
 
   const errors = [];
+  errors.push(...paypalConfigurationIssues(env));
   const warnings = [];
   const turnstileEnabled = isTrue(env, "TURNSTILE_ENABLED");
   const turnstileSiteKey = text(env, "TURNSTILE_SITE_KEY");

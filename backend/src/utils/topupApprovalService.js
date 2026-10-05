@@ -9,6 +9,9 @@ import { addCredit } from "./creditService.js";
 import { publishAccountEvent } from "./accountEventBus.js";
 import { notifyTopupApproved } from "./telegramNotifier.js";
 import { approvedVoucherUseCount } from "./voucherCheckoutService.js";
+import { assertPaymentPurchaseLimit, assertReservedVoucherUserLimit, consumePaymentReservation, heldPaymentReservation, lockPaymentBenefits, preparePaymentBenefitGuard, serializeMemoryPayments, restorePaymentReservation } from "./paymentBenefitService.js";
+import { paymentReceiptMoney } from "./paymentMoney.js";
+import { assertPaypalSettlement } from "./paypalSettlementGuard.js";
 
 const LATE_PAYMENT_REJECTION_REASONS = new Set([
   "expired",
@@ -54,6 +57,7 @@ async function claimGatewayTransaction(topup, approvalFields, session = null) {
     ),
     topupId: topup._id,
     amount: Number(topup.amount || 0),
+    ...paymentReceiptMoney(topup),
   };
 
   try {
@@ -104,6 +108,8 @@ function approvableTopupQuery(topup) {
 async function claimVoucherUsage(topup, session = null) {
   const code = normalizeVoucherCode(topup?.voucherCode);
   if (!code) return null;
+  const candidate = await execMaybeSession(Voucher.findOne({ code }), session);
+  if (candidate) await assertReservedVoucherUserLimit(candidate, topup.userId?._id || topup.userId, session);
 
   const voucher = await Voucher.findOneAndUpdate(
     {
@@ -188,6 +194,8 @@ async function releaseVoucherUsage(topup, session = null) {
 }
 
 async function assertPackageTopupLimit(topup, session = null) {
+  await assertPaymentPurchaseLimit("topup", topup, session);
+  if (await heldPaymentReservation("topup", topup, session)) return;
   const packageId = topup.packageId?._id || topup.packageId;
   if (!packageId) return;
 
@@ -214,11 +222,16 @@ async function approvePendingTopupWithSession(topup, approvalFields = {}, sessio
   let voucherClaimed = false;
   let approvedTopup = null;
   let paymentReceipt = null;
+  let reservationConsumed = false;
 
   try {
+    await lockPaymentBenefits(topup.userId?._id || topup.userId, session);
+    const current = await execMaybeSession(Topup.findOne(approvableTopupQuery(topup)), session);
+    if (!current) return null;
+    await assertPaypalSettlement("topup", current, approvalFields, session);
     await assertPackageTopupLimit(topup, session);
 
-    if (topup.voucherCode) {
+    if (topup.voucherCode && !await heldPaymentReservation("topup", topup, session)) {
       await claimVoucherUsage(topup, session);
       voucherClaimed = true;
     }
@@ -248,6 +261,7 @@ async function approvePendingTopupWithSession(topup, approvalFields = {}, sessio
       session,
     );
 
+    reservationConsumed = Boolean(await consumePaymentReservation("topup", approvedTopup, session));
     const user = await addCredit(
       approvedTopup.userId._id || approvedTopup.userId,
       approvedTopup.credit,
@@ -256,6 +270,7 @@ async function approvePendingTopupWithSession(topup, approvalFields = {}, sessio
     return { topup: approvedTopup, user };
   } catch (error) {
     if (!session && approvedTopup) {
+      if (reservationConsumed) await restorePaymentReservation("topup", approvedTopup);
       if (paymentReceipt?._id) {
         await PaymentReceipt.findByIdAndDelete(paymentReceipt._id).catch(() => {});
       }
@@ -309,11 +324,12 @@ function notifyApproval(result, approvalFields = {}) {
 
 export async function approvePendingTopup(topup, approvalFields = {}) {
   if (isMemoryDb()) {
-    const result = await approvePendingTopupWithSession(topup, approvalFields);
+    const result = await serializeMemoryPayments(() => approvePendingTopupWithSession(topup, approvalFields));
     notifyApproval(result, approvalFields);
     return result;
   }
 
+  await preparePaymentBenefitGuard(topup.userId?._id || topup.userId);
   const session = await mongoose.startSession();
   let result = null;
   try {

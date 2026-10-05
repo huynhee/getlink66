@@ -16,6 +16,9 @@ import {
   rejectUnknownKeys,
 } from "../utils/validators.js";
 import { expirePendingSepayTopups } from "../utils/topupExpiryService.js";
+import { moneySnapshot, paymentProvider, paypalPrice } from "../utils/paymentMoney.js";
+import { paypalAvailability, paypalConfiguration } from "../utils/paypal.js";
+import { cancelPaypalPayment, createPaypalCheckout } from "../utils/paypalPaymentService.js";
 
 const MIN_TOPUP_AMOUNT = Number(process.env.MIN_TOPUP_AMOUNT || 1000);
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{16,128}$/;
@@ -122,11 +125,12 @@ function packagePayAmount(pack) {
   );
 }
 
-function isSameIdempotentTopupRequest(topup, pack, voucherCode = "") {
+function isSameIdempotentTopupRequest(topup, pack, voucherCode = "", provider = "sepay") {
   return (
     String(topup?.packageId?._id || topup?.packageId || "") ===
       String(pack?._id || "") &&
-    String(topup?.voucherCode || "") === String(voucherCode || "")
+    String(topup?.voucherCode || "") === String(voucherCode || "") &&
+    (topup.requestedPaymentProvider || topup.gatewayProvider || "sepay") === provider
   );
 }
 
@@ -217,7 +221,7 @@ export async function getPackages(_req, res, next) {
     let packages = await TopupPackage.find();
     await syncDefaultTopupPackages(packages);
     packages = sortPackages(await TopupPackage.find({ isActive: true }).lean());
-    res.json({ packages });
+    res.json({ packages, payments: { paypal: paypalAvailability() } });
   } catch (error) {
     next(error);
   }
@@ -232,6 +236,7 @@ export async function createTopup(req, res, next) {
       "price",
       "voucherCode",
       "type",
+      "paymentProvider",
     ]);
     if (unknownKey) {
       return res.status(400).json({ message: "Invalid topup request" });
@@ -254,7 +259,7 @@ export async function createTopup(req, res, next) {
       return res.status(400).json({ message: "Invalid idempotency key" });
     }
 
-    const type = "sepay";
+    const type = paymentProvider(req.body.paymentProvider);
     const pack = packageId
       ? await TopupPackage.findById(packageId)
       : await TopupPackage.findOne({ price, isActive: true });
@@ -269,14 +274,14 @@ export async function createTopup(req, res, next) {
         idempotencyKey,
       });
       if (existingTopup) {
-        if (!isSameIdempotentTopupRequest(existingTopup, pack, normalizedVoucherCode)) {
+        if (!isSameIdempotentTopupRequest(existingTopup, pack, normalizedVoucherCode, type)) {
           return res.status(409).json({
             message: "Idempotency key was already used for another topup request",
           });
         }
         const payment = existingTopup.status === "approved"
           ? null
-          : createSepayCheckout({ topup: existingTopup, user: req.user, pack });
+          : type === "paypal" ? await createPaypalCheckout("topup", existingTopup) : createSepayCheckout({ topup: existingTopup, user: req.user, pack });
         return res.json({
           topup: existingTopup,
           payment,
@@ -290,9 +295,11 @@ export async function createTopup(req, res, next) {
 
     const isAuto = type === "auto" || type === "fake";
     const isSepay = type === "sepay";
+    const isPaypal = type === "paypal";
     const status = isAuto ? "approved" : "pending";
     if (isSepay) assertSepayConfigured();
-    const originalAmount = packagePayAmount(pack);
+    if (isPaypal) paypalConfiguration({ newCheckout: true });
+    const originalAmount = isPaypal ? paypalPrice(pack) : packagePayAmount(pack);
     let discountAmount = 0;
     let voucherCreditBonus = 0;
     let voucher = null;
@@ -309,8 +316,8 @@ export async function createTopup(req, res, next) {
       voucherCreditBonus = Number(voucher.creditBonus || 0);
     }
 
-    const amount = Math.max(0, originalAmount - discountAmount);
-    if (amount < MIN_TOPUP_AMOUNT) {
+    const amount = Math.max(isPaypal ? 1 : 0, originalAmount - discountAmount);
+    if (amount < (isPaypal ? 1 : MIN_TOPUP_AMOUNT)) {
       return res
         .status(400)
         .json({ message: "Topup amount is too low after discount" });
@@ -320,17 +327,16 @@ export async function createTopup(req, res, next) {
     const baseTopupPayload = {
       userId: req.user._id,
       packageId: pack._id,
-      originalAmount,
-      discountAmount,
+      ...moneySnapshot(originalAmount, voucher?.discountPercent || 0, isPaypal ? "USD" : "VND", { minimumMinor: isPaypal ? 1 : 0 }),
       voucherCode: voucher?.code,
       voucherDiscountPercent: voucher?.discountPercent || 0,
       voucherCreditBonus,
-      amount,
       credit,
       type,
       status,
-      gatewayProvider: isSepay ? "sepay" : undefined,
-      expiresAt: isSepay ? new Date(Date.now() + 30 * 60 * 1000) : undefined,
+      gatewayProvider: type,
+      requestedPaymentProvider: type,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
       idempotencyKey: idempotencyKey || undefined,
     };
 
@@ -357,7 +363,7 @@ export async function createTopup(req, res, next) {
               idempotencyKey,
             });
             if (topup) {
-              if (!isSameIdempotentTopupRequest(topup, pack, normalizedVoucherCode)) {
+              if (!isSameIdempotentTopupRequest(topup, pack, normalizedVoucherCode, type)) {
                 return res.status(409).json({
                   message: "Idempotency key was already used for another topup request",
                 });
@@ -391,6 +397,10 @@ export async function createTopup(req, res, next) {
     }
 
     let payment = null;
+    if (isPaypal && topup.status !== "approved") {
+      payment = await createPaypalCheckout("topup", topup);
+      topup = await Topup.findById(topup._id);
+    }
     if (isSepay && topup.status !== "approved") {
       payment = createSepayCheckout({ topup, user: req.user, pack });
       topup = await Topup.findByIdAndUpdate(
@@ -445,7 +455,7 @@ export async function topupStatus(req, res, next) {
       _id: req.params.id,
       userId: req.user._id,
     })
-      .select("status credit amount paymentCode paidAt canceledAt rejectionReason createdAt updatedAt")
+      .select("status credit amount currency amountMinor gatewayProvider paypalOrderId paypalCaptureId paymentReconciliationStatus paypalRefundMinor paypalDisputeStatus paymentCode paidAt canceledAt rejectionReason createdAt updatedAt")
       .lean();
 
     if (!topup) {
@@ -477,6 +487,12 @@ export async function cancelTopup(req, res, next) {
     const reason = String(req.body.reason || "user_cancel");
     if (!["user_cancel", "gateway_error"].includes(reason)) {
       return res.status(400).json({ message: "Invalid cancel reason" });
+    }
+
+    const owned = await Topup.findOne({ _id: req.params.id, userId: req.user._id });
+    if (owned?.gatewayProvider === "paypal") {
+      const topup = await cancelPaypalPayment("topup", owned);
+      return res.json({ topup, status: topup.status, userCredit: req.user.credit });
     }
 
     const canceledAt = new Date();

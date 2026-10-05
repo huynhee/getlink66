@@ -1,8 +1,10 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
+import { paymentMoneyFields } from "./paymentFields.js";
 
 const topupSchema = new mongoose.Schema(
   {
+    ...paymentMoneyFields,
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -19,7 +21,7 @@ const topupSchema = new mongoose.Schema(
     credit: { type: Number, required: true },
     type: {
       type: String,
-      enum: ["manual", "auto", "fake", "vnpay", "vietqr", "sepay"],
+      enum: ["manual", "auto", "fake", "vnpay", "vietqr", "sepay", "paypal"],
       default: "auto",
     },
     status: {

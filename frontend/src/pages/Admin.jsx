@@ -8,10 +8,12 @@ import CoinAmount from "../components/CoinAmount.jsx";
 import Pagination from "../components/Pagination.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
+import { formatPaymentMoney, parseAdminUsdPrice } from "../utils/paymentPresentation.js";
 
 const emptyPackage = {
   name: "",
   price: "",
+  paypalPriceUsd: "",
   credit: "",
   salePercent: "",
   salePrice: "",
@@ -24,6 +26,7 @@ const emptyMembershipPlan = {
   code: "",
   name: "",
   price: "",
+  paypalPriceUsd: "",
   durationDays: "",
   dailyDownloadLimit: "100",
   maxPurchasesPerUser: "",
@@ -197,8 +200,8 @@ function discountedPrice(pkg) {
   return Math.round(Number(pkg.price || 0) * (100 - Number(pkg.salePercent || 0)) / 100);
 }
 
-function formatMoney(value) {
-  return `${Number(value || 0).toLocaleString("vi-VN")}đ`;
+function formatMoney(value, currency = "VND") {
+  return formatPaymentMoney(value, currency, "vi-VN");
 }
 
 function formatNumber(value, locale = "vi-VN") {
@@ -288,7 +291,7 @@ function timelineStatusClass(status) {
 function adminTimelineAmount(event, locale, l) {
   const amount = Number(event?.amount || 0);
   if (!amount) return "-";
-  if (event.type === "pro") return formatMoney(Math.abs(amount));
+  if (event.type === "pro") return formatMoney(Math.abs(amount), event.metadata?.currency);
   if (["model", "scene"].includes(event.type)) return `${Math.abs(amount).toLocaleString(locale)} ${l("lượt", "downloads")}`;
   return `${amount > 0 ? "+" : "-"}${Math.abs(amount).toLocaleString(locale)} credit`;
 }
@@ -302,6 +305,7 @@ export default function Admin({ user, language = "vi" }) {
   const [websiteSection, setWebsiteSection] = useState("packages");
   const [threed66SettingsTab, setThreed66SettingsTab] = useState("tasks");
   const [revenuePeriod, setRevenuePeriod] = useState("day");
+  const [revenueCurrency, setRevenueCurrency] = useState("VND");
   const [overview, setOverview] = useState(null);
   const [dashboard, setDashboard] = useState(null);
   const [storageHealth, setStorageHealth] = useState(null);
@@ -346,6 +350,7 @@ export default function Admin({ user, language = "vi" }) {
   const [loading, setLoading] = useState(false);
   const [packageMode, setPackageMode] = useState("credit");
   const [packageForm, setPackageForm] = useState(emptyPackage);
+  const [packageError, setPackageError] = useState("");
   const [membershipPlanForm, setMembershipPlanForm] = useState(emptyMembershipPlan);
   const [voucherForm, setVoucherForm] = useState(emptyVoucher);
   const [voucherMode, setVoucherMode] = useState("credit");
@@ -488,7 +493,9 @@ export default function Admin({ user, language = "vi" }) {
 
   async function reviewTransaction(item, action) {
     if (!item?.rawId) return;
-    const actionLabel = action === "approve" ? l("duyệt", "approve") : l("hủy", "cancel");
+    const actionLabel = action === "approve"
+      ? item.gatewayProvider === "paypal" ? l("đối soát", "reconcile") : l("duyệt", "approve")
+      : l("hủy", "cancel");
     const kindLabel = item.kind === "pro" ? "Pro" : "Credit";
     if (!window.confirm(l(
       `Xác nhận ${actionLabel} giao dịch ${kindLabel} ${item.paymentCode || ""}?`,
@@ -501,14 +508,17 @@ export default function Admin({ user, language = "vi" }) {
     setTransactionMsg("");
     setTransactionMsgError(false);
     try {
-      await api(endpoint, {
+      const result = await api(endpoint, {
         method: "POST",
         body: action === "cancel" ? JSON.stringify({ reason: "admin_cancel" }) : undefined
       });
-      setTransactionMsg(l(
-        `Đã ${actionLabel} giao dịch ${kindLabel}.`,
-        `${kindLabel} transaction ${action === "approve" ? "approved" : "canceled"}.`,
-      ));
+      const status = (result.order || result.topup)?.status;
+      setTransactionMsg(status === "pending"
+        ? l("Giao dịch vẫn đang chờ PayPal xác nhận, chưa cấp quyền.", "The transaction is still awaiting PayPal confirmation; benefits have not been granted.")
+        : l(
+          `Giao dịch ${kindLabel}: ${status === "approved" ? "thành công" : "đã hủy"}.`,
+          `${kindLabel} transaction ${status === "approved" ? "approved" : "canceled"}.`,
+        ));
       await Promise.all([loadTopups(), loadData(), loadUsers()]);
       if (userDetail?.user?._id && item.user?._id === userDetail.user._id) {
         await loadUserDetail(userDetail.user, userTimelineType);
@@ -579,6 +589,7 @@ export default function Admin({ user, language = "vi" }) {
     setPackageForm({
       name: pack.name || "",
       price: pack.price || "",
+      paypalPriceUsd: pack.paypalPriceCents == null ? "" : (pack.paypalPriceCents / 100).toFixed(2),
       credit: pack.credit || "",
       salePercent: pack.salePercent || "",
       salePrice: Number(pack.salePrice || 0) > 0 ? pack.salePrice : "",
@@ -590,13 +601,19 @@ export default function Admin({ user, language = "vi" }) {
 
   async function savePackage(event) {
     event.preventDefault();
-    await api(editingPackageId ? `/api/admin/topup-packages/${editingPackageId}` : "/api/admin/topup-packages", {
-      method: editingPackageId ? "PUT" : "POST",
-      body: JSON.stringify(packageForm)
-    });
-    setPackageForm(emptyPackage);
-    setEditingPackageId("");
-    await loadData();
+    setPackageError("");
+    try {
+      const { paypalPriceUsd, ...payload } = packageForm;
+      await api(editingPackageId ? `/api/admin/topup-packages/${editingPackageId}` : "/api/admin/topup-packages", {
+        method: editingPackageId ? "PUT" : "POST",
+        body: JSON.stringify({ ...payload, paypalPriceCents: parseAdminUsdPrice(paypalPriceUsd) })
+      });
+      setPackageForm(emptyPackage);
+      setEditingPackageId("");
+      await loadData();
+    } catch (error) {
+      setPackageError(error.message);
+    }
   }
 
   async function deletePackage(id) {
@@ -657,7 +674,8 @@ export default function Admin({ user, language = "vi" }) {
     setMembershipPlanForm({
       code: plan.code || "",
       name: plan.name || "",
-      price: plan.price || "",
+      price: plan.price ?? "",
+      paypalPriceUsd: plan.paypalPriceCents == null ? "" : (plan.paypalPriceCents / 100).toFixed(2),
       durationDays: plan.durationDays || "",
       dailyDownloadLimit: plan.dailyDownloadLimit || "100",
       maxPurchasesPerUser: Number(plan.maxPurchasesPerUser || 0) > 0 ? plan.maxPurchasesPerUser : "",
@@ -669,20 +687,27 @@ export default function Admin({ user, language = "vi" }) {
 
   async function saveMembershipPlan(event) {
     event.preventDefault();
-    const payload = {
-      ...membershipPlanForm,
-      price: Number(membershipPlanForm.price || 0),
-      durationDays: Number(membershipPlanForm.durationDays || 1),
-      dailyDownloadLimit: Number(membershipPlanForm.dailyDownloadLimit || 100),
-      maxPurchasesPerUser: Number(membershipPlanForm.maxPurchasesPerUser || 0)
-    };
-    await api(editingMembershipPlanId ? `/api/admin/membership-plans/${editingMembershipPlanId}` : "/api/admin/membership-plans", {
-      method: editingMembershipPlanId ? "PUT" : "POST",
-      body: JSON.stringify(payload)
-    });
-    setMembershipPlanForm(emptyMembershipPlan);
-    setEditingMembershipPlanId("");
-    await loadData();
+    setPackageError("");
+    try {
+      const { paypalPriceUsd, ...form } = membershipPlanForm;
+      const payload = {
+        ...form,
+        paypalPriceCents: parseAdminUsdPrice(paypalPriceUsd),
+        price: Number(membershipPlanForm.price || 0),
+        durationDays: Number(membershipPlanForm.durationDays || 1),
+        dailyDownloadLimit: Number(membershipPlanForm.dailyDownloadLimit || 100),
+        maxPurchasesPerUser: Number(membershipPlanForm.maxPurchasesPerUser || 0)
+      };
+      await api(editingMembershipPlanId ? `/api/admin/membership-plans/${editingMembershipPlanId}` : "/api/admin/membership-plans", {
+        method: editingMembershipPlanId ? "PUT" : "POST",
+        body: JSON.stringify(payload)
+      });
+      setMembershipPlanForm(emptyMembershipPlan);
+      setEditingMembershipPlanId("");
+      await loadData();
+    } catch (error) {
+      setPackageError(error.message);
+    }
   }
 
   async function deleteMembershipPlan(id) {
@@ -1157,7 +1182,7 @@ export default function Admin({ user, language = "vi" }) {
     }
   }
 
-  const revenueChart = overview?.revenueChart || [];
+  const revenueChart = (revenueCurrency === "USD" ? overview?.usdRevenueChart : overview?.revenueChart) || [];
   const chartRevenue = revenueChart.reduce((sum, item) => sum + Number(item.revenue || 0), 0);
   const maxRevenue = Math.max(...revenueChart.map((item) => Number(item.revenue || 0)), 1);
   const chartLabels = {
@@ -1210,6 +1235,20 @@ export default function Admin({ user, language = "vi" }) {
       detail: l(`${formatNumber(adminKpis.activePro, locale)} tài khoản Pro`, `${formatNumber(adminKpis.activePro, locale)} active Pro accounts`),
       icon: Zap,
       tone: "magenta",
+    },
+    {
+      label: "PayPal · USD",
+      value: formatMoney(Number(adminKpis.revenueByCurrency?.USD?.grossMinor || 0) / 100, "USD"),
+      detail: `${l("Credit", "Credit")}: ${formatMoney(Number(adminKpis.revenueByCurrency?.USD?.creditRevenueMinor || 0) / 100, "USD")} · Pro: ${formatMoney(Number(adminKpis.revenueByCurrency?.USD?.proRevenueMinor || 0) / 100, "USD")}`,
+      icon: CircleDollarSign,
+      tone: "cyan",
+    },
+    {
+      label: l("PayPal: thực nhận", "PayPal: net receipts"),
+      value: formatMoney(Number(adminKpis.revenueByCurrency?.USD?.netMinor || 0) / 100, "USD"),
+      detail: `${l("Phí", "Fees")}: ${formatMoney(Number(adminKpis.revenueByCurrency?.USD?.feesMinor || 0) / 100, "USD")} · ${l("Hoàn tiền", "Refunds")}: ${formatMoney(Number(adminKpis.revenueByCurrency?.USD?.refundedMinor || 0) / 100, "USD")}`,
+      icon: Wallet,
+      tone: "green",
     },
     {
       label: l("Tải model & scene", "Model & scene downloads"),
@@ -1951,6 +1990,10 @@ export default function Admin({ user, language = "vi" }) {
                 <p>{chartLabels[revenuePeriod]}, {l("tính theo giao dịch đã thanh toán.", "based on paid transactions.")}</p>
               </div>
               <div className="chartControls">
+                <select aria-label={l("Tiền tệ doanh thu", "Revenue currency")} value={revenueCurrency} onChange={(event) => setRevenueCurrency(event.target.value)}>
+                  <option value="VND">VND · SePay</option>
+                  <option value="USD">USD · PayPal</option>
+                </select>
                 {[
                   ["day", l("Ngày", "Day")],
                   ["month", l("Tháng", "Month")],
@@ -1968,20 +2011,20 @@ export default function Admin({ user, language = "vi" }) {
               </div>
               <div className="chartTotal">
                 <span>{l("Tổng kỳ", "Period total")}</span>
-                <strong>{formatMoney(chartRevenue)}</strong>
+                <strong>{formatMoney(chartRevenue, revenueCurrency)}</strong>
               </div>
             </div>
             <div className={`revenueChart ${revenuePeriod}`} aria-label={l("Biểu đồ doanh thu", "Revenue chart")}>
               {revenueChart.map((item) => {
                 const height = Math.max(6, Math.round((Number(item.revenue || 0) / maxRevenue) * 100));
-                const tooltip = `${item.label} · ${formatMoney(item.revenue)} · ${formatNumber(item.count, locale)} ${l("giao dịch", "transactions")}`;
+                const tooltip = `${item.label} · ${formatMoney(item.revenue, revenueCurrency)} · ${formatNumber(item.count, locale)} ${l("giao dịch", "transactions")}`;
                 return (
                   <div className="chartBarItem" key={item.date}>
                     <div className="chartBarTrack" aria-label={tooltip}>
                       <div className="chartBarFill" style={{ height: `${height}%` }} />
                     </div>
                     <div className="chartTooltip" role="tooltip">
-                      <strong>{formatMoney(item.revenue)}</strong>
+                      <strong>{formatMoney(item.revenue, revenueCurrency)}</strong>
                       <small>{formatNumber(item.count, locale)} {l("giao dịch", "transactions")}</small>
                     </div>
                     <span>{item.label}</span>
@@ -2019,7 +2062,7 @@ export default function Admin({ user, language = "vi" }) {
                       <strong>{item.packageName || item.type || l("Nạp credit", "Credit top-up")}</strong>
                       <span>{item.userEmail || item.userName || l("Không rõ user", "Unknown user")}</span>
                     </div>
-                    <small>{formatMoney(item.amount)} · {item.status}</small>
+                    <small>{formatMoney(item.amount, item.currency)} · {item.status}</small>
                   </div>
                 ))}
                 {!recentTopups.length && <p className="muted">{l("Chưa có giao dịch.", "No transactions yet.")}</p>}
@@ -2085,6 +2128,11 @@ export default function Admin({ user, language = "vi" }) {
                   <input type="number" value={packageForm.price} onChange={(e) => setPackageForm({ ...packageForm, price: e.target.value })} placeholder={t.price} />
                   <input type="number" value={packageForm.credit} onChange={(e) => setPackageForm({ ...packageForm, credit: e.target.value })} placeholder="Credit" />
                 </div>
+                <label>
+                  {l("Giá PayPal (USD)", "PayPal price (USD)")}
+                  <input type="number" min="0.01" max="1000000" step="0.01" value={packageForm.paypalPriceUsd} onChange={(e) => setPackageForm({ ...packageForm, paypalPriceUsd: e.target.value })} placeholder={l("Chưa cấu hình", "Not configured")} />
+                </label>
+                {packageError && <p role="alert" className="error">{packageError}</p>}
                 <div className="inputRow">
                   <input type="number" value={packageForm.salePercent} onChange={(e) => setPackageForm({ ...packageForm, salePercent: e.target.value })} placeholder={l("Sale %, ví dụ 20", "Sale %, e.g. 20")} />
                   <input
@@ -2174,6 +2222,7 @@ export default function Admin({ user, language = "vi" }) {
                       </span>
                     )}
                     <span>{pkg.credit} CREDIT</span>
+                    <span>PayPal: {formatPaymentMoney(pkg.paypalPriceCents == null ? null : pkg.paypalPriceCents / 100, "USD", locale)}</span>
                     <span className="muted">
                       {Number(pkg.maxTopupsPerUser || 0) > 0
                         ? l(`Giới hạn ${pkg.maxTopupsPerUser} lần/tài khoản`, `Limit ${pkg.maxTopupsPerUser} times/account`)
@@ -2218,6 +2267,11 @@ export default function Admin({ user, language = "vi" }) {
                   <input value={membershipPlanForm.name} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, name: e.target.value })} placeholder={l("Tên gói Pro", "Pro plan name")} />
                   <input type="number" value={membershipPlanForm.price} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, price: e.target.value })} placeholder={t.price} />
                 </div>
+                <label>
+                  {l("Giá PayPal (USD)", "PayPal price (USD)")}
+                  <input type="number" min="0" max="1000000" step="0.01" value={membershipPlanForm.paypalPriceUsd} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, paypalPriceUsd: e.target.value })} placeholder={l("Chưa cấu hình", "Not configured")} />
+                </label>
+                {packageError && <p role="alert" className="error">{packageError}</p>}
                 <div className="inputRow">
                   <input type="number" min="1" value={membershipPlanForm.durationDays} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, durationDays: e.target.value })} placeholder={l("Số ngày hiệu lực", "Duration days")} />
                   <input type="number" min="1" value={membershipPlanForm.dailyDownloadLimit} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, dailyDownloadLimit: e.target.value })} placeholder={l("Quota tải/ngày", "Downloads/day")} />
@@ -2235,7 +2289,7 @@ export default function Admin({ user, language = "vi" }) {
                   style={{ height: "auto", minHeight: 110 }}
                   placeholder={l("Mỗi dòng là một quyền lợi Pro", "Each line is one Pro benefit")}
                 />
-                <button className="smallButton" disabled={!membershipPlanForm.name || !membershipPlanForm.price || !membershipPlanForm.durationDays} style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}>
+                <button className="smallButton" disabled={!membershipPlanForm.name || membershipPlanForm.price === "" || !membershipPlanForm.durationDays} style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}>
                   {editingMembershipPlanId ? <Save size={16} /> : <Plus size={16} />}
                   {editingMembershipPlanId ? l("Lưu gói Pro", "Save Pro plan") : l("Thêm gói Pro", "Add Pro plan")}
                 </button>
@@ -2290,6 +2344,7 @@ export default function Admin({ user, language = "vi" }) {
                     <div className="priceBlock compact" style={{ alignItems: "flex-start" }}>
                       <strong>{Number(plan.price || 0).toLocaleString(locale)}đ</strong>
                     </div>
+                    <span>PayPal: {formatPaymentMoney(Number(plan.price) === 0 ? 0 : plan.paypalPriceCents == null ? null : plan.paypalPriceCents / 100, "USD", locale)}</span>
                     <span>{Number(plan.durationDays || 0).toLocaleString(locale)} {l("ngày, hết hạn cuối ngày", "days, expires end of day")}</span>
                     <span>{Number(plan.dailyDownloadLimit || 100).toLocaleString(locale)} {l("lượt tải/ngày", "downloads/day")}</span>
                     <span className="muted">
@@ -3294,10 +3349,15 @@ export default function Admin({ user, language = "vi" }) {
                       : l("Đã hủy", "Rejected")}
                 </span>
                 <div className="topupAuditAmount">
-                  <strong>{formatMoney(item.amount)}</strong>
+                  <strong>{formatMoney(item.amount, item.currency)}</strong>
                   {Number(item.discountAmount || 0) > 0 && (
-                    <span>{l("Giảm", "Discount")}: {formatMoney(item.discountAmount)}</span>
+                    <span>{l("Giảm", "Discount")}: {formatMoney(item.discountAmount, item.currency)}</span>
                   )}
+                  {item.gatewayProvider === "paypal" && <small className="topupAuditPaypalDetails">
+                    {item.paymentReconciliationStatus} · {item.paypalCaptureId || "-"}
+                    {item.paypalRefundMinor > 0 && ` · ${l("Hoàn tiền", "Refund")}: ${formatMoney(item.paypalRefundMinor / 100, "USD")}`}
+                    {item.paypalDisputeStatus && ` · ${l("Tranh chấp", "Dispute")}: ${item.paypalDisputeStatus}`}
+                  </small>}
                 </div>
                 {item.kind === "pro" ? (
                   <strong>{item.isQuotaAddon ? `+${Number(item.quotaBoostAmount || 0).toLocaleString(locale)} ${l("lượt", "downloads")}` : `${Number(item.durationDays || 0).toLocaleString(locale)} ${l("ngày", "days")}`}</strong>
@@ -3317,7 +3377,7 @@ export default function Admin({ user, language = "vi" }) {
                 {item.status === "pending" && (
                   <div className="adminUserActions">
                     <button type="button" className="smallButton" disabled={reviewingTransactionId === (item.id || item.rawId)} onClick={() => reviewTransaction(item, "approve")}>
-                      <Check size={14} /> {l("Duyệt", "Approve")}
+                      <Check size={14} /> {item.gatewayProvider === "paypal" ? l("Đối soát", "Reconcile") : l("Duyệt", "Approve")}
                     </button>
                     <button type="button" className="smallButton dangerButton" disabled={reviewingTransactionId === (item.id || item.rawId)} onClick={() => reviewTransaction(item, "cancel")}>
                       <X size={14} /> {l("Hủy", "Cancel")}

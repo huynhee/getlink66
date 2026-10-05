@@ -69,7 +69,8 @@ function formatDate(value, language) {
   return date.toLocaleString(language === "vi" ? "vi-VN" : "en-US");
 }
 
-function formatMoney(value) {
+function formatMoney(value, currency = "VND") {
+  if (currency === "USD") return `US$${Number(value || 0).toFixed(2)}`;
   return `${Number(value || 0).toLocaleString("vi-VN")}đ`;
 }
 
@@ -115,7 +116,7 @@ function eventAmount(event, language = "vi") {
       ? `${Math.abs(amount)} ${language === "vi" ? "lượt" : "downloads"}`
       : (language === "vi" ? "Miễn phí" : "No quota charge");
   }
-  return amount < 0 ? formatMoney(Math.abs(amount)) : formatMoney(amount);
+  return formatMoney(Math.abs(amount), event.metadata?.currency);
 }
 
 function compactRemainingLabel(expiresAt, language) {
@@ -164,7 +165,7 @@ function metadataLines(event, language) {
       ].filter(Boolean);
     }
     return [
-      m.amountMoney ? `${paymentLabel}: ${formatMoney(m.amountMoney)}` : "",
+      m.amountMoney ? `${paymentLabel}: ${formatMoney(m.amountMoney, m.currency)}` : "",
       m.creditAmount ? `${language === "vi" ? "Credit theo đơn" : "Order credit"}: +${Number(m.creditAmount).toLocaleString(locale)}` : "",
       m.voucherCode ? `Voucher: ${m.voucherCode}` : "",
       m.paymentCode ? `${language === "vi" ? "Mã" : "Code"}: ${m.paymentCode}` : "",
@@ -173,7 +174,7 @@ function metadataLines(event, language) {
   if (event.type === "pro") {
     return [
       m.planName || m.planCode ? `${language === "vi" ? "Gói" : "Plan"}: ${m.planName || m.planCode}` : "",
-      m.amountMoney ? `${paymentLabel}: ${formatMoney(m.amountMoney)}` : "",
+      m.amountMoney ? `${paymentLabel}: ${formatMoney(m.amountMoney, m.currency)}` : "",
       m.activatedUntil ? `${language === "vi" ? "Hạn Pro" : "Pro expiry"}: ${formatDate(m.activatedUntil, language)}` : "",
       m.quotaBoostAmount ? `${language === "vi" ? "Thêm lượt" : "Extra downloads"}: ${m.quotaBoostAmount}` : "",
       m.voucherCode ? `Voucher: ${m.voucherCode}` : "",
@@ -219,7 +220,7 @@ function metadataLines(event, language) {
     return [
       m.voucherCode ? `${language === "vi" ? "Mã" : "Code"}: ${m.voucherCode}` : "",
       m.targetKind ? `${language === "vi" ? "Loại" : "Type"}: ${m.targetKind === "pro" ? "Pro" : "Credit"}` : "",
-      m.discountAmount ? `${language === "vi" ? "Giảm" : "Discount"}: ${formatMoney(m.discountAmount)}` : "",
+      m.discountAmount ? `${language === "vi" ? "Giảm" : "Discount"}: ${formatMoney(m.discountAmount, m.currency)}` : "",
       m.creditBonus ? `${language === "vi" ? "Tặng thêm" : "Bonus"}: +${m.creditBonus} credit` : "",
     ].filter(Boolean);
   }
@@ -413,6 +414,11 @@ export default function History({ language = "vi" }) {
                       ? (language === "vi" ? "Đang chuẩn bị..." : "Preparing...")
                       : (language === "vi" ? "Tải lại" : "Redownload")}
                   </button>
+                )}
+                {metadata.gatewayProvider === "paypal" && event.status === "pending" && ["credit", "pro"].includes(event.type) && (
+                  <a className="smallButton" href={`/topup?mode=${event.type === "pro" ? "pro" : "credit"}&payment=paypal_return&orderKind=${event.type === "pro" ? "membership" : "topup"}&orderId=${encodeURIComponent(metadata.orderId || metadata.topupId)}`}>
+                    {language === "vi" ? "Kiểm tra thanh toán PayPal" : "Check PayPal payment"}
+                  </a>
                 )}
               </div>
               <div className="timelineEventSide">

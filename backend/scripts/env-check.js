@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { productionReadinessIssues } from "../src/config/productionReadiness.js";
+import { paypalConfigurationIssues } from "../src/config/paypalConfig.js";
 
 const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.env");
 const raw = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
@@ -10,6 +11,11 @@ const production = process.env.NODE_ENV === "production";
 const errors = [];
 const warnings = [];
 const ok = [];
+errors.push(...paypalConfigurationIssues(process.env));
+if (process.env.PAYPAL_ENABLED === "true") {
+  ok.push("PayPal configured (server-side credentials)");
+  if (process.env.PAYPAL_ENV !== "live") warnings.push("PayPal uses Sandbox; no real payments are accepted");
+}
 
 function has(name) {
   return Boolean(String(process.env[name] || "").trim());

@@ -10,6 +10,9 @@ import { approvedVoucherUseCount } from "./voucherCheckoutService.js";
 import { synchronizeMarketplaceQuotaGrant } from "./marketplaceQuotaGrantService.js";
 import { notifyMembershipApproved } from "./telegramNotifier.js";
 import { publishAccountInvalidation } from "./accountEventBus.js";
+import { assertPaymentPurchaseLimit, assertReservedVoucherUserLimit, consumePaymentReservation, heldPaymentReservation, lockPaymentBenefits, preparePaymentBenefitGuard, serializeMemoryPayments, restorePaymentReservation } from "./paymentBenefitService.js";
+import { paymentReceiptMoney } from "./paymentMoney.js";
+import { assertPaypalSettlement } from "./paypalSettlementGuard.js";
 
 export const DEFAULT_MEMBERSHIP_PLANS = [
   {
@@ -161,6 +164,9 @@ async function releaseVoucherCounter(code, session = null) {
 async function claimMembershipVoucher(order, session = null) {
   const code = String(order?.voucherCode || "").trim().toUpperCase();
   if (!code) return false;
+  if (await heldPaymentReservation("membership", order, session)) return false;
+  const candidate = await execMaybeSession(Voucher.findOne({ code }), session);
+  if (candidate) await assertReservedVoucherUserLimit(candidate, order.userId, session);
 
   const voucher = await Voucher.findOneAndUpdate(
     {
@@ -176,7 +182,6 @@ async function claimMembershipVoucher(order, session = null) {
     error.status = 409;
     throw error;
   }
-
   const perUserLimit = Number(voucher.perUserLimit ?? 1);
   if (perUserLimit > 0) {
     const approvedByUser = await approvedVoucherUseCount(order.userId, code);
@@ -209,6 +214,7 @@ async function claimMembershipPayment(order, approvalFields, session = null) {
     provider: String(approvalFields?.gatewayProvider || order.gatewayProvider || ""),
     membershipOrderId: order._id,
     amount: Number(order.amount || 0),
+    ...paymentReceiptMoney(order),
   };
   try {
     if (!session) {
@@ -237,11 +243,14 @@ async function claimMembershipPayment(order, approvalFields, session = null) {
 }
 
 async function approveMembershipOrderWithSession(order, approvalFields = {}, session = null) {
+  await lockPaymentBenefits(order.userId?._id || order.userId, session);
   const current = await execMaybeSession(
     MembershipOrder.findOne(approvableMembershipOrderQuery(order)),
     session,
   );
   if (!current) return null;
+  await assertPaypalSettlement("membership", current, approvalFields, session);
+  await assertPaymentPurchaseLimit("membership", current, session);
 
   const user = await execMaybeSession(User.findById(current.userId), session);
   if (!user) {
@@ -255,6 +264,7 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
   let voucherClaimed = false;
   let approvedOrder = null;
   let paymentReceipt = null;
+  let reservationConsumed = false;
   try {
     voucherClaimed = await claimMembershipVoucher(current, session);
     approvedOrder = await MembershipOrder.findOneAndUpdate(
@@ -286,6 +296,7 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
 
     paymentReceipt = await claimMembershipPayment(approvedOrder, approvalFields, session);
 
+    reservationConsumed = Boolean(await consumePaymentReservation("membership", approvedOrder, session));
     const updatedUser = shouldBoostToday
       ? await execMaybeSession(User.findById(current.userId), session)
       : await User.findByIdAndUpdate(
@@ -308,6 +319,7 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
     return { order: approvedOrder, user: updatedUser };
   } catch (error) {
     if (!session) {
+      if (reservationConsumed) await restorePaymentReservation("membership", approvedOrder);
       if (paymentReceipt?._id) {
         await PaymentReceipt.findByIdAndDelete(paymentReceipt._id).catch(() => {});
       }
@@ -353,7 +365,7 @@ function notifyMembershipApproval(result, approvalFields = {}) {
 
 export async function approvePendingMembershipOrder(order, approvalFields = {}) {
   if (isMemoryDb()) {
-    const result = await approveMembershipOrderWithSession(order, approvalFields);
+    const result = await serializeMemoryPayments(() => approveMembershipOrderWithSession(order, approvalFields));
     if (result?.order?.isQuotaAddon) {
       const synced = await synchronizeMarketplaceQuotaGrant(result.order);
       result.order = synced.order;
@@ -361,6 +373,7 @@ export async function approvePendingMembershipOrder(order, approvalFields = {}) 
     notifyMembershipApproval(result, approvalFields);
     return result;
   }
+  await preparePaymentBenefitGuard(order.userId?._id || order.userId);
   const session = await mongoose.startSession();
   let result = null;
   try {

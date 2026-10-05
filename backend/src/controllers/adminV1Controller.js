@@ -12,6 +12,9 @@ import SystemLog from "../models/SystemLog.js";
 import AuditLog from "../models/AuditLog.js";
 import MarketplaceReport from "../models/MarketplaceReport.js";
 import { approvePendingTopup } from "../utils/topupApprovalService.js";
+import { adminPaypalPrice } from "../utils/paymentMoney.js";
+import { paymentSummary, paymentRecordFields } from "../utils/paymentReporting.js";
+import { cancelPaypalPayment, paypalPaymentId, processPaypalPayment } from "../utils/paypalPaymentService.js";
 import { approvePendingMembershipOrder, isProActive, nextVietnamReset, normalizeProUntil, vietnamDayKey } from "../utils/membershipService.js";
 import { buildUserTimeline } from "../utils/timelineService.js";
 import { isSafeId, limitedString, rejectUnknownKeys } from "../utils/validators.js";
@@ -116,6 +119,7 @@ function topupTransaction(item) {
     user: transactionUser(item.userId),
     title: item.packageId?.name || (item.type === "manual" ? "Admin credit adjustment" : "Credit topup"),
     amount: Number(item.amount || 0),
+    ...paymentRecordFields(item),
     originalAmount: Number(item.originalAmount || item.amount || 0),
     discountAmount: Number(item.discountAmount || 0),
     credit: Number(item.credit || 0),
@@ -143,6 +147,7 @@ function membershipTransaction(item) {
     user: transactionUser(item.userId),
     title: item.isQuotaAddon ? `Daily add-on - ${item.planName || item.planCode}` : item.planName || item.planCode || "Pro",
     amount: Number(item.amount || 0),
+    ...paymentRecordFields(item),
     originalAmount: Number(item.originalAmount || item.amount || 0),
     discountAmount: Number(item.discountAmount || 0),
     credit: 0,
@@ -206,8 +211,8 @@ export async function adminDashboard(req, res, next) {
       recentSystemLogs,
       recentAuditLogs,
     ] = await Promise.all([
-      Topup.find(approvedTopupQuery).select("amount credit paidAt createdAt").lean(),
-      MembershipOrder.find(approvedProQuery).select("amount paidAt createdAt").lean(),
+      Topup.find(approvedTopupQuery).select("amount amountMinor currency gatewayProvider paypalFeeMinor paypalRefundMinor credit paidAt createdAt").lean(),
+      MembershipOrder.find(approvedProQuery).select("amount amountMinor currency gatewayProvider paypalFeeMinor paypalRefundMinor paidAt createdAt").lean(),
       Topup.countDocuments({ status: "pending" }),
       MembershipOrder.countDocuments({ status: "pending" }),
       User.countDocuments(rangeQuery("createdAt", range)),
@@ -231,13 +236,15 @@ export async function adminDashboard(req, res, next) {
       AuditLog.find().sort({ createdAt: -1 }).limit(8).lean(),
     ]);
     await hydrateAtlasUserField(recentAuditLogs, "actor", "name email");
-    const creditRevenue = creditRevenueRows.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const proRevenue = proRevenueRows.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const revenueByCurrency = paymentSummary(creditRevenueRows, proRevenueRows);
+    const creditRevenue = revenueByCurrency.VND.creditRevenueMinor;
+    const proRevenue = revenueByCurrency.VND.proRevenueMinor;
     const creditIssued = creditRevenueRows.reduce((sum, item) => sum + Number(item.credit || 0), 0);
     res.json({
       dashboard: {
         range,
         kpis: {
+          revenueByCurrency,
           creditRevenue,
           proRevenue,
           totalRevenue: creditRevenue + proRevenue,
@@ -470,6 +477,9 @@ export async function adminApproveTopup(req, res, next) {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid topup id" });
     const topup = await Topup.findOne({ _id: req.params.id, status: "pending" });
     if (!topup) return res.status(404).json({ message: "Pending topup not found" });
+    if (topup.gatewayProvider === "paypal") return res.json({
+      topup: await processPaypalPayment(paypalPaymentId("topup", topup._id)),
+    });
     const result = await approvePendingTopup(topup, { approvedByAdminId: req.user._id });
     if (!result) return res.status(409).json({ message: "Topup is no longer pending" });
     res.json({ topup: result.topup, user: result.user });
@@ -481,6 +491,8 @@ export async function adminApproveTopup(req, res, next) {
 export async function adminCancelTopup(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid topup id" });
+    const owned = await Topup.findById(req.params.id);
+    if (owned?.gatewayProvider === "paypal") return res.json({ topup: await cancelPaypalPayment("topup", owned) });
     const topup = await Topup.findOneAndUpdate(
       { _id: req.params.id, status: "pending" },
       { $set: { status: "rejected", canceledAt: new Date(), rejectionReason: limitedString(req.body?.reason || "admin_cancel", 120) } },
@@ -498,6 +510,9 @@ export async function adminApproveMembershipOrder(req, res, next) {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid membership order id" });
     const order = await MembershipOrder.findOne({ _id: req.params.id, status: "pending" });
     if (!order) return res.status(404).json({ message: "Pending membership order not found" });
+    if (order.gatewayProvider === "paypal") return res.json({
+      order: await processPaypalPayment(paypalPaymentId("membership", order._id)),
+    });
     const result = await approvePendingMembershipOrder(order, { approvedByAdminId: req.user._id });
     if (!result) return res.status(409).json({ message: "Membership order is no longer pending" });
     res.json({ order: result.order, user: result.user });
@@ -509,6 +524,8 @@ export async function adminApproveMembershipOrder(req, res, next) {
 export async function adminCancelMembershipOrder(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid membership order id" });
+    const owned = await MembershipOrder.findById(req.params.id);
+    if (owned?.gatewayProvider === "paypal") return res.json({ order: await cancelPaypalPayment("membership", owned) });
     const order = await MembershipOrder.findOneAndUpdate(
       { _id: req.params.id, status: "pending" },
       { $set: { status: "rejected", canceledAt: new Date(), rejectionReason: limitedString(req.body?.reason || "admin_cancel", 120) } },
@@ -535,6 +552,7 @@ function normalizePlanPayload(body = {}) {
     code,
     name,
     price,
+    ...(Object.hasOwn(body, "paypalPriceCents") ? { paypalPriceCents: adminPaypalPrice(body.paypalPriceCents, { allowZero: true }) } : {}),
     durationDays,
     expiresEndOfDay: true,
     tier: "member",
@@ -558,7 +576,7 @@ export async function adminListMembershipPlans(_req, res, next) {
 
 export async function adminCreateMembershipPlan(req, res, next) {
   try {
-    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "durationDays", "dailyDownloadLimit", "maxPurchasesPerUser", "badge", "features", "isActive", "sortOrder"]);
+    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "paypalPriceCents", "durationDays", "dailyDownloadLimit", "maxPurchasesPerUser", "badge", "features", "isActive", "sortOrder"]);
     if (unknownKey) return res.status(400).json({ message: "Invalid membership plan request" });
     const payload = normalizePlanPayload(req.body);
     if (!payload.code || !payload.name) return res.status(400).json({ message: "Plan code and name are required" });
@@ -573,7 +591,7 @@ export async function adminCreateMembershipPlan(req, res, next) {
 export async function adminUpdateMembershipPlan(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid membership plan id" });
-    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "durationDays", "dailyDownloadLimit", "maxPurchasesPerUser", "badge", "features", "isActive", "sortOrder"]);
+    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "paypalPriceCents", "durationDays", "dailyDownloadLimit", "maxPurchasesPerUser", "badge", "features", "isActive", "sortOrder"]);
     if (unknownKey) return res.status(400).json({ message: "Invalid membership plan request" });
     const payload = normalizePlanPayload(req.body);
     delete payload.code;

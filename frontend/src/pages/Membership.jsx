@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Check, CreditCard, Sparkles } from "lucide-react";
 import { api } from "../api.js";
 import { membershipBenefitLabels, membershipDurationLabel } from "../utils/membershipPresentation.js";
+import { checkoutCurrency, formatPaymentMoney, packagePrice, submitPaymentCheckout } from "../utils/paymentPresentation.js";
 
 const PENDING_MEMBERSHIP_ORDER_KEY = "pendingMembershipOrderId";
 
@@ -10,31 +11,10 @@ function createIdempotencyKey() {
   return `membership-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
 }
 
-function submitPaymentCheckout(payment) {
-  if (!payment?.checkoutUrl || !payment?.fields) return false;
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = payment.checkoutUrl;
-  form.style.display = "none";
-  Object.entries(payment.fields).forEach(([name, value]) => {
-    if (value === undefined || value === null) return;
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = name;
-    input.value = String(value);
-    form.appendChild(input);
-  });
-  document.body.appendChild(form);
-  form.submit();
-  return true;
-}
-
-function money(value, locale) {
-  return `${Number(value || 0).toLocaleString(locale)}đ`;
-}
-
 export default function Membership({ user, onUserChange, language = "vi" }) {
   const locale = language === "vi" ? "vi-VN" : "en-US";
+  const [paypalEnabled, setPaypalEnabled] = useState(false);
+  const money = (plan) => formatPaymentMoney(packagePrice(plan, language, { pro: true }), checkoutCurrency(language), locale);
   const [plans, setPlans] = useState([]);
   const [membership, setMembership] = useState(null);
   const [selectedPlanId, setSelectedPlanId] = useState("");
@@ -45,6 +25,7 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
 
   const loadPlans = useCallback(async () => {
     const data = await api("/api/membership/plans");
+    setPaypalEnabled(data.payments?.paypal?.enabled === true);
     setPlans(data.plans || []);
     setSelectedPlanId((current) => current || data.plans?.[0]?._id || "");
   }, []);
@@ -111,7 +92,7 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
       const data = await api("/api/membership/checkout", {
         method: "POST",
         headers: { "Idempotency-Key": requestKeyRef.current },
-        body: JSON.stringify({ planId: selectedPlanId }),
+        body: JSON.stringify({ planId: selectedPlanId, paymentProvider: language === "en" ? "paypal" : "sepay" }),
       });
       if (data.status === "approved") {
         window.sessionStorage.removeItem(PENDING_MEMBERSHIP_ORDER_KEY);
@@ -142,6 +123,8 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
   }
 
   const selectedPlan = plans.find((plan) => String(plan._id) === String(selectedPlanId));
+  const selectedPrice = selectedPlan ? packagePrice(selectedPlan, language, { pro: true }) : null;
+  const canBuy = selectedPrice !== null && (language !== "en" || selectedPrice === 0 || paypalEnabled);
 
   return (
     <div className="stack">
@@ -173,7 +156,7 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
           >
             {plan.badge && <span className="badge success">{plan.badge}</span>}
             <h3>{plan.name}</h3>
-            <strong>{money(plan.price, locale)}</strong>
+            <strong>{money(plan)}</strong>
             <span>{membershipDurationLabel(plan, language)}</span>
             {Number(plan.maxPurchasesPerUser || 0) > 0 && (
               <span className="muted">
@@ -195,13 +178,14 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
         <div>
           <span>{language === "vi" ? "Gói Pro đang chọn" : "Selected Pro plan"}</span>
           <strong>{selectedPlan?.name || "-"}</strong>
-          <p>{selectedPlan ? money(selectedPlan.price, locale) : ""}</p>
+          <p>{selectedPlan ? money(selectedPlan) : ""}</p>
         </div>
-        <button className="primaryButton" disabled={loading || !selectedPlan} onClick={checkout}>
+        <button className="primaryButton" disabled={loading || !canBuy} onClick={checkout}>
           <CreditCard size={18} />
-          {language === "vi" ? "Mua Pro" : "Buy Pro"}
+          {language === "vi" ? "Mua Pro" : selectedPrice > 0 ? "Pay with PayPal" : "Buy Pro"}
         </button>
       </section>
+      {language === "en" && selectedPlan && !canBuy && <p className="muted">{selectedPrice === null ? "USD price is not available for this plan yet." : "PayPal checkout is not available yet."}</p>}
       {message && <p className="success">{message}</p>}
       {error && <p className="error">{error}</p>}
     </div>

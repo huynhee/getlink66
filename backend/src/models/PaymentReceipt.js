@@ -21,6 +21,8 @@ const paymentReceiptSchema = new mongoose.Schema(
       default: null,
     },
     amount: { type: Number, required: true },
+    currency: { type: String, enum: ["VND", "USD"], default: "VND" },
+    amountMinor: { type: Number, min: 0 },
   },
   { timestamps: true },
 );

@@ -111,7 +111,7 @@ function applyUpdate(document, update = {}, query = {}) {
       document[key] = value;
     }
   });
-  if (update.$setOnInsert && !document._id) {
+  if (update.$setOnInsert && !document.createdAt) {
     Object.entries(update.$setOnInsert).forEach(([key, value]) => setByPath(document, key, value));
   }
   if (update.$set) {
@@ -272,7 +272,7 @@ export function createMemoryModel(name) {
   return {
     async create(data) {
       const now = new Date().toISOString();
-      const document = { ...clone(data), _id: id(), createdAt: now, updatedAt: now };
+      const document = { ...clone(data), _id: data._id || id(), createdAt: now, updatedAt: now };
       collection.push(document);
       return clone(document);
     },
@@ -297,7 +297,7 @@ export function createMemoryModel(name) {
         document = {};
         applyUpdate(document, update, query);
         const now = new Date().toISOString();
-        document._id = id();
+        document._id ||= id();
         document.createdAt = now;
         document.updatedAt = now;
         collection.push(document);

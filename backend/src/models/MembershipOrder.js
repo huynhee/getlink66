@@ -1,8 +1,10 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
+import { paymentMoneyFields } from "./paymentFields.js";
 
 const membershipOrderSchema = new mongoose.Schema(
   {
+    ...paymentMoneyFields,
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     planId: { type: mongoose.Schema.Types.ObjectId, ref: "MembershipPlan", required: true, index: true },
     planCode: { type: String, default: "" },

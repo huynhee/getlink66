@@ -7,6 +7,7 @@ import PluginHero from "../components/PluginHero.jsx";
 import { ModelCard } from "./Models.jsx";
 import { translations } from "../i18n.js";
 import { membershipBenefitLabels } from "../utils/membershipPresentation.js";
+import { formatPaymentMoney, packagePrice, checkoutCurrency } from "../utils/paymentPresentation.js";
 
 const HOME_TEXT_DEFAULTS = {
   vi: {
@@ -123,6 +124,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const [demoLink, setDemoLink] = useState("");
   const [demoError, setDemoError] = useState("");
   const [packages, setPackages] = useState([]);
+  const [paypalEnabled, setPaypalEnabled] = useState(false);
   const [membershipPlans, setMembershipPlans] = useState([]);
   const [featuredModels, setFeaturedModels] = useState([]);
   const [featuredModelsLoading, setFeaturedModelsLoading] = useState(true);
@@ -232,7 +234,10 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
       });
     api("/api/topup/packages")
       .then((data) => {
-        if (!cancelled) setPackages(data.packages || []);
+        if (!cancelled) {
+          setPackages(data.packages || []);
+          setPaypalEnabled(Boolean(data.payments?.paypal?.enabled));
+        }
       })
       .catch(() => {});
     api("/api/membership/plans")
@@ -299,11 +304,11 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   );
 
   function finalPrice(pkg) {
-    if (Number(pkg.salePrice || 0) > 0) return Number(pkg.salePrice || 0);
-    return Math.round(Number(pkg.price || 0) * (100 - Number(pkg.salePercent || 0)) / 100);
+    return packagePrice(pkg, language);
   }
 
   function hasSale(pkg) {
+    if (language === "en") return false;
     return (
       Number(pkg.salePercent || 0) > 0 ||
       (Number(pkg.salePrice || 0) > 0 &&
@@ -822,7 +827,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                         </div>
                       )}
                       <div className="price hl-green">
-                        {finalPrice(pkg).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span style={{ fontSize: 16 }}>đ</span>
+                        {formatPaymentMoney(finalPrice(pkg), checkoutCurrency(language), language === "vi" ? "vi-VN" : "en-US")}
                       </div>
                     </div>
                     {hasSale(pkg) && (
@@ -848,9 +853,13 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                         <li key={featureIndex}>{feature}</li>
                       ))}
                     </ul>
-                    <a className={pkg.badge ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("credit", pkg._id))}>
-                      {user ? t.topupNow : t.buyNow}
-                    </a>
+                    {language === "en" && (!paypalEnabled || finalPrice(pkg) == null) ? (
+                      <button className="googleButton" disabled>Not available</button>
+                    ) : (
+                      <a className={pkg.badge ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("credit", pkg._id))}>
+                        {language === "en" ? "Pay with PayPal" : user ? t.topupNow : t.buyNow}
+                      </a>
+                    )}
                   </div>
                 ))}
               </div>
@@ -869,7 +878,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                     <h3>{plan.name}</h3>
                     <div className="priceBlock">
                       <div className="price hl-green">
-                        {Number(plan.price || 0).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span style={{ fontSize: 16 }}>đ</span>
+                        {formatPaymentMoney(packagePrice(plan, language, { pro: true }), checkoutCurrency(language), language === "vi" ? "vi-VN" : "en-US")}
                       </div>
                     </div>
                     <div className="credits">
@@ -893,9 +902,13 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                         <li key={featureIndex}>{feature}</li>
                       ))}
                     </ul>
-                    <a className={plan.code === "GOLD" ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("pro", plan._id))}>
-                      {user ? t.topupNow : t.buyNow}
-                    </a>
+                    {language === "en" && Number(plan.price) !== 0 && (!paypalEnabled || packagePrice(plan, language, { pro: true }) == null) ? (
+                      <button className="googleButton" disabled>Not available</button>
+                    ) : (
+                      <a className={plan.code === "GOLD" ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("pro", plan._id))}>
+                        {language === "en" && Number(plan.price) !== 0 ? "Pay with PayPal" : user ? t.topupNow : t.buyNow}
+                      </a>
+                    )}
                   </div>
                 ))}
                 {!membershipPlans.length && (

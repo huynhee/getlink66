@@ -6,6 +6,7 @@ const membershipPlanSchema = new mongoose.Schema(
     code: { type: String, required: true, unique: true, trim: true, uppercase: true },
     name: { type: String, required: true, trim: true },
     price: { type: Number, required: true, min: 0 },
+    paypalPriceCents: { type: Number, default: null, min: 0, max: 100000000, validate: (value) => value == null || Number.isSafeInteger(value) },
     durationDays: { type: Number, required: true, min: 1 },
     expiresEndOfDay: { type: Boolean, default: false },
     tier: { type: String, enum: ["member"], default: "member" },

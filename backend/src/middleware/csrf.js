@@ -7,7 +7,8 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const CSRF_SKIP_PATHS = new Set([
   "/api/auth/csrf",
   "/api/payments/vietqr/webhook",
-  "/api/payments/sepay/ipn"
+  "/api/payments/sepay/ipn",
+  "/api/payments/paypal/webhook"
 ]);
 const UPLOAD_TOOL_PATHS = new Set([
   "/api/admin/marketplace/drive/sync-folder",

@@ -4,32 +4,10 @@ import { api } from "../api.js";
 import { useMarketplacePrices } from "../utils/useMarketplacePrices.js";
 import { translations } from "../i18n.js";
 import { membershipBenefitLabels, membershipDurationLabel } from "../utils/membershipPresentation.js";
+import { checkoutCurrency, discountedPaymentPrice, formatPaymentMoney, packagePrice, submitPaymentCheckout } from "../utils/paymentPresentation.js";
 
-const CURRENCY = "đ";
 const PENDING_TOPUP_ID_KEY = "pendingSepayTopupId";
 const PENDING_MEMBERSHIP_ORDER_KEY = "pendingMembershipOrderId";
-
-function submitPaymentCheckout(payment) {
-  if (!payment?.checkoutUrl || !payment?.fields) return false;
-
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = payment.checkoutUrl;
-  form.style.display = "none";
-
-  Object.entries(payment.fields).forEach(([name, value]) => {
-    if (value === undefined || value === null) return;
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = name;
-    input.value = String(value);
-    form.appendChild(input);
-  });
-
-  document.body.appendChild(form);
-  form.submit();
-  return true;
-}
 
 function recentApprovedTopup(history = []) {
   const now = Date.now();
@@ -43,11 +21,8 @@ function recentApprovedTopup(history = []) {
 function clearPaymentQuery() {
   const url = new URL(window.location.href);
   url.searchParams.delete("payment");
+  ["orderKind", "orderId", "token", "PayerID"].forEach((key) => url.searchParams.delete(key));
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-}
-
-function money(value, locale) {
-  return `${Number(value || 0).toLocaleString(locale)}${CURRENCY}`;
 }
 
 function modeFromLocation() {
@@ -77,6 +52,9 @@ function createIdempotencyKey() {
 export default function Topup({ user, onUserChange, language = "vi" }) {
   const t = translations[language] || translations.vi;
   const locale = language === "vi" ? "vi-VN" : "en-US";
+  const currency = checkoutCurrency(language);
+  const money = (value, valueLocale = locale, valueCurrency = currency) => formatPaymentMoney(value, valueCurrency, valueLocale);
+  const [paypalEnabled, setPaypalEnabled] = useState(false);
   const [packages, setPackages] = useState([]);
   const [membershipPlans, setMembershipPlans] = useState([]);
   const [membership, setMembership] = useState(null);
@@ -121,13 +99,14 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
 
   useEffect(() => {
     api("/api/topup/packages").then((data) => {
+      setPaypalEnabled(data.payments?.paypal?.enabled === true);
       const nextPackages = data.packages || [];
       setPackages(nextPackages);
       const packageId = queryParam("packageId");
       if (packageId && nextPackages.some((item) => String(item._id) === String(packageId))) {
         setSelectedPackageId(packageId);
       }
-    });
+    }).catch((err) => setError(err.message));
   }, []);
 
   useEffect(() => {
@@ -157,6 +136,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   useEffect(() => {
     const paymentStatus = new URLSearchParams(window.location.search).get("payment");
     if (!paymentStatus) return undefined;
+    if (paymentStatus.startsWith("paypal_")) return undefined;
     const pendingTopupId = window.sessionStorage.getItem(PENDING_TOPUP_ID_KEY);
     const pendingMembershipOrderId = window.sessionStorage.getItem(PENDING_MEMBERSHIP_ORDER_KEY);
     if (pendingMembershipOrderId && !pendingTopupId) return undefined;
@@ -290,6 +270,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
 
   useEffect(() => {
     const paymentStatus = new URLSearchParams(window.location.search).get("payment");
+    if (paymentStatus?.startsWith("paypal_")) return undefined;
     const pendingOrderId = window.sessionStorage.getItem(PENDING_MEMBERSHIP_ORDER_KEY);
     if (!paymentStatus || !pendingOrderId || !user) return undefined;
     changeTopupMode("pro");
@@ -353,9 +334,70 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     return () => window.clearInterval(timer);
   }, [user, onUserChange, language]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("payment");
+    const kind = params.get("orderKind");
+    const id = params.get("orderId");
+    if (!result?.startsWith("paypal_") || !user?._id || !["topup", "membership"].includes(kind) || !/^[a-f0-9]{24}$/i.test(id || "")) return undefined;
+    let canceled = false;
+    let timer;
+    let attempts = 0;
+    const setFeedback = kind === "membership" ? setProMessage : setMessage;
+    const setFailure = kind === "membership" ? setProError : setError;
+    const statusPath = kind === "membership" ? `/api/membership/orders/${id}` : `/api/topup/${id}`;
+    setTopupModeState(kind === "membership" ? "pro" : "credit");
+    setFeedback(language === "vi" ? "Đang xác nhận thanh toán PayPal..." : "Confirming PayPal payment...");
+
+    function accept(data) {
+      if (canceled) return true;
+      if (data.status === "approved") {
+        setFailure("");
+        window.sessionStorage.removeItem(kind === "membership" ? PENDING_MEMBERSHIP_ORDER_KEY : PENDING_TOPUP_ID_KEY);
+        if (kind === "membership") {
+          setMembership(data.membership);
+          onUserChange?.((current) => current ? { ...current, proUntil: data.membership?.proUntil, isPro: data.membership?.active, proDailyDownloadLimit: data.membership?.dailyDownloadLimit } : current);
+        } else {
+          setLastPaidPayment(data.topup);
+          setPayment(null);
+          onUserChange?.((current) => current ? { ...current, credit: data.userCredit } : current);
+        }
+        setFeedback(language === "vi" ? "Thanh toán thành công. Tài khoản đã được cập nhật." : "Payment successful. Your account has been updated.");
+        clearPaymentQuery();
+        return true;
+      }
+      if (data.status === "rejected") {
+        setFeedback(language === "vi" ? "Đơn thanh toán đã hủy hoặc hết hạn." : "Payment order canceled or expired.");
+        clearPaymentQuery();
+        return true;
+      }
+      return false;
+    }
+
+    async function poll() {
+      if (canceled) return;
+      try { if (accept(await api(`${statusPath}/status`))) return; }
+      catch (err) { if (!canceled) setFailure(err.message); }
+      attempts += 1;
+      if (!canceled && attempts < 40) timer = window.setTimeout(poll, 3000);
+      else if (!canceled) setFeedback(language === "vi" ? "Thanh toán đang được đối soát. Bạn có thể kiểm tra lại đơn này sau." : "Payment reconciliation is pending. You can check this order again later.");
+    }
+
+    async function confirm() {
+      try {
+        const data = result === "paypal_cancel"
+          ? await api(`${statusPath}/cancel`, { method: "POST", body: JSON.stringify({ reason: "user_cancel" }) })
+          : await api(`/api/payments/paypal/orders/${kind}/${id}/capture`, { method: "POST", body: "{}" });
+        if (accept(data)) return;
+      } catch (err) { if (!canceled) setFailure(err.message); }
+      await poll();
+    }
+    confirm();
+    return () => { canceled = true; window.clearTimeout(timer); };
+  }, [user?._id, onUserChange, language]);
+
   function priceBeforeVoucher(item) {
-    if (Number(item.salePrice || 0) > 0) return Number(item.salePrice || 0);
-    return Math.round(Number(item.price || 0) * (100 - Number(item.salePercent || 0)) / 100);
+    return packagePrice(item, language);
   }
 
   function voucherAppliesToPackage(currentVoucher, item) {
@@ -370,12 +412,14 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     if (!voucherAppliesToPackage(appliedVoucher, item)) return priceBeforeVoucher(item);
     const priceAfterSale = priceBeforeVoucher(item);
     if (Number(appliedVoucher?.discountPercent || 0) > 0) {
-      return Math.max(0, Math.round(priceAfterSale * (100 - Number(appliedVoucher.discountPercent)) / 100));
+      const discounted = discountedPaymentPrice(priceAfterSale, appliedVoucher.discountPercent, currency);
+      return discounted === null ? null : currency === "USD" ? Math.max(0.01, discounted) : discounted;
     }
     return priceAfterSale;
   }
 
   function hasSale(item) {
+    if (language === "en") return false;
     return (
       Number(item.salePercent || 0) > 0 ||
       (Number(item.salePrice || 0) > 0 &&
@@ -396,11 +440,13 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     appliedVoucher.appliesToMembership !== false &&
     Number(appliedVoucher.discountPercent || 0) > 0;
   const selectedPlanIsDailyAddon = membership?.active && isDailyMembershipPlan(selectedMembershipPlan);
+  const canBuyCredit = selectedPackage && finalPrice(selectedPackage) !== null && (language !== "en" || paypalEnabled) && finalPrice(selectedPackage) >= (currency === "USD" ? 0.01 : 1000);
+  const canBuyPro = selectedMembershipPlan && membershipFinalPrice(selectedMembershipPlan) !== null && (language !== "en" || paypalEnabled || membershipFinalPrice(selectedMembershipPlan) === 0);
 
   function membershipFinalPrice(plan) {
-    const original = Number(plan?.price || 0);
+    const original = packagePrice(plan, language, { pro: true });
     if (!voucherTargetsMembership) return original;
-    return Math.max(0, Math.round(original * (100 - Number(appliedVoucher.discountPercent || 0)) / 100));
+    return discountedPaymentPrice(original, appliedVoucher.discountPercent, currency);
   }
 
   function selectPackage(item) {
@@ -434,6 +480,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         headers: { "Idempotency-Key": membershipRequestKeyRef.current },
         body: JSON.stringify({
           planId: selectedMembershipPlan._id,
+          paymentProvider: language === "en" ? "paypal" : "sepay",
           voucherCode: voucherTargetsMembership ? appliedVoucher?.code : undefined,
         }),
       });
@@ -487,7 +534,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         headers: { "Idempotency-Key": topupRequestKeyRef.current },
         body: JSON.stringify({
           packageId: selectedPackage._id,
-          type: "sepay",
+          paymentProvider: language === "en" ? "paypal" : "sepay",
           voucherCode: voucherAppliesToPackage(appliedVoucher, selectedPackage) ? appliedVoucher?.code : undefined,
         }),
       });
@@ -671,11 +718,12 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                   : (language === "vi" ? "Chọn một gói Pro để tiếp tục." : "Select a Pro plan to continue.")}
               </p>
             </div>
-            <button className="primaryButton" type="button" disabled={proLoading || !selectedMembershipPlan} onClick={checkoutMembership}>
+            <button className="primaryButton" type="button" disabled={proLoading || !canBuyPro} onClick={checkoutMembership}>
               <CreditCard size={18} />
-              {language === "vi" ? "Mua Pro" : "Buy Pro"}
+              {language === "vi" ? "Mua Pro" : canBuyPro && membershipFinalPrice(selectedMembershipPlan) > 0 ? "Pay with PayPal" : "Buy Pro"}
             </button>
           </div>
+          {language === "en" && selectedMembershipPlan && !canBuyPro && <p className="muted">{membershipFinalPrice(selectedMembershipPlan) === null ? "USD price is not available for this plan yet." : "PayPal checkout is not available yet."}</p>}
           {proMessage && <p className="success" style={{ marginTop: 14 }}>{proMessage}</p>}
           {proError && <p className="error" style={{ marginTop: 14 }}>{proError}</p>}
         </section>
@@ -708,16 +756,16 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 <div className="priceBlock compact topupPackagePrice">
                   {hasSale(item) && (
                     <div className="priceOriginal">
-                      {Number(item.price).toLocaleString(locale)}<span>{CURRENCY}</span>
+                      {money(item.price)}
                     </div>
                   )}
-                  <strong className="topupPackageFinalPrice">{finalPrice(item).toLocaleString(locale)}{CURRENCY}</strong>
+                  <strong className="topupPackageFinalPrice">{money(finalPrice(item))}</strong>
                 </div>
                 {Number(appliedVoucher?.discountPercent || 0) > 0 && voucherAppliesToPackage(appliedVoucher, item) && (
                   <span>
                     {language === "vi"
-                      ? `Sau voucher ${appliedVoucher.code}: giảm ${appliedVoucher.discountPercent}% từ ${priceBeforeVoucher(item).toLocaleString(locale)}${CURRENCY}`
-                      : `After voucher ${appliedVoucher.code}: ${appliedVoucher.discountPercent}% off from ${priceBeforeVoucher(item).toLocaleString(locale)}${CURRENCY}`}
+                      ? `Sau voucher ${appliedVoucher.code}: giảm ${appliedVoucher.discountPercent}% từ ${money(priceBeforeVoucher(item))}`
+                      : `After voucher ${appliedVoucher.code}: ${appliedVoucher.discountPercent}% off from ${money(priceBeforeVoucher(item))}`}
                   </span>
                 )}
                 {appliedVoucher && !voucherAppliesToPackage(appliedVoucher, item) && (
@@ -727,11 +775,11 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                   <span className="topupPackageSale">
                     {Number(item.salePercent || 0) > 0
                       ? (language === "vi"
-                        ? `Sale ${item.salePercent}% từ ${Number(item.price).toLocaleString(locale)}${CURRENCY}`
-                        : `Sale ${item.salePercent}% from ${Number(item.price).toLocaleString(locale)}${CURRENCY}`)
+                        ? `Sale ${item.salePercent}% từ ${money(item.price)}`
+                        : `Sale ${item.salePercent}% from ${money(item.price)}`)
                       : (language === "vi"
-                        ? `Giá sale từ ${Number(item.price).toLocaleString(locale)}${CURRENCY}`
-                        : `Sale price from ${Number(item.price).toLocaleString(locale)}${CURRENCY}`)}
+                        ? `Giá sale từ ${money(item.price)}`
+                        : `Sale price from ${money(item.price)}`)}
                   </span>
                 )}
                 <strong className="topupPackageCredit">{finalCredit(item)} credit</strong>
@@ -763,8 +811,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 <strong>{selectedPackage.name || t.defaultPackageName}</strong>
                 <p>
                   {language === "vi"
-                    ? `Thanh toán ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} để nhận ${finalCredit(selectedPackage)} Credit dùng cho Getlink hoặc tải lẻ Model/Scene`
-                    : `Pay ${finalPrice(selectedPackage).toLocaleString(locale)}${CURRENCY} to receive ${finalCredit(selectedPackage)} Credits for Getlink or one-off Model/Scene downloads`}
+                    ? `Thanh toán ${money(finalPrice(selectedPackage))} để nhận ${finalCredit(selectedPackage)} Credit dùng cho Getlink hoặc tải lẻ Model/Scene`
+                    : `Pay ${money(finalPrice(selectedPackage))} to receive ${finalCredit(selectedPackage)} Credits for Getlink or one-off Model/Scene downloads`}
                   {appliedVoucher && voucherAppliesToPackage(appliedVoucher, selectedPackage)
                     ? (language === "vi" ? `, đã áp dụng voucher ${appliedVoucher.code}` : `, voucher ${appliedVoucher.code} applied`)
                     : ""}.
@@ -777,11 +825,12 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 <p>{t.selectPackageHelp}</p>
               </div>
             )}
-            <button className="primaryButton" type="button" disabled={!selectedPackage || submitting} onClick={topup}>
+            <button className="primaryButton" type="button" disabled={!canBuyCredit || submitting} onClick={topup}>
               <CreditCard size={18} />
-              {submitting ? t.redirectingPayment : (language === "vi" ? "Nạp Credit" : "Top up Credit")}
+              {submitting ? t.redirectingPayment : (language === "vi" ? "Nạp Credit" : "Pay with PayPal")}
             </button>
           </div>
+          {language === "en" && selectedPackage && !canBuyCredit && <p className="muted">{finalPrice(selectedPackage) === null ? "USD price is not available for this package yet." : "PayPal checkout is not available for this order."}</p>}
           {message && <p className="success" style={{ marginTop: 14 }}>{message}</p>}
           {error && <p className="error" style={{ marginTop: 14 }}>{error}</p>}
           {lastPaidPayment && (
@@ -790,8 +839,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               <strong>+{lastPaidPayment.credit} credit</strong>
               <p>
                 {language === "vi"
-                  ? `Mã nạp ${lastPaidPayment.paymentCode} đã xác nhận. Bạn có thể tạo lượt nạp mới.`
-                  : `Top-up code ${lastPaidPayment.paymentCode} has been confirmed. You can create a new top-up.`}
+                  ? `Mã nạp ${lastPaidPayment.paymentCode || lastPaidPayment.paypalOrderId || lastPaidPayment._id} đã xác nhận. Bạn có thể tạo lượt nạp mới.`
+                  : `Top-up code ${lastPaidPayment.paymentCode || lastPaidPayment.paypalOrderId || lastPaidPayment._id} has been confirmed. You can create a new top-up.`}
               </p>
             </div>
           )}
@@ -801,7 +850,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               <div className="table">
                 <div className="tableRow">
                   <span>{t.amount}</span>
-                  <strong>{Number(payment.amount).toLocaleString(locale)}{CURRENCY}</strong>
+                  <strong>{money(payment.amount, locale, payment.currency || "VND")}</strong>
                   <button className="smallButton" type="button" onClick={() => copyText(payment.amount, "amount")}>
                     {copied === "amount" ? <Check size={14} /> : <Copy size={14} />}
                     {t.copy}
@@ -811,7 +860,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                   <div className="tableRow">
                     <span>Voucher</span>
                     <strong>{payment.voucherCode}</strong>
-                    <span>-{Number(payment.discountAmount).toLocaleString(locale)}{CURRENCY}</span>
+                    <span>-{money(payment.discountAmount, locale, payment.currency || "VND")}</span>
                   </div>
                 )}
                 {payment.voucherCode && Number(payment.discountAmount || 0) <= 0 && (
@@ -823,7 +872,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 )}
                 <div className="tableRow">
                   <span>{t.orderCode}</span>
-                  <strong>{payment.paymentCode}</strong>
+                  <strong>{payment.paymentCode || payment.paypalOrderId || payment._id}</strong>
                   <button className="smallButton" type="button" onClick={() => copyText(payment.paymentCode, "code")}>
                     {copied === "code" ? <Check size={14} /> : <Copy size={14} />}
                     {t.copy}
@@ -831,7 +880,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 </div>
                 <div className="tableRow">
                   <span>{t.status}</span>
-                  <strong>{t.paymentLabel}</strong>
+                  <strong>{payment.gatewayProvider === "paypal" ? "PayPal" : t.paymentLabel}</strong>
                   <span>{payment.status === "approved" ? t.credited : t.waitingPayment}</span>
                 </div>
               </div>

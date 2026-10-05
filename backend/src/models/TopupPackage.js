@@ -7,6 +7,7 @@ const topupPackageSchema = new mongoose.Schema(
     defaultRevision: { type: Number, default: 0, min: 0 },
     name: { type: String, required: true, default: "GÓI CREDIT" },
     price: { type: Number, required: true },
+    paypalPriceCents: { type: Number, default: null, min: 1, max: 100000000, validate: (value) => value == null || Number.isSafeInteger(value) },
     credit: { type: Number, required: true },
     salePercent: { type: Number, default: 0, min: 0, max: 100 },
     salePrice: { type: Number, default: 0, min: 0 },

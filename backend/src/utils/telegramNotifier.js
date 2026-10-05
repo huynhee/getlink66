@@ -45,8 +45,9 @@ function escapeHtml(value = "") {
     .replace(/>/g, "&gt;");
 }
 
-function money(value) {
+function money(value, currency = "VND") {
   const number = Number(value || 0);
+  if (currency === "USD") return `${number.toFixed(2)} USD`;
   return `${new Intl.NumberFormat("vi-VN").format(number)} VND`;
 }
 
@@ -101,7 +102,7 @@ export function notifyTopupApproved({ topup, user, source = "System" } = {}) {
     "<b>Top-up approved</b>",
     `Source: ${escapeHtml(source)}`,
     `User: ${escapeHtml(user?.email || user?.name || String(topup?.userId || "-"))}`,
-    `Amount: ${money(topup?.amount)}`,
+    `Amount: ${money(topup?.amount, topup?.currency)}`,
     `Credit added: ${Number(topup?.credit || 0)}`,
     `User credit: ${Number(user?.credit || 0)}`,
     `Payment code: <code>${escapeHtml(topup?.paymentCode || "-")}</code>`,
@@ -117,7 +118,7 @@ export function notifyMembershipApproved({ order, user, source = "System" } = {}
     `User: ${escapeHtml(user?.email || user?.name || String(order?.userId || "-"))}`,
     `Plan: ${escapeHtml(order?.planName || order?.planCode || "Pro")}`,
     `Type: ${order?.isQuotaAddon ? "Daily quota add-on" : "Pro membership"}`,
-    `Amount: ${money(order?.amount)}`,
+    `Amount: ${money(order?.amount, order?.currency)}`,
     `Active until: ${escapeHtml(vietnamDateTime(order?.activatedUntil || user?.proUntil))}`,
     `Payment code: <code>${escapeHtml(order?.paymentCode || "-")}</code>`,
   ];
@@ -131,7 +132,7 @@ export function notifyTopupRejected({ topup, actor } = {}) {
   const lines = [
     "<b>Top-up rejected</b>",
     `Actor: ${escapeHtml(actor?.email || actor?.name || "Admin")}`,
-    `Amount: ${money(topup?.amount)}`,
+    `Amount: ${money(topup?.amount, topup?.currency)}`,
     `Credit: ${Number(topup?.credit || 0)}`,
     `Payment code: <code>${escapeHtml(topup?.paymentCode || "-")}</code>`,
     `Topup: <code>${escapeHtml(shortId(topup?._id))}</code>`,

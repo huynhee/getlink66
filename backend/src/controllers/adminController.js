@@ -2,6 +2,8 @@ import Cookie from "../models/Cookie.js";
 import User from "../models/User.js";
 import Voucher from "../models/Voucher.js";
 import Topup from "../models/Topup.js";
+import { adminPaypalPrice } from "../utils/paymentMoney.js";
+import { paymentSummary, paymentRecordFields } from "../utils/paymentReporting.js";
 import TopupPackage from "../models/TopupPackage.js";
 import Getlink from "../models/Getlink.js";
 import ProductCache from "../models/ProductCache.js";
@@ -113,6 +115,7 @@ function normalizePackagePayload(body = {}) {
   return {
     name: body.name || "GÓI CREDIT",
     price: Number(body.price),
+    ...(Object.hasOwn(body, "paypalPriceCents") ? { paypalPriceCents: adminPaypalPrice(body.paypalPriceCents) } : {}),
     credit: Number(body.credit),
     salePercent: Number(body.salePercent) || 0,
     salePrice:
@@ -589,9 +592,8 @@ export async function getOverview(req, res, next) {
         get3D66CookiePoolStatus(),
       ]);
 
-    const approvedTopups = topups.filter(
-      (topup) => topup.status === "approved",
-    );
+    const allApprovedTopups = topups.filter((topup) => topup.status === "approved");
+    const approvedTopups = allApprovedTopups.filter((topup) => (topup.currency || "VND") === "VND");
     const pendingTopups = topups.filter((topup) => topup.status === "pending");
     const now = new Date();
     const todayKey = vietnamChartKey(now, "day");
@@ -656,6 +658,7 @@ export async function getOverview(req, res, next) {
           userName: itemUser?.name || "",
           packageName: packageName || "",
           amount: Number(item.amount || 0),
+          ...paymentRecordFields(item),
           credit: Number(item.credit || 0),
           status: item.status || "",
           type: item.type || "",
@@ -673,6 +676,8 @@ export async function getOverview(req, res, next) {
 
     res.json({
       overview: {
+        revenueByCurrency: paymentSummary(allApprovedTopups),
+        usdRevenueChart: buildRevenueChart(allApprovedTopups.filter((topup) => topup.currency === "USD"), revenuePeriod),
         totalUsers: users.length,
         totalCredit: users.reduce(
           (sum, user) => sum + Number(user.credit || 0),
@@ -682,11 +687,11 @@ export async function getOverview(req, res, next) {
           .length,
         activeVouchers: activeVouchers.length,
         pendingTopups: pendingTopups.length,
-        pendingAmount: pendingTopups.reduce(
+        pendingAmount: pendingTopups.filter((topup) => (topup.currency || "VND") === "VND").reduce(
           (sum, topup) => sum + Number(topup.amount || 0),
           0,
         ),
-        approvedTopups: approvedTopups.length,
+        approvedTopups: allApprovedTopups.length,
         rejectedTopups: topups.filter((topup) => topup.status === "rejected")
           .length,
         revenue: approvedRevenue,
@@ -1142,6 +1147,7 @@ export async function listTopupRecords(req, res, next) {
         voucherCode: doc.voucherCode || "",
         paymentCode: doc.paymentCode || "",
         gatewayProvider: doc.gatewayProvider || "",
+        ...paymentRecordFields(doc),
         gatewayTransactionId: doc.gatewayTransactionId || "",
         rejectionReason: doc.rejectionReason || "",
         paidAt: doc.paidAt,
@@ -1445,6 +1451,7 @@ export async function createTopupPackage(req, res, next) {
     const unknownKey = rejectUnknownKeys(req.body, [
       "name",
       "price",
+      "paypalPriceCents",
       "credit",
       "salePercent",
       "salePrice",
@@ -1482,6 +1489,7 @@ export async function updateTopupPackage(req, res, next) {
     const unknownKey = rejectUnknownKeys(req.body, [
       "name",
       "price",
+      "paypalPriceCents",
       "credit",
       "salePercent",
       "salePrice",

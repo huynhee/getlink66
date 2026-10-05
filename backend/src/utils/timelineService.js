@@ -6,6 +6,7 @@ import ModelDownload from "../models/ModelDownload.js";
 import Referral from "../models/Referral.js";
 import CreditLedgerEntry from "../models/CreditLedgerEntry.js";
 import { hydrateAtlasUserField } from "./crossDatabaseHydration.js";
+import { paymentRecordFields } from "./paymentReporting.js";
 
 const TIMELINE_TYPES = new Set(["all", "credit", "pro", "getlink", "model", "scene", "referral", "voucher"]);
 
@@ -95,6 +96,7 @@ function mapTopup(item) {
     item.paidAt || item.createdAt,
     {
       topupId: item._id,
+      ...paymentRecordFields(item),
       amountMoney: moneyAmount(item.amount),
       creditAmount: Number(item.credit || 0),
       isManualAdjustment,
@@ -175,6 +177,7 @@ function mapMembership(item) {
     item.paidAt || item.createdAt,
     {
       orderId: item._id,
+      ...paymentRecordFields(item),
       planId: item.planId,
       planCode: item.planCode || "",
       planName: item.planName || "",
@@ -287,6 +290,7 @@ function mapTopupVoucher(item) {
     {
       topupId: item._id,
       voucherCode: item.voucherCode || "",
+      ...paymentRecordFields(item),
       discountAmount: moneyAmount(item.discountAmount),
       creditBonus: Number(item.voucherCreditBonus || 0),
       creditAmount: Number(item.credit || 0),
@@ -306,6 +310,7 @@ function mapMembershipVoucher(item) {
     item.paidAt || item.createdAt,
     {
       membershipOrderId: item._id,
+      ...paymentRecordFields(item),
       voucherCode: item.voucherCode || "",
       discountAmount: moneyAmount(item.discountAmount),
       targetKind: "pro",

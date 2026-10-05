@@ -14,6 +14,12 @@ const APPROVABLE_PAYMENT_STATES = {
   ],
 };
 
+function isVndPayment(order, provider) {
+  if ((order.currency || "VND") !== "VND" || order.gatewayProvider === "paypal") return false;
+  if (!order.gatewayProvider) return true; // Legacy bank-transfer orders.
+  return order.gatewayProvider === provider;
+}
+
 function webhookSecretFromRequest(req) {
   const auth = String(req.get("authorization") || "");
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
@@ -159,6 +165,7 @@ async function approveMembershipFromPayment({ paymentCode, amount, transactionId
   if (!order) {
     return { ok: false, paymentCode, reason: "membership_order_not_found_or_already_handled" };
   }
+  if (!isVndPayment(order, provider)) return { ok: false, paymentCode, reason: "payment_provider_or_currency_mismatch" };
   if (amount < order.amount) {
     return {
       ok: false,
@@ -237,6 +244,7 @@ async function approveTopupFromTransaction(transaction) {
   // KHONG check expiresAt: user da chuyen tien that thi phai approve. Dinh nghia "expired"
   // chi la UI hint cho user khuyen tao QR moi, khong phai ly do reject thanh toan.
   // Defense chong abuse: amount check ben duoi - neu gia tang sau, amount cu khong du.
+  if (!isVndPayment(topup, "vietqr")) return { ok: false, paymentCode, reason: "payment_provider_or_currency_mismatch" };
 
   if (amount < topup.amount) {
     return {
@@ -404,6 +412,7 @@ export async function sepayIpn(req, res, next) {
       });
     }
 
+    if (!isVndPayment(topup, "sepay")) return res.status(409).json({ ok: false, reason: "payment_provider_or_currency_mismatch" });
     if (amount < topup.amount) {
       return res.status(409).json({
         ok: false,
