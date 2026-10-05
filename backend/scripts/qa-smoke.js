@@ -208,6 +208,60 @@ async function stopChild(child) {
   if (child.exitCode === null) child.kill("SIGKILL");
 }
 
+async function verifyLanguageFlags(page, viewport, accountType) {
+  const button = page.locator(".languageToggleSingle button");
+  const openMenu = async () => {
+    if (!await button.isVisible()) await page.locator(".mobileMenuButton").click();
+  };
+  const initialLanguage = await page.locator("html").getAttribute("lang");
+  const initialTheme = await page.locator("html").getAttribute("data-theme");
+  const checkFlag = (language) => page.waitForFunction((expected) => {
+    const toggle = globalThis.document.querySelector(".languageToggleSingle button");
+    const flag = toggle?.querySelector("img");
+    if (!flag?.complete || flag.naturalWidth === 0) return false;
+    const icon = flag.getBoundingClientRect();
+    const control = toggle.getBoundingClientRect();
+    const account = toggle.closest(".account");
+    return globalThis.document.documentElement.lang === expected
+      && flag.getAttribute("src") === `/icons/flags/${expected === "vi" ? "vn" : "gb"}.svg`
+      && toggle.textContent.trim() === ""
+      && Boolean(toggle.getAttribute("aria-label"))
+      && Boolean(toggle.getAttribute("title"))
+      && account.scrollWidth <= account.clientWidth + 1
+      && icon.width === 24 && icon.height === 16
+      && icon.left >= control.left && icon.right <= control.right
+      && icon.top >= control.top && icon.bottom <= control.bottom;
+  }, language);
+
+  await openMenu();
+  for (const theme of ["light", "dark"]) {
+    if (await page.locator("html").getAttribute("data-theme") !== theme) {
+      await page.locator(".themeToggle").click();
+    }
+    for (const language of ["vi", "en"]) {
+      if (await page.locator("html").getAttribute("lang") !== language) await button.click();
+      await checkFlag(language);
+      await page.locator(viewport === "mobile" ? ".account" : ".topbar").screenshot({
+        path: path.join(screenshotRoot, `${viewport}-${accountType}-${theme}-${language}-flag.png`),
+      });
+    }
+  }
+  if (accountType === "guest") {
+    const account = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/auth/user");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await account;
+    await openMenu();
+  }
+  await checkFlag("en");
+  await button.focus();
+  await button.press("Enter");
+  await checkFlag("vi");
+  if (initialLanguage === "en") await button.click();
+  if (await page.locator("html").getAttribute("data-theme") !== initialTheme) {
+    await page.locator(".themeToggle").click();
+  }
+}
+
 async function verifyConfiguredCreditCopy(page, context, viewport) {
   let scenePrice = 20;
   const pattern = "**/api/settings";
@@ -397,6 +451,8 @@ async function main() {
       { name: "mobile", width: 390, height: 844 },
     ]) {
       const context = await browser.newContext({ viewport });
+      await context.route("**/api/auth/google/one-tap/config",
+        (route) => route.fulfill({ json: { enabled: false } }));
       await context.route(/^https:\/\/(?:pagead2\.googlesyndication\.com|googleads\.g\.doubleclick\.net)\//,
         (route) => route.fulfill({ status: 204, body: "" }));
       const page = await context.newPage();
@@ -457,6 +513,7 @@ async function main() {
         path: path.join(screenshotRoot, `${viewport.name}-models.png`),
         fullPage: true,
       });
+      await verifyLanguageFlags(page, viewport.name, "guest");
 
       const adminDataPaths = [
         "/api/admin/overview",
@@ -495,6 +552,7 @@ async function main() {
         path: path.join(screenshotRoot, `${viewport.name}-admin.png`),
         fullPage: true,
       });
+      await verifyLanguageFlags(page, viewport.name, "admin");
       await verifyConfiguredCreditCopy(page, context, viewport.name);
       await verifyLiveAccountBalance(page, context);
       await context.close();
@@ -510,6 +568,7 @@ async function main() {
       viewports: 2,
       liveAccountBalance: true,
       configuredCreditCopy: true,
+      languageFlags: true,
       completedGetlinkBalanceReplay: false,
       externalFailures: externalFailures.length,
       externalFailureSamples: externalFailures.slice(0, 10),

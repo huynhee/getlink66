@@ -2932,6 +2932,18 @@ label,
   grid-template-columns: 1fr;
 }
 
+.languageToggle.languageToggleSingle button {
+  display: grid;
+  place-items: center;
+}
+
+.languageFlag {
+  display: block;
+  width: 24px;
+  height: 16px;
+  object-fit: contain;
+}
+
 .marketSearchPanel {
   padding: 12px 14px;
 }
@@ -3195,6 +3207,19 @@ label,
     align-items: stretch;
     gap: 8px;
     padding-top: 12px;
+  }
+
+  .topbarMenu .accountGuest {
+    grid-template-columns: minmax(0, 1fr) 42px 42px;
+  }
+
+  .account > .headerLoginButton {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    min-width: 0;
+    min-height: 42px;
+    justify-content: center;
   }
 
   .account > .pluginDownloadButton {

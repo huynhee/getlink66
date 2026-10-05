@@ -37,7 +37,14 @@ function LanguageToggle({ language, onLanguageChange }) {
         title={label}
         aria-label={label}
       >
-        {language.toUpperCase()}
+        <img
+          className="languageFlag"
+          src={language === "vi" ? "/icons/flags/vn.svg" : "/icons/flags/gb.svg"}
+          width="24"
+          height="16"
+          alt=""
+          aria-hidden="true"
+        />
       </button>
     </div>
   );
@@ -497,7 +504,7 @@ export default function Navbar({
               </div>
             </div>
           ) : (
-            <div className="account">
+            <div className="account accountGuest">
               <PluginDownloadButton language={language} />
               <a className="headerLoginButton" href={googleHref()}>
                 <Chrome size={15} />
