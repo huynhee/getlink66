@@ -319,7 +319,11 @@ async function verifySubscriptionCatalog(page, context, viewport) {
     startsAt: current.endsAt, endsAt: new Date(now + 366 * 86400000).toISOString() };
   let checkoutEnabled = true;
   const plansPattern = "**/api/membership/plans";
-  const plansHandler = (route) => route.fulfill({ json: { plans, checkoutEnabled, payments: { paypal: { enabled: true } } } });
+  const plansHandler = async (route) => {
+    // Keep catalog initialization asynchronous even on fast local machines.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill({ json: { plans, checkoutEnabled, payments: { paypal: { enabled: true } } } });
+  };
   const mePattern = "**/api/membership/me";
   const meHandler = (route) => route.fulfill({ json: { membership: { active: true, tier: "pro", dailyDownloadLimit: 20,
     proUntil: upcoming.endsAt, currentPeriod: current, upcomingPeriods: [upcoming] } } });
@@ -351,8 +355,15 @@ async function verifySubscriptionCatalog(page, context, viewport) {
     const tabs = page.locator(".subscriptionPeriodTabs");
     await tabs.waitFor();
     const expected = { vi: { day: "Ngày", month: "Tháng", year: "Năm" }, en: { day: "Day", month: "Month", year: "Year" } }[language][period];
+    // The initial Month tab mounts before the catalog resolves a planId link.
+    await page.waitForFunction(({ label, period }) => {
+      const catalog = globalThis.document.querySelector(".subscriptionCatalog");
+      const selected = catalog?.querySelector('.subscriptionPeriodTabs [aria-selected="true"]');
+      const cards = [...(catalog?.querySelectorAll(".subscriptionPlanCard") || [])];
+      return selected?.textContent.trim() === label && cards.length === 3
+        && cards.every((card) => card.querySelector(".subscriptionPlanHeading h3")?.textContent.startsWith(period));
+    }, { label: expected, period }, { timeout: 15_000 });
     if (await tabs.locator('[aria-selected="true"]').innerText() !== expected) throw new Error(`Wrong selected period: ${period}`);
-    await page.waitForFunction(() => globalThis.document.querySelectorAll(".subscriptionPlanCard").length === 3);
     const titles = await page.locator(".subscriptionPlanHeading h3").allTextContents();
     if (!titles.every((title) => title.startsWith(period))) throw new Error(`Catalog mixed periods: ${titles}`);
     const overflow = await page.locator(".subscriptionCatalog").evaluate((root) =>
