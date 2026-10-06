@@ -92,7 +92,7 @@ export function subscriptionCheckoutDescription(plan, membership, language = "vi
       ? `Cộng thêm ${quota} lượt chỉ hôm nay; không đổi thời hạn hoặc lịch Subscription đã mua.`
       : `Adds ${quota} downloads for today only, without changing your existing Subscription schedule or expiry.`;
   }
-  if (Number(plan.catalogVersion) >= 2 && membership?.active && subscriptionBillingPeriod(plan) !== "day") {
+  if (membership?.active && subscriptionBillingPeriod(plan) !== "day") {
     return language === "vi"
       ? `${quota} lượt/ngày trong ${plan.durationDays} ngày. Kỳ mới bắt đầu sau các kỳ đã mua; không đổi quota hiện tại.`
       : `${quota} downloads/day for ${plan.durationDays} days. Starts after your purchased periods, without changing your current quota.`;

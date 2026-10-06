@@ -155,13 +155,14 @@ test("pending payments still settle once using the purchased snapshot after dele
   assert.equal((await Package.findById(pack._id)).name, "Purchased Credit");
 });
 
-test("archive flag independently prevents sale and catalog activation", async () => {
+test("archive flag independently prevents sale even after legacy catalog activation requests", async () => {
   await newPlan({ catalogVersion: 2, isActive: true, isArchived: true });
   const user = await User.create({ email: "hidden@example.test" });
   const plan = await Plan.findOne();
   assert.equal((await invoke(createMembershipCheckout, { user, body: { planId: plan._id } })).status, 400);
-  await assert.rejects(activateSubscriptionCatalog(), { code: "SUBSCRIPTION_CATALOG_NOT_READY" });
-  await Settings.create({ key: "homepage", subscriptionCatalogVersion: 2 });
+  await activateSubscriptionCatalog();
+  await Settings.findOneAndUpdate({ key: "homepage" }, { $set: { subscriptionCatalogVersion: 2 } });
+  assert.equal((await Plan.findById(plan._id)).isArchived, true);
   assert.equal((await invoke(listMembershipPlans)).payload.plans.length, 0);
   const pack = await Package.create({ name: "Hidden", price: 11000, credit: 30, isActive: true, isArchived: true });
   assert.equal((await invoke(createTopup, { user, body: { packageId: pack._id } })).status, 400);

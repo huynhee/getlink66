@@ -207,27 +207,29 @@ test("blank prices cannot activate, explicit zero may be free, and integer field
   assert.throws(() => paypalPrice({ price: null, paypalPriceCents: null }, { freeTrial: true }));
 });
 
-test("catalog prepares nine inactive drafts, keeps legacy selling, switches explicitly and never reseeds prices", async () => {
+test("catalog prepares inactive drafts alongside enabled plans and never resets prices or availability", async () => {
   await Plan.deleteMany({}); await Settings.deleteMany({});
   await initializeMembershipPlans();
+  const legacyCount = await Plan.countDocuments({});
   await prepareSubscriptionCatalog();
   const plans = await Plan.find({ catalogVersion: 2 });
   assert.equal(plans.length, 9);
   assert.equal(plans.every((plan) => plan.price === null && plan.isActive === false), true);
-  await assert.rejects(activateSubscriptionCatalog(), /at least one/);
+  assert.equal((await activateSubscriptionCatalog()).mode, "unified");
   const chosen = plans.find((plan) => plan.code === "SUB_MONTH_20");
   await Plan.findByIdAndUpdate(chosen._id, { $set: { price: 12345, isActive: true, dailyDownloadLimit: 75 } });
   await prepareSubscriptionCatalog();
   assert.equal((await Plan.findById(chosen._id)).price, 12345);
   const oldList = await invoke(listMembershipPlans, {});
-  assert.equal(oldList.payload.plans.some((plan) => plan.catalogVersion === 2), false);
+  assert.equal(oldList.payload.plans.some((plan) => plan._id === chosen._id), true);
+  assert.equal(oldList.payload.plans.length, legacyCount + 1);
   await Promise.all([activateSubscriptionCatalog(), activateSubscriptionCatalog()]);
-  assert.equal((await getSubscriptionCatalog()).version, 2);
-  assert.equal((await Plan.find({ catalogVersion: { $ne: 2 } })).every((plan) => plan.isActive === false), true);
+  assert.equal((await getSubscriptionCatalog()).mode, "unified");
+  assert.equal((await Plan.find({ catalogVersion: { $ne: 2 } })).every((plan) => plan.isActive === true), true);
   await initializeMembershipPlans();
-  assert.equal((await Plan.find({ catalogVersion: { $ne: 2 } })).every((plan) => plan.isActive === false), true);
+  assert.equal((await Plan.find({ catalogVersion: { $ne: 2 } })).every((plan) => plan.isActive === true), true);
   const list = await invoke(listMembershipPlans, {});
-  assert.equal(list.payload.plans.length, 1);
+  assert.equal(list.payload.plans.length, legacyCount + 1);
   const user = await newUser();
   await setSubscriptionCheckoutEnabled(false);
   const req = { user, body: { planId: chosen._id }, get: () => "" };
@@ -235,7 +237,7 @@ test("catalog prepares nine inactive drafts, keeps legacy selling, switches expl
   await setSubscriptionCheckoutEnabled(true);
 });
 
-test("paid legacy pending order survives catalog retirement and keeps its immutable benefits", async () => {
+test("paid pending order survives disabling its plan and keeps its immutable benefits", async () => {
   const old = await Plan.create({ code: `LEGACY${++sequence}`, name: "Old monthly", price: 10000, isActive: true,
     catalogVersion: 1, durationDays: 30, dailyDownloadLimit: 50 });
   await Settings.findOneAndUpdate({ key: "homepage" }, { $set: { subscriptionCatalogVersion: 1 } });
@@ -247,9 +249,9 @@ test("paid legacy pending order survives catalog retirement and keeps its immuta
     const user = await newUser();
     const req = { user, body: { planId: old._id }, get: () => "subscription-immutable-0001" };
     const { payload } = await invoke(createMembershipCheckout, req);
-    await Plan.findByIdAndUpdate(old._id, { $set: { price: 20000, dailyDownloadLimit: 100, durationDays: 365 } });
+    await Plan.findByIdAndUpdate(old._id, { $set: { price: 20000, dailyDownloadLimit: 100, durationDays: 365, isActive: false } });
     await activateSubscriptionCatalog();
-    assert.equal((await Plan.findById(old._id)).catalogRetired, true);
+    assert.equal((await Plan.findById(old._id)).isActive, false);
     await Order.findByIdAndUpdate(payload.order._id, { $set: { status: "rejected", rejectionReason: "expired" } });
     const late = await approvePendingMembershipOrder(await Order.findById(payload.order._id));
     assert.equal(late.order.amount, 10000);

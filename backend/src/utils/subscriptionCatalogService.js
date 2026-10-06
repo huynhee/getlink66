@@ -38,7 +38,7 @@ function querySession(query, session) {
 }
 
 export function subscriptionBillingPeriod(plan) {
-  if (Number(plan?.catalogVersion) === 2 && Object.hasOwn(SUBSCRIPTION_PERIOD_DEFAULTS, plan?.billingPeriod)) {
+  if (Object.hasOwn(SUBSCRIPTION_PERIOD_DEFAULTS, plan?.billingPeriod)) {
     return plan.billingPeriod;
   }
   if (Number(plan?.durationDays) <= 1) return "day";
@@ -46,17 +46,13 @@ export function subscriptionBillingPeriod(plan) {
   return "month";
 }
 
-export function subscriptionPlanVersion(plan) {
-  return Number(plan?.catalogVersion) === SUBSCRIPTION_CATALOG_VERSION ? SUBSCRIPTION_CATALOG_VERSION : 1;
-}
-
 export async function getSubscriptionCatalog(session = null) {
   const settings = await querySession(SiteSetting.findOne({ key: CATALOG_KEY }), session).lean();
   const preparedCount = await querySession(MembershipPlan.countDocuments({
-    catalogVersion: SUBSCRIPTION_CATALOG_VERSION,
     code: { $in: INITIAL_SUBSCRIPTION_PLANS.map((plan) => plan.code) },
   }), session);
   return {
+    mode: "unified",
     version: Number(settings?.subscriptionCatalogVersion) === SUBSCRIPTION_CATALOG_VERSION ? SUBSCRIPTION_CATALOG_VERSION : 1,
     prepared: preparedCount === INITIAL_SUBSCRIPTION_PLANS.length,
     checkoutEnabled: settings?.subscriptionCheckoutEnabled !== false,
@@ -65,10 +61,8 @@ export async function getSubscriptionCatalog(session = null) {
   };
 }
 
-export function subscriptionPlanQuery(catalog) {
-  return catalog?.version === SUBSCRIPTION_CATALOG_VERSION
-    ? { catalogVersion: SUBSCRIPTION_CATALOG_VERSION, isActive: true, isArchived: { $ne: true }, price: { $ne: null } }
-    : { catalogVersion: { $ne: SUBSCRIPTION_CATALOG_VERSION }, isActive: true, isArchived: { $ne: true } };
+export function subscriptionPlanQuery() {
+  return { isActive: true, isArchived: { $ne: true }, price: { $ne: null } };
 }
 
 async function ensureCatalogSettings() {
@@ -83,7 +77,7 @@ async function ensureCatalogSettings() {
   }
 }
 
-// Catalog and plan writes share one Core document so publish/edit races retry atomically.
+// Catalog and plan writes share one Core document so checkout/edit races retry atomically.
 export async function lockSubscriptionCatalog(session) {
   if (!session) return;
   await SiteSetting.findOneAndUpdate(
@@ -129,22 +123,12 @@ export function assertSubscriptionPlanFields(plan) {
   }
 }
 
-export async function assertPlanCatalogWrite(plan, session = null) {
+export function assertPlanCatalogWrite(plan) {
   assertSubscriptionPlanFields(plan);
-  const catalog = await getSubscriptionCatalog(session);
-  if (plan.isActive && catalog.version === SUBSCRIPTION_CATALOG_VERSION && subscriptionPlanVersion(plan) !== catalog.version) {
-    throw paymentError("Legacy plans cannot be reopened after catalog activation", "SUBSCRIPTION_CATALOG_RETIRED", 409);
-  }
 }
 
 export async function prepareSubscriptionCatalog() {
   return withSubscriptionCatalogWrite(async (session) => {
-    for (const defaults of INITIAL_SUBSCRIPTION_PLANS) {
-      const existing = await querySession(MembershipPlan.findOne({ code: defaults.code }), session).lean();
-      if (existing && subscriptionPlanVersion(existing) !== SUBSCRIPTION_CATALOG_VERSION) {
-        throw paymentError(`Reserved Subscription code already exists: ${defaults.code}`, "SUBSCRIPTION_CODE_CONFLICT", 409);
-      }
-    }
     for (const defaults of INITIAL_SUBSCRIPTION_PLANS) {
       await MembershipPlan.findOneAndUpdate(
         { code: defaults.code }, { $setOnInsert: defaults }, { upsert: true, new: true, session },
@@ -155,26 +139,8 @@ export async function prepareSubscriptionCatalog() {
 }
 
 export async function activateSubscriptionCatalog() {
-  return withSubscriptionCatalogWrite(async (session) => {
-    const catalog = await getSubscriptionCatalog(session);
-    if (catalog.version === SUBSCRIPTION_CATALOG_VERSION) return catalog;
-    const enabled = await querySession(MembershipPlan.find({ catalogVersion: SUBSCRIPTION_CATALOG_VERSION, isActive: true, isArchived: { $ne: true } }), session).lean();
-    if (!enabled.length) {
-      throw paymentError("Enable at least one Subscription plan with a VND price first", "SUBSCRIPTION_CATALOG_NOT_READY", 409);
-    }
-    enabled.forEach(assertSubscriptionPlanFields);
-    await MembershipPlan.updateMany(
-      { catalogVersion: { $ne: SUBSCRIPTION_CATALOG_VERSION } },
-      { $set: { isActive: false, catalogRetired: true } },
-      { session },
-    );
-    await SiteSetting.findOneAndUpdate(
-      { key: CATALOG_KEY },
-      { $set: { subscriptionCatalogVersion: SUBSCRIPTION_CATALOG_VERSION, subscriptionCatalogActivatedAt: new Date() } },
-      { session },
-    );
-    return getSubscriptionCatalog(session);
-  });
+  // Older admin clients may still call this endpoint; never retire other plans.
+  return withSubscriptionCatalogWrite((session) => getSubscriptionCatalog(session));
 }
 
 export async function setSubscriptionCheckoutEnabled(enabled) {

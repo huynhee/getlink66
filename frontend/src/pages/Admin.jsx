@@ -10,6 +10,7 @@ import SubscriptionSchedule from "../components/SubscriptionSchedule.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
 import { formatPaymentMoney, parseAdminUsdPrice } from "../utils/paymentPresentation.js";
+import { subscriptionBillingPeriod } from "../utils/membershipPresentation.js";
 
 const emptyPackage = {
   name: "",
@@ -359,6 +360,8 @@ export default function Admin({ user, language = "vi" }) {
   const [packageMessage, setPackageMessage] = useState("");
   const [deletingPackageKey, setDeletingPackageKey] = useState("");
   const packageDeleteBusy = React.useRef(false);
+  const membershipPlanToggleBusy = React.useRef(false);
+  const [updatingMembershipPlanId, setUpdatingMembershipPlanId] = useState("");
   const [membershipPlanForm, setMembershipPlanForm] = useState(emptyMembershipPlan);
   const [voucherForm, setVoucherForm] = useState(emptyVoucher);
   const [voucherMode, setVoucherMode] = useState("credit");
@@ -627,7 +630,7 @@ export default function Admin({ user, language = "vi" }) {
   }
 
   async function deleteCatalogItem(kind, item) {
-    if (packageDeleteBusy.current) return;
+    if (packageDeleteBusy.current || membershipPlanToggleBusy.current) return;
     if (!window.confirm(l(
       `Xóa gói "${item.name || item.code}" khỏi danh sách? Đơn hàng và quyền lợi đã mua vẫn được giữ nguyên.`,
       `Delete "${item.name || item.code}" from the catalog? Existing orders and purchased benefits will be preserved.`,
@@ -713,7 +716,7 @@ export default function Admin({ user, language = "vi" }) {
       name: plan.name || "",
       price: plan.price ?? "",
       paypalPriceUsd: plan.paypalPriceCents == null ? "" : (plan.paypalPriceCents / 100).toFixed(2),
-      billingPeriod: Number(plan.catalogVersion) === 2 ? plan.billingPeriod || "month" : Number(plan.durationDays) <= 1 ? "day" : Number(plan.durationDays) >= 365 ? "year" : "month",
+      billingPeriod: subscriptionBillingPeriod(plan),
       durationDays: plan.durationDays || "",
       dailyDownloadLimit: plan.dailyDownloadLimit || "100",
       maxPurchasesPerUser: Number(plan.maxPurchasesPerUser || 0) > 0 ? plan.maxPurchasesPerUser : "",
@@ -726,6 +729,7 @@ export default function Admin({ user, language = "vi" }) {
 
   async function saveMembershipPlan(event) {
     event.preventDefault();
+    if (membershipPlanToggleBusy.current || packageDeleteBusy.current || catalogBusy) return;
     setPackageError("");
     setPackageMessage("");
     try {
@@ -752,22 +756,43 @@ export default function Admin({ user, language = "vi" }) {
   }
 
   async function updateSubscriptionCatalog(action, body = {}) {
-    if (catalogBusy) return;
-    if (action === "activate" && !window.confirm(l(
-      "Áp dụng bộ Subscription và ngừng bán tất cả gói cũ, gồm Trial? Đơn và quyền lợi đã mua vẫn được giữ nguyên.",
-      "Apply the Subscription catalog and stop selling all legacy plans, including Trial? Existing orders and benefits are preserved."
-    ))) return;
+    if (catalogBusy || membershipPlanToggleBusy.current || packageDeleteBusy.current) return;
     setCatalogBusy(true);
     setPackageError("");
     try {
       const data = await api(`/api/admin/membership-plans/subscription/${action}`, { method: "POST", body: JSON.stringify(body) });
       setMembershipPlans(data.plans || []);
       setSubscriptionCatalog(data.catalog);
-      await loadData();
     } catch (error) {
       setPackageError(error.message);
     } finally {
       setCatalogBusy(false);
+    }
+  }
+
+  async function toggleMembershipPlan(plan, isActive) {
+    if (membershipPlanToggleBusy.current || packageDeleteBusy.current || catalogBusy) return;
+    setPackageError("");
+    setPackageMessage("");
+    if (isActive && plan.price == null) {
+      fillMembershipPlanForm(plan);
+      setPackageError(l("Nhập giá VND trước khi bật gói.", "Configure a VND price before enabling this plan."));
+      return;
+    }
+    membershipPlanToggleBusy.current = true;
+    setUpdatingMembershipPlanId(plan._id);
+    try {
+      const data = await api(`/api/admin/membership-plans/${plan._id}`, {
+        method: "PUT", body: JSON.stringify({ isActive })
+      });
+      setMembershipPlans((items) => items.map((item) => item._id === plan._id ? data.plan : item));
+      setMembershipPlanForm((form) => form.code === plan.code ? { ...form, isActive: data.plan.isActive } : form);
+      setPackageMessage(isActive ? l("Đã bật gói.", "Plan enabled.") : l("Đã tắt gói.", "Plan disabled."));
+    } catch (error) {
+      setPackageError(error.message);
+    } finally {
+      membershipPlanToggleBusy.current = false;
+      setUpdatingMembershipPlanId("");
     }
   }
 
@@ -2298,15 +2323,12 @@ export default function Admin({ user, language = "vi" }) {
           ) : (
             <>
               <div className="adminSubTabs">
-                <strong>Subscription · {subscriptionCatalog.version === 2 ? l("Đang áp dụng", "Active catalog") : l("Catalog cũ đang bán", "Legacy catalog on sale")}</strong>
-                <button type="button" className="smallButton" disabled={catalogBusy || subscriptionCatalog.prepared} onClick={() => updateSubscriptionCatalog("prepare")}>
-                  <Plus size={16} /> {l("Chuẩn bị 9 gói", "Prepare 9 plans")}
-                </button>
-                <button type="button" className="smallButton" disabled={catalogBusy || subscriptionCatalog.version === 2} onClick={() => updateSubscriptionCatalog("activate")}>
-                  <Check size={16} /> {l("Áp dụng bộ Subscription", "Apply Subscription catalog")}
+                <strong>Subscription</strong>
+                <button type="button" className="smallButton" disabled={catalogBusy || Boolean(updatingMembershipPlanId) || Boolean(deletingPackageKey) || subscriptionCatalog.prepared} onClick={() => updateSubscriptionCatalog("prepare")}>
+                  <Plus size={16} /> {l("Thêm 9 gói mẫu", "Add 9 draft plans")}
                 </button>
                 <label className="adminCheckboxRow">
-                  <input type="checkbox" checked={subscriptionCatalog.checkoutEnabled} disabled={catalogBusy}
+                  <input type="checkbox" checked={subscriptionCatalog.checkoutEnabled} disabled={catalogBusy || Boolean(updatingMembershipPlanId) || Boolean(deletingPackageKey)}
                     onChange={(event) => updateSubscriptionCatalog("checkout", { enabled: event.target.checked })} />
                   {l("Nhận đơn mới", "Accept new purchases")}
                 </label>
@@ -2371,7 +2393,7 @@ export default function Admin({ user, language = "vi" }) {
                   style={{ height: "auto", minHeight: 110 }}
                   placeholder={l("Mỗi dòng là một quyền lợi Subscription", "Each line is one Subscription benefit")}
                 />
-                <button className="smallButton" disabled={!membershipPlanForm.name || (membershipPlanForm.isActive && membershipPlanForm.price === "") || !membershipPlanForm.durationDays} style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}>
+                <button className="smallButton" disabled={catalogBusy || Boolean(updatingMembershipPlanId) || Boolean(deletingPackageKey) || !membershipPlanForm.name || (membershipPlanForm.isActive && membershipPlanForm.price === "") || !membershipPlanForm.durationDays} style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}>
                   {editingMembershipPlanId ? <Save size={16} /> : <Plus size={16} />}
                   {editingMembershipPlanId ? l("Lưu Subscription", "Save Subscription") : l("Thêm Subscription", "Add Subscription")}
                 </button>
@@ -2417,17 +2439,23 @@ export default function Admin({ user, language = "vi" }) {
                       <button type="button" onClick={() => fillMembershipPlanForm(plan)} title={l("Sửa Subscription", "Edit Subscription plan")}>
                         <Pencil size={15} />
                       </button>
-                      <button type="button" disabled={Boolean(deletingPackageKey)} onClick={() => deleteCatalogItem("pro", plan)} title={l("Xóa Subscription", "Delete Subscription plan")} aria-label={l(`Xóa Subscription ${plan.name || plan.code}`, `Delete Subscription plan ${plan.name || plan.code}`)} style={{ color: "var(--error)" }}>
+                      <button type="button" disabled={Boolean(deletingPackageKey) || Boolean(updatingMembershipPlanId)} onClick={() => deleteCatalogItem("pro", plan)} title={l("Xóa Subscription", "Delete Subscription plan")} aria-label={l(`Xóa Subscription ${plan.name || plan.code}`, `Delete Subscription plan ${plan.name || plan.code}`)} style={{ color: "var(--error)" }}>
                         {deletingPackageKey === `pro:${plan._id}` ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
                       </button>
                     </div>
-                    <span className={`badge ${plan.isActive !== false ? "success" : "error"}`}>{plan.isActive !== false ? "ACTIVE" : "OFF"}</span>
+                    <label className="adminCheckboxRow">
+                      <input type="checkbox" checked={plan.isActive !== false} disabled={catalogBusy || Boolean(updatingMembershipPlanId) || Boolean(deletingPackageKey)}
+                        aria-label={l(`Bật bán ${plan.name || plan.code}`, `Enable sales for ${plan.name || plan.code}`)}
+                        onChange={(event) => toggleMembershipPlan(plan, event.target.checked)} />
+                      {updatingMembershipPlanId === plan._id && <Loader2 size={14} className="spin" />}
+                      {plan.isActive !== false ? l("Đang bán", "On sale") : l("Đã tắt", "Disabled")}
+                    </label>
                     <h3 style={{ marginTop: 8 }}>{plan.name || plan.code}</h3>
                     <div className="priceBlock compact" style={{ alignItems: "flex-start" }}>
                       <strong>{plan.price == null ? l("Chưa nhập giá", "Price not configured") : `${Number(plan.price).toLocaleString(locale)}đ`}</strong>
                     </div>
                     <span>PayPal: {formatPaymentMoney(plan.price === 0 ? 0 : plan.paypalPriceCents == null ? null : plan.paypalPriceCents / 100, "USD", locale)}</span>
-                    <span>{l("Nhóm kỳ", "Period")}: {plan.billingPeriod || (Number(plan.durationDays) <= 1 ? "day" : Number(plan.durationDays) >= 365 ? "year" : "month")}</span>
+                    <span>{l("Nhóm kỳ", "Period")}: {subscriptionBillingPeriod(plan)}</span>
                     <span>{Number(plan.durationDays || 0).toLocaleString(locale)} {l("ngày, hết hạn cuối ngày", "days, expires end of day")}</span>
                     <span>{Number(plan.dailyDownloadLimit || 100).toLocaleString(locale)} {l("lượt tải/ngày", "downloads/day")}</span>
                     <span className="muted">

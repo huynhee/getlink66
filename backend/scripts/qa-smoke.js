@@ -265,14 +265,20 @@ async function verifyLanguageFlags(page, viewport, accountType) {
 
 async function verifyAdminPackageDeletion(page, context, viewport) {
   const pattern = /\/api\/admin\/(topup-packages|membership-plans)(?:\/[^/?]+)?$/;
-  let packages = [], plans = [], deletes = 0, failDelete = false, releaseDelete;
-  const catalog = { version: 2, prepared: true, checkoutEnabled: true };
+  let packages = [], plans = [], deletes = 0, failDelete = false, failToggle = false, releaseDelete;
+  const catalog = { version: 1, mode: "unified", prepared: true, checkoutEnabled: true };
   const handler = async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
     const credit = pathname.includes("topup-packages");
     if (request.method() === "GET") {
       return route.fulfill({ json: credit ? { packages } : { plans, catalog } });
+    }
+    if (!credit && request.method() === "PUT") {
+      if (failToggle) return route.fulfill({ status: 409, json: { message: "QA toggle refused; retry is safe." } });
+      const id = pathname.split("/").at(-1);
+      plans = plans.map((plan) => plan._id === id ? { ...plan, isActive: request.postDataJSON().isActive } : plan);
+      return route.fulfill({ json: { plan: plans.find((plan) => plan._id === id) } });
     }
     if (request.method() !== "DELETE") return route.fallback();
     deletes++;
@@ -312,7 +318,7 @@ async function verifyAdminPackageDeletion(page, context, viewport) {
     for (const theme of ["light", "dark"]) {
       for (const language of ["vi", "en"]) {
         packages = [1, 2].map((id) => ({ _id: String(id).padStart(24, "a"), name: `QA Credit ${id}`, price: 10000, credit: 28, badge: "QA", features: ["QA benefit"] }));
-        plans = [3, 4].map((id) => ({ _id: String(id).padStart(24, "b"), code: `QA_PLAN_${id}`, name: `QA Subscription ${id}`, price: null, isActive: false, catalogVersion: 2, billingPeriod: "month", durationDays: 30, dailyDownloadLimit: 50 }));
+        plans = [3, 4].map((id) => ({ _id: String(id).padStart(24, "b"), code: `QA_PLAN_${id}`, name: `QA Subscription ${id}`, price: 10000, isActive: false, catalogVersion: id === 3 ? 1 : 2, billingPeriod: "month", durationDays: 30, dailyDownloadLimit: 50 }));
         await openCatalog();
         if (!await page.locator(".languageToggleSingle button").isVisible()) await page.locator(".mobileMenuButton").click();
         if (await page.locator("html").getAttribute("lang") !== language) await page.locator(".languageToggleSingle button").click();
@@ -323,6 +329,25 @@ async function verifyAdminPackageDeletion(page, context, viewport) {
           const cards = panel.locator(".packageGrid .package");
           await cards.first().waitFor();
           if (await cards.count() !== 2) throw new Error("Admin package fixtures did not load");
+          if (kind === "pro") {
+            if (await panel.getByRole("button", { name: /Áp dụng bộ|Apply Subscription catalog/ }).count()) throw new Error("Admin still gates plan availability behind catalog activation");
+            for (let index = 0; index < 2; index++) {
+              const card = cards.nth(index);
+              const toggle = card.getByRole("checkbox", { name: /Bật bán|Enable sales for/ });
+              await toggle.click();
+              await panel.getByRole("status").waitFor();
+              if (!await toggle.isChecked()) throw new Error("Plan did not enable");
+              await card.screenshot({ path: path.join(screenshotRoot, `${viewport}-admin-plan-enabled-${index}-${theme}-${language}.png`) });
+              failToggle = true;
+              await toggle.click();
+              await panel.getByRole("alert").waitFor();
+              if (!await toggle.isChecked()) throw new Error("Rejected toggle changed plan availability");
+              failToggle = false;
+              await toggle.click();
+              await panel.getByRole("status").waitFor();
+              if (await toggle.isChecked()) throw new Error("Plan did not disable on retry");
+            }
+          }
           const remove = () => cards.first().getByRole("button", { name: /^(Xóa|Delete)/ });
           if (await remove().count() !== 1) throw new Error("Admin package has duplicate delete controls");
           if (!await cards.first().evaluate((card) => {
@@ -418,7 +443,7 @@ async function verifySubscriptionCatalog(page, context, viewport) {
   const plans = ["day", "month", "year"].flatMap((billingPeriod, index) => [20, 50, 100].map((quota, quotaIndex) => ({
     _id: String(index * 3 + quotaIndex + 1).padStart(24, "0"), code: `QA_${billingPeriod}_${quota}`,
     name: `${billingPeriod} ${quota}`, billingPeriod, dailyDownloadLimit: quota,
-    durationDays: { day: 1, month: 30, year: 365 }[billingPeriod], catalogVersion: 2,
+    durationDays: { day: 1, month: 30, year: 365 }[billingPeriod], catalogVersion: quota === 20 ? 1 : 2,
     price: 10000 * quota, paypalPriceCents: quota * 10, isActive: true, features: [],
   })));
   plans[5].paypalPriceCents = null;
@@ -886,6 +911,7 @@ async function main() {
       configuredCreditCopy: true,
       languageFlags: true,
       adminPackageDeletion: true,
+      unifiedSubscriptionToggles: true,
       subscriptionCatalog: true,
       topupLayout: true,
       homepagePricingRemoved: true,

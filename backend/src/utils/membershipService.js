@@ -93,6 +93,7 @@ export function createMembershipPaymentCode() {
 }
 
 export async function initializeMembershipPlans() {
+  if (await MembershipPlan.countDocuments({}) > 0) return;
   const setting = await SiteSetting.findOne({ key: "homepage" });
   if (Number(setting?.subscriptionCatalogVersion) >= 2) return;
   await Promise.all(

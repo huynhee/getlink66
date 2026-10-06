@@ -34,7 +34,7 @@ function sortPlans(plans = []) {
 export async function listMembershipPlans(_req, res, next) {
   try {
     const catalog = await getSubscriptionCatalog();
-    const plans = await MembershipPlan.find(subscriptionPlanQuery(catalog)).lean();
+    const plans = await MembershipPlan.find(subscriptionPlanQuery()).lean();
     res.json({ plans: sortPlans(plans.filter((plan) => plan.price !== null && plan.price !== undefined)),
       checkoutEnabled: catalog.checkoutEnabled, payments: { paypal: paypalAvailability() } });
   } catch (error) {
@@ -184,7 +184,7 @@ export async function createMembershipCheckout(req, res, next) {
         voucherDiscountPercent: Number(voucher?.discountPercent || 0),
         durationDays: Number(plan.durationDays || 1),
         billingPeriod: billingPeriodFor(plan),
-        subscriptionPolicyVersion: Number(plan.catalogVersion) >= 2 ? 2 : 1,
+        subscriptionPolicyVersion: 2,
         expiresEndOfDay: true,
         dailyDownloadLimit: Number(plan.dailyDownloadLimit || 100),
         status: "pending",
@@ -197,9 +197,8 @@ export async function createMembershipCheckout(req, res, next) {
       order = await withSubscriptionCatalogWrite(async (session) => {
         const catalog = await getSubscriptionCatalog(session);
         const freshPlan = await MembershipPlan.findById(plan._id).session(session);
-        const compatibleCatalog = catalog.version === 2 ? Number(freshPlan?.catalogVersion) === 2 : Number(freshPlan?.catalogVersion || 1) === 1;
         const fields = ["price", "paypalPriceCents", "durationDays", "dailyDownloadLimit", "billingPeriod", "name", "maxPurchasesPerUser"];
-        if (!catalog.checkoutEnabled || !compatibleCatalog || freshPlan?.isActive === false || freshPlan?.isArchived || !freshPlan
+        if (!catalog.checkoutEnabled || freshPlan?.isActive === false || freshPlan?.isArchived || !freshPlan
           || fields.some((field) => String(freshPlan[field] ?? "") !== String(plan[field] ?? ""))) {
           throw Object.assign(new Error("Subscription plan changed; refresh plans before purchasing"), { status: 409, code: "SUBSCRIPTION_PLAN_CHANGED" });
         }
