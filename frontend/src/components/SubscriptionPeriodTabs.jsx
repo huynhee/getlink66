@@ -5,11 +5,12 @@ import "./subscription.css";
 
 const PERIOD_ICONS = { day: Sun, month: CalendarDays, year: CalendarRange };
 
-export default function SubscriptionPeriodTabs({ value = "month", onChange, language = "vi", panelId }) {
+export default function SubscriptionPeriodTabs({ value = "month", onChange, language = "vi", panelId, disabled = false }) {
   const id = useId();
   const buttons = useRef([]);
 
   function handleKeyDown(event, index) {
+    if (disabled) return;
     let nextIndex;
     if (event.key === "ArrowRight") nextIndex = (index + 1) % SUBSCRIPTION_PERIODS.length;
     else if (event.key === "ArrowLeft") nextIndex = (index + SUBSCRIPTION_PERIODS.length - 1) % SUBSCRIPTION_PERIODS.length;
@@ -30,6 +31,7 @@ export default function SubscriptionPeriodTabs({ value = "month", onChange, lang
             key={period}
             ref={(button) => { buttons.current[index] = button; }}
             type="button"
+            disabled={disabled}
             id={`${id}-${period}`}
             role="tab"
             aria-selected={value === period}

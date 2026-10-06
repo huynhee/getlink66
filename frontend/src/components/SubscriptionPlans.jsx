@@ -12,7 +12,7 @@ import "./subscription.css";
 
 export default function SubscriptionPlans({
   plans = [], period = "month", onPeriodChange, selectedPlanId = "", onSelect,
-  hrefForPlan, language = "vi", paypalEnabled = false, checkoutEnabled = true, getPrice, discountLabel = "", loading = false,
+  hrefForPlan, language = "vi", paypalEnabled = false, checkoutEnabled = true, getPrice, discountLabel = "", loading = false, compact = false,
 }) {
   const panelId = useId();
   const visiblePlans = subscriptionPlansForPeriod(plans, period);
@@ -20,7 +20,7 @@ export default function SubscriptionPlans({
   return (
     <div className="subscriptionCatalog">
       <div className="subscriptionCatalogHeading">
-        <SubscriptionPeriodTabs value={period} onChange={onPeriodChange} language={language} panelId={panelId} />
+        <SubscriptionPeriodTabs value={period} onChange={onPeriodChange} language={language} panelId={panelId} disabled={loading} />
         <p>{language === "vi" ? "Thanh toán từng lần, không tự động gia hạn" : "One-time payment, no automatic renewal"}</p>
       </div>
       <div id={panelId} role="tabpanel" aria-label={language === "vi" ? "Các gói Subscription" : "Subscription plans"} aria-busy={loading}>
@@ -53,9 +53,18 @@ export default function SubscriptionPlans({
                       : `Max ${plan.maxPurchasesPerUser} purchases/account`}
                   </small>
                 )}
-                <ul className="subscriptionPlanBenefits">
-                  {membershipBenefitLabels(plan, language).map((feature) => <li key={feature}><Check size={14} aria-hidden="true" /><span>{feature}</span></li>)}
-                </ul>
+                {compact ? (
+                  <details className="subscriptionBenefitsDisclosure">
+                    <summary>{language === "vi" ? "Quyền lợi gói" : "Plan benefits"}</summary>
+                    <ul className="subscriptionPlanBenefits">
+                      {membershipBenefitLabels(plan, language).map((feature) => <li key={feature}><Check size={14} aria-hidden="true" /><span>{feature}</span></li>)}
+                    </ul>
+                  </details>
+                ) : (
+                  <ul className="subscriptionPlanBenefits">
+                    {membershipBenefitLabels(plan, language).map((feature) => <li key={feature}><Check size={14} aria-hidden="true" /><span>{feature}</span></li>)}
+                  </ul>
+                )}
                 <div className="subscriptionPlanAction">
                   {!available && (
                     <small className="subscriptionUnavailable">

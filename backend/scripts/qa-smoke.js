@@ -328,11 +328,23 @@ async function verifySubscriptionCatalog(page, context, viewport) {
   const meHandler = (route) => route.fulfill({ json: { membership: { active: true, tier: "pro", dailyDownloadLimit: 20,
     proUntil: upcoming.endsAt, currentPeriod: current, upcomingPeriods: [upcoming] } } });
   const packagesPattern = "**/api/topup/packages";
-  const packagesHandler = async (route) => {
-    const response = await route.fetch();
-    const data = await response.json();
-    await route.fulfill({ response, json: { ...data, payments: { paypal: { enabled: true } } } });
+  const packages = [100, 300, 600, 1200, 2500].map((credit, index) => ({
+    _id: String(index + 21).padStart(24, "0"), name: `Credit ${credit}`, credit,
+    price: credit * 1000, paypalPriceCents: credit, features: [],
+  }));
+  const packagesHandler = (route) => route.fulfill({ json: { packages, payments: { paypal: { enabled: true } } } });
+  const voucherPattern = "**/api/voucher/apply";
+  const voucherHandler = (route) => route.fulfill({ json: { voucher: {
+    code: "QA10", discountPercent: 10, creditBonus: 30, appliesToMembership: true, applicablePackageIds: [],
+  } } });
+  const checkoutRequests = [];
+  const checkoutHandler = (route) => {
+    checkoutRequests.push({ path: new URL(route.request().url()).pathname, ...route.request().postDataJSON() });
+    return route.fulfill({ status: 400, json: { message: "QA checkout stopped before payment" } });
   };
+  await context.route(voucherPattern, voucherHandler);
+  await context.route("**/api/membership/checkout", checkoutHandler);
+  await context.route("**/api/topup", checkoutHandler);
   await context.route(plansPattern, plansHandler);
   await context.route(mePattern, meHandler);
   await context.route(packagesPattern, packagesHandler);
@@ -370,6 +382,20 @@ async function verifySubscriptionCatalog(page, context, viewport) {
       root.scrollWidth > root.clientWidth + 1 || [...root.querySelectorAll(".subscriptionPlanCard, button, a")].some((element) => element.scrollWidth > element.clientWidth + 2));
     if (overflow) throw new Error(`${viewport} Subscription controls overflow`);
   };
+  const assertTopupLayout = async () => {
+    const problem = await page.locator(".topupPage").evaluate((root) => {
+      if (globalThis.document.documentElement.scrollWidth > globalThis.innerWidth + 1) return "Page overflow";
+      const catalog = root.querySelector(".topupCatalogColumn").getBoundingClientRect();
+      const order = root.querySelector(".topupOrderColumn").getBoundingClientRect();
+      if (globalThis.innerWidth > 820 ? order.left < catalog.right : order.top < catalog.bottom) return "Order overlaps catalog";
+      const controls = [...root.querySelectorAll("button, input, .subscriptionPlanCard, .topupCreditPlan, .topupOrderSummary")];
+      const overflowing = controls.find((control) => control.clientWidth > 0 && control.scrollWidth > control.clientWidth + 2);
+      if (overflowing) return `Control overflow: ${overflowing.className} (${overflowing.scrollWidth}/${overflowing.clientWidth})`;
+      return "";
+    });
+    if (problem) throw new Error(`${viewport} Topup: ${problem}`);
+    if (await page.locator(".topupPayButton").count() !== 1 || await page.locator("#topup-voucher").count() !== 1) throw new Error("Duplicate checkout or voucher controls");
+  };
   try {
     for (const language of ["vi", "en"]) {
       for (const theme of ["light", "dark"]) {
@@ -384,9 +410,54 @@ async function verifySubscriptionCatalog(page, context, viewport) {
         await assertCatalog("day", language);
         await page.locator(".subscriptionPeriodTabs button").first().press("End");
         await assertCatalog("year", language);
+        await page.goto(`${frontendOrigin}/topup`, { waitUntil: "domcontentloaded" });
+        await assertCatalog("month", language);
+        if (!await page.locator('#topup-tab-pro').getAttribute("aria-selected").then((value) => value === "true")) throw new Error("Topup default is not Subscription");
+        await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-topup-subscription-${theme}-${language}.png`), fullPage: true });
+        await assertTopupLayout();
+        await page.locator("#topup-tab-pro").focus();
+        await page.locator("#topup-tab-pro").press("End");
+        await page.locator(".topupCreditPlan").first().getByRole("button").click();
+        await page.waitForFunction(() => globalThis.document.querySelector(".topupSelectedItem > strong")?.textContent === "Credit 100");
+        await assertTopupLayout();
+        const creditPrice = await page.locator(".topupOrderTotal dd").innerText();
+        if (!creditPrice.includes(language === "vi" ? "100.000" : "US$1.00")) throw new Error(`Wrong Credit total: ${creditPrice}`);
+        await page.locator("#topup-voucher").fill("QA10");
+        await page.locator(".topupVoucherForm").getByRole("button").click();
+        await page.locator(".topupAppliedVoucher").waitFor();
+        await page.waitForFunction((expected) => globalThis.document.querySelector(".topupOrderTotal dd")?.textContent.includes(expected), language === "vi" ? "90.000" : "US$0.90");
+        if (!await page.locator(".topupSelectedItem").innerText().then((text) => text.includes("130 Credit"))) throw new Error("Missing voucher Credit bonus");
+        await assertTopupLayout();
+        await page.evaluate(() => globalThis.scrollTo(0, 0));
+        await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-topup-credit-${theme}-${language}.png`), fullPage: true });
+        const beforeCheckout = checkoutRequests.length;
+        await page.locator(".topupPayButton").click();
+        await page.locator(".topupOrderSummary .error").waitFor();
+        const checkout = checkoutRequests[beforeCheckout];
+        if (checkoutRequests.length !== beforeCheckout + 1 || checkout.path !== "/api/topup" || checkout.packageId !== packages[0]._id || checkout.paymentProvider !== (language === "vi" ? "sepay" : "paypal") || checkout.voucherCode !== "QA10") throw new Error("Credit checkout contract changed");
+        await page.locator(".topupAppliedVoucher button").click();
+        if (await page.locator(".topupAppliedVoucher").count()) throw new Error("Voucher was not removed");
+        if (await page.locator(".topupOrderTotal dd").innerText() !== creditPrice) throw new Error("Removing voucher did not restore price");
+        await page.locator("#topup-tab-credit").press("Home");
+        await assertCatalog("month", language);
+        const beforeSubscription = checkoutRequests.length;
+        await page.locator(".topupPayButton").click();
+        await page.locator(".topupOrderSummary .error").waitFor();
+        const subscription = checkoutRequests[beforeSubscription];
+        if (checkoutRequests.length !== beforeSubscription + 1 || subscription.path !== "/api/membership/checkout" || subscription.planId !== plans[3]._id || subscription.paymentProvider !== (language === "vi" ? "sepay" : "paypal") || subscription.voucherCode) throw new Error("Subscription checkout contract changed");
+        await page.locator(".subscriptionPeriodTabs button").first().click();
+        await assertCatalog("day", language);
+        const freeButton = page.locator(".topupPayButton");
+        if (await freeButton.isDisabled() || !await freeButton.innerText().then((text) => text.includes(language === "vi" ? "Nhận gói miễn phí" : "Get free plan"))) throw new Error("Free plan checkout is unavailable");
       }
       await page.goto(`${frontendOrigin}/topup?mode=pro&planId=${plans[8]._id}`, { waitUntil: "domcontentloaded" });
       await assertCatalog("year", language);
+      await page.locator("#topup-tab-credit").click();
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => globalThis.document.querySelector("#topup-tab-credit")?.getAttribute("aria-selected") === "true");
+      await page.goto(`${frontendOrigin}/topup?packageId=${packages[1]._id}`, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => globalThis.document.querySelector(".topupSelectedItem > strong")?.textContent === "Credit 300");
+      if (await page.locator("#topup-tab-credit").getAttribute("aria-selected") !== "true") throw new Error("Credit package link opened Subscription");
       await page.goto(`${frontendOrigin}/topup?mode=pro`, { waitUntil: "domcontentloaded" });
       await assertCatalog("month", language);
       if (language === "en") {
@@ -395,9 +466,20 @@ async function verifySubscriptionCatalog(page, context, viewport) {
         await unavailable.getByRole("button").click();
         if (!await page.locator(".topupCheckoutBox .primaryButton").isDisabled()) throw new Error("Missing USD price can be purchased");
       }
+      const homepageCatalogRequests = [];
+      const collectHomeRequest = (request) => {
+        const pathname = new URL(request.url()).pathname;
+        if (["/api/topup/packages", "/api/membership/plans"].includes(pathname)) homepageCatalogRequests.push(pathname);
+      };
+      page.on("request", collectHomeRequest);
       await page.goto(`${frontendOrigin}/`, { waitUntil: "domcontentloaded" });
-      await assertCatalog("month", language);
-      await page.locator(".subscriptionCatalog").screenshot({ path: path.join(screenshotRoot, `${viewport}-subscription-home-${language}.png`) });
+      await page.locator("#home-guide").waitFor();
+      await page.evaluate(() => new Promise((resolve) => globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve))));
+      page.off("request", collectHomeRequest);
+      if (homepageCatalogRequests.length) throw new Error(`Homepage still fetches package catalogs: ${homepageCatalogRequests}`);
+      if (await page.locator("#pricing, .homeTopupChooser, .subscriptionCatalog, .pricingGrid").count()) throw new Error("Homepage still contains top-up packages");
+      if (await page.locator('a[href="#pricing"]').count()) throw new Error("Homepage contains a broken pricing anchor");
+      await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-home-without-pricing-${language}.png`), fullPage: true });
     }
     checkoutEnabled = false;
     await page.goto(`${frontendOrigin}/membership`, { waitUntil: "domcontentloaded" });
@@ -408,6 +490,9 @@ async function verifySubscriptionCatalog(page, context, viewport) {
     await context.unroute(mePattern, meHandler);
     await context.unroute(packagesPattern, packagesHandler);
     await context.unroute(eventsPattern, eventsHandler);
+    await context.unroute(voucherPattern, voucherHandler);
+    await context.unroute("**/api/membership/checkout", checkoutHandler);
+    await context.unroute("**/api/topup", checkoutHandler);
   }
 }
 
@@ -680,6 +765,8 @@ async function main() {
       configuredCreditCopy: true,
       languageFlags: true,
       subscriptionCatalog: true,
+      topupLayout: true,
+      homepagePricingRemoved: true,
       completedGetlinkBalanceReplay: false,
       externalFailures: externalFailures.length,
       externalFailureSamples: externalFailures.slice(0, 10),

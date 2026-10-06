@@ -1,0 +1,712 @@
+.topupPage {
+  min-width: 0;
+  max-width: 1380px;
+  margin: 0 auto;
+  padding-block: 16px 40px;
+  letter-spacing: 0;
+}
+
+.appFrame.page-topup ~ .messengerFloat {
+  display: none;
+}
+
+.topupPage .topupPageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  margin-bottom: 28px;
+}
+
+.topupPage .topupPageHeader h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  line-height: 1.3;
+}
+
+.topupPage .topupPageHeader p,
+.topupPage .topupCatalogHeader p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.topupPage .topupHistoryLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.topupPage .topupHistoryLink:hover {
+  color: var(--brand-primary);
+}
+
+.topupPage .topupAccountStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px 48px;
+  padding-block: 20px;
+  border-block: 1px solid var(--border);
+  margin-bottom: 28px;
+}
+
+.topupPage .topupAccountStrip > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.topupPage .topupAccountStrip svg {
+  flex-shrink: 0;
+  color: var(--accent-cyan);
+}
+
+.topupPage .topupAccountStrip span {
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.topupPage .topupAccountStrip strong {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.topupPage .topupAccountStrip small {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.topupPage .topupModeTabs {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--border);
+}
+
+.topupPage .topupModeTabs > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 12px 2px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.topupPage .topupModeTabs > button[aria-selected="true"] {
+  color: var(--brand-primary);
+  border-bottom-color: var(--brand-primary);
+}
+
+.topupPage .topupLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  align-items: start;
+  gap: 36px;
+}
+
+.topupPage .topupCatalogColumn,
+.topupPage .topupCatalogSection,
+.topupPage .topupOrderColumn {
+  min-width: 0;
+}
+
+.topupPage .topupCatalogHeader h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.topupPage .subscriptionCatalog {
+  margin-block: 24px 28px;
+}
+
+.topupPage .subscriptionCatalogHeading {
+  align-items: start;
+  gap: 12px;
+}
+
+.topupPage .subscriptionCatalogHeading > p {
+  font-size: 11px;
+  line-height: 1.6;
+  max-width: 230px;
+}
+
+.topupPage .subscriptionPeriodTabs {
+  width: 280px;
+}
+
+.topupPage .subscriptionPeriodTabs > button {
+  min-height: 38px;
+  font-size: 12px;
+}
+
+.topupPage .subscriptionPlanGrid {
+  grid-template-columns: repeat(min(var(--subscription-columns, 3), 3), minmax(0, 1fr));
+  gap: 12px;
+}
+
+.topupPage .subscriptionPlanCard,
+.topupPage .topupCreditPlan {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.topupPage .subscriptionPlanCard.isSelected,
+.topupPage .topupCreditPlan.isSelected {
+  border-color: var(--brand-primary);
+  box-shadow: inset 0 0 0 1px var(--brand-primary);
+}
+
+.topupPage .subscriptionPlanHeading {
+  min-height: 60px;
+}
+
+.topupPage .subscriptionPlanHeading h3,
+.topupPage .topupCreditPlanHeading h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.topupPage .subscriptionPlanPrice {
+  order: 2;
+  margin: 0 0 8px;
+  font-size: 25px;
+}
+
+.topupPage .subscriptionPlanPrice.unavailable {
+  font-size: 16px;
+}
+
+.topupPage .subscriptionPlanQuota {
+  margin: 0;
+  font-size: 12px;
+}
+
+.topupPage .subscriptionPlanQuota strong {
+  font-size: 32px;
+  font-family: var(--font-display);
+}
+
+.topupPage .subscriptionPlanDuration {
+  margin: 0;
+  font-size: 11px;
+}
+
+.topupPage .subscriptionDiscount {
+  order: 3;
+  margin: 0;
+  font-size: 11px;
+}
+
+.topupPage .subscriptionBenefitsDisclosure {
+  order: 4;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.topupPage .subscriptionBenefitsDisclosure summary {
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.topupPage .subscriptionBenefitsDisclosure .subscriptionPlanBenefits {
+  padding-block: 8px;
+  margin: 0;
+  border: 0;
+  gap: 10px;
+}
+
+.topupPage .subscriptionPlanBenefits li {
+  font-size: 11px;
+}
+
+.topupPage .subscriptionPlanAction {
+  order: 5;
+  padding-top: 4px;
+}
+
+.topupPage .topupCreditPlanGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-block: 24px;
+}
+
+.topupPage .topupCreditPlanHeading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 42px;
+}
+
+.topupPage .topupCreditPlanHeading svg {
+  flex-shrink: 0;
+  color: var(--brand-primary);
+}
+
+.topupPage .topupCreditAmount {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.topupPage .topupCreditAmount strong {
+  color: var(--accent-cyan);
+  font-family: var(--font-display);
+  font-size: 32px;
+}
+
+.topupPage .topupCreditPlanPrice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.topupPage .topupCreditPlanPrice > strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.topupPage .topupCreditPlanPrice del,
+.topupPage .topupCreditPlan > small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.topupPage .topupCreditPlan > button {
+  order: 5;
+  width: 100%;
+  min-height: 44px;
+  margin-top: auto;
+  padding: 10px 8px;
+  justify-content: center;
+  font-size: 12px;
+  white-space: normal;
+}
+
+.topupPage .topupOrderColumn {
+  position: sticky;
+  top: 24px;
+}
+
+.topupPage .topupOrderSummary {
+  display: block;
+  padding: 24px;
+  margin: 0;
+  background: var(--surface-1);
+  border-color: var(--border);
+  clip-path: none;
+  border-radius: 6px;
+  box-shadow: none;
+  overflow-wrap: anywhere;
+}
+
+.topupPage .topupOrderHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.topupPage .topupOrderHeading h2 {
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.topupPage .topupOrderHeading svg {
+  color: var(--brand-primary);
+}
+
+.topupPage .topupSelectedItem {
+  display: block;
+  margin-bottom: 24px;
+}
+
+.topupPage .topupSelectedItem > span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: none;
+  margin-bottom: 6px;
+}
+
+.topupPage .topupSelectedItem > strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+
+.topupPage .topupSelectedItem p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.topupPage .topupVoucherPanel {
+  display: block;
+  padding-block: 20px;
+  border-block: 1px solid var(--border);
+  margin: 0;
+}
+
+.topupPage .topupVoucherForm label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.topupPage .topupVoucherInputRow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.topupPage .topupVoucherInputRow input {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+  min-height: 40px;
+  padding: 10px;
+  font-size: 12px;
+  border-radius: 4px;
+}
+
+.topupPage .topupVoucherInputRow button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  min-width: 72px;
+  width: auto;
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.topupPage .topupAppliedVoucher {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--brand-primary);
+}
+
+.topupPage .topupAppliedVoucher strong,
+.topupPage .topupAppliedVoucher span {
+  color: inherit;
+  font-size: 11px;
+  text-transform: none;
+}
+
+.topupPage .topupAppliedVoucher .topupIconButton {
+  margin-left: auto;
+}
+
+.topupPage .topupOrderTotals {
+  display: grid;
+  gap: 14px;
+  margin: 20px 0 24px;
+  font-size: 12px;
+}
+
+.topupPage .topupOrderTotals > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.topupPage .topupOrderTotals dt {
+  color: var(--text-muted);
+}
+
+.topupPage .topupOrderTotals dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.topupPage .topupDiscountRow dd {
+  color: var(--brand-primary);
+}
+
+.topupPage .topupOrderTotal {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.topupPage .topupOrderTotal dt {
+  color: var(--text-primary);
+}
+
+.topupPage .topupOrderTotal dd {
+  font-size: 22px;
+  font-family: var(--font-display);
+  font-weight: 800;
+}
+
+.topupPage .topupPaymentProvider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.topupPage .topupPaymentProvider span,
+.topupPage .topupPaymentProvider svg {
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-transform: none;
+}
+
+.topupPage .topupPayButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 12px;
+  font-size: 13px;
+  white-space: normal;
+}
+
+.topupPage .topupFeedback {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.topupPage .topupOrderFootnote,
+.topupPage .topupCatalogNote {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.topupPage .topupOrderFootnote {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  margin: 16px 4px 0;
+}
+
+.topupPage .topupOrderFootnote svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.topupPage .topupPaymentResult,
+.topupPage .topupPaymentDetails {
+  padding-block: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.topupPage .topupPaymentResult {
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  color: var(--brand-primary);
+}
+
+.topupPage .topupPaymentResult h3,
+.topupPage .topupPaymentDetails h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.topupPage .topupPaymentResult p {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.topupPage .topupPaymentRows {
+  margin: 0;
+}
+
+.topupPage .topupPaymentRows > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-block: 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.topupPage .topupPaymentRows dt {
+  min-width: 110px;
+  color: var(--text-muted);
+}
+
+.topupPage .topupPaymentRows dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.topupPage .topupIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  width: 32px;
+  height: 32px;
+  padding: 4px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.topupPage .topupIconButton:hover:not(:disabled) {
+  color: var(--brand-primary);
+  background: var(--surface-2);
+}
+
+.topupPage button:disabled {
+  cursor: not-allowed;
+}
+
+.topupPage button:focus-visible,
+.topupPage a:focus-visible,
+.topupPage summary:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 3px;
+}
+
+.topupPage .topupSpinner {
+  animation: topup-spin 1s linear infinite;
+}
+
+@keyframes topup-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 1100px) {
+  .topupPage .topupLayout {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 24px;
+  }
+
+  .topupPage .subscriptionPlanGrid,
+  .topupPage .topupCreditPlanGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .topupPage .topupLayout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+
+  .topupPage .topupOrderColumn {
+    position: static;
+  }
+
+  .topupPage .subscriptionPlanGrid,
+  .topupPage .topupCreditPlanGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .topupPage .topupPageHeader {
+    margin-bottom: 20px;
+  }
+
+  .topupPage .topupPageHeader h1 {
+    font-size: 24px;
+  }
+
+  .topupPage .topupAccountStrip {
+    gap: 20px 28px;
+  }
+
+  .topupPage .subscriptionPlanGrid,
+  .topupPage .topupCreditPlanGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topupPage .subscriptionPlanCard,
+  .topupPage .topupCreditPlan {
+    padding: 16px;
+  }
+
+  .topupPage .subscriptionPlanPrice {
+    font-size: 22px;
+  }
+
+  .topupPage .subscriptionPlanPrice.unavailable {
+    font-size: 15px;
+  }
+
+  .topupPage .subscriptionCatalogHeading {
+    display: grid;
+  }
+
+  .topupPage .subscriptionCatalogHeading > p {
+    max-width: none;
+  }
+}
+
+@media (max-width: 380px) {
+  .topupPage .subscriptionPlanGrid,
+  .topupPage .topupCreditPlanGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topupPage .topupSpinner {
+    animation: none;
+  }
+}

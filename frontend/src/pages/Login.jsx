@@ -1,13 +1,11 @@
 import React, { useState } from "react";
-import { AlertCircle, ArrowRight, BookOpen, CheckCircle2, ChevronRight, Chrome, ClipboardPaste, Search, ShieldCheck, Sparkles, UserPlus, Wallet } from "lucide-react";
+import { AlertCircle, ArrowRight, BookOpen, ChevronRight, Chrome, ClipboardPaste, Search, ShieldCheck, UserPlus } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import GuideContent from "../components/GuideContent.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
 import PluginHero from "../components/PluginHero.jsx";
 import { ModelCard } from "./Models.jsx";
 import { translations } from "../i18n.js";
-import SubscriptionPlans from "../components/SubscriptionPlans.jsx";
-import { formatPaymentMoney, packagePrice, checkoutCurrency } from "../utils/paymentPresentation.js";
 
 const HOME_TEXT_DEFAULTS = {
   vi: {
@@ -119,18 +117,12 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const userId = user?._id;
   const [demoLink, setDemoLink] = useState("");
   const [demoError, setDemoError] = useState("");
-  const [packages, setPackages] = useState([]);
-  const [paypalEnabled, setPaypalEnabled] = useState(false);
-  const [membershipPlans, setMembershipPlans] = useState([]);
-  const [subscriptionPeriod, setSubscriptionPeriod] = useState("month");
-  const [subscriptionCheckoutEnabled, setSubscriptionCheckoutEnabled] = useState(true);
   const [featuredModels, setFeaturedModels] = useState([]);
   const [featuredModelsLoading, setFeaturedModelsLoading] = useState(true);
   const [featuredScenes, setFeaturedScenes] = useState([]);
   const [featuredScenesLoading, setFeaturedScenesLoading] = useState(true);
   const [catalogSearchType, setCatalogSearchType] = useState("model");
   const [catalogSearch, setCatalogSearch] = useState("");
-  const [homeTopupMode, setHomeTopupMode] = useState("pro");
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
   const [referral, setReferral] = useState(null);
   const [referralCopied, setReferralCopied] = useState(false);
@@ -230,22 +222,6 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
           setFeaturedScenesLoading(false);
         }
       });
-    api("/api/topup/packages")
-      .then((data) => {
-        if (!cancelled) {
-          setPackages(data.packages || []);
-          setPaypalEnabled(Boolean(data.payments?.paypal?.enabled));
-        }
-      })
-      .catch(() => {});
-    api("/api/membership/plans")
-      .then((data) => {
-        if (!cancelled) {
-          setMembershipPlans(data.plans || []);
-          setSubscriptionCheckoutEnabled(data.checkoutEnabled !== false);
-        }
-      })
-      .catch(() => {});
     api("/api/system/3d66-status")
       .then((data) => {
         if (!cancelled) setSystemStatus({ online: Boolean(data.online), message: data.message || "" });
@@ -287,35 +263,10 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
       .catch(() => setReferral(null));
   }, [userId, adminMode]);
 
-  const pricingPackages = packages.length
-    ? packages
-    : [
-      {
-        name: language === "vi" ? "GÓI STARTER" : "STARTER PACKAGE",
-        price: 65000,
-        credit: 140,
-        salePercent: 0,
-        badge: "",
-        features: t.defaultPackageFeatures
-      }
-    ];
   const activeGuideArticle = React.useMemo(
     () => guideArticles.find((item) => item.slug === guideActiveSlug) || guideArticles[0],
     [guideActiveSlug, guideArticles]
   );
-
-  function finalPrice(pkg) {
-    return packagePrice(pkg, language);
-  }
-
-  function hasSale(pkg) {
-    if (language === "en") return false;
-    return (
-      Number(pkg.salePercent || 0) > 0 ||
-      (Number(pkg.salePrice || 0) > 0 &&
-        Number(pkg.salePrice || 0) < Number(pkg.price || 0))
-    );
-  }
 
   function googleHref(target = returnTo) {
     const params = new URLSearchParams({ returnTo: target });
@@ -326,13 +277,6 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
 
   function authAwareHref(target) {
     return user ? target : googleHref(target);
-  }
-
-  function topupTarget(mode, id = "") {
-    const params = new URLSearchParams({ mode });
-    if (mode === "pro" && id) params.set("planId", id);
-    if (mode === "credit" && id) params.set("packageId", id);
-    return `/topup?${params.toString()}`;
   }
 
   function getlinkTarget() {
@@ -522,7 +466,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
               <a className="primaryButton" href={authAwareHref("/getlink")}>
                 <Chrome size={18} /> {user ? t.enterGetlink : t.googleLogin}
               </a>
-              <a className="googleButton" href="#pricing">
+              <a className="googleButton" href={authAwareHref("/topup?mode=pro")}>
                 {t.viewPricing} <ArrowRight size={16} />
               </a>
             </div>
@@ -718,158 +662,6 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
 
       {!adminMode && (
         <>
-          <section id="pricing" style={{ marginTop: 64 }}>
-            <div className="sectionTitle">
-              <h3>{siteSettings.pricingEyebrow || t.pricing}</h3>
-              <h2 className="glitchTitle subtle" data-text={siteSettings.pricingTitle || t.choosePackage}>
-                {siteSettings.pricingTitle || t.choosePackage}
-              </h2>
-              <p className="pricingModeDescription">
-                {homeTopupMode === "credit"
-                  ? siteSettings.pricingNote
-                  : (language === "vi"
-                    ? "Bạn đang xem Subscription dùng để mở quyền và quota tải Model/Scene trong thư viện."
-                    : "Subscription plans unlock Model/Scene library access and daily download quota.")}
-              </p>
-            </div>
-
-            <div
-              className="homeTopupChooser landingTopupChooser"
-            >
-              <div>
-                <span className="eyebrowSignal">{language === "vi" ? "Gói nạp" : "Top-up"}</span>
-                <h3>{language === "vi" ? "Nạp theo nhu cầu" : "Top up by need"}</h3>
-                <p className="homeTopupPurpose">
-                  {language === "vi"
-                    ? "Credit dùng cho Getlink và tải lẻ Model/Scene. Subscription phù hợp người tải thường xuyên, mở quyền Pro và quota theo ngày."
-                    : "Credits cover Getlink and one-off Model/Scene downloads. Subscription suits frequent users with Pro access and daily quota."}
-                </p>
-              </div>
-              <div className="homeTopupActions">
-                <button
-                  type="button"
-                  className={`homeTopupAction pro ${homeTopupMode === "pro" ? "active" : ""}`}
-                  onClick={() => setHomeTopupMode("pro")}
-                  aria-pressed={homeTopupMode === "pro"}
-                >
-                  <Sparkles size={18} />
-                  <span>Subscription</span>
-                  <small>{language === "vi" ? "Quyền tải Model/Scene Pro" : "Pro Model/Scene access"}</small>
-                  <small className="homeTopupActionStatus">
-                    {homeTopupMode === "pro" && <CheckCircle2 size={13} />}
-                    {homeTopupMode === "pro"
-                      ? (language === "vi" ? "Đang chọn" : "Selected")
-                      : (language === "vi" ? "Chọn Subscription" : "Choose Subscription")}
-                  </small>
-                </button>
-                <button
-                  type="button"
-                  className={`homeTopupAction credit ${homeTopupMode === "credit" ? "active" : ""}`}
-                  onClick={() => setHomeTopupMode("credit")}
-                  aria-pressed={homeTopupMode === "credit"}
-                >
-                  <Wallet size={18} />
-                  <span>Credit</span>
-                  <small>{language === "vi" ? "Getlink và tải lẻ Model/Scene" : "Getlink and one-off Model/Scene downloads"}</small>
-                  <small className="homeTopupActionStatus">
-                    {homeTopupMode === "credit" && <CheckCircle2 size={13} />}
-                    {homeTopupMode === "credit"
-                      ? (language === "vi" ? "Đang chọn" : "Selected")
-                      : (language === "vi" ? "Chọn Credit" : "Choose Credit")}
-                  </small>
-                </button>
-              </div>
-            </div>
-
-            <div className={`homeTopupCurrentMode ${homeTopupMode}`} aria-live="polite">
-              <CheckCircle2 size={16} />
-              <span>{language === "vi" ? "Đang hiển thị:" : "Showing:"}</span>
-              <strong>
-                {homeTopupMode === "credit"
-                  ? (language === "vi" ? "Gói Credit cho Getlink và tải lẻ" : "Credit plans for Getlink and one-off downloads")
-                  : (language === "vi" ? "Subscription cho thư viện Model/Scene" : "Subscription for the Model/Scene library")}
-              </strong>
-            </div>
-
-            {homeTopupMode === "credit" ? (
-              <div
-                className="pricingGrid"
-                style={{ "--package-count": Math.min(pricingPackages.length || 1, 5) }}
-              >
-                {pricingPackages.map((pkg, index) => (
-                  <div
-                    className="pricingCard"
-                    key={pkg._id || pkg.name || index}
-                    style={pkg.badge ? { borderColor: "var(--neon-green)", zIndex: 10 } : undefined}
-                  >
-                    {pkg.badge && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: -12,
-                          left: "50%",
-                          transform: "translateX(-50%)",
-                          background: "var(--neon-green)",
-                          color: "#000",
-                          padding: "2px 12px",
-                          fontSize: 11,
-                          fontWeight: "bold",
-                          fontFamily: "var(--font-mono)"
-                        }}
-                      >
-                        {pkg.badge}
-                      </div>
-                    )}
-                    <h3>{pkg.name || t.defaultPackageName}</h3>
-                    <div className="priceBlock">
-                      {hasSale(pkg) && (
-                        <div className="priceOriginal">
-                          {Number(pkg.price).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}<span>đ</span>
-                        </div>
-                      )}
-                      <div className="price hl-green">
-                        {formatPaymentMoney(finalPrice(pkg), checkoutCurrency(language), language === "vi" ? "vi-VN" : "en-US")}
-                      </div>
-                    </div>
-                    {hasSale(pkg) && (
-                      <div className="credits pricingSaleLine">
-                        {language === "vi"
-                          ? `SALE ${pkg.salePercent}% từ ${Number(pkg.price).toLocaleString("vi-VN")}đ`
-                          : `SALE ${pkg.salePercent}% from ${Number(pkg.price).toLocaleString("en-US")}đ`}
-                      </div>
-                    )}
-                    <div className="credits">{pkg.credit} CREDIT</div>
-                    {Number(pkg.maxTopupsPerUser || 0) > 0 && (
-                      <div className="credits" style={{ color: "var(--text-muted)", fontWeight: 500 }}>
-                        {language === "vi"
-                          ? `Mỗi tài khoản nạp tối đa ${pkg.maxTopupsPerUser} lần`
-                          : `Max ${pkg.maxTopupsPerUser} times/account`}
-                      </div>
-                    )}
-                    <ul>
-                      {((pkg.features && pkg.features.length > 0)
-                        ? pkg.features
-                        : t.defaultPackageFeatures
-                      ).map((feature, featureIndex) => (
-                        <li key={featureIndex}>{feature}</li>
-                      ))}
-                    </ul>
-                    {language === "en" && (!paypalEnabled || finalPrice(pkg) == null) ? (
-                      <button className="googleButton" disabled>Not available</button>
-                    ) : (
-                      <a className={pkg.badge ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("credit", pkg._id))}>
-                        {language === "en" ? "Pay with PayPal" : user ? t.topupNow : t.buyNow}
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <SubscriptionPlans plans={membershipPlans} period={subscriptionPeriod} onPeriodChange={setSubscriptionPeriod}
-                language={language} paypalEnabled={paypalEnabled} checkoutEnabled={subscriptionCheckoutEnabled} hrefForPlan={(plan) => authAwareHref(topupTarget("pro", plan._id))} />
-            )}
-          </section>
-
           <section className="homeGuideSection" id="home-guide">
             <div className="sectionTitle">
               <h3>
