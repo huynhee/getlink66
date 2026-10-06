@@ -591,7 +591,7 @@ export function normalizePlanPayload(body = {}) {
 
 export async function adminListMembershipPlans(_req, res, next) {
   try {
-    const plans = await MembershipPlan.find().sort({ sortOrder: 1, price: 1 }).lean();
+    const plans = await MembershipPlan.find({ isArchived: { $ne: true } }).sort({ sortOrder: 1, price: 1 }).lean();
     res.json({ plans, catalog: await getSubscriptionCatalog() });
   } catch (error) {
     next(error);
@@ -626,7 +626,7 @@ export async function adminUpdateMembershipPlan(req, res, next) {
     if (unknownKey) return res.status(400).json({ message: "Invalid membership plan request" });
     const plan = await withSubscriptionCatalogWrite(async (session) => {
       const existing = await MembershipPlan.findById(req.params.id).session(session).lean();
-      if (!existing) return null;
+      if (!existing || existing.isArchived) return null;
       const payload = normalizePlanPayload({ ...existing, billingPeriod: subscriptionBillingPeriod(existing), ...req.body });
       delete payload.code;
       if (!payload.name) throw paymentError("Plan name is required", "INVALID_SUBSCRIPTION_PLAN", 400);
@@ -643,11 +643,15 @@ export async function adminUpdateMembershipPlan(req, res, next) {
 export async function adminDeleteMembershipPlan(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid membership plan id" });
-    const plan = await withSubscriptionCatalogWrite((session) =>
-      MembershipPlan.findByIdAndUpdate(req.params.id, { $set: { isActive: false } }, { new: true, session }),
-    );
+    const plan = await withSubscriptionCatalogWrite(async (session) => {
+      const existing = await MembershipPlan.findById(req.params.id).session(session);
+      if (!existing || existing.isArchived) return existing;
+      return MembershipPlan.findByIdAndUpdate(req.params.id, {
+        $set: { isActive: false, isArchived: true, archivedAt: new Date() },
+      }, { new: true, session });
+    });
     if (!plan) return res.status(404).json({ message: "Membership plan not found" });
-    res.json({ plan });
+    res.json({ ok: true, archived: true, plan, catalog: await getSubscriptionCatalog() });
   } catch (error) {
     next(error);
   }
@@ -664,7 +668,7 @@ export async function adminReorderMembershipPlans(req, res, next) {
         await MembershipPlan.findByIdAndUpdate(id, { $set: { sortOrder: (index + 1) * 10 } }, { session });
       }
     });
-    const plans = await MembershipPlan.find().sort({ sortOrder: 1, price: 1 }).lean();
+    const plans = await MembershipPlan.find({ isArchived: { $ne: true } }).sort({ sortOrder: 1, price: 1 }).lean();
     res.json({ plans, catalog: await getSubscriptionCatalog() });
   } catch (error) {
     next(error);

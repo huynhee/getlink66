@@ -263,6 +263,116 @@ async function verifyLanguageFlags(page, viewport, accountType) {
   }
 }
 
+async function verifyAdminPackageDeletion(page, context, viewport) {
+  const pattern = /\/api\/admin\/(topup-packages|membership-plans)(?:\/[^/?]+)?$/;
+  let packages = [], plans = [], deletes = 0, failDelete = false, releaseDelete;
+  const catalog = { version: 2, prepared: true, checkoutEnabled: true };
+  const handler = async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    const credit = pathname.includes("topup-packages");
+    if (request.method() === "GET") {
+      return route.fulfill({ json: credit ? { packages } : { plans, catalog } });
+    }
+    if (request.method() !== "DELETE") return route.fallback();
+    deletes++;
+    await new Promise((resolve) => { releaseDelete = resolve; });
+    if (failDelete) return route.fulfill({ status: 409, json: { message: "QA deletion refused; retry is safe." } });
+    const id = pathname.split("/").at(-1);
+    if (credit) packages = packages.filter((item) => item._id !== id);
+    else plans = plans.filter((item) => item._id !== id);
+    return route.fulfill({ json: { ok: true, archived: true, catalog } });
+  };
+  const initialLanguage = await page.locator("html").getAttribute("lang");
+  const initialTheme = await page.locator("html").getAttribute("data-theme");
+  await context.route(pattern, handler);
+  // Repeated catalog reloads do not need SSE; live account events are tested separately.
+  const eventsPattern = "**/api/account/events";
+  const stopEvents = (route) => route.fulfill({ status: 204, body: "" });
+  await context.route(eventsPattern, stopEvents);
+  const panel = page.locator(".panel").filter({ has: page.getByRole("heading", { name: /Quản lý gói nạp|Manage top-up packages/ }) });
+  const finishDelete = async () => {
+    const deadline = Date.now() + 5000;
+    while (!releaseDelete) {
+      if (Date.now() > deadline) throw new Error("Package DELETE request was not sent");
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    releaseDelete();
+  };
+  const openCatalog = async () => {
+    const responses = ["topup-packages", "membership-plans"].map((endpoint) => page.waitForResponse(
+      (response) => new URL(response.url()).pathname === `/api/admin/${endpoint}`,
+    ));
+    await page.goto(`${frontendOrigin}/admin`, { waitUntil: "domcontentloaded" });
+    await Promise.all(responses);
+    await page.getByRole("navigation", { name: "Admin sections", exact: true }).getByRole("button", { name: "Website", exact: true }).click();
+    await panel.waitFor();
+  };
+  try {
+    for (const theme of ["light", "dark"]) {
+      for (const language of ["vi", "en"]) {
+        packages = [1, 2].map((id) => ({ _id: String(id).padStart(24, "a"), name: `QA Credit ${id}`, price: 10000, credit: 28, badge: "QA", features: ["QA benefit"] }));
+        plans = [3, 4].map((id) => ({ _id: String(id).padStart(24, "b"), code: `QA_PLAN_${id}`, name: `QA Subscription ${id}`, price: null, isActive: false, catalogVersion: 2, billingPeriod: "month", durationDays: 30, dailyDownloadLimit: 50 }));
+        await openCatalog();
+        if (!await page.locator(".languageToggleSingle button").isVisible()) await page.locator(".mobileMenuButton").click();
+        if (await page.locator("html").getAttribute("lang") !== language) await page.locator(".languageToggleSingle button").click();
+        if (await page.locator("html").getAttribute("data-theme") !== theme) await page.locator(".themeToggle").click();
+        if (await page.locator(".mobileMenuButton").getAttribute("aria-expanded") === "true") await page.locator(".mobileMenuButton").click();
+        for (const kind of ["credit", "pro"]) {
+          await panel.locator(".adminSubTabs").first().getByRole("button", { name: kind === "credit" ? "Credit" : "Subscription", exact: true }).click();
+          const cards = panel.locator(".packageGrid .package");
+          await cards.first().waitFor();
+          if (await cards.count() !== 2) throw new Error("Admin package fixtures did not load");
+          const remove = () => cards.first().getByRole("button", { name: /^(Xóa|Delete)/ });
+          if (await remove().count() !== 1) throw new Error("Admin package has duplicate delete controls");
+          if (!await cards.first().evaluate((card) => {
+            const toolbar = card.querySelector(".packageActions");
+            const content = toolbar.nextElementSibling;
+            return toolbar.getBoundingClientRect().bottom <= content.getBoundingClientRect().top;
+          })) throw new Error("Package controls overlap its content");
+          const before = deletes;
+          page.once("dialog", (dialog) => dialog.dismiss());
+          await remove().click();
+          if (deletes !== before || await cards.count() !== 2) throw new Error("Cancelled package deletion changed the catalog");
+          page.once("dialog", (dialog) => dialog.accept());
+          failDelete = false;
+          releaseDelete = null;
+          await remove().click();
+          await page.waitForFunction(() => globalThis.document.querySelector(".packageActions .spin"));
+          if (await remove().isEnabled()) throw new Error("Delete button stays enabled during deletion");
+          await finishDelete();
+          await panel.getByRole("status").waitFor();
+          if (await cards.count() !== 1 || deletes !== before + 1) throw new Error("Deletion did not immediately remove exactly one package");
+          page.once("dialog", (dialog) => dialog.accept());
+          failDelete = true;
+          releaseDelete = null;
+          await remove().click();
+          await finishDelete();
+          await panel.getByRole("alert").waitFor();
+          if (await cards.count() !== 1 || !await remove().isEnabled()) throw new Error("Failed deletion removed the package or blocked retry");
+          await cards.first().screenshot({ path: path.join(screenshotRoot, `${viewport}-admin-delete-${kind}-${theme}-${language}.png`) });
+          page.once("dialog", (dialog) => dialog.accept());
+          failDelete = false;
+          releaseDelete = null;
+          await remove().click();
+          await finishDelete();
+          await panel.getByRole("status").waitFor();
+          if (await cards.count() !== 0) throw new Error("Retry did not delete the package");
+        }
+        await openCatalog();
+        if (await panel.locator(".packageGrid .package").count()) throw new Error("Deleted packages returned after reload");
+      }
+    }
+  } finally {
+    if (releaseDelete) releaseDelete();
+    await context.unroute(pattern, handler);
+    await context.unroute(eventsPattern, stopEvents);
+    if (!await page.locator(".languageToggleSingle button").isVisible()) await page.locator(".mobileMenuButton").click();
+    if (await page.locator("html").getAttribute("lang") !== initialLanguage) await page.locator(".languageToggleSingle button").click();
+    if (await page.locator("html").getAttribute("data-theme") !== initialTheme) await page.locator(".themeToggle").click();
+  }
+}
+
 async function verifyConfiguredCreditCopy(page, context, viewport) {
   let scenePrice = 20;
   const pattern = "**/api/settings";
@@ -757,6 +867,7 @@ async function main() {
         fullPage: true,
       });
       await verifyLanguageFlags(page, viewport.name, "admin");
+      await verifyAdminPackageDeletion(page, context, viewport.name);
       await verifyConfiguredCreditCopy(page, context, viewport.name);
       await verifyLiveAccountBalance(page, context);
       await verifySubscriptionCatalog(page, context, viewport.name);
@@ -774,6 +885,7 @@ async function main() {
       liveAccountBalance: true,
       configuredCreditCopy: true,
       languageFlags: true,
+      adminPackageDeletion: true,
       subscriptionCatalog: true,
       topupLayout: true,
       homepagePricingRemoved: true,

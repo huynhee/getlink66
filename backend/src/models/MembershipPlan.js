@@ -18,6 +18,8 @@ const membershipPlanSchema = new mongoose.Schema(
     badge: { type: String, default: "" },
     features: { type: [String], default: [] },
     isActive: { type: Boolean, default: true, index: true },
+    isArchived: { type: Boolean, default: false },
+    archivedAt: { type: Date, default: null },
     sortOrder: { type: Number, default: 0, index: true },
   },
   { timestamps: true },

@@ -131,7 +131,7 @@ export async function createMembershipCheckout(req, res, next) {
     if (setting?.subscriptionCheckoutEnabled === false) {
       return res.status(503).json({ code: "SUBSCRIPTION_CHECKOUT_PAUSED", message: "New subscription purchases are paused" });
     }
-    if (plan.isActive === false || plan.price === null || plan.price === undefined) {
+    if (plan.isActive === false || plan.isArchived || plan.price === null || plan.price === undefined) {
       return res.status(400).json({ code: "SUBSCRIPTION_PRICE_UNAVAILABLE", message: "Subscription plan is not available for purchase" });
     }
     req.user = await refreshSubscriptionUser(req.user);
@@ -199,7 +199,7 @@ export async function createMembershipCheckout(req, res, next) {
         const freshPlan = await MembershipPlan.findById(plan._id).session(session);
         const compatibleCatalog = catalog.version === 2 ? Number(freshPlan?.catalogVersion) === 2 : Number(freshPlan?.catalogVersion || 1) === 1;
         const fields = ["price", "paypalPriceCents", "durationDays", "dailyDownloadLimit", "billingPeriod", "name", "maxPurchasesPerUser"];
-        if (!catalog.checkoutEnabled || !compatibleCatalog || freshPlan?.isActive === false || !freshPlan
+        if (!catalog.checkoutEnabled || !compatibleCatalog || freshPlan?.isActive === false || freshPlan?.isArchived || !freshPlan
           || fields.some((field) => String(freshPlan[field] ?? "") !== String(plan[field] ?? ""))) {
           throw Object.assign(new Error("Subscription plan changed; refresh plans before purchasing"), { status: 409, code: "SUBSCRIPTION_PLAN_CHANGED" });
         }

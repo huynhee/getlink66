@@ -1439,7 +1439,7 @@ export async function deleteVoucher(req, res, next) {
 
 export async function listTopupPackages(req, res, next) {
   try {
-    const packages = await TopupPackage.find();
+    const packages = await TopupPackage.find({ isArchived: { $ne: true } });
     res.json({ packages: sortPackages(packages) });
   } catch (error) {
     next(error);
@@ -1511,7 +1511,7 @@ export async function updateTopupPackage(req, res, next) {
       return res.status(400).json({ message: validationError });
     }
 
-    const pack = await TopupPackage.findByIdAndUpdate(req.params.id, payload, {
+    const pack = await TopupPackage.findOneAndUpdate({ _id: req.params.id, isArchived: { $ne: true } }, payload, {
       new: true,
     });
     if (!pack) {
@@ -1547,7 +1547,7 @@ export async function reorderTopupPackages(req, res, next) {
       ),
     );
 
-    const packages = await TopupPackage.find();
+    const packages = await TopupPackage.find({ isArchived: { $ne: true } });
     res.json({ packages: sortPackages(packages) });
   } catch (error) {
     next(error);
@@ -1559,8 +1559,13 @@ export async function deleteTopupPackage(req, res, next) {
     if (!isSafeId(req.params.id)) {
       return res.status(400).json({ message: "Invalid package id" });
     }
-    await TopupPackage.findByIdAndDelete(req.params.id);
-    res.json({ ok: true });
+    const pack = await TopupPackage.findOneAndUpdate(
+      { _id: req.params.id, isArchived: { $ne: true } },
+      { $set: { isActive: false, isArchived: true, archivedAt: new Date() } },
+      { new: true },
+    ) || await TopupPackage.findById(req.params.id);
+    if (!pack) return res.status(404).json({ message: "Topup package not found" });
+    res.json({ ok: true, archived: true, package: pack });
   } catch (error) {
     next(error);
   }

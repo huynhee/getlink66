@@ -67,8 +67,8 @@ export async function getSubscriptionCatalog(session = null) {
 
 export function subscriptionPlanQuery(catalog) {
   return catalog?.version === SUBSCRIPTION_CATALOG_VERSION
-    ? { catalogVersion: SUBSCRIPTION_CATALOG_VERSION, isActive: true, price: { $ne: null } }
-    : { catalogVersion: { $ne: SUBSCRIPTION_CATALOG_VERSION }, isActive: true };
+    ? { catalogVersion: SUBSCRIPTION_CATALOG_VERSION, isActive: true, isArchived: { $ne: true }, price: { $ne: null } }
+    : { catalogVersion: { $ne: SUBSCRIPTION_CATALOG_VERSION }, isActive: true, isArchived: { $ne: true } };
 }
 
 async function ensureCatalogSettings() {
@@ -158,7 +158,7 @@ export async function activateSubscriptionCatalog() {
   return withSubscriptionCatalogWrite(async (session) => {
     const catalog = await getSubscriptionCatalog(session);
     if (catalog.version === SUBSCRIPTION_CATALOG_VERSION) return catalog;
-    const enabled = await querySession(MembershipPlan.find({ catalogVersion: SUBSCRIPTION_CATALOG_VERSION, isActive: true }), session).lean();
+    const enabled = await querySession(MembershipPlan.find({ catalogVersion: SUBSCRIPTION_CATALOG_VERSION, isActive: true, isArchived: { $ne: true } }), session).lean();
     if (!enabled.length) {
       throw paymentError("Enable at least one Subscription plan with a VND price first", "SUBSCRIPTION_CATALOG_NOT_READY", 409);
     }

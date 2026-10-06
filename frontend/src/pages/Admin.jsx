@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Archive, ArrowDown, ArrowUp, Ban, BarChart3, Box, Check, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Flag, Gauge, Gift, Globe2, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Archive, ArrowDown, ArrowUp, Ban, BarChart3, Box, Check, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Flag, Gauge, Gift, Globe2, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Trash2, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import AdminDownloadHistory from "../components/AdminDownloadHistory.jsx";
 import AdminMarketplace from "../components/AdminMarketplace.jsx";
@@ -356,6 +356,9 @@ export default function Admin({ user, language = "vi" }) {
   const [packageMode, setPackageMode] = useState("credit");
   const [packageForm, setPackageForm] = useState(emptyPackage);
   const [packageError, setPackageError] = useState("");
+  const [packageMessage, setPackageMessage] = useState("");
+  const [deletingPackageKey, setDeletingPackageKey] = useState("");
+  const packageDeleteBusy = React.useRef(false);
   const [membershipPlanForm, setMembershipPlanForm] = useState(emptyMembershipPlan);
   const [voucherForm, setVoucherForm] = useState(emptyVoucher);
   const [voucherMode, setVoucherMode] = useState("credit");
@@ -608,6 +611,7 @@ export default function Admin({ user, language = "vi" }) {
   async function savePackage(event) {
     event.preventDefault();
     setPackageError("");
+    setPackageMessage("");
     try {
       const { paypalPriceUsd, ...payload } = packageForm;
       await api(editingPackageId ? `/api/admin/topup-packages/${editingPackageId}` : "/api/admin/topup-packages", {
@@ -622,13 +626,40 @@ export default function Admin({ user, language = "vi" }) {
     }
   }
 
-  async function deletePackage(id) {
-    await api(`/api/admin/topup-packages/${id}`, { method: "DELETE" });
-    if (editingPackageId === id) {
-      setEditingPackageId("");
-      setPackageForm(emptyPackage);
+  async function deleteCatalogItem(kind, item) {
+    if (packageDeleteBusy.current) return;
+    if (!window.confirm(l(
+      `Xóa gói "${item.name || item.code}" khỏi danh sách? Đơn hàng và quyền lợi đã mua vẫn được giữ nguyên.`,
+      `Delete "${item.name || item.code}" from the catalog? Existing orders and purchased benefits will be preserved.`,
+    ))) return;
+    packageDeleteBusy.current = true;
+    setDeletingPackageKey(`${kind}:${item._id}`);
+    setPackageError("");
+    setPackageMessage("");
+    try {
+      const endpoint = kind === "credit" ? "topup-packages" : "membership-plans";
+      const data = await api(`/api/admin/${endpoint}/${item._id}`, { method: "DELETE" });
+      if (kind === "credit") {
+        setPackages((current) => current.filter((pkg) => pkg._id !== item._id));
+        if (editingPackageId === item._id) {
+          setEditingPackageId("");
+          setPackageForm(emptyPackage);
+        }
+      } else {
+        setMembershipPlans((current) => current.filter((plan) => plan._id !== item._id));
+        if (data.catalog) setSubscriptionCatalog(data.catalog);
+        if (editingMembershipPlanId === item._id) {
+          setEditingMembershipPlanId("");
+          setMembershipPlanForm(emptyMembershipPlan);
+        }
+      }
+      setPackageMessage(l(`Đã xóa gói "${item.name || item.code}".`, `Deleted "${item.name || item.code}".`));
+    } catch (error) {
+      setPackageError(error.message || l("Không thể xóa gói. Vui lòng thử lại.", "Unable to delete the package. Please try again."));
+    } finally {
+      packageDeleteBusy.current = false;
+      setDeletingPackageKey("");
     }
-    await loadData();
   }
 
   async function movePackage(dragId, targetId) {
@@ -696,6 +727,7 @@ export default function Admin({ user, language = "vi" }) {
   async function saveMembershipPlan(event) {
     event.preventDefault();
     setPackageError("");
+    setPackageMessage("");
     try {
       const { paypalPriceUsd, ...form } = membershipPlanForm;
       const payload = {
@@ -717,15 +749,6 @@ export default function Admin({ user, language = "vi" }) {
     } catch (error) {
       setPackageError(error.message);
     }
-  }
-
-  async function deleteMembershipPlan(id) {
-    await api(`/api/admin/membership-plans/${id}`, { method: "DELETE" });
-    if (editingMembershipPlanId === id) {
-      setEditingMembershipPlanId("");
-      setMembershipPlanForm(emptyMembershipPlan);
-    }
-    await loadData();
   }
 
   async function updateSubscriptionCatalog(action, body = {}) {
@@ -2121,6 +2144,8 @@ export default function Admin({ user, language = "vi" }) {
       {activeSection === "website" && websiteSection === "packages" && (
         <section className="panel">
           <h2><Package size={20} /> {l("Quản lý gói nạp", "Manage top-up packages")}</h2>
+          {packageError && <p role="alert" className="error">{packageError}</p>}
+          {packageMessage && <p role="status" className="success">{packageMessage}</p>}
           <div className="adminSubTabs" role="tablist" aria-label={l("Loại gói nạp", "Top-up package type")}>
             <button type="button" className={packageMode === "credit" ? "active" : ""} onClick={() => setPackageMode("credit")}>
               <CreditCard size={15} /> Credit
@@ -2166,7 +2191,6 @@ export default function Admin({ user, language = "vi" }) {
                   {l("Giá PayPal (USD)", "PayPal price (USD)")}
                   <input type="number" min="0.01" max="1000000" step="0.01" value={packageForm.paypalPriceUsd} onChange={(e) => setPackageForm({ ...packageForm, paypalPriceUsd: e.target.value })} placeholder={l("Chưa cấu hình", "Not configured")} />
                 </label>
-                {packageError && <p role="alert" className="error">{packageError}</p>}
                 <div className="inputRow">
                   <input type="number" value={packageForm.salePercent} onChange={(e) => setPackageForm({ ...packageForm, salePercent: e.target.value })} placeholder={l("Sale %, ví dụ 20", "Sale %, e.g. 20")} />
                   <input
@@ -2213,7 +2237,7 @@ export default function Admin({ user, language = "vi" }) {
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={() => movePackage(dragPackageId, pkg._id)}
                     onDragEnd={() => setDragPackageId("")}
-                    style={{ alignItems: "stretch", padding: 16, position: "relative", textAlign: "left" }}
+                    style={{ alignItems: "stretch", padding: 16, paddingTop: 44, position: "relative", textAlign: "left" }}
                   >
                     <div className="packageActions">
                       <span title={l("Kéo để sắp xếp", "Drag to sort")}>
@@ -2222,13 +2246,10 @@ export default function Admin({ user, language = "vi" }) {
                       <button type="button" onClick={() => fillPackageForm(pkg)} title={l("Sửa gói", "Edit package")}>
                         <Pencil size={15} />
                       </button>
-                      <button type="button" onClick={() => deletePackage(pkg._id)} title={l("Xóa gói", "Delete package")} style={{ color: "var(--error)" }}>
-                        <X size={16} />
+                      <button type="button" disabled={Boolean(deletingPackageKey)} onClick={() => deleteCatalogItem("credit", pkg)} title={l("Xóa gói", "Delete package")} aria-label={l(`Xóa gói ${pkg.name}`, `Delete package ${pkg.name}`)} style={{ color: "var(--error)" }}>
+                        {deletingPackageKey === `credit:${pkg._id}` ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
                       </button>
                     </div>
-                    <button onClick={() => deletePackage(pkg._id)} title={l("Xóa gói", "Delete package")} style={{ position: "absolute", top: 8, right: 8, color: "var(--error)" }}>
-                      <X size={16} />
-                    </button>
                     {pkg.badge && <span className="badge success" style={{ alignSelf: "start" }}>{pkg.badge}</span>}
                     <h3 style={{ marginTop: 8 }}>{pkg.name || t.defaultPackageName}</h3>
                     <div className="priceBlock compact" style={{ alignItems: "flex-start" }}>
@@ -2333,7 +2354,6 @@ export default function Admin({ user, language = "vi" }) {
                   {l("Giá PayPal (USD)", "PayPal price (USD)")}
                   <input type="number" min="0" max="1000000" step="0.01" value={membershipPlanForm.paypalPriceUsd} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, paypalPriceUsd: e.target.value })} placeholder={l("Chưa cấu hình", "Not configured")} />
                 </label>
-                {packageError && <p role="alert" className="error">{packageError}</p>}
                 <div className="inputRow">
                   <input type="number" min="1" value={membershipPlanForm.durationDays} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, durationDays: e.target.value })} placeholder={l("Số ngày hiệu lực", "Duration days")} />
                   <input type="number" min="1" value={membershipPlanForm.dailyDownloadLimit} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, dailyDownloadLimit: e.target.value })} placeholder={l("Quota tải/ngày", "Downloads/day")} />
@@ -2370,7 +2390,7 @@ export default function Admin({ user, language = "vi" }) {
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={() => moveMembershipPlan(dragMembershipPlanId, plan._id)}
                     onDragEnd={() => setDragMembershipPlanId("")}
-                    style={{ alignItems: "stretch", padding: 16, textAlign: "left" }}
+                    style={{ alignItems: "stretch", padding: 16, paddingTop: 44, textAlign: "left" }}
                   >
                     <div className="packageActions">
                       <span title={l("Kéo để sắp xếp", "Drag to sort")}>
@@ -2397,8 +2417,8 @@ export default function Admin({ user, language = "vi" }) {
                       <button type="button" onClick={() => fillMembershipPlanForm(plan)} title={l("Sửa Subscription", "Edit Subscription plan")}>
                         <Pencil size={15} />
                       </button>
-                      <button type="button" onClick={() => deleteMembershipPlan(plan._id)} title={l("Tắt Subscription", "Disable Subscription plan")} style={{ color: "var(--error)" }}>
-                        <X size={16} />
+                      <button type="button" disabled={Boolean(deletingPackageKey)} onClick={() => deleteCatalogItem("pro", plan)} title={l("Xóa Subscription", "Delete Subscription plan")} aria-label={l(`Xóa Subscription ${plan.name || plan.code}`, `Delete Subscription plan ${plan.name || plan.code}`)} style={{ color: "var(--error)" }}>
+                        {deletingPackageKey === `pro:${plan._id}` ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
                       </button>
                     </div>
                     <span className={`badge ${plan.isActive !== false ? "success" : "error"}`}>{plan.isActive !== false ? "ACTIVE" : "OFF"}</span>

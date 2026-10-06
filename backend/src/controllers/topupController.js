@@ -180,6 +180,8 @@ async function syncDefaultTopupPackages(packages) {
     seenKeys.add(key);
 
     const current = pack.toObject ? pack.toObject() : pack;
+    // Reserve archived default codes so catalog refreshes cannot recreate them.
+    if (current.isArchived) return;
     if (Number(current.defaultRevision || 0) < DEFAULT_TOPUP_PACKAGE_REVISION) {
       updates.push(
         TopupPackage.findByIdAndUpdate(pack._id, defaultPack, { new: true }),
@@ -220,7 +222,7 @@ export async function getPackages(_req, res, next) {
   try {
     let packages = await TopupPackage.find();
     await syncDefaultTopupPackages(packages);
-    packages = sortPackages(await TopupPackage.find({ isActive: true }).lean());
+    packages = sortPackages(await TopupPackage.find({ isActive: true, isArchived: { $ne: true } }).lean());
     res.json({ packages, payments: { paypal: paypalAvailability() } });
   } catch (error) {
     next(error);
@@ -262,9 +264,9 @@ export async function createTopup(req, res, next) {
     const type = paymentProvider(req.body.paymentProvider);
     const pack = packageId
       ? await TopupPackage.findById(packageId)
-      : await TopupPackage.findOne({ price, isActive: true });
+      : await TopupPackage.findOne({ price, isActive: true, isArchived: { $ne: true } });
 
-    if (!pack || pack.isActive === false) {
+    if (!pack || pack.isActive === false || pack.isArchived) {
       return res.status(400).json({ message: "Invalid topup package" });
     }
 

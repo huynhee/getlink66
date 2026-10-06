@@ -3,7 +3,7 @@ import { activateSubscriptionCatalog, prepareSubscriptionCatalog, setSubscriptio
 import { rejectUnknownKeys } from "../utils/validators.js";
 
 async function respondCatalog(res, catalog) {
-  const plans = await MembershipPlan.find().sort({ sortOrder: 1, price: 1, _id: 1 }).lean();
+  const plans = await MembershipPlan.find({ isArchived: { $ne: true } }).sort({ sortOrder: 1, price: 1, _id: 1 }).lean();
   res.json({ plans, catalog });
 }
 
