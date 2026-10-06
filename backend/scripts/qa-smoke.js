@@ -223,12 +223,13 @@ async function verifyLanguageFlags(page, viewport, accountType) {
     const control = toggle.getBoundingClientRect();
     const account = toggle.closest(".account");
     return globalThis.document.documentElement.lang === expected
-      && flag.getAttribute("src") === `/icons/flags/${expected === "vi" ? "vn" : "gb"}.svg`
+      && flag.getAttribute("src") === (expected === "vi" ? "/icons/flags/vn.svg" : "/icons/flags/gb.svg?v=2")
       && toggle.textContent.trim() === ""
       && Boolean(toggle.getAttribute("aria-label"))
       && Boolean(toggle.getAttribute("title"))
       && account.scrollWidth <= account.clientWidth + 1
       && icon.width === 24 && icon.height === 16
+      && Math.abs(flag.naturalWidth / flag.naturalHeight - 1.5) < 0.01
       && icon.left >= control.left && icon.right <= control.right
       && icon.top >= control.top && icon.bottom <= control.bottom;
   }, language);
@@ -330,7 +331,7 @@ async function verifySubscriptionCatalog(page, context, viewport) {
   const packagesPattern = "**/api/topup/packages";
   const packages = [100, 300, 600, 1200, 2500].map((credit, index) => ({
     _id: String(index + 21).padStart(24, "0"), name: `Credit ${credit}`, credit,
-    price: credit * 1000, paypalPriceCents: credit, features: [],
+    price: credit * 1000, paypalPriceCents: credit, features: ["QA Credit benefit"],
   }));
   const packagesHandler = (route) => route.fulfill({ json: { packages, payments: { paypal: { enabled: true } } } });
   const voucherPattern = "**/api/voucher/apply";
@@ -381,6 +382,13 @@ async function verifySubscriptionCatalog(page, context, viewport) {
     const overflow = await page.locator(".subscriptionCatalog").evaluate((root) =>
       root.scrollWidth > root.clientWidth + 1 || [...root.querySelectorAll(".subscriptionPlanCard, button, a")].some((element) => element.scrollWidth > element.clientWidth + 2));
     if (overflow) throw new Error(`${viewport} Subscription controls overflow`);
+    const benefitsHidden = await page.locator(".subscriptionCatalog").evaluate((root) =>
+      [...root.querySelectorAll(".subscriptionPlanCard")].some((card) => {
+        const benefits = card.querySelector(".subscriptionPlanBenefits");
+        return Boolean(card.querySelector("details")) || !benefits?.children.length
+          || [...benefits.children].some((item) => item.getClientRects().length === 0);
+      }));
+    if (benefitsHidden) throw new Error("Subscription benefits must be visible without expanding a section");
   };
   const assertTopupLayout = async () => {
     const problem = await page.locator(".topupPage").evaluate((root) => {
@@ -419,6 +427,8 @@ async function verifySubscriptionCatalog(page, context, viewport) {
         await page.locator("#topup-tab-pro").press("End");
         await page.locator(".topupCreditPlan").first().getByRole("button").click();
         await page.waitForFunction(() => globalThis.document.querySelector(".topupSelectedItem > strong")?.textContent === "Credit 100");
+        if (!await page.locator(".topupCreditPlan .subscriptionPlanBenefits").first().isVisible()
+          || await page.locator(".topupCreditPlan details").count()) throw new Error("Credit benefits must be visible without expanding a section");
         await assertTopupLayout();
         const creditPrice = await page.locator(".topupOrderTotal dd").innerText();
         if (!creditPrice.includes(language === "vi" ? "100.000" : "US$1.00")) throw new Error(`Wrong Credit total: ${creditPrice}`);

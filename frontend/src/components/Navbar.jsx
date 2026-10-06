@@ -39,7 +39,7 @@ function LanguageToggle({ language, onLanguageChange }) {
       >
         <img
           className="languageFlag"
-          src={language === "vi" ? "/icons/flags/vn.svg" : "/icons/flags/gb.svg"}
+          src={language === "vi" ? "/icons/flags/vn.svg" : "/icons/flags/gb.svg?v=2"}
           width="24"
           height="16"
           alt=""

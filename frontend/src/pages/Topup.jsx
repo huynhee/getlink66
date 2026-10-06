@@ -661,7 +661,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                 <h2>{language === "vi" ? "Tải Model & Scene mỗi ngày" : "Daily Model & Scene downloads"}</h2>
                 <p>{language === "vi" ? "Model trừ 1 lượt · Scene trừ 5 lượt · Không trừ Credit" : "Model: 1 download · Scene: 5 downloads · No Credits spent"}</p>
               </header>
-              <SubscriptionPlans plans={membershipPlans} period={subscriptionPeriod} language={language} compact
+              <SubscriptionPlans plans={membershipPlans} period={subscriptionPeriod} language={language}
                 paypalEnabled={paypalEnabled} checkoutEnabled={subscriptionCheckoutEnabled}
                 selectedPlanId={selectedMembershipPlanId} getPrice={membershipFinalPrice} loading={plansLoading || checkoutBusy || voucherLoading}
                 discountLabel={voucherTargetsMembership ? "Voucher " + appliedVoucher.code + ": -" + appliedVoucher.discountPercent + "%" : ""}
@@ -703,10 +703,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
                       </div>
                       {Number(item.maxTopupsPerUser || 0) > 0 && <small>{language === "vi" ? "Tối đa " + item.maxTopupsPerUser + " lần/tài khoản" : "Max " + item.maxTopupsPerUser + " purchases/account"}</small>}
                       {item.features?.length > 0 && (
-                        <details className="subscriptionBenefitsDisclosure">
-                          <summary>{language === "vi" ? "Quyền lợi gói" : "Package benefits"}</summary>
-                          <ul className="subscriptionPlanBenefits">{item.features.map((feature, index) => <li key={index}><Check size={14} /><span>{feature}</span></li>)}</ul>
-                        </details>
+                        <ul className="subscriptionPlanBenefits">{item.features.map((feature, index) => <li key={index}><Check size={14} aria-hidden="true" /><span>{feature}</span></li>)}</ul>
                       )}
                       {finalPrice(item) === null && <small className="subscriptionUnavailable">{language === "vi" ? "Gói chưa có giá để mua." : "USD price is not available yet."}</small>}
                       <button type="button" className={selected ? "primaryButton" : "googleButton"} aria-pressed={selected}

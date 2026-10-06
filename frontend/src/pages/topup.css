@@ -226,22 +226,10 @@
   font-size: 11px;
 }
 
-.topupPage .subscriptionBenefitsDisclosure {
+.topupPage .subscriptionPlanBenefits {
   order: 4;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.topupPage .subscriptionBenefitsDisclosure summary {
-  padding: 8px 0;
-  cursor: pointer;
-}
-
-.topupPage .subscriptionBenefitsDisclosure .subscriptionPlanBenefits {
-  padding-block: 8px;
   margin: 0;
-  border: 0;
+  padding-top: 12px;
   gap: 10px;
 }
 

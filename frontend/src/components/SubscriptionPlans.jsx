@@ -12,7 +12,7 @@ import "./subscription.css";
 
 export default function SubscriptionPlans({
   plans = [], period = "month", onPeriodChange, selectedPlanId = "", onSelect,
-  hrefForPlan, language = "vi", paypalEnabled = false, checkoutEnabled = true, getPrice, discountLabel = "", loading = false, compact = false,
+  hrefForPlan, language = "vi", paypalEnabled = false, checkoutEnabled = true, getPrice, discountLabel = "", loading = false,
 }) {
   const panelId = useId();
   const visiblePlans = subscriptionPlansForPeriod(plans, period);
@@ -53,18 +53,9 @@ export default function SubscriptionPlans({
                       : `Max ${plan.maxPurchasesPerUser} purchases/account`}
                   </small>
                 )}
-                {compact ? (
-                  <details className="subscriptionBenefitsDisclosure">
-                    <summary>{language === "vi" ? "Quyền lợi gói" : "Plan benefits"}</summary>
-                    <ul className="subscriptionPlanBenefits">
-                      {membershipBenefitLabels(plan, language).map((feature) => <li key={feature}><Check size={14} aria-hidden="true" /><span>{feature}</span></li>)}
-                    </ul>
-                  </details>
-                ) : (
-                  <ul className="subscriptionPlanBenefits">
-                    {membershipBenefitLabels(plan, language).map((feature) => <li key={feature}><Check size={14} aria-hidden="true" /><span>{feature}</span></li>)}
-                  </ul>
-                )}
+                <ul className="subscriptionPlanBenefits">
+                  {membershipBenefitLabels(plan, language).map((feature) => <li key={feature}><Check size={14} aria-hidden="true" /><span>{feature}</span></li>)}
+                </ul>
                 <div className="subscriptionPlanAction">
                   {!available && (
                     <small className="subscriptionUnavailable">
