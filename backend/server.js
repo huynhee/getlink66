@@ -168,6 +168,7 @@ const { startMarketplaceSearchIndexJob, stopMarketplaceSearchIndexJob } = await 
 const { startMarketplaceRecommendationJob, stopMarketplaceRecommendationJob } = await import("./src/utils/marketplaceRecommendationV3.js");
 const { startMarketplacePopularityJob, stopMarketplacePopularityJob } = await import("./src/utils/marketplacePopularityJob.js");
 const { startMarketplaceQuotaGrantJob, stopMarketplaceQuotaGrantJob } = await import("./src/utils/marketplaceQuotaGrantJob.js");
+const { startSubscriptionScheduleJob, stopSubscriptionScheduleJob } = await import("./src/utils/subscriptionScheduleJob.js");
 const { startMarketplaceDeletionJob, stopMarketplaceDeletionJob } = await import("./src/utils/marketplaceDeletionJob.js");
 const { startMarketplaceCoverCacheJob, stopMarketplaceCoverCacheJob } = await import("./src/utils/marketplaceCoverCacheJob.js");
 const { marketplaceCoverCacheConfig } = await import("./src/utils/marketplaceCoverCache.js");
@@ -208,6 +209,7 @@ startMarketplaceSearchIndexJob();
 startMarketplaceRecommendationJob();
 startMarketplacePopularityJob();
 startMarketplaceQuotaGrantJob();
+startSubscriptionScheduleJob();
 startMarketplaceDeletionJob();
 startMarketplaceCoverCacheJob();
 startHistoryRetentionJob();
@@ -440,6 +442,7 @@ async function gracefulShutdown(signal) {
   stopMarketplaceRecommendationJob();
   stopMarketplacePopularityJob();
   stopMarketplaceQuotaGrantJob();
+  await stopSubscriptionScheduleJob();
   stopMarketplaceDeletionJob();
   stopMarketplaceCoverCacheJob();
   stopHistoryRetentionJob();

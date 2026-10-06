@@ -23,8 +23,12 @@ const userSchema = new mongoose.Schema(
     proPlanId: { type: mongoose.Schema.Types.ObjectId, ref: "MembershipPlan" },
     proActivatedAt: Date,
     proDailyDownloadLimit: { type: Number, default: 100, min: 0 },
+    subscriptionManaged: { type: Boolean, default: false },
+    subscriptionCurrentPeriod: { type: mongoose.Schema.Types.Mixed, default: null },
+    subscriptionNextTransitionAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
+userSchema.index({ subscriptionManaged: 1, subscriptionNextTransitionAt: 1 });
 
 export default isMemoryDb() ? createMemoryModel("User") : mongoose.model("User", userSchema);

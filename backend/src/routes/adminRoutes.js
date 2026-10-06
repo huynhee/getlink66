@@ -1,4 +1,5 @@
 import { Router, raw } from "express";
+import { adminActivateSubscriptionCatalog, adminPrepareSubscriptionCatalog, adminSetSubscriptionCheckout } from "../controllers/subscriptionCatalogController.js";
 import {
   createPluginRelease, deletePluginRelease, getPluginRelease, getPluginReleaseUpload,
   listPluginReleases, publishPluginRelease, uploadPluginReleaseChunk, verifyPluginRelease, withdrawPluginRelease,
@@ -200,6 +201,9 @@ router.put("/topup-packages/:id", adminWriteLimit, auditAdmin("UPDATE_PACKAGE"),
 router.delete("/topup-packages/:id", adminWriteLimit, auditAdmin("DELETE_PACKAGE"), deleteTopupPackage);
 
 router.get("/membership-plans", adminListMembershipPlans);
+router.post("/membership-plans/subscription/prepare", adminWriteLimit, auditAdmin("PREPARE_SUBSCRIPTION_CATALOG"), adminPrepareSubscriptionCatalog);
+router.post("/membership-plans/subscription/activate", adminWriteLimit, auditAdmin("ACTIVATE_SUBSCRIPTION_CATALOG"), adminActivateSubscriptionCatalog);
+router.post("/membership-plans/subscription/checkout", adminWriteLimit, auditAdmin("SET_SUBSCRIPTION_CHECKOUT"), adminSetSubscriptionCheckout);
 router.post("/membership-plans", adminWriteLimit, auditAdmin("CREATE_MEMBERSHIP_PLAN"), adminCreateMembershipPlan);
 router.post("/membership-plans/reorder", adminWriteLimit, auditAdmin("REORDER_MEMBERSHIP_PLANS"), adminReorderMembershipPlans);
 router.put("/membership-plans/:id", adminWriteLimit, auditAdmin("UPDATE_MEMBERSHIP_PLAN"), adminUpdateMembershipPlan);

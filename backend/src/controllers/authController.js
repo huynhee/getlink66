@@ -5,6 +5,8 @@ import QRCode from "qrcode";
 import { issueCsrfToken } from "../middleware/csrf.js";
 import { generateTokens } from "../middleware/jwtAuth.js";
 import User from "../models/User.js";
+import { refreshSubscriptionUser } from "../utils/subscriptionScheduleService.js";
+import { isProActive } from "../utils/membershipService.js";
 import DailyDownloadQuota from "../models/DailyDownloadQuota.js";
 import { securityEvent } from "../utils/logger.js";
 import { SESSION_EXPIRED_MESSAGE } from "../utils/authMessages.js";
@@ -91,7 +93,7 @@ function nextVietnamReset(date = new Date()) {
 
 async function downloadQuotaSnapshot(user) {
   if (!user) return null;
-  const isPro = Boolean(user.proUntil && new Date(user.proUntil) > new Date());
+  const isPro = isProActive(user);
   const tier = isPro ? "member" : "free";
   const dayKey = vietnamDayKey();
   const quota = await DailyDownloadQuota.findOne({ dayKey, userId: user._id, tier }).lean();
@@ -318,8 +320,10 @@ export async function currentUser(req, res, next) {
     const defaultLanguage = defaultLanguageFromCountry(req.headers?.["cf-ipcountry"]);
     if (!req.user) return res.json({ user: null, defaultLanguage });
 
+    req.user = await refreshSubscriptionUser(req.user);
+
     const normalizedProUntil = normalizeProUntil(req.user.proUntil);
-    if (normalizedProUntil && normalizedProUntil.getTime() !== new Date(req.user.proUntil).getTime()) {
+    if (!req.user.subscriptionManaged && normalizedProUntil && normalizedProUntil.getTime() !== new Date(req.user.proUntil).getTime()) {
       req.user.proUntil = normalizedProUntil;
       await User.findByIdAndUpdate(req.user._id, { $set: { proUntil: normalizedProUntil } });
     }
@@ -338,8 +342,9 @@ export async function currentUser(req, res, next) {
       role: req.user.role,
       credit: req.user.credit,
       proUntil: req.user.proUntil || null,
-      isPro: Boolean(req.user.proUntil && new Date(req.user.proUntil) > new Date()),
+      isPro: isProActive(req.user),
       proDailyDownloadLimit: Number(req.user.proDailyDownloadLimit || 100),
+      subscriptionCurrentPeriod: req.user.subscriptionCurrentPeriod || null,
       isBanned: Boolean(req.user.isBanned),
       banReason: req.user.banReason || "",
       isTwoFactorEnabled: req.user.isTwoFactorEnabled,

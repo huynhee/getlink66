@@ -8,6 +8,7 @@ import { paymentError } from "./paymentMoney.js";
 import { releasePaymentReservation, reservePaymentBenefits } from "./paymentBenefitService.js";
 import { approvePendingTopup } from "./topupApprovalService.js";
 import { approvePendingMembershipOrder, membershipSnapshot } from "./membershipService.js";
+import { refreshSubscriptionUser } from "./subscriptionScheduleService.js";
 
 export function paypalOrderModel(kind) {
   if (kind === "topup") return Topup;
@@ -217,7 +218,7 @@ export async function paypalCaptureResponse(kind, orderId, userId) {
   const owned = await Model.findOne({ _id: orderId, userId, gatewayProvider: "paypal" });
   if (!owned) throw paymentError("Payment order not found", "PAYMENT_NOT_FOUND", 404);
   const order = await processPaypalPayment(paypalPaymentId(kind, orderId));
-  const user = await User.findById(userId);
+  const user = await refreshSubscriptionUser(await User.findById(userId));
   return { status: order.status, ...(kind === "topup" ? { topup: order, userCredit: user.credit } : { order, membership: membershipSnapshot(user) }) };
 }
 

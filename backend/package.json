@@ -24,6 +24,8 @@
     "storage:retention:apply": "node scripts/apply-storage-retention-policy.js --execute",
     "referral:expiry:dry-run": "node scripts/fix-referral-pro-expiry.js",
     "referral:expiry:execute": "node scripts/fix-referral-pro-expiry.js --execute",
+    "subscription:dry-run": "node scripts/subscription-migration.js",
+    "subscription:migrate": "node scripts/subscription-migration.js --execute",
     "marketplace:demo:purge": "node scripts/purge-marketplace-demo-assets.js",
     "data:split:dry-run": "node scripts/split-marketplace-databases.js",
     "data:split:execute": "node scripts/split-marketplace-databases.js --execute",

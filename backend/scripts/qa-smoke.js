@@ -303,6 +303,103 @@ async function verifyConfiguredCreditCopy(page, context, viewport) {
   }
 }
 
+async function verifySubscriptionCatalog(page, context, viewport) {
+  const plans = ["day", "month", "year"].flatMap((billingPeriod, index) => [20, 50, 100].map((quota, quotaIndex) => ({
+    _id: String(index * 3 + quotaIndex + 1).padStart(24, "0"), code: `QA_${billingPeriod}_${quota}`,
+    name: `${billingPeriod} ${quota}`, billingPeriod, dailyDownloadLimit: quota,
+    durationDays: { day: 1, month: 30, year: 365 }[billingPeriod], catalogVersion: 2,
+    price: 10000 * quota, paypalPriceCents: quota * 10, isActive: true, features: [],
+  })));
+  plans[5].paypalPriceCents = null;
+  plans[0].price = 0;
+  const now = Date.now();
+  const current = { id: "qa-current", planName: "Month 20", billingPeriod: "month", dailyDownloadLimit: 20,
+    startsAt: new Date(now - 86400000).toISOString(), endsAt: new Date(now + 86400000).toISOString() };
+  const upcoming = { id: "qa-next", planName: "Year 100", billingPeriod: "year", dailyDownloadLimit: 100,
+    startsAt: current.endsAt, endsAt: new Date(now + 366 * 86400000).toISOString() };
+  let checkoutEnabled = true;
+  const plansPattern = "**/api/membership/plans";
+  const plansHandler = (route) => route.fulfill({ json: { plans, checkoutEnabled, payments: { paypal: { enabled: true } } } });
+  const mePattern = "**/api/membership/me";
+  const meHandler = (route) => route.fulfill({ json: { membership: { active: true, tier: "pro", dailyDownloadLimit: 20,
+    proUntil: upcoming.endsAt, currentPeriod: current, upcomingPeriods: [upcoming] } } });
+  const packagesPattern = "**/api/topup/packages";
+  const packagesHandler = async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({ response, json: { ...data, payments: { paypal: { enabled: true } } } });
+  };
+  await context.route(plansPattern, plansHandler);
+  await context.route(mePattern, meHandler);
+  await context.route(packagesPattern, packagesHandler);
+  const eventsPattern = "**/api/account/events";
+  const eventsHandler = (route) => route.fulfill({ contentType: "text/event-stream", body: ": Subscription UI fixture\n\n" });
+  await context.route(eventsPattern, eventsHandler);
+  const setPresentation = async (language, theme) => {
+    const button = page.locator(".languageToggleSingle button");
+    await button.waitFor({ state: "attached" });
+    const needsChange = await page.locator("html").getAttribute("lang") !== language
+      || await page.locator("html").getAttribute("data-theme") !== theme;
+    if (!needsChange) return;
+    if (viewport === "mobile" && !await button.isVisible()) await page.locator(".mobileMenuButton").click();
+    await button.waitFor({ state: "visible" });
+    if (await page.locator("html").getAttribute("lang") !== language) await button.click();
+    if (await page.locator("html").getAttribute("data-theme") !== theme) await page.locator(".themeToggle").click();
+    if (viewport === "mobile") await page.locator(".mobileMenuButton").click();
+  };
+  const assertCatalog = async (period, language) => {
+    const tabs = page.locator(".subscriptionPeriodTabs");
+    await tabs.waitFor();
+    const expected = { vi: { day: "Ngày", month: "Tháng", year: "Năm" }, en: { day: "Day", month: "Month", year: "Year" } }[language][period];
+    if (await tabs.locator('[aria-selected="true"]').innerText() !== expected) throw new Error(`Wrong selected period: ${period}`);
+    await page.waitForFunction(() => globalThis.document.querySelectorAll(".subscriptionPlanCard").length === 3);
+    const titles = await page.locator(".subscriptionPlanHeading h3").allTextContents();
+    if (!titles.every((title) => title.startsWith(period))) throw new Error(`Catalog mixed periods: ${titles}`);
+    const overflow = await page.locator(".subscriptionCatalog").evaluate((root) =>
+      root.scrollWidth > root.clientWidth + 1 || [...root.querySelectorAll(".subscriptionPlanCard, button, a")].some((element) => element.scrollWidth > element.clientWidth + 2));
+    if (overflow) throw new Error(`${viewport} Subscription controls overflow`);
+  };
+  try {
+    for (const language of ["vi", "en"]) {
+      for (const theme of ["light", "dark"]) {
+        await page.goto(`${frontendOrigin}/membership`, { waitUntil: "domcontentloaded" });
+        await setPresentation(language, theme);
+        await assertCatalog("month", language);
+        await page.locator(".subscriptionSchedule .isUpcoming").waitFor();
+        const schedule = await page.locator(".subscriptionSchedule").innerText();
+        if (!schedule.includes(language === "vi" ? "Đã thanh toán, chờ bắt đầu" : "Paid, waiting to start")) throw new Error("Missing paid queued period");
+        await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-subscription-${theme}-${language}.png`), fullPage: true });
+        await page.locator(".subscriptionPeriodTabs button").first().click();
+        await assertCatalog("day", language);
+        await page.locator(".subscriptionPeriodTabs button").first().press("End");
+        await assertCatalog("year", language);
+      }
+      await page.goto(`${frontendOrigin}/topup?mode=pro&planId=${plans[8]._id}`, { waitUntil: "domcontentloaded" });
+      await assertCatalog("year", language);
+      await page.goto(`${frontendOrigin}/topup?mode=pro`, { waitUntil: "domcontentloaded" });
+      await assertCatalog("month", language);
+      if (language === "en") {
+        const unavailable = page.locator(".subscriptionPlanCard").filter({ hasText: "month 100" });
+        if (!await unavailable.innerText().then((value) => value.includes("Price unavailable"))) throw new Error("Missing USD price became free");
+        await unavailable.getByRole("button").click();
+        if (!await page.locator(".topupCheckoutBox .primaryButton").isDisabled()) throw new Error("Missing USD price can be purchased");
+      }
+      await page.goto(`${frontendOrigin}/`, { waitUntil: "domcontentloaded" });
+      await assertCatalog("month", language);
+      await page.locator(".subscriptionCatalog").screenshot({ path: path.join(screenshotRoot, `${viewport}-subscription-home-${language}.png`) });
+    }
+    checkoutEnabled = false;
+    await page.goto(`${frontendOrigin}/membership`, { waitUntil: "domcontentloaded" });
+    await assertCatalog("month", "en");
+    if (!await page.locator(".topupCheckoutBox .primaryButton").isDisabled()) throw new Error("Paused Subscription checkout remained enabled");
+  } finally {
+    await context.unroute(plansPattern, plansHandler);
+    await context.unroute(mePattern, meHandler);
+    await context.unroute(packagesPattern, packagesHandler);
+    await context.unroute(eventsPattern, eventsHandler);
+  }
+}
+
 async function main() {
   if (!fs.existsSync(path.join(buildRoot, "index.html"))) {
     throw new Error(`Build is missing: ${buildRoot}`);
@@ -333,6 +430,7 @@ async function main() {
       THREED66_MOCK: "true",
       SEPAY_ENABLED: "false",
       PAYPAL_ENABLED: "false",
+      SUBSCRIPTION_SCHEDULE_JOB_ENABLED: "false",
       PAYPAL_CLIENT_ID: "",
       PAYPAL_CLIENT_SECRET: "",
       PAYPAL_WEBHOOK_ID: "",
@@ -555,6 +653,7 @@ async function main() {
       await verifyLanguageFlags(page, viewport.name, "admin");
       await verifyConfiguredCreditCopy(page, context, viewport.name);
       await verifyLiveAccountBalance(page, context);
+      await verifySubscriptionCatalog(page, context, viewport.name);
       await context.close();
     }
 
@@ -569,6 +668,7 @@ async function main() {
       liveAccountBalance: true,
       configuredCreditCopy: true,
       languageFlags: true,
+      subscriptionCatalog: true,
       completedGetlinkBalanceReplay: false,
       externalFailures: externalFailures.length,
       externalFailureSamples: externalFailures.slice(0, 10),

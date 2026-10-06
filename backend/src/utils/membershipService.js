@@ -13,6 +13,10 @@ import { publishAccountInvalidation } from "./accountEventBus.js";
 import { assertPaymentPurchaseLimit, assertReservedVoucherUserLimit, consumePaymentReservation, heldPaymentReservation, lockPaymentBenefits, preparePaymentBenefitGuard, serializeMemoryPayments, restorePaymentReservation } from "./paymentBenefitService.js";
 import { paymentReceiptMoney } from "./paymentMoney.js";
 import { assertPaypalSettlement } from "./paypalSettlementGuard.js";
+import SiteSetting from "../models/SiteSetting.js";
+import { activateSubscriptionOrder, refreshSubscriptionInTransaction } from "./subscriptionScheduleService.js";
+import { DAY_MS, vietnamDayKey, endOfVietnamDay } from "./subscriptionTime.js";
+export { vietnamDayKey, nextVietnamReset, endOfVietnamDay, normalizeProUntil } from "./subscriptionTime.js";
 
 export const DEFAULT_MEMBERSHIP_PLANS = [
   {
@@ -58,6 +62,10 @@ export const DEFAULT_MEMBERSHIP_PLANS = [
 ];
 
 export function isProActive(user, at = new Date()) {
+  if (user?.subscriptionManaged) {
+    const current = user.subscriptionCurrentPeriod;
+    return Boolean(current && new Date(current.startsAt) <= at && new Date(current.endsAt) > at);
+  }
   const proUntil = user?.proUntil ? new Date(user.proUntil) : null;
   return Boolean(proUntil && proUntil > at);
 }
@@ -69,6 +77,7 @@ export function membershipSnapshot(user, at = new Date()) {
     tier: active ? "pro" : "free",
     proUntil: user?.proUntil || null,
     dailyDownloadLimit: active ? Number(user?.proDailyDownloadLimit || 100) : 5,
+    currentPeriod: user?.subscriptionCurrentPeriod || null,
   };
 }
 
@@ -84,7 +93,8 @@ export function createMembershipPaymentCode() {
 }
 
 export async function initializeMembershipPlans() {
-  const syncDefaults = process.env.SYNC_DEFAULT_MEMBERSHIP_PLANS === "true";
+  const setting = await SiteSetting.findOne({ key: "homepage" });
+  if (Number(setting?.subscriptionCatalogVersion) >= 2) return;
   await Promise.all(
     DEFAULT_MEMBERSHIP_PLANS.map((plan) => {
       const defaults = {
@@ -95,14 +105,13 @@ export async function initializeMembershipPlans() {
       };
       return MembershipPlan.findOneAndUpdate(
         { code: plan.code },
-        syncDefaults ? { $set: defaults } : { $setOnInsert: defaults },
+        { $setOnInsert: defaults },
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
     }),
   );
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const LATE_PAYMENT_REJECTION_REASONS = new Set(["expired", "user_cancel", "gateway_error"]);
 
 async function execMaybeSession(queryOrPromise, session = null) {
@@ -112,33 +121,8 @@ async function execMaybeSession(queryOrPromise, session = null) {
   return queryOrPromise;
 }
 
-function vietnamDateParts(date = new Date()) {
-  const shifted = new Date(date.getTime() + 7 * 60 * 60 * 1000);
-  return shifted.toISOString().slice(0, 10).split("-").map(Number);
-}
-
-export function vietnamDayKey(date = new Date()) {
-  return new Date(date.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
-export function nextVietnamReset(date = new Date()) {
-  const [year, month, day] = vietnamDayKey(date).split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day, 17, 0, 0, 0));
-}
-
-export function endOfVietnamDay(date = new Date()) {
-  const [year, month, day] = vietnamDateParts(date);
-  return new Date(Date.UTC(year, month - 1, day, 16, 59, 59, 999));
-}
-
-export function normalizeProUntil(proUntil) {
-  if (!proUntil) return null;
-  const date = new Date(proUntil);
-  if (Number.isNaN(date.valueOf())) return null;
-  return endOfVietnamDay(date);
-}
-
 function isDailyPlan(order) {
+  if (order?.billingPeriod) return order.billingPeriod === "day";
   return String(order?.planCode || "").trim().toUpperCase() === "DAILY" ||
     Number(order?.durationDays || 0) <= 1;
 }
@@ -252,12 +236,14 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
   await assertPaypalSettlement("membership", current, approvalFields, session);
   await assertPaymentPurchaseLimit("membership", current, session);
 
-  const user = await execMaybeSession(User.findById(current.userId), session);
+  let user = await execMaybeSession(User.findById(current.userId), session);
   if (!user) {
     const error = new Error("User not found");
     error.status = 404;
     throw error;
   }
+
+  user = await refreshSubscriptionInTransaction(user, { session });
 
   const activatedUntil = addMembershipTime(user, current);
   const shouldBoostToday = isDailyPlan(current) && isProActive(user);
@@ -297,7 +283,11 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
     paymentReceipt = await claimMembershipPayment(approvedOrder, approvalFields, session);
 
     reservationConsumed = Boolean(await consumePaymentReservation("membership", approvedOrder, session));
-    const updatedUser = shouldBoostToday
+    const useSchedule = Number(current.subscriptionPolicyVersion) >= 2 || user.subscriptionManaged;
+    const scheduled = !shouldBoostToday && useSchedule
+      ? await activateSubscriptionOrder(approvedOrder, user, { session }) : null;
+    if (scheduled) approvedOrder = scheduled.order;
+    const updatedUser = scheduled?.user || (shouldBoostToday
       ? await execMaybeSession(User.findById(current.userId), session)
       : await User.findByIdAndUpdate(
         current.userId,
@@ -310,7 +300,7 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
           },
         },
         { new: true, session },
-      );
+      ));
     if (!updatedUser) {
       const error = new Error("User not found while activating membership");
       error.status = 409;
@@ -336,6 +326,9 @@ async function approveMembershipOrderWithSession(order, approvalFields = {}, ses
               gatewayTransactionId: current.gatewayTransactionId || "",
               gatewayPayload: current.gatewayPayload || null,
               activatedUntil: current.activatedUntil || null,
+              activatedFrom: current.activatedFrom || null,
+              subscriptionQueued: Boolean(current.subscriptionQueued),
+              subscriptionPeriodId: current.subscriptionPeriodId || null,
               isQuotaAddon: Boolean(current.isQuotaAddon),
               quotaBoostAmount: Number(current.quotaBoostAmount || 0),
               quotaBoostDayKey: current.quotaBoostDayKey || "",

@@ -6,7 +6,7 @@ import SiteFooter from "../components/SiteFooter.jsx";
 import PluginHero from "../components/PluginHero.jsx";
 import { ModelCard } from "./Models.jsx";
 import { translations } from "../i18n.js";
-import { membershipBenefitLabels } from "../utils/membershipPresentation.js";
+import SubscriptionPlans from "../components/SubscriptionPlans.jsx";
 import { formatPaymentMoney, packagePrice, checkoutCurrency } from "../utils/paymentPresentation.js";
 
 const HOME_TEXT_DEFAULTS = {
@@ -70,10 +70,6 @@ function localizedHomeText(settings = {}, language = "vi") {
   );
 }
 
-function isDailyMembershipPlan(plan) {
-  return String(plan?.code || "").toUpperCase() === "DAILY" || Number(plan?.durationDays || 0) <= 1;
-}
-
 function normalize3D66Input(value = "", resolveMode = "search") {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -126,6 +122,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   const [packages, setPackages] = useState([]);
   const [paypalEnabled, setPaypalEnabled] = useState(false);
   const [membershipPlans, setMembershipPlans] = useState([]);
+  const [subscriptionPeriod, setSubscriptionPeriod] = useState("month");
+  const [subscriptionCheckoutEnabled, setSubscriptionCheckoutEnabled] = useState(true);
   const [featuredModels, setFeaturedModels] = useState([]);
   const [featuredModelsLoading, setFeaturedModelsLoading] = useState(true);
   const [featuredScenes, setFeaturedScenes] = useState([]);
@@ -242,7 +240,10 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
       .catch(() => {});
     api("/api/membership/plans")
       .then((data) => {
-        if (!cancelled) setMembershipPlans(data.plans || []);
+        if (!cancelled) {
+          setMembershipPlans(data.plans || []);
+          setSubscriptionCheckoutEnabled(data.checkoutEnabled !== false);
+        }
       })
       .catch(() => {});
     api("/api/system/3d66-status")
@@ -727,8 +728,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 {homeTopupMode === "credit"
                   ? siteSettings.pricingNote
                   : (language === "vi"
-                    ? "Bạn đang xem gói Pro dùng để mở quyền và quota tải Model/Scene trong thư viện."
-                    : "You are viewing Pro plans that unlock Model/Scene library access and download quota.")}
+                    ? "Bạn đang xem Subscription dùng để mở quyền và quota tải Model/Scene trong thư viện."
+                    : "Subscription plans unlock Model/Scene library access and daily download quota.")}
               </p>
             </div>
 
@@ -740,8 +741,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 <h3>{language === "vi" ? "Nạp theo nhu cầu" : "Top up by need"}</h3>
                 <p className="homeTopupPurpose">
                   {language === "vi"
-                    ? "Credit dùng cho Getlink và tải lẻ Model/Scene. Pro phù hợp người tải thường xuyên, mở quyền Pro và quota theo ngày."
-                    : "Credits cover Getlink and one-off Model/Scene downloads. Pro suits frequent users with Pro access and daily quota."}
+                    ? "Credit dùng cho Getlink và tải lẻ Model/Scene. Subscription phù hợp người tải thường xuyên, mở quyền Pro và quota theo ngày."
+                    : "Credits cover Getlink and one-off Model/Scene downloads. Subscription suits frequent users with Pro access and daily quota."}
                 </p>
               </div>
               <div className="homeTopupActions">
@@ -752,13 +753,13 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                   aria-pressed={homeTopupMode === "pro"}
                 >
                   <Sparkles size={18} />
-                  <span>Pro</span>
+                  <span>Subscription</span>
                   <small>{language === "vi" ? "Quyền tải Model/Scene Pro" : "Pro Model/Scene access"}</small>
                   <small className="homeTopupActionStatus">
                     {homeTopupMode === "pro" && <CheckCircle2 size={13} />}
                     {homeTopupMode === "pro"
                       ? (language === "vi" ? "Đang chọn" : "Selected")
-                      : (language === "vi" ? "Chọn Pro" : "Choose Pro")}
+                      : (language === "vi" ? "Chọn Subscription" : "Choose Subscription")}
                   </small>
                 </button>
                 <button
@@ -786,7 +787,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
               <strong>
                 {homeTopupMode === "credit"
                   ? (language === "vi" ? "Gói Credit cho Getlink và tải lẻ" : "Credit plans for Getlink and one-off downloads")
-                  : (language === "vi" ? "Gói Pro cho thư viện Model/Scene" : "Pro plans for the Model/Scene library")}
+                  : (language === "vi" ? "Subscription cho thư viện Model/Scene" : "Subscription for the Model/Scene library")}
               </strong>
             </div>
 
@@ -864,60 +865,8 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 ))}
               </div>
             ) : (
-              <div
-                className="pricingGrid homeProPricingGrid"
-                style={{ "--package-count": Math.min(membershipPlans.length || 1, 5) }}
-              >
-                {membershipPlans.map((plan) => (
-                  <div className="pricingCard" key={plan._id || plan.code}>
-                    {plan.badge && (
-                      <div className="badge success" style={{ width: "fit-content" }}>
-                        {plan.badge}
-                      </div>
-                    )}
-                    <h3>{plan.name}</h3>
-                    <div className="priceBlock">
-                      <div className="price hl-green">
-                        {formatPaymentMoney(packagePrice(plan, language, { pro: true }), checkoutCurrency(language), language === "vi" ? "vi-VN" : "en-US")}
-                      </div>
-                    </div>
-                    <div className="credits">
-                      {isDailyMembershipPlan(plan)
-                        ? (language === "vi"
-                          ? `Thêm ${plan.dailyDownloadLimit}/ngày khi cần`
-                          : `Add ${plan.dailyDownloadLimit}/day when needed`)
-                        : (language === "vi"
-                          ? `${plan.durationDays} ngày - ${plan.dailyDownloadLimit}/ngày`
-                          : `${plan.durationDays} days - ${plan.dailyDownloadLimit}/day`)}
-                    </div>
-                    {Number(plan.maxPurchasesPerUser || 0) > 0 && (
-                      <div className="muted">
-                        {language === "vi"
-                          ? `Tối đa ${plan.maxPurchasesPerUser} lần/tài khoản`
-                          : `Max ${plan.maxPurchasesPerUser} purchases/account`}
-                      </div>
-                    )}
-                    <ul>
-                      {membershipBenefitLabels(plan, language).map((feature, featureIndex) => (
-                        <li key={featureIndex}>{feature}</li>
-                      ))}
-                    </ul>
-                    {language === "en" && Number(plan.price) !== 0 && (!paypalEnabled || packagePrice(plan, language, { pro: true }) == null) ? (
-                      <button className="googleButton" disabled>Not available</button>
-                    ) : (
-                      <a className={plan.code === "GOLD" ? "primaryButton" : "googleButton"} href={authAwareHref(topupTarget("pro", plan._id))}>
-                        {language === "en" && Number(plan.price) !== 0 ? "Pay with PayPal" : user ? t.topupNow : t.buyNow}
-                      </a>
-                    )}
-                  </div>
-                ))}
-                {!membershipPlans.length && (
-                  <div className="pricingCard">
-                    <h3>Pro</h3>
-                    <div className="credits">{language === "vi" ? "Đang tải gói Pro..." : "Loading Pro plans..."}</div>
-                  </div>
-                )}
-              </div>
+              <SubscriptionPlans plans={membershipPlans} period={subscriptionPeriod} onPeriodChange={setSubscriptionPeriod}
+                language={language} paypalEnabled={paypalEnabled} checkoutEnabled={subscriptionCheckoutEnabled} hrefForPlan={(plan) => authAwareHref(topupTarget("pro", plan._id))} />
             )}
           </section>
 

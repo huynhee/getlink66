@@ -189,6 +189,9 @@ function compareSortValues(field, left, right) {
 
 function chain(result, isArray = true, projection = "") {
   return {
+    session() {
+      return chain(result, isArray, projection);
+    },
     sort(sortSpec = {}) {
       const fields = Object.entries(sortSpec);
       const sorted = [...result].sort((a, b) => {

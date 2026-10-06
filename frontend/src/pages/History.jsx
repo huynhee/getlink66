@@ -175,7 +175,9 @@ function metadataLines(event, language) {
     return [
       m.planName || m.planCode ? `${language === "vi" ? "Gói" : "Plan"}: ${m.planName || m.planCode}` : "",
       m.amountMoney ? `${paymentLabel}: ${formatMoney(m.amountMoney, m.currency)}` : "",
-      m.activatedUntil ? `${language === "vi" ? "Hạn Pro" : "Pro expiry"}: ${formatDate(m.activatedUntil, language)}` : "",
+      m.activatedFrom ? `${language === "vi" ? "Bắt đầu" : "Starts"}: ${formatDate(m.activatedFrom, language)}` : "",
+      m.activatedUntil ? `${language === "vi" ? "Hạn Subscription" : "Subscription expiry"}: ${formatDate(m.activatedUntil, language)}` : "",
+      m.activatedFrom && new Date(m.activatedFrom) > new Date() ? (language === "vi" ? "Đã thanh toán, đang chờ bắt đầu" : "Paid, waiting to start") : "",
       m.quotaBoostAmount ? `${language === "vi" ? "Thêm lượt" : "Extra downloads"}: ${m.quotaBoostAmount}` : "",
       m.voucherCode ? `Voucher: ${m.voucherCode}` : "",
     ].filter(Boolean);

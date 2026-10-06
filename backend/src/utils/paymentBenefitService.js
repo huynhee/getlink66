@@ -104,7 +104,9 @@ export async function reservePaymentBenefits(kind, order) {
     const membership = kind === "membership";
     const packageId = membership ? order.planId : order.packageId;
     const pack = await querySession((membership ? MembershipPlan : TopupPackage).findById(packageId), session);
-    if (!pack || pack.isActive === false) throw paymentError("Package is unavailable", "PAYMENT_PACKAGE_UNAVAILABLE", 409);
+    if (!pack || (pack.isActive === false && !(membership && pack.catalogRetired === true))) {
+      throw paymentError("Package is unavailable", "PAYMENT_PACKAGE_UNAVAILABLE", 409);
+    }
     await assertPaymentPurchaseLimit(kind, order, session);
     let claimedVoucher = false;
     if (order.voucherCode) {

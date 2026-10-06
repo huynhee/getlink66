@@ -16,6 +16,7 @@ import { invalidateMarketplaceHomeRecommendations } from "./marketplaceRecommend
 import { recordMarketplaceDownloadBehavior } from "./marketplaceBehaviorService.js";
 import { downloadTokenSecret } from "../config/secrets.js";
 import User from "../models/User.js";
+import { refreshSubscriptionUser } from "./subscriptionScheduleService.js";
 import {
   ensureMarketplaceCreditEntitlement,
   getMarketplaceCreditEntitlement,
@@ -190,6 +191,7 @@ async function loadDownloadableModel(modelId, expectedAssetType = "") {
 
 export async function getMarketplaceDownloadOptions({ req, modelId, expectedAssetType = "" }) {
   if (!req.user) throw paymentMethodError("AUTH_REQUIRED", "Login is required.", 401);
+  req.user = await refreshSubscriptionUser(await User.findById(req.user._id) || req.user);
   const { model, assetType } = await loadDownloadableModel(modelId, expectedAssetType);
   const tier = accessTier(req);
   const quotaCost = marketplaceDownloadCost(assetType);
@@ -317,6 +319,7 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     error.code = "AUTH_REQUIRED";
     throw error;
   }
+  req.user = await refreshSubscriptionUser(await User.findById(req.user._id) || req.user);
   if (req.user.isBanned) {
     const error = new Error(
       req.user.banReason || "This account cannot download marketplace assets.",

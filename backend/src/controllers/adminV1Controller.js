@@ -12,10 +12,12 @@ import SystemLog from "../models/SystemLog.js";
 import AuditLog from "../models/AuditLog.js";
 import MarketplaceReport from "../models/MarketplaceReport.js";
 import { approvePendingTopup } from "../utils/topupApprovalService.js";
-import { adminPaypalPrice } from "../utils/paymentMoney.js";
+import { adminPaypalPrice, paymentError } from "../utils/paymentMoney.js";
 import { paymentSummary, paymentRecordFields } from "../utils/paymentReporting.js";
 import { cancelPaypalPayment, paypalPaymentId, processPaypalPayment } from "../utils/paypalPaymentService.js";
-import { approvePendingMembershipOrder, isProActive, nextVietnamReset, normalizeProUntil, vietnamDayKey } from "../utils/membershipService.js";
+import { approvePendingMembershipOrder, isProActive, nextVietnamReset, vietnamDayKey } from "../utils/membershipService.js";
+import { adjustSubscription, subscriptionDetails, refreshSubscriptionUser } from "../utils/subscriptionScheduleService.js";
+import { assertPlanCatalogWrite, getSubscriptionCatalog, subscriptionBillingPeriod, withSubscriptionCatalogWrite } from "../utils/subscriptionCatalogService.js";
 import { buildUserTimeline } from "../utils/timelineService.js";
 import { isSafeId, limitedString, rejectUnknownKeys } from "../utils/validators.js";
 import { hydrateAtlasUserField } from "../utils/crossDatabaseHydration.js";
@@ -92,6 +94,8 @@ function publicUser(user) {
     proActivatedAt: doc.proActivatedAt || null,
     proPlanId: doc.proPlanId || null,
     proDailyDownloadLimit: Number(doc.proDailyDownloadLimit || 100),
+    subscriptionCurrentPeriod: doc.subscriptionCurrentPeriod || null,
+    subscriptionNextTransitionAt: doc.subscriptionNextTransitionAt || null,
     isPro: isProActive(doc),
     referralCode: doc.referralCode || "",
     createdAt: doc.createdAt,
@@ -296,8 +300,11 @@ export async function adminUserProfile(req, res, next) {
         .lean(),
     ]);
     await hydrateAtlasUserField(auditLogs, "actor", "name email");
+    const subscription = await subscriptionDetails(user);
     res.json({
-      user: publicUser(user),
+      user: publicUser(subscription.user),
+      currentPeriod: subscription.currentPeriod,
+      upcomingPeriods: subscription.upcomingPeriods,
       stats: { getlinks, topups, proOrders, modelDownloads, sceneDownloads },
       auditLogs,
     });
@@ -326,7 +333,7 @@ export async function adminUserTimeline(req, res, next) {
 export async function adminUserQuota(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid user id" });
-    const user = await User.findById(req.params.id).lean();
+    const user = await refreshSubscriptionUser(await User.findById(req.params.id).lean());
     if (!user) return res.status(404).json({ message: "User not found" });
     const dayKey = vietnamDayKey();
     const tier = isProActive(user) ? "member" : "free";
@@ -366,29 +373,28 @@ export async function adminAdjustUserPro(req, res, next) {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid user id" });
     const unknownKey = rejectUnknownKeys(req.body, ["proUntil", "proDailyDownloadLimit", "clearPro"]);
     if (unknownKey) return res.status(400).json({ message: "Invalid pro adjustment request" });
-    const patch = {};
-    if (req.body.clearPro) {
-      patch.proUntil = null;
-      patch.proPlanId = null;
-      patch.proDailyDownloadLimit = 100;
-    } else {
+    if (req.body.clearPro !== undefined && typeof req.body.clearPro !== "boolean") {
+      return res.status(400).json({ message: "clearPro must be a boolean" });
+    }
+    const changes = { clearPro: req.body.clearPro === true };
+    if (!changes.clearPro) {
       if (req.body.proUntil !== undefined) {
         const proUntil = parseDate(req.body.proUntil);
         if (!proUntil) return res.status(400).json({ message: "Invalid Pro expiry" });
-        patch.proUntil = normalizeProUntil(proUntil);
-        patch.proActivatedAt = new Date();
+        changes.proUntil = proUntil;
       }
       if (req.body.proDailyDownloadLimit !== undefined) {
         const daily = Number(req.body.proDailyDownloadLimit);
-        if (!Number.isInteger(daily) || daily < 0 || daily > 100000) {
+        if (!Number.isSafeInteger(daily) || daily < 1 || daily > 100000) {
           return res.status(400).json({ message: "Invalid daily download limit" });
         }
-        patch.proDailyDownloadLimit = daily;
+        changes.proDailyDownloadLimit = daily;
       }
     }
-    const user = await User.findByIdAndUpdate(req.params.id, { $set: patch }, { new: true });
+    const user = await adjustSubscription(req.params.id, changes);
     if (!user) return res.status(404).json({ message: "User not found" });
-    res.json({ user: publicUser(user) });
+    const subscription = await subscriptionDetails(user);
+    res.json({ user: publicUser(subscription.user), currentPeriod: subscription.currentPeriod, upcomingPeriods: subscription.upcomingPeriods });
   } catch (error) {
     next(error);
   }
@@ -538,13 +544,30 @@ export async function adminCancelMembershipOrder(req, res, next) {
   }
 }
 
-function normalizePlanPayload(body = {}) {
+function planInteger(value, field, { minimum = 1, fallback } = {}) {
+  if (value == null || (typeof value === "string" && !value.trim())) {
+    if (fallback !== undefined) return fallback;
+    throw paymentError(`${field} is required`, "INVALID_SUBSCRIPTION_PLAN", 400);
+  }
+  const number = typeof value === "boolean" ? NaN : Number(value);
+  if (!Number.isSafeInteger(number) || number < minimum) {
+    throw paymentError(`${field} must be an integer of at least ${minimum}`, "INVALID_SUBSCRIPTION_PLAN", 400);
+  }
+  return number;
+}
+
+export function normalizePlanPayload(body = {}) {
   const code = String(body.code || "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
   const name = limitedString(body.name, 80);
-  const price = Math.max(0, Math.round(Number(body.price || 0)));
-  const durationDays = Math.max(1, Math.round(Number(body.durationDays || 1)));
-  const dailyDownloadLimit = Math.max(1, Math.round(Number(body.dailyDownloadLimit || 100)));
-  const maxPurchasesPerUser = Math.max(0, Math.round(Number(body.maxPurchasesPerUser || 0)));
+  const price = body.price == null || (typeof body.price === "string" && !body.price.trim())
+    ? null : planInteger(body.price, "price", { minimum: 0 });
+  const billingPeriod = body.billingPeriod ?? subscriptionBillingPeriod(body);
+  const durationDays = planInteger(body.durationDays, "durationDays");
+  const dailyDownloadLimit = planInteger(body.dailyDownloadLimit, "dailyDownloadLimit");
+  const maxPurchasesPerUser = planInteger(body.maxPurchasesPerUser, "maxPurchasesPerUser", { minimum: 0, fallback: 0 });
+  if (body.isActive !== undefined && typeof body.isActive !== "boolean") {
+    throw paymentError("isActive must be a boolean", "INVALID_SUBSCRIPTION_PLAN", 400);
+  }
   const features = Array.isArray(body.features)
     ? body.features
     : String(body.features || "").split(/\n|,/);
@@ -552,6 +575,7 @@ function normalizePlanPayload(body = {}) {
     code,
     name,
     price,
+    billingPeriod,
     ...(Object.hasOwn(body, "paypalPriceCents") ? { paypalPriceCents: adminPaypalPrice(body.paypalPriceCents, { allowZero: true }) } : {}),
     durationDays,
     expiresEndOfDay: true,
@@ -561,14 +585,14 @@ function normalizePlanPayload(body = {}) {
     badge: limitedString(body.badge, 40),
     features: features.map((item) => limitedString(item, 120)).filter(Boolean).slice(0, 20),
     isActive: body.isActive !== false,
-    sortOrder: Number.isFinite(Number(body.sortOrder)) ? Number(body.sortOrder) : 0,
+    sortOrder: planInteger(body.sortOrder, "sortOrder", { minimum: 0, fallback: 0 }),
   };
 }
 
 export async function adminListMembershipPlans(_req, res, next) {
   try {
     const plans = await MembershipPlan.find().sort({ sortOrder: 1, price: 1 }).lean();
-    res.json({ plans });
+    res.json({ plans, catalog: await getSubscriptionCatalog() });
   } catch (error) {
     next(error);
   }
@@ -576,11 +600,18 @@ export async function adminListMembershipPlans(_req, res, next) {
 
 export async function adminCreateMembershipPlan(req, res, next) {
   try {
-    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "paypalPriceCents", "durationDays", "dailyDownloadLimit", "maxPurchasesPerUser", "badge", "features", "isActive", "sortOrder"]);
+    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "paypalPriceCents", "billingPeriod", "durationDays", "dailyDownloadLimit", "maxPurchasesPerUser", "badge", "features", "isActive", "sortOrder"]);
     if (unknownKey) return res.status(400).json({ message: "Invalid membership plan request" });
     const payload = normalizePlanPayload(req.body);
     if (!payload.code || !payload.name) return res.status(400).json({ message: "Plan code and name are required" });
-    const plan = await MembershipPlan.create(payload);
+    payload.catalogVersion = 2;
+    const plan = await withSubscriptionCatalogWrite(async (session) => {
+      await assertPlanCatalogWrite(payload, session);
+      const existing = await MembershipPlan.findOne({ code: payload.code }).session(session);
+      if (existing) throw paymentError("Membership plan code already exists", "SUBSCRIPTION_CODE_CONFLICT", 409);
+      const [created] = await MembershipPlan.insertMany([payload], { session });
+      return created;
+    });
     res.json({ plan });
   } catch (error) {
     if (error?.code === 11000) return res.status(409).json({ message: "Membership plan code already exists" });
@@ -591,12 +622,17 @@ export async function adminCreateMembershipPlan(req, res, next) {
 export async function adminUpdateMembershipPlan(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid membership plan id" });
-    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "paypalPriceCents", "durationDays", "dailyDownloadLimit", "maxPurchasesPerUser", "badge", "features", "isActive", "sortOrder"]);
+    const unknownKey = rejectUnknownKeys(req.body, ["code", "name", "price", "paypalPriceCents", "billingPeriod", "durationDays", "dailyDownloadLimit", "maxPurchasesPerUser", "badge", "features", "isActive", "sortOrder"]);
     if (unknownKey) return res.status(400).json({ message: "Invalid membership plan request" });
-    const payload = normalizePlanPayload(req.body);
-    delete payload.code;
-    if (!payload.name) return res.status(400).json({ message: "Plan name is required" });
-    const plan = await MembershipPlan.findByIdAndUpdate(req.params.id, { $set: payload }, { new: true });
+    const plan = await withSubscriptionCatalogWrite(async (session) => {
+      const existing = await MembershipPlan.findById(req.params.id).session(session).lean();
+      if (!existing) return null;
+      const payload = normalizePlanPayload({ ...existing, billingPeriod: subscriptionBillingPeriod(existing), ...req.body });
+      delete payload.code;
+      if (!payload.name) throw paymentError("Plan name is required", "INVALID_SUBSCRIPTION_PLAN", 400);
+      await assertPlanCatalogWrite({ ...existing, ...payload }, session);
+      return MembershipPlan.findByIdAndUpdate(req.params.id, { $set: payload }, { new: true, runValidators: true, session });
+    });
     if (!plan) return res.status(404).json({ message: "Membership plan not found" });
     res.json({ plan });
   } catch (error) {
@@ -607,7 +643,9 @@ export async function adminUpdateMembershipPlan(req, res, next) {
 export async function adminDeleteMembershipPlan(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid membership plan id" });
-    const plan = await MembershipPlan.findByIdAndUpdate(req.params.id, { $set: { isActive: false } }, { new: true });
+    const plan = await withSubscriptionCatalogWrite((session) =>
+      MembershipPlan.findByIdAndUpdate(req.params.id, { $set: { isActive: false } }, { new: true, session }),
+    );
     if (!plan) return res.status(404).json({ message: "Membership plan not found" });
     res.json({ plan });
   } catch (error) {
@@ -618,16 +656,16 @@ export async function adminDeleteMembershipPlan(req, res, next) {
 export async function adminReorderMembershipPlans(req, res, next) {
   try {
     const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds : [];
-    if (!orderedIds.length || orderedIds.some((id) => !isSafeId(id))) {
+    if (!orderedIds.length || orderedIds.some((id) => !isSafeId(id)) || new Set(orderedIds).size !== orderedIds.length) {
       return res.status(400).json({ message: "orderedIds is required" });
     }
-    await Promise.all(
-      orderedIds.map((id, index) =>
-        MembershipPlan.findByIdAndUpdate(id, { $set: { sortOrder: (index + 1) * 10 } }),
-      ),
-    );
+    await withSubscriptionCatalogWrite(async (session) => {
+      for (const [index, id] of orderedIds.entries()) {
+        await MembershipPlan.findByIdAndUpdate(id, { $set: { sortOrder: (index + 1) * 10 } }, { session });
+      }
+    });
     const plans = await MembershipPlan.find().sort({ sortOrder: 1, price: 1 }).lean();
-    res.json({ plans });
+    res.json({ plans, catalog: await getSubscriptionCatalog() });
   } catch (error) {
     next(error);
   }

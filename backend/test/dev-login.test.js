@@ -23,6 +23,7 @@ test("logged-in accounts expose only Free or Pro membership tiers", () => {
     tier: "free",
     proUntil: null,
     dailyDownloadLimit: 5,
+    currentPeriod: null,
   });
 
   const proUntil = new Date("2026-07-16T00:00:00.000Z");
@@ -31,5 +32,6 @@ test("logged-in accounts expose only Free or Pro membership tiers", () => {
     tier: "pro",
     proUntil,
     dailyDownloadLimit: 100,
+    currentPeriod: null,
   });
 });

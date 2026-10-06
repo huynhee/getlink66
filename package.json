@@ -26,6 +26,8 @@
     "storage:retention:apply": "npm run storage:retention:apply --prefix backend",
     "referral:expiry:dry-run": "npm run referral:expiry:dry-run --prefix backend",
     "referral:expiry:execute": "npm run referral:expiry:execute --prefix backend",
+    "subscription:dry-run": "npm run subscription:dry-run --prefix backend",
+    "subscription:migrate": "npm run subscription:migrate --prefix backend",
     "data:split:dry-run": "npm run data:split:dry-run --prefix backend",
     "data:split:execute": "npm run data:split:execute --prefix backend",
     "data:split:finalize": "npm run data:split:finalize --prefix backend",

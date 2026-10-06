@@ -5,6 +5,7 @@ import PluginDeviceAuthorization from "../models/PluginDeviceAuthorization.js";
 import PluginDeviceSession from "../models/PluginDeviceSession.js";
 import PluginRefreshToken from "../models/PluginRefreshToken.js";
 import User from "../models/User.js";
+import { refreshSubscriptionUser } from "../utils/subscriptionScheduleService.js";
 import { pluginJwtSecret } from "../config/secrets.js";
 import {
   isProActive,
@@ -91,6 +92,7 @@ function signAccessToken(session) {
 }
 
 async function publicUser(user) {
+  user = await refreshSubscriptionUser(user);
   const pro = isProActive(user);
   const tier = pro ? "member" : "free";
   const quota = await DailyDownloadQuota.findOne({
@@ -108,6 +110,8 @@ async function publicUser(user) {
     avatar: user.avatar || "",
     isPro: pro,
     proUntil: user.proUntil || null,
+    proDailyDownloadLimit: Number(user.proDailyDownloadLimit || 100),
+    subscriptionCurrentPeriod: user.subscriptionCurrentPeriod || null,
     credit: Number(user.credit || 0),
     downloadQuota: {
       used,

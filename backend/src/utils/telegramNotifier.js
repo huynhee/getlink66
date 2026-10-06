@@ -119,6 +119,9 @@ export function notifyMembershipApproved({ order, user, source = "System" } = {}
     `Plan: ${escapeHtml(order?.planName || order?.planCode || "Pro")}`,
     `Type: ${order?.isQuotaAddon ? "Daily quota add-on" : "Pro membership"}`,
     `Amount: ${money(order?.amount, order?.currency)}`,
+    ...(order?.activatedFrom ? [`Starts: ${escapeHtml(vietnamDateTime(order.activatedFrom))}`] : []),
+    ...(order?.subscriptionQueued ? ["Status: Paid, waiting to start"] : []),
+    `Daily quota: ${Number(order?.dailyDownloadLimit || 100)}`,
     `Active until: ${escapeHtml(vietnamDateTime(order?.activatedUntil || user?.proUntil))}`,
     `Payment code: <code>${escapeHtml(order?.paymentCode || "-")}</code>`,
   ];

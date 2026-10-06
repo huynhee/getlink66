@@ -158,6 +158,7 @@ function userStateSignature(user) {
     proUntil: user.proUntil || null,
     isPro: Boolean(user.isPro),
     proDailyDownloadLimit: Number(user.proDailyDownloadLimit || 0),
+    subscriptionCurrentPeriod: user.subscriptionCurrentPeriod || null,
     isBanned: Boolean(user.isBanned),
     banReason: user.banReason || "",
     isTwoFactorEnabled: Boolean(user.isTwoFactorEnabled),

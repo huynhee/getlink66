@@ -5,7 +5,13 @@ import Notification from "../models/Notification.js";
 import Referral from "../models/Referral.js";
 import SiteSetting from "../models/SiteSetting.js";
 import User from "../models/User.js";
-import { endOfVietnamDay } from "./membershipService.js";
+import { endOfVietnamDay, isProActive, vietnamDayKey } from "./membershipService.js";
+import SubscriptionQuotaGrant from "../models/SubscriptionQuotaGrant.js";
+import SubscriptionPeriod from "../models/SubscriptionPeriod.js";
+import { grantReferralSubscription, refreshSubscriptionInTransaction } from "./subscriptionScheduleService.js";
+import { synchronizeSubscriptionQuotaGrant } from "./marketplaceQuotaGrantService.js";
+import { lockPaymentBenefits, preparePaymentBenefitGuard, serializeMemoryPayments } from "./paymentBenefitService.js";
+import { publishAccountInvalidation } from "./accountEventBus.js";
 import logger from "./logger.js";
 
 const REFERRAL_CODE_RE = /^[A-Z0-9]{6,24}$/;
@@ -75,10 +81,7 @@ function proRewardFields(user, now) {
   const wasActive = Boolean(currentUntil && currentUntil > now);
   return {
     proUntil: referralRewardProUntil(user, now),
-    proDailyDownloadLimit: Math.max(
-      MEMBER_DAILY_DOWNLOAD_LIMIT,
-      Number(user?.proDailyDownloadLimit || 0),
-    ),
+    proDailyDownloadLimit: wasActive ? Number(user?.proDailyDownloadLimit || 100) : MEMBER_DAILY_DOWNLOAD_LIMIT,
     ...(!wasActive && !user?.proActivatedAt ? { proActivatedAt: now } : {}),
   };
 }
@@ -153,13 +156,27 @@ async function notifyReferralReward({
   await Notification.insertMany(notifications);
 }
 
-function transactionUnsupported(error) {
-  const text = String(error?.message || error || "").toLowerCase();
-  return (
-    text.includes("transaction numbers are only allowed") ||
-    text.includes("replica set member or mongos") ||
-    text.includes("transactions are not supported")
-  );
+async function prepareReferralProBenefits(result, previousUsers, now, session = null) {
+  const grants = [];
+  for (const [field, rewardField] of [["referrer", "referrerProDays"], ["referredUser", "referredProDays"]]) {
+    if (!(result[rewardField] > 0)) continue;
+    const previous = previousUsers[field];
+    if (!isProActive(previous, now)) {
+      result[field] = await grantReferralSubscription(previous, {
+        at: now, session, sourceKey: `referral:${previous._id}:${vietnamDayKey(now)}`,
+      });
+    } else {
+      const amount = Math.max(0, 100 - Number(previous.proDailyDownloadLimit || 100));
+      if (amount > 0) {
+        const sourceKey = `referral-floor:${previous._id}:${vietnamDayKey(now)}`;
+        const grant = await SubscriptionQuotaGrant.findOneAndUpdate({ sourceKey }, { $setOnInsert: {
+          sourceKey, userId: previous._id, dayKey: vietnamDayKey(now), amount, status: "pending", attempts: 0,
+        } }, { upsert: true, new: true, session });
+        grants.push(grant);
+      }
+    }
+  }
+  result.quotaGrants = grants;
 }
 
 function referralClaimCondition(user, includeProState) {
@@ -180,7 +197,10 @@ async function awardReferralSignupTransactional(referredUser, { mode, rewards, r
   let result = null;
   try {
     await session.withTransaction(async () => {
-      const [freshReferredUser, referrer] = await Promise.all([
+      for (const id of [String(referredUser._id), String((await User.findOne({ referralCode }).session(session))?._id)].sort()) {
+        await lockPaymentBenefits(id, session);
+      }
+      let [freshReferredUser, referrer] = await Promise.all([
         User.findOne({ _id: referredUser._id }).session(session),
         User.findOne({ referralCode }).session(session),
       ]);
@@ -195,6 +215,8 @@ async function awardReferralSignupTransactional(referredUser, { mode, rewards, r
       }
 
       const now = new Date();
+      freshReferredUser = await refreshSubscriptionInTransaction(freshReferredUser, { at: now, session });
+      referrer = await refreshSubscriptionInTransaction(referrer, { at: now, session });
       const referrerReward = rewards.proEnabled ? proRewardFields(referrer, now) : {};
       const referredReward = mode === "both" && rewards.proEnabled
         ? proRewardFields(freshReferredUser, now)
@@ -252,6 +274,7 @@ async function awardReferralSignupTransactional(referredUser, { mode, rewards, r
         referredCredit: mode === "both" && rewards.creditEnabled ? REFERRAL_CREDIT : 0,
         mode,
       };
+      await prepareReferralProBenefits(result, { referrer, referredUser: freshReferredUser }, now, session);
     });
     if (result) {
       await notifyReferralReward(result).catch((error) => {
@@ -285,7 +308,7 @@ function restoreProStateUpdate(snapshot, extraUnset = {}) {
   };
 }
 
-export async function awardReferralSignup(referredUser, rawCode) {
+async function awardReferralSignupInner(referredUser, rawCode) {
   const rewards = await referralSettings();
   const { mode } = rewards;
   if (mode === "off") return null;
@@ -294,23 +317,23 @@ export async function awardReferralSignup(referredUser, rawCode) {
   if (!referredUser?._id || !referralCode) return null;
   if (referredUser.referralRewardedAt || referredUser.referredBy) return null;
 
-  const referrer = await User.findOne({ referralCode });
+  let referrer = await User.findOne({ referralCode });
   if (!referrer || String(referrer._id) === String(referredUser._id)) return null;
 
   if (!isMemoryDb()) {
+    await preparePaymentBenefitGuard(referrer._id);
+    await preparePaymentBenefitGuard(referredUser._id);
     try {
       return await awardReferralSignupTransactional(referredUser, { mode, rewards, referralCode });
     } catch (error) {
       if (error?.code === 11000 || error?.code === "REFERRAL_STATE_CONFLICT") return null;
-      if (!transactionUnsupported(error)) throw error;
-      logger.warn(
-        { message: error.message },
-        "MongoDB transactions unavailable; using compensated referral write",
-      );
+      throw error;
     }
   }
 
   const now = new Date();
+  referrer = await refreshSubscriptionInTransaction(referrer, { at: now });
+  referredUser = await refreshSubscriptionInTransaction(referredUser, { at: now });
   const referrerReward = rewards.proEnabled ? proRewardFields(referrer, now) : {};
   const referredReward = mode === "both" && rewards.proEnabled ? proRewardFields(referredUser, now) : {};
   const referredPreviousState = previousProState(referredUser);
@@ -389,10 +412,51 @@ export async function awardReferralSignup(referredUser, rawCode) {
     mode,
   };
 
+  await prepareReferralProBenefits(result, { referrer, referredUser }, now);
+
   await notifyReferralReward(result).catch((error) => {
     logger.warn({ message: error.message }, "Referral notification failed");
   });
 
+  return result;
+}
+
+export async function awardReferralSignup(referredUser, rawCode) {
+  let result;
+  if (isMemoryDb()) {
+    result = await serializeMemoryPayments(async () => {
+      const referrer = await User.findOne({ referralCode: normalizeReferralCode(rawCode) });
+      const fresh = referredUser?._id ? await User.findById(referredUser._id) : null;
+      if (!referrer || !fresh || fresh.referralRewardedAt || fresh.referredBy) return null;
+      const snapshots = [referrer, fresh];
+      const ids = snapshots.map((user) => user._id);
+      const periods = await SubscriptionPeriod.find({ userId: { $in: ids } }).lean();
+      const grants = await SubscriptionQuotaGrant.find({ userId: { $in: ids } }).lean();
+      try { return await awardReferralSignupInner(fresh, rawCode); }
+      catch (error) {
+        for (const user of snapshots) {
+          const $set = {}, $unset = {};
+          for (const key of ["credit", "proUntil", "proActivatedAt", "proPlanId", "proDailyDownloadLimit", "subscriptionManaged", "subscriptionCurrentPeriod", "subscriptionNextTransitionAt", "referredBy", "referralRewardedAt"]) {
+            if (user[key] === undefined) $unset[key] = ""; else $set[key] = user[key];
+          }
+          await User.findByIdAndUpdate(user._id, { $set, $unset });
+        }
+        await SubscriptionPeriod.deleteMany({ userId: { $in: ids } });
+        await SubscriptionPeriod.insertMany(periods);
+        await SubscriptionQuotaGrant.deleteMany({ userId: { $in: ids } });
+        await SubscriptionQuotaGrant.insertMany(grants);
+        await Referral.deleteOne({ referredUserId: fresh._id });
+        throw error;
+      }
+    });
+  } else result = await awardReferralSignupInner(referredUser, rawCode);
+  if (result) {
+    for (const grant of result.quotaGrants || []) {
+      await synchronizeSubscriptionQuotaGrant(grant).catch((error) => logger.warn({ message: error.message }, "Referral quota queued for retry"));
+    }
+    publishAccountInvalidation(result.referrer._id, "referral_reward");
+    publishAccountInvalidation(result.referredUser._id, "referral_reward");
+  }
   return result;
 }
 

@@ -171,7 +171,7 @@ function mapMembership(item) {
   return eventBase(
     `membership:${item._id}`,
     "pro",
-    isAddon ? `Thêm lượt Pro hôm nay - ${item.planName || item.planCode || "Daily"}` : `Mua Pro - ${item.planName || item.planCode || ""}`.trim(),
+    isAddon ? `Thêm lượt hôm nay - ${item.planName || item.planCode || "Daily"}` : `Mua Subscription - ${item.planName || item.planCode || ""}`.trim(),
     isApproved ? -moneyAmount(item.amount) : 0,
     item.status,
     item.paidAt || item.createdAt,
@@ -184,6 +184,9 @@ function mapMembership(item) {
       durationDays: Number(item.durationDays || 0),
       dailyDownloadLimit: Number(item.dailyDownloadLimit || 0),
       activatedUntil: item.activatedUntil || null,
+      activatedFrom: item.activatedFrom || null,
+      billingPeriod: item.billingPeriod || null,
+      subscriptionQueued: Boolean(item.subscriptionQueued),
       isQuotaAddon: isAddon,
       quotaBoostAmount: Number(item.quotaBoostAmount || 0),
       quotaBoostDayKey: item.quotaBoostDayKey || "",

@@ -16,6 +16,10 @@ import { isSafeId, isVoucherCode, normalizeVoucherCode, rejectUnknownKeys } from
 import { moneySnapshot, paymentProvider, paypalPrice } from "../utils/paymentMoney.js";
 import { paypalAvailability, paypalConfiguration } from "../utils/paypal.js";
 import { cancelPaypalPayment, createPaypalCheckout } from "../utils/paypalPaymentService.js";
+import SiteSetting from "../models/SiteSetting.js";
+import { billingPeriodFor } from "../utils/subscriptionTime.js";
+import { subscriptionDetails, refreshSubscriptionUser } from "../utils/subscriptionScheduleService.js";
+import { getSubscriptionCatalog, subscriptionPlanQuery, withSubscriptionCatalogWrite } from "../utils/subscriptionCatalogService.js";
 
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{16,128}$/;
 
@@ -29,15 +33,20 @@ function sortPlans(plans = []) {
 
 export async function listMembershipPlans(_req, res, next) {
   try {
-    const plans = await MembershipPlan.find({ isActive: true }).lean();
-    res.json({ plans: sortPlans(plans), payments: { paypal: paypalAvailability() } });
+    const catalog = await getSubscriptionCatalog();
+    const plans = await MembershipPlan.find(subscriptionPlanQuery(catalog)).lean();
+    res.json({ plans: sortPlans(plans.filter((plan) => plan.price !== null && plan.price !== undefined)),
+      checkoutEnabled: catalog.checkoutEnabled, payments: { paypal: paypalAvailability() } });
   } catch (error) {
     next(error);
   }
 }
 
-export function membershipMe(req, res) {
-  res.json({ membership: membershipSnapshot(req.user) });
+export async function membershipMe(req, res, next) {
+  try {
+    const details = await subscriptionDetails(req.user);
+    res.json({ membership: { ...membershipSnapshot(details.user), currentPeriod: details.currentPeriod, upcomingPeriods: details.upcomingPeriods } });
+  } catch (error) { next(error); }
 }
 
 function isSameMembershipCheckout(order, plan, voucherCode, provider) {
@@ -104,7 +113,7 @@ export async function createMembershipCheckout(req, res, next) {
       return res.status(400).json({ message: "Invalid idempotency key" });
     }
     const plan = await MembershipPlan.findById(planId);
-    if (!plan || plan.isActive === false) {
+    if (!plan) {
       return res.status(400).json({ message: "Invalid membership plan" });
     }
     if (idempotencyKey) {
@@ -118,6 +127,14 @@ export async function createMembershipCheckout(req, res, next) {
         return res.json(await existingMembershipCheckoutResponse(existing, req.user, plan));
       }
     }
+    const setting = await SiteSetting.findOne({ key: "homepage" });
+    if (setting?.subscriptionCheckoutEnabled === false) {
+      return res.status(503).json({ code: "SUBSCRIPTION_CHECKOUT_PAUSED", message: "New subscription purchases are paused" });
+    }
+    if (plan.isActive === false || plan.price === null || plan.price === undefined) {
+      return res.status(400).json({ code: "SUBSCRIPTION_PRICE_UNAVAILABLE", message: "Subscription plan is not available for purchase" });
+    }
+    req.user = await refreshSubscriptionUser(req.user);
     const isPaypal = provider === "paypal";
     const originalAmount = isPaypal ? paypalPrice(plan, { freeTrial: true }) : Number(plan.price || 0);
     // A free plan must not consume a voucher or enter the payment gateway.
@@ -157,7 +174,7 @@ export async function createMembershipCheckout(req, res, next) {
     const paymentCode = createMembershipPaymentCode();
     let order;
     try {
-      order = await MembershipOrder.create({
+      const snapshot = {
         userId: req.user._id,
         planId: plan._id,
         planCode: plan.code,
@@ -166,6 +183,8 @@ export async function createMembershipCheckout(req, res, next) {
         voucherCode: voucher?.code || "",
         voucherDiscountPercent: Number(voucher?.discountPercent || 0),
         durationDays: Number(plan.durationDays || 1),
+        billingPeriod: billingPeriodFor(plan),
+        subscriptionPolicyVersion: Number(plan.catalogVersion) >= 2 ? 2 : 1,
         expiresEndOfDay: true,
         dailyDownloadLimit: Number(plan.dailyDownloadLimit || 100),
         status: "pending",
@@ -174,6 +193,23 @@ export async function createMembershipCheckout(req, res, next) {
         requestedPaymentProvider: provider,
         expiresAt: amount === 0 ? undefined : new Date(Date.now() + 30 * 60 * 1000),
         idempotencyKey: idempotencyKey || undefined,
+      };
+      order = await withSubscriptionCatalogWrite(async (session) => {
+        const catalog = await getSubscriptionCatalog(session);
+        const freshPlan = await MembershipPlan.findById(plan._id).session(session);
+        const compatibleCatalog = catalog.version === 2 ? Number(freshPlan?.catalogVersion) === 2 : Number(freshPlan?.catalogVersion || 1) === 1;
+        const fields = ["price", "paypalPriceCents", "durationDays", "dailyDownloadLimit", "billingPeriod", "name", "maxPurchasesPerUser"];
+        if (!catalog.checkoutEnabled || !compatibleCatalog || freshPlan?.isActive === false || !freshPlan
+          || fields.some((field) => String(freshPlan[field] ?? "") !== String(plan[field] ?? ""))) {
+          throw Object.assign(new Error("Subscription plan changed; refresh plans before purchasing"), { status: 409, code: "SUBSCRIPTION_PLAN_CHANGED" });
+        }
+        const countQuery = MembershipOrder.countDocuments({ userId: req.user._id, planId: plan._id, status: { $in: ["pending", "approved"] } });
+        const used = maxPurchasesPerUser > 0 ? await (session ? countQuery.session(session) : countQuery) : 0;
+        if (maxPurchasesPerUser > 0 && used >= maxPurchasesPerUser) {
+          throw Object.assign(new Error("Subscription purchase limit reached"), { status: 409, code: "MEMBERSHIP_PLAN_PURCHASE_LIMIT_REACHED" });
+        }
+        if (session) return (await MembershipOrder.create([snapshot], { session }))[0];
+        return MembershipOrder.create(snapshot);
       });
     } catch (error) {
       if (error?.code === 11000 && idempotencyKey) {
@@ -219,7 +255,7 @@ export async function membershipOrderStatus(req, res, next) {
   try {
     if (!isSafeId(req.params.id)) return res.status(400).json({ message: "Invalid order id" });
     const order = await MembershipOrder.findOne({ _id: req.params.id, userId: req.user._id })
-      .select("status amount currency amountMinor originalAmount discountAmount voucherCode voucherDiscountPercent gatewayProvider paypalOrderId paypalCaptureId paymentReconciliationStatus paypalRefundMinor paypalDisputeStatus isQuotaAddon quotaBoostAmount quotaBoostDayKey paymentCode paidAt canceledAt rejectionReason activatedUntil createdAt updatedAt")
+      .select("status planName billingPeriod durationDays dailyDownloadLimit amount currency amountMinor originalAmount discountAmount voucherCode voucherDiscountPercent gatewayProvider paypalOrderId paypalCaptureId paymentReconciliationStatus paypalRefundMinor paypalDisputeStatus isQuotaAddon quotaBoostAmount quotaBoostDayKey paymentCode paidAt canceledAt rejectionReason activatedFrom activatedUntil subscriptionQueued createdAt updatedAt")
       .lean();
     if (!order) return res.status(404).json({ message: "Membership order not found" });
     res.json({ order, status: order.status, membership: membershipSnapshot(req.user) });

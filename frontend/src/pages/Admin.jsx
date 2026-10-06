@@ -6,6 +6,7 @@ import AdminMarketplace from "../components/AdminMarketplace.jsx";
 import AdminPluginReleases from "../components/AdminPluginReleases.jsx";
 import CoinAmount from "../components/CoinAmount.jsx";
 import Pagination from "../components/Pagination.jsx";
+import SubscriptionSchedule from "../components/SubscriptionSchedule.jsx";
 import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
 import { formatPaymentMoney, parseAdminUsdPrice } from "../utils/paymentPresentation.js";
@@ -27,12 +28,14 @@ const emptyMembershipPlan = {
   name: "",
   price: "",
   paypalPriceUsd: "",
-  durationDays: "",
+  billingPeriod: "month",
+  durationDays: "30",
   dailyDownloadLimit: "100",
   maxPurchasesPerUser: "",
   badge: "",
   features: "Tải nhanh\nQuyền truy cập ưu tiên",
-  isActive: true
+  isActive: false,
+  sortOrder: "0"
 };
 
 const emptyVoucher = {
@@ -313,6 +316,8 @@ export default function Admin({ user, language = "vi" }) {
   const [users, setUsers] = useState([]);
   const [packages, setPackages] = useState([]);
   const [membershipPlans, setMembershipPlans] = useState([]);
+  const [subscriptionCatalog, setSubscriptionCatalog] = useState({ version: 1, prepared: false, checkoutEnabled: true });
+  const [catalogBusy, setCatalogBusy] = useState(false);
   const [vouchers, setVouchers] = useState([]);
   const [articles, setArticles] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -410,6 +415,7 @@ export default function Admin({ user, language = "vi" }) {
     setStorageHealth(storageRes.storage || null);
     setPackages(pRes.packages || []);
     setMembershipPlans(planRes.plans || []);
+    setSubscriptionCatalog(planRes.catalog || { version: 1, prepared: false, checkoutEnabled: true });
     setVouchers(vRes.vouchers || []);
     setCookieRecords(cRes.cookies || []);
     setCookiePool(sRes.pool || null);
@@ -676,12 +682,14 @@ export default function Admin({ user, language = "vi" }) {
       name: plan.name || "",
       price: plan.price ?? "",
       paypalPriceUsd: plan.paypalPriceCents == null ? "" : (plan.paypalPriceCents / 100).toFixed(2),
+      billingPeriod: Number(plan.catalogVersion) === 2 ? plan.billingPeriod || "month" : Number(plan.durationDays) <= 1 ? "day" : Number(plan.durationDays) >= 365 ? "year" : "month",
       durationDays: plan.durationDays || "",
       dailyDownloadLimit: plan.dailyDownloadLimit || "100",
       maxPurchasesPerUser: Number(plan.maxPurchasesPerUser || 0) > 0 ? plan.maxPurchasesPerUser : "",
       badge: plan.badge || "",
       features: Array.isArray(plan.features) ? plan.features.join("\n") : "",
-      isActive: plan.isActive !== false
+      isActive: plan.isActive !== false,
+      sortOrder: String(plan.sortOrder ?? 0)
     });
   }
 
@@ -693,10 +701,11 @@ export default function Admin({ user, language = "vi" }) {
       const payload = {
         ...form,
         paypalPriceCents: parseAdminUsdPrice(paypalPriceUsd),
-        price: Number(membershipPlanForm.price || 0),
-        durationDays: Number(membershipPlanForm.durationDays || 1),
-        dailyDownloadLimit: Number(membershipPlanForm.dailyDownloadLimit || 100),
-        maxPurchasesPerUser: Number(membershipPlanForm.maxPurchasesPerUser || 0)
+        price: String(membershipPlanForm.price).trim() === "" ? null : Number(membershipPlanForm.price),
+        durationDays: Number(membershipPlanForm.durationDays),
+        dailyDownloadLimit: Number(membershipPlanForm.dailyDownloadLimit),
+        maxPurchasesPerUser: Number(membershipPlanForm.maxPurchasesPerUser || 0),
+        sortOrder: Number(membershipPlanForm.sortOrder || 0)
       };
       await api(editingMembershipPlanId ? `/api/admin/membership-plans/${editingMembershipPlanId}` : "/api/admin/membership-plans", {
         method: editingMembershipPlanId ? "PUT" : "POST",
@@ -717,6 +726,26 @@ export default function Admin({ user, language = "vi" }) {
       setMembershipPlanForm(emptyMembershipPlan);
     }
     await loadData();
+  }
+
+  async function updateSubscriptionCatalog(action, body = {}) {
+    if (catalogBusy) return;
+    if (action === "activate" && !window.confirm(l(
+      "Áp dụng bộ Subscription và ngừng bán tất cả gói cũ, gồm Trial? Đơn và quyền lợi đã mua vẫn được giữ nguyên.",
+      "Apply the Subscription catalog and stop selling all legacy plans, including Trial? Existing orders and benefits are preserved."
+    ))) return;
+    setCatalogBusy(true);
+    setPackageError("");
+    try {
+      const data = await api(`/api/admin/membership-plans/subscription/${action}`, { method: "POST", body: JSON.stringify(body) });
+      setMembershipPlans(data.plans || []);
+      setSubscriptionCatalog(data.catalog);
+      await loadData();
+    } catch (error) {
+      setPackageError(error.message);
+    } finally {
+      setCatalogBusy(false);
+    }
   }
 
   function resetVoucherEditor(mode = voucherMode) {
@@ -1099,13 +1128,17 @@ export default function Admin({ user, language = "vi" }) {
       setUserDetail({
         user: profileUser,
         stats: profileRes.stats || {},
-        auditLogs: profileRes.auditLogs || []
+        auditLogs: profileRes.auditLogs || [],
+        currentPeriod: profileRes.currentPeriod || profileUser.subscriptionCurrentPeriod || null,
+        upcomingPeriods: profileRes.upcomingPeriods || []
       });
       setUserQuota(quotaRes.quota || null);
       setUserTimeline(timelineRes.events || []);
       setUserTimelineType(timelineRes.type || timelineType);
       setProAdjustForm({
-        proUntil: toDateInput(profileUser.proUntil),
+        proUntil: toDateInput((profileRes.currentPeriod || profileUser.subscriptionCurrentPeriod)?.endsAt
+          ? new Date(new Date((profileRes.currentPeriod || profileUser.subscriptionCurrentPeriod).endsAt).getTime() - 1)
+          : profileUser.proUntil),
         proDailyDownloadLimit: String(profileUser.proDailyDownloadLimit ?? 100)
       });
     } catch (err) {
@@ -1127,7 +1160,7 @@ export default function Admin({ user, language = "vi" }) {
           proDailyDownloadLimit: Number(proAdjustForm.proDailyDownloadLimit || 100)
         })
       });
-      setUserDetailMsg(l("Đã cập nhật Pro cho user.", "User Pro updated."));
+      setUserDetailMsg(l("Đã cập nhật kỳ hiện tại và dịch lịch các kỳ tiếp theo.", "Current period updated; subsequent periods rescheduled."));
       await Promise.all([loadUsers(), loadUserDetail(userDetail.user, userTimelineType)]);
     } catch (err) {
       setUserDetailMsg(err.message);
@@ -1136,13 +1169,14 @@ export default function Admin({ user, language = "vi" }) {
 
   async function clearUserPro() {
     if (!userDetail?.user?._id) return;
+    if (!window.confirm(l("Hủy toàn bộ Subscription hiện tại và các kỳ đã thanh toán đang chờ của user này?", "Cancel this user's current Subscription and all paid upcoming periods?"))) return;
     try {
       setUserDetailMsg("");
       await api(`/api/admin/users/${userDetail.user._id}/pro-adjust`, {
         method: "POST",
         body: JSON.stringify({ clearPro: true })
       });
-      setUserDetailMsg(l("Đã gỡ Pro của user.", "User Pro cleared."));
+      setUserDetailMsg(l("Đã hủy toàn bộ kỳ Subscription còn lại.", "All remaining Subscription periods cancelled."));
       await Promise.all([loadUsers(), loadUserDetail(userDetail.user, userTimelineType)]);
     } catch (err) {
       setUserDetailMsg(err.message);
@@ -2092,13 +2126,13 @@ export default function Admin({ user, language = "vi" }) {
               <CreditCard size={15} /> Credit
             </button>
             <button type="button" className={packageMode === "pro" ? "active" : ""} onClick={() => setPackageMode("pro")}>
-              <Zap size={15} /> Pro
+              <Zap size={15} /> Subscription
             </button>
           </div>
           <p className="muted" style={{ marginTop: 8 }}>
             {packageMode === "credit"
               ? l("Gói Credit cộng số dư dùng cho Getlink và tải lẻ Model/Scene; không kích hoạt Pro hoặc cộng quota hằng ngày.", "Credit packages add balance for Getlink and one-off Model/Scene downloads; they do not activate Pro or add daily quota.")
-              : l("Gói Pro kích hoạt quyền thành viên và quota tải Model/Scene, không cộng credit.", "Pro plans activate membership and Model/Scene download quota, not credit.")}
+              : l("Subscription cấp quota tải Model/Scene theo từng kỳ, không cộng Credit.", "Subscription provides Model/Scene download quota per period, not Credits.")}
           </p>
 
           {packageMode === "credit" ? (
@@ -2242,6 +2276,20 @@ export default function Admin({ user, language = "vi" }) {
             </>
           ) : (
             <>
+              <div className="adminSubTabs">
+                <strong>Subscription · {subscriptionCatalog.version === 2 ? l("Đang áp dụng", "Active catalog") : l("Catalog cũ đang bán", "Legacy catalog on sale")}</strong>
+                <button type="button" className="smallButton" disabled={catalogBusy || subscriptionCatalog.prepared} onClick={() => updateSubscriptionCatalog("prepare")}>
+                  <Plus size={16} /> {l("Chuẩn bị 9 gói", "Prepare 9 plans")}
+                </button>
+                <button type="button" className="smallButton" disabled={catalogBusy || subscriptionCatalog.version === 2} onClick={() => updateSubscriptionCatalog("activate")}>
+                  <Check size={16} /> {l("Áp dụng bộ Subscription", "Apply Subscription catalog")}
+                </button>
+                <label className="adminCheckboxRow">
+                  <input type="checkbox" checked={subscriptionCatalog.checkoutEnabled} disabled={catalogBusy}
+                    onChange={(event) => updateSubscriptionCatalog("checkout", { enabled: event.target.checked })} />
+                  {l("Nhận đơn mới", "Accept new purchases")}
+                </label>
+              </div>
               <form onSubmit={saveMembershipPlan} style={{ display: "grid", gap: 10, marginTop: 14 }}>
                 <div className="inputRow">
                   <select
@@ -2251,7 +2299,7 @@ export default function Admin({ user, language = "vi" }) {
                       fillMembershipPlanForm(selected);
                     }}
                   >
-                    <option value="">{l("Tạo gói Pro mới", "Create new Pro plan")}</option>
+                    <option value="">{l("Tạo Subscription mới", "Create Subscription plan")}</option>
                     {membershipPlans.map((plan) => (
                       <option key={plan._id} value={plan._id}>{plan.name || plan.code}</option>
                     ))}
@@ -2264,8 +2312,22 @@ export default function Admin({ user, language = "vi" }) {
                 </div>
                 <div className="inputRow">
                   <input value={membershipPlanForm.code} disabled={Boolean(editingMembershipPlanId)} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, code: e.target.value.toUpperCase() })} placeholder="CODE: DAILY, SILVER, GOLD" />
-                  <input value={membershipPlanForm.name} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, name: e.target.value })} placeholder={l("Tên gói Pro", "Pro plan name")} />
-                  <input type="number" value={membershipPlanForm.price} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, price: e.target.value })} placeholder={t.price} />
+                  <input value={membershipPlanForm.name} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, name: e.target.value })} placeholder={l("Tên Subscription", "Subscription plan name")} />
+                  <label>{l("Giá VND (để trống: chưa bán)", "VND price (blank: not on sale)")}
+                    <input type="number" min="0" step="1" value={membershipPlanForm.price} onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, price: e.target.value })} placeholder={l("Chưa nhập giá", "Not configured")} />
+                  </label>
+                </div>
+                <div className="inputRow">
+                  <label>{l("Nhóm kỳ", "Billing period")}
+                    <select value={membershipPlanForm.billingPeriod} onChange={(event) => setMembershipPlanForm({
+                      ...membershipPlanForm, billingPeriod: event.target.value, durationDays: String({ day: 1, month: 30, year: 365 }[event.target.value]),
+                    })}>
+                      <option value="day">{l("Ngày", "Day")}</option><option value="month">{l("Tháng", "Month")}</option><option value="year">{l("Năm", "Year")}</option>
+                    </select>
+                  </label>
+                  <label>{l("Thứ tự", "Sort order")}
+                    <input type="number" min="0" step="1" value={membershipPlanForm.sortOrder} onChange={(event) => setMembershipPlanForm({ ...membershipPlanForm, sortOrder: event.target.value })} />
+                  </label>
                 </div>
                 <label>
                   {l("Giá PayPal (USD)", "PayPal price (USD)")}
@@ -2287,16 +2349,16 @@ export default function Admin({ user, language = "vi" }) {
                   onChange={(e) => setMembershipPlanForm({ ...membershipPlanForm, features: e.target.value })}
                   rows={4}
                   style={{ height: "auto", minHeight: 110 }}
-                  placeholder={l("Mỗi dòng là một quyền lợi Pro", "Each line is one Pro benefit")}
+                  placeholder={l("Mỗi dòng là một quyền lợi Subscription", "Each line is one Subscription benefit")}
                 />
-                <button className="smallButton" disabled={!membershipPlanForm.name || membershipPlanForm.price === "" || !membershipPlanForm.durationDays} style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}>
+                <button className="smallButton" disabled={!membershipPlanForm.name || (membershipPlanForm.isActive && membershipPlanForm.price === "") || !membershipPlanForm.durationDays} style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}>
                   {editingMembershipPlanId ? <Save size={16} /> : <Plus size={16} />}
-                  {editingMembershipPlanId ? l("Lưu gói Pro", "Save Pro plan") : l("Thêm gói Pro", "Add Pro plan")}
+                  {editingMembershipPlanId ? l("Lưu Subscription", "Save Subscription") : l("Thêm Subscription", "Add Subscription")}
                 </button>
               </form>
 
               <p className="muted" style={{ marginTop: 14, marginBottom: 0, fontSize: 13 }}>
-                {l("Kéo thả gói Pro để đổi vị trí hiển thị ngoài trang chủ và trang nạp.", "Drag Pro plans to change their order on the homepage and top-up page.")}
+                {l("Kéo thả Subscription để đổi thứ tự hiển thị.", "Drag Subscription plans to reorder them.")}
               </p>
               <div className="packageGrid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
                 {membershipPlans.map((plan, planIndex) => (
@@ -2332,19 +2394,20 @@ export default function Admin({ user, language = "vi" }) {
                       >
                         <ArrowDown size={15} />
                       </button>
-                      <button type="button" onClick={() => fillMembershipPlanForm(plan)} title={l("Sửa gói Pro", "Edit Pro plan")}>
+                      <button type="button" onClick={() => fillMembershipPlanForm(plan)} title={l("Sửa Subscription", "Edit Subscription plan")}>
                         <Pencil size={15} />
                       </button>
-                      <button type="button" onClick={() => deleteMembershipPlan(plan._id)} title={l("Tắt gói Pro", "Disable Pro plan")} style={{ color: "var(--error)" }}>
+                      <button type="button" onClick={() => deleteMembershipPlan(plan._id)} title={l("Tắt Subscription", "Disable Subscription plan")} style={{ color: "var(--error)" }}>
                         <X size={16} />
                       </button>
                     </div>
                     <span className={`badge ${plan.isActive !== false ? "success" : "error"}`}>{plan.isActive !== false ? "ACTIVE" : "OFF"}</span>
                     <h3 style={{ marginTop: 8 }}>{plan.name || plan.code}</h3>
                     <div className="priceBlock compact" style={{ alignItems: "flex-start" }}>
-                      <strong>{Number(plan.price || 0).toLocaleString(locale)}đ</strong>
+                      <strong>{plan.price == null ? l("Chưa nhập giá", "Price not configured") : `${Number(plan.price).toLocaleString(locale)}đ`}</strong>
                     </div>
-                    <span>PayPal: {formatPaymentMoney(Number(plan.price) === 0 ? 0 : plan.paypalPriceCents == null ? null : plan.paypalPriceCents / 100, "USD", locale)}</span>
+                    <span>PayPal: {formatPaymentMoney(plan.price === 0 ? 0 : plan.paypalPriceCents == null ? null : plan.paypalPriceCents / 100, "USD", locale)}</span>
+                    <span>{l("Nhóm kỳ", "Period")}: {plan.billingPeriod || (Number(plan.durationDays) <= 1 ? "day" : Number(plan.durationDays) >= 365 ? "year" : "month")}</span>
                     <span>{Number(plan.durationDays || 0).toLocaleString(locale)} {l("ngày, hết hạn cuối ngày", "days, expires end of day")}</span>
                     <span>{Number(plan.dailyDownloadLimit || 100).toLocaleString(locale)} {l("lượt tải/ngày", "downloads/day")}</span>
                     <span className="muted">
@@ -2360,7 +2423,7 @@ export default function Admin({ user, language = "vi" }) {
                     </ul>
                   </div>
                 ))}
-                {!membershipPlans.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Chưa có gói Pro.", "No Pro plans yet.")}</p>}
+                {!membershipPlans.length && <p className="muted" style={{ textAlign: "center", padding: 16 }}>{l("Chưa có Subscription.", "No Subscription plans yet.")}</p>}
               </div>
             </>
           )}
@@ -2514,7 +2577,7 @@ export default function Admin({ user, language = "vi" }) {
             ) : (
               <div className="voucherScopeSummary">
                 <span>{l("Phạm vi", "Scope")}</span>
-                <strong>{voucherMode === "pro" ? l("Tất cả gói Pro", "All Pro plans") : l("Tất cả gói Credit và Pro", "All Credit and Pro plans")}</strong>
+                <strong>{voucherMode === "pro" ? l("Tất cả Subscription", "All Subscription plans") : l("Tất cả gói Credit và Subscription", "All Credit and Subscription plans")}</strong>
               </div>
             )}
             <button
@@ -2592,9 +2655,9 @@ export default function Admin({ user, language = "vi" }) {
                     <span>{t.appliesTo}</span>
                     <strong>
                       {proVoucher
-                        ? l("Gói Pro / Membership", "Pro / Membership plans")
+                        ? "Subscription"
                         : sharedVoucher
-                          ? l("Credit và Pro", "Credit and Pro")
+                          ? l("Credit và Subscription", "Credit and Subscription")
                           : Array.isArray(voucher.applicablePackageIds) && voucher.applicablePackageIds.length > 0
                             ? voucher.applicablePackageIds.map((pkg) => pkg?.name || t.defaultPackageName).join(", ")
                             : t.allTopupPackages}
@@ -3274,11 +3337,11 @@ export default function Admin({ user, language = "vi" }) {
 
       {activeSection === "general" && generalSection === "topups" && (
         <section className="panel">
-          <h2><CreditCard size={20} /> {l("Giao dịch Credit / Pro", "Credit / Pro transactions")}</h2>
+          <h2><CreditCard size={20} /> {l("Giao dịch Credit / Subscription", "Credit / Subscription transactions")}</h2>
           <div className="adminSubTabs" role="tablist" aria-label={l("Loại giao dịch", "Transaction type")}>
             {[
               ["credit", "Credit", CreditCard],
-              ["pro", "Pro", Zap],
+              ["pro", "Subscription", Zap],
               ["all", l("Tất cả", "All"), Wallet],
             ].map(([kind, label, Icon]) => (
               <button
@@ -3506,10 +3569,13 @@ export default function Admin({ user, language = "vi" }) {
                 </div>
               </div>
 
+              <SubscriptionSchedule membership={{ active: userDetail.user?.isPro,
+                dailyDownloadLimit: userDetail.user?.proDailyDownloadLimit, proUntil: userDetail.user?.proUntil,
+                currentPeriod: userDetail.currentPeriod, upcomingPeriods: userDetail.upcomingPeriods }} language={language} />
               <form className="adminInlineForm" onSubmit={saveUserProAdjust}>
                 <div>
-                  <strong>{l("Chỉnh Pro thủ công", "Manual Pro adjustment")}</strong>
-                  <span>{l("Dùng khi cần hỗ trợ user hoặc xử lý đơn Pro lỗi webhook.", "Use for support or failed Pro webhook cases.")}</span>
+                  <strong>{l("Chỉnh kỳ Subscription hiện tại", "Adjust current Subscription period")}</strong>
+                  <span>{l("Các kỳ chờ giữ nguyên thời lượng và được dịch theo hạn mới.", "Upcoming periods keep their duration and shift to follow the new expiry.")}</span>
                 </div>
                 <input
                   type="date"
@@ -3519,13 +3585,13 @@ export default function Admin({ user, language = "vi" }) {
                 />
                 <input
                   type="number"
-                  min="0"
+                  min="1"
                   value={proAdjustForm.proDailyDownloadLimit}
                   onChange={(e) => setProAdjustForm({ ...proAdjustForm, proDailyDownloadLimit: e.target.value })}
                   placeholder={l("Lượt tải/ngày", "Downloads/day")}
                 />
-                <button className="smallButton" type="submit"><Save size={14} /> {l("Lưu Pro", "Save Pro")}</button>
-                <button className="smallButton dangerButton" type="button" onClick={clearUserPro}><X size={14} /> {l("Gỡ Pro", "Clear Pro")}</button>
+                <button className="smallButton" type="submit"><Save size={14} /> {l("Lưu Subscription", "Save Subscription")}</button>
+                <button className="smallButton dangerButton" type="button" onClick={clearUserPro}><X size={14} /> {l("Hủy toàn bộ kỳ", "Cancel all periods")}</button>
               </form>
 
               <div className="adminDetailGrid compact">

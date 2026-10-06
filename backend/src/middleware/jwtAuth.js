@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { jwtSecret } from "../config/secrets.js";
 import { securityEvent } from "../utils/logger.js";
 import { SESSION_EXPIRED_MESSAGE } from "../utils/authMessages.js";
+import { refreshSubscriptionUser } from "../utils/subscriptionScheduleService.js";
 
 function shouldBindFingerprintToIp() {
   return process.env.SESSION_FINGERPRINT_BIND_IP === "true";
@@ -177,7 +178,7 @@ export async function jwtAuth(req, res, next) {
       setRefreshTokenCookie(res, signRefreshToken(currentPayload, fp));
     }
 
-    req.user = user;
+    req.user = await refreshSubscriptionUser(user);
     req.jwtPayload = payload;
 
     // Polyfill req.isAuthenticated() for existing middleware

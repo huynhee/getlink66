@@ -22,7 +22,7 @@ export function usdCents(value) {
 }
 
 export function paypalPrice(pack, { freeTrial = false } = {}) {
-  if (freeTrial && Number(pack.price) === 0) return 0;
+  if (freeTrial && pack.price != null && String(pack.price).trim() !== "" && Number(pack.price) === 0) return 0;
   const cents = pack.paypalPriceCents;
   if (!Number.isSafeInteger(cents) || cents < (freeTrial ? 0 : 1)) {
     throw paymentError("PayPal price is not configured for this package", "PAYPAL_PRICE_UNAVAILABLE", 409);

@@ -3,6 +3,10 @@ import { marketplaceDbConnection } from "../config/db.js";
 import DailyDownloadQuota from "../models/DailyDownloadQuota.js";
 import MarketplaceQuotaGrant from "../models/MarketplaceQuotaGrant.js";
 import MembershipOrder from "../models/MembershipOrder.js";
+import SubscriptionQuotaGrant from "../models/SubscriptionQuotaGrant.js";
+import SubscriptionMarketplaceQuotaGrant from "../models/SubscriptionMarketplaceQuotaGrant.js";
+import { publishAccountInvalidation } from "./accountEventBus.js";
+import { serializeMemoryPayments } from "./paymentBenefitService.js";
 
 function resetAtForDayKey(dayKey) {
   const [year, month, day] = String(dayKey || "").split("-").map(Number);
@@ -118,5 +122,50 @@ export async function retryPendingMarketplaceQuotaGrants(limit = 50) {
       errors.push({ orderId: String(order._id), message: String(error.message || "quota_sync_failed") });
     }
   }
-  return { inspected: orders.length, applied, errors };
+  const grants = await SubscriptionQuotaGrant.find({ status: { $in: ["pending", "error"] } }).sort({ createdAt: 1 }).limit(limit);
+  for (const grant of grants) {
+    try { await synchronizeSubscriptionQuotaGrant(grant); applied += 1; }
+    catch (error) { errors.push({ sourceKey: grant.sourceKey, message: error.message }); }
+  }
+  return { inspected: orders.length + grants.length, applied, errors };
+}
+
+async function applySubscriptionGrant(grant, session = null) {
+  const existing = await (session ? SubscriptionMarketplaceQuotaGrant.findOne({ sourceKey: grant.sourceKey }).session(session)
+    : SubscriptionMarketplaceQuotaGrant.findOne({ sourceKey: grant.sourceKey }));
+  if (existing) return existing;
+  const payload = { sourceKey: grant.sourceKey, userId: grant.userId, dayKey: grant.dayKey, amount: grant.amount, appliedAt: new Date() };
+  const created = session ? (await SubscriptionMarketplaceQuotaGrant.create([payload], { session }))[0]
+    : await SubscriptionMarketplaceQuotaGrant.create(payload);
+  try {
+    await DailyDownloadQuota.findOneAndUpdate({ dayKey: grant.dayKey, userId: grant.userId, guestKey: "", tier: "member" }, {
+      $setOnInsert: { dayKey: grant.dayKey, userId: grant.userId, guestKey: "", tier: "member" },
+      $set: { resetAt: resetAtForDayKey(grant.dayKey) }, $inc: { bonusLimit: grant.amount },
+    }, { new: true, upsert: true, session });
+    return created;
+  } catch (error) {
+    if (!session) await SubscriptionMarketplaceQuotaGrant.findByIdAndDelete(created._id);
+    throw error;
+  }
+}
+
+export async function synchronizeSubscriptionQuotaGrant(grant) {
+  if (["applied", "expired"].includes(grant.status)) return grant;
+  const resetAt = resetAtForDayKey(grant.dayKey);
+  try {
+    if (!resetAt) throw new Error("Invalid referral quota day");
+    if (resetAt <= new Date()) return SubscriptionQuotaGrant.findByIdAndUpdate(grant._id, { $set: { status: "expired", lastError: "" } }, { new: true });
+    if (isMemoryDb()) await serializeMemoryPayments(() => applySubscriptionGrant(grant));
+    else {
+      const session = await marketplaceDbConnection().startSession();
+      try { await session.withTransaction(() => applySubscriptionGrant(grant, session)); }
+      finally { await session.endSession(); }
+    }
+    const updated = await SubscriptionQuotaGrant.findByIdAndUpdate(grant._id, { $set: { status: "applied", syncedAt: new Date(), lastError: "" } }, { new: true });
+    publishAccountInvalidation(grant.userId, "referral_quota_applied");
+    return updated;
+  } catch (error) {
+    await SubscriptionQuotaGrant.findByIdAndUpdate(grant._id, { $set: { status: "error", lastError: String(error.message).slice(0, 500) }, $inc: { attempts: 1 } });
+    throw error;
+  }
 }

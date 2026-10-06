@@ -1,5 +1,6 @@
 import PluginDeviceSession from "../models/PluginDeviceSession.js";
 import User from "../models/User.js";
+import { refreshSubscriptionUser } from "../utils/subscriptionScheduleService.js";
 import {
   pluginError,
   pluginRequestIpHash,
@@ -32,7 +33,7 @@ export async function pluginBearerAuth(req, _res, next) {
       throw pluginError(403, "ACCOUNT_BANNED", "This account is not allowed to download.");
     }
 
-    req.user = user;
+    req.user = await refreshSubscriptionUser(user);
     req.pluginSession = session;
     req.pluginJwtPayload = payload;
     req.isAuthenticated = () => true;
