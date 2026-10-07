@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { DOWNLOAD_STREAM_BUFFER_BYTES, normalizeDownloadRange } from "./downloadTransfer.js";
 
 function localRoot() {
   return String(process.env.MARKETPLACE_LOCAL_STORAGE_ROOT || "").trim();
@@ -160,15 +161,15 @@ function escapeDriveQueryValue(value) {
 }
 
 function normalizedByteRange(value) {
-  const range = String(value || "").trim();
-  if (!range) return "";
-  if (!/^bytes=(?:\d+-\d*|-\d+)$/.test(range)) {
-    const error = new Error("Invalid byte range.");
-    error.status = 416;
-    error.code = "INVALID_BYTE_RANGE";
-    throw error;
-  }
-  return range;
+  return normalizeDownloadRange(value);
+}
+
+function validIfRange(value) {
+  const validator = String(value || "").trim();
+  if (validator.length > 256) return "";
+  if (/^"[^"\r\n]*"$/.test(validator)) return validator;
+  const date = new Date(validator);
+  return Number.isFinite(date.getTime()) && date.toUTCString() === validator ? validator : "";
 }
 
 export async function openGoogleDriveFileStream(fileId, fallbackFileName = "file", options = {}) {
@@ -178,23 +179,28 @@ export async function openGoogleDriveFileStream(fileId, fallbackFileName = "file
     error.status = 400;
     throw error;
   }
-  const range = normalizedByteRange(options.range);
+  const requestedRange = normalizedByteRange(options.range);
+  const ifRange = validIfRange(options.ifRange);
+  const range = options.ifRange && !ifRange ? "" : requestedRange;
   const response = await fetchGoogleDrive(
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(normalizedFileId)}?alt=media&supportsAllDrives=true`,
-    { signal: options.signal, ...(range ? { headers: { range } } : {}) },
+    { signal: options.signal, headers: { "accept-encoding": "identity", ...(range ? { range, ...(ifRange ? { "if-range": ifRange } : {}) } : {}) } },
   );
   if (!response.ok || !response.body) {
     const body = await response.text().catch(() => "");
     const error = new Error(`Google Drive download failed: ${response.status} ${body.slice(0, 160)}`);
     error.status = response.status === 404 ? 404 : response.status === 416 ? 416 : 502;
+    error.contentRange = response.status === 416 ? String(response.headers.get("content-range") || "") : "";
     throw error;
   }
   return {
-    stream: Readable.fromWeb(response.body),
+    stream: Readable.fromWeb(response.body, { highWaterMark: DOWNLOAD_STREAM_BUFFER_BYTES }),
     contentLength: Number(response.headers.get("content-length") || 0),
     contentRange: String(response.headers.get("content-range") || ""),
     acceptRanges: String(response.headers.get("accept-ranges") || "bytes"),
     statusCode: response.status === 206 ? 206 : 200,
+    etag: String(response.headers.get("etag") || ""),
+    lastModified: String(response.headers.get("last-modified") || ""),
     contentType: response.headers.get("content-type") || "",
     fileName: fallbackFileName || "file",
   };
@@ -625,8 +631,12 @@ export async function openStorageStream(session, options = {}) {
       error.status = 404;
       throw error;
     }
-    const fileSize = fs.statSync(target).size;
-    const range = normalizedByteRange(options.range);
+    const stat = fs.statSync(target);
+    const fileSize = stat.size;
+    const lastModified = stat.mtime.toUTCString();
+    const requestedRange = normalizedByteRange(options.range);
+    // Local files have no stored strong validator; an unknown ETag requires a full response.
+    const range = options.ifRange && validIfRange(options.ifRange) !== lastModified ? "" : requestedRange;
     let start = 0;
     let end = fileSize - 1;
     if (range) {
@@ -642,16 +652,18 @@ export async function openStorageStream(session, options = {}) {
         const error = new Error("Requested byte range is not satisfiable.");
         error.status = 416;
         error.code = "BYTE_RANGE_NOT_SATISFIABLE";
+        error.contentRange = `bytes */${fileSize}`;
         throw error;
       }
       end = Math.min(end, fileSize - 1);
     }
     return {
-      stream: fs.createReadStream(target, range ? { start, end } : undefined),
+      stream: fs.createReadStream(target, { highWaterMark: DOWNLOAD_STREAM_BUFFER_BYTES, signal: options.signal, ...(range ? { start, end } : {}) }),
       contentLength: range ? end - start + 1 : fileSize,
       contentRange: range ? `bytes ${start}-${end}/${fileSize}` : "",
       acceptRanges: "bytes",
       statusCode: range ? 206 : 200,
+      lastModified,
       fileName: session.fileName || path.basename(target),
     };
   }
@@ -660,7 +672,7 @@ export async function openStorageStream(session, options = {}) {
     const file = await openGoogleDriveFileStream(
       session.driveFileId,
       session.fileName || "model.zip",
-      { range: options.range },
+      { range: options.range, ifRange: options.ifRange, signal: options.signal },
     );
     return {
       ...file,

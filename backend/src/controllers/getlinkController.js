@@ -30,7 +30,8 @@ import {
 } from "../utils/downloadToken.js";
 import logger, { securityEvent } from "../utils/logger.js";
 import { writeSystemLog } from "../utils/systemLog.js";
-import { createGetlinkDownloadLimiter, streamGetlinkFile } from "../utils/getlinkDownloadTransfer.js";
+import { streamGetlinkFile } from "../utils/getlinkDownloadTransfer.js";
+import { downloadTransferLimiter } from "../utils/downloadTransfer.js";
 
 const productLocks = new Map();
 const historyRefreshLocks = new Map();
@@ -40,7 +41,6 @@ const MAX_PREVIEW_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_PREVIEW_IMAGE_REDIRECTS = 5;
 const PREVIEW_IMAGE_TIMEOUT_MS = 15_000;
 const DOWNLOAD_FORMAT_OPTIONS_VERSION = 2;
-const downloadLimiter = createGetlinkDownloadLimiter();
 
 // Per-user-per-product in-flight set: chong race condition double-charge credit
 // JS event loop la single-threaded → Set.has()/add()/delete() la atomic giua cac await.
@@ -77,7 +77,7 @@ async function hasEnoughCredit(userId, creditCost) {
 }
 
 function acquireDownloadSlot(req, ownerUserId = "", range = "") {
-  return downloadLimiter.acquire({
+  return downloadTransferLimiter.acquire({
     userId: ownerUserId || req.user?._id,
     ip: req.ip,
     range,

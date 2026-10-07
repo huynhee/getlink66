@@ -48,6 +48,7 @@ import {
 } from "../utils/marketplaceSearch.js";
 import { marketplacePublicDeletionQuery } from "../utils/marketplaceDeletionService.js";
 import { pipeMarketplaceDownloadStream } from "../utils/marketplaceDownloadStream.js";
+import { downloadTransferLimiter, normalizeDownloadRange, streamDownloadFile } from "../utils/downloadTransfer.js";
 import { sendMarketplaceImage } from "../utils/marketplaceImageDelivery.js";
 import {
   marketplaceRankingMetadata,
@@ -1537,6 +1538,13 @@ export async function getDownloadOptions(req, res, next) {
 }
 
 export async function downloadSessionFile(req, res, next) {
+  const controller = new AbortController();
+  let slot = null;
+  let file = null;
+  let upstreamError = null;
+  const captureUpstreamError = (error) => { upstreamError = error; };
+  const onClose = () => { if (!res.writableEnded) controller.abort(); };
+  res.once("close", onClose);
   try {
     if (!isSafeId(req.params.id)) {
       return res.status(400).json({ message: "Invalid session id" });
@@ -1546,7 +1554,14 @@ export async function downloadSessionFile(req, res, next) {
       req.query.t,
       req.user?._id,
     );
-    res.setHeader("cache-control", "no-store");
+    controller.signal.throwIfAborted();
+    const range = normalizeDownloadRange(req.get("range"));
+    slot = downloadTransferLimiter.acquire({ userId: session.userId, ip: req.ip, range });
+    if (!slot.ok) {
+      res.setHeader("retry-after", "5");
+      return res.status(slot.status).json({ message: slot.message, retryable: true });
+    }
+    res.setHeader("cache-control", "no-store, no-transform");
     res.setHeader("referrer-policy", "no-referrer");
     res.setHeader("x-accel-buffering", "no");
 
@@ -1566,9 +1581,9 @@ export async function downloadSessionFile(req, res, next) {
       return res.redirect(302, redirectUrl);
     }
 
-    let file;
+    const upstreamStartedAt = performance.now();
     try {
-      file = await openStorageStream(session, { range: req.get("range") || "" });
+      file = await openStorageStream(session, { range, ifRange: req.get("if-range") || "", signal: controller.signal });
     } catch (error) {
       if (!error.status && session.storageProvider === "google_drive") {
         error.status = 502;
@@ -1576,18 +1591,17 @@ export async function downloadSessionFile(req, res, next) {
       }
       throw error;
     }
-    if (res.destroyed) {
-      file.stream.destroy();
-      return;
+    const upstreamOpenMs = Math.round(performance.now() - upstreamStartedAt);
+    file.stream.once("error", captureUpstreamError);
+    controller.signal.throwIfAborted();
+    if (file.stream.errored) throw file.stream.errored;
+    if (req.method !== "HEAD") {
+      const billedSession = await finalizeMarketplaceDownloadBilling(session);
+      controller.signal.throwIfAborted();
+      if (upstreamError) throw upstreamError;
+      await markMarketplaceDownloadRedeemed(billedSession);
+      controller.signal.throwIfAborted();
     }
-    let billedSession;
-    try {
-      billedSession = await finalizeMarketplaceDownloadBilling(session);
-    } catch (error) {
-      file.stream?.destroy?.();
-      throw error;
-    }
-    await markMarketplaceDownloadRedeemed(billedSession);
     res.setHeader("content-type", "application/octet-stream");
     res.setHeader(
       "content-disposition",
@@ -1596,23 +1610,37 @@ export async function downloadSessionFile(req, res, next) {
     res.setHeader("accept-ranges", file.acceptRanges || "bytes");
     if (file.contentRange) res.setHeader("content-range", file.contentRange);
     if (file.contentLength) res.setHeader("content-length", file.contentLength);
+    if (file.etag) res.setHeader("etag", file.etag);
+    if (file.lastModified) res.setHeader("last-modified", file.lastModified);
     res.status(file.statusCode === 206 ? 206 : 200);
-    pipeMarketplaceDownloadStream(file.stream, res, (error) => {
-      const upstreamError = new Error("Marketplace download stream interrupted.", { cause: error });
-      upstreamError.status = 502;
-      upstreamError.code = "DOWNLOAD_UPSTREAM_INTERRUPTED";
-      if (res.headersSent) {
-        logger.error({ err: error, correlationId: req.correlationId, sessionId: req.params.id }, "Marketplace download stream interrupted");
-        res.destroy();
-        return;
-      }
-      for (const header of ["content-type", "content-disposition", "content-length", "content-range", "accept-ranges"]) {
-        res.removeHeader(header);
-      }
-      next(upstreamError);
+    if (req.method === "HEAD") return res.end();
+    res.socket?.setNoDelay(true);
+    res.flushHeaders();
+    await streamDownloadFile(file.stream, res, {
+      signal: controller.signal,
+      onMetrics(metrics) {
+        logger.info({ type: "MARKETPLACE_DOWNLOAD_TRANSFER", assetType: session.assetType,
+          clientType: session.clientType, storageProvider: session.storageProvider,
+          partial: file.statusCode === 206, upstreamOpenMs, ...metrics }, "Marketplace file transfer");
+      },
     });
   } catch (error) {
-    if (res.destroyed) return;
+    if (controller.signal.aborted && (!upstreamError || upstreamError.name === "AbortError")) return;
+    if (res.headersSent || res.destroyed) {
+      logger.error({ err: error, correlationId: req.correlationId, sessionId: req.params.id }, "Marketplace download stream interrupted");
+      res.destroy();
+      return;
+    }
+    for (const header of ["content-type", "content-disposition", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) res.removeHeader(header);
+    if (error.status === 416 && /^bytes \*\/\d+$/.test(error.contentRange || "")) res.setHeader("content-range", error.contentRange);
+    if (!error.status && file) {
+      error.status = 502;
+      error.code = "DOWNLOAD_UPSTREAM_INTERRUPTED";
+    }
     next(error);
+  } finally {
+    res.off("close", onClose);
+    file?.stream?.destroy();
+    slot?.release?.();
   }
 }

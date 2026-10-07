@@ -3,6 +3,10 @@
 This tuning concerns file bytes (3D66 -> VPS -> client), not link creation or
 credit pricing. Web and plugin downloads keep the existing owner/HMAC checks.
 
+Model/Scene downloads now share this transfer pipeline and connection capacity.
+See [Marketplace transfer](MARKETPLACE_TRANSFER_RUNBOOK.md) for Drive proxy,
+resume, billing safeguards and deployment checks.
+
 ## Application
 
 - Full downloads retain the default two connections per account.
