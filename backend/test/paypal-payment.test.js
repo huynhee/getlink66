@@ -386,6 +386,46 @@ test("USD voucher can make Pro free without calling the gateway", async () => {
   assert.equal(remoteOrders.size, 0);
 });
 
+test("scoped Subscription voucher discounts USD and rejects other plans before any PayPal order", async () => {
+  const plan = await MembershipPlan.create({ code: "SCOPE", name: "Scoped monthly", price: 10000,
+    paypalPriceCents: 1000, durationDays: 30, dailyDownloadLimit: 50, isActive: true });
+  const other = await MembershipPlan.create({ code: "OTHER", name: "Other monthly", price: 10000,
+    paypalPriceCents: 1000, durationDays: 30, dailyDownloadLimit: 50, isActive: true });
+  await Voucher.create({ code: "SCOPED10", targetKind: "pro", applicablePlanIds: [plan._id], discountPercent: 10,
+    usageLimit: 10, usedCount: 0, perUserLimit: 1, expireAt: new Date(Date.now() + 3600000), isActive: true });
+  const bad = await invoke(createMembershipCheckout, { planId: other._id, paymentProvider: "paypal", voucherCode: "SCOPED10" });
+  assert.equal(bad.status, 400);
+  assert.equal(remoteOrders.size, 0);
+  assert.equal(await MembershipOrder.countDocuments({}), 0);
+  const result = await invoke(createMembershipCheckout, { planId: plan._id, paymentProvider: "paypal", voucherCode: "SCOPED10" });
+  assert.equal(result.status, 200, result.error?.stack);
+  assert.equal(result.payload.order.amountMinor, 900);
+  const operation = await PaypalPayment.findById(`membership:${result.payload.order._id}`);
+  remoteOrders.get(operation.paypalOrderId).status = "APPROVED";
+  await processPaypalPayment(operation._id);
+  await processPaypalPayment(operation._id);
+  assert.equal(captureRequests().length, 1);
+  assert.equal((await Voucher.findOne({ code: "SCOPED10" })).usedCount, 1);
+  assert.equal((await MembershipOrder.findById(result.payload.order._id)).status, "approved");
+});
+
+test("changing a Subscription voucher scope after checkout prevents PayPal capture", async () => {
+  const plan = await MembershipPlan.create({ code: "SCOPE", name: "Scoped monthly", price: 10000,
+    paypalPriceCents: 1000, durationDays: 30, dailyDownloadLimit: 50, isActive: true });
+  const voucher = await Voucher.create({ code: "SCOPED10", targetKind: "pro", applicablePlanIds: [plan._id], discountPercent: 10,
+    usageLimit: 10, usedCount: 0, perUserLimit: 1, expireAt: new Date(Date.now() + 3600000), isActive: true });
+  const result = await invoke(createMembershipCheckout, { planId: plan._id, paymentProvider: "paypal", voucherCode: "SCOPED10" });
+  assert.equal(result.status, 200, result.error?.stack);
+  const operation = await PaypalPayment.findById(`membership:${result.payload.order._id}`);
+  remoteOrders.get(operation.paypalOrderId).status = "APPROVED";
+  await Voucher.findByIdAndUpdate(voucher._id, { applicablePlanIds: ["aaaaaaaaaaaaaaaaaaaaaaaa"] });
+  await assert.rejects(processPaypalPayment(operation._id), /Subscription/);
+  assert.equal(captureRequests().length, 0);
+  assert.equal(await Reservation.countDocuments({}), 0);
+  assert.equal((await Voucher.findById(voucher._id)).usedCount, 0);
+  assert.equal((await MembershipOrder.findById(result.payload.order._id)).status, "pending");
+});
+
 test("background reconciliation keeps working after PayPal is disabled", async () => {
   const result = await checkout();
   result.remote.status = "APPROVED";

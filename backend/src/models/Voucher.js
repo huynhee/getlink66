@@ -16,6 +16,7 @@ const voucherSchema = new mongoose.Schema(
     // 0 = khong gioi han theo tung tai khoan, chi bi gioi han boi usageLimit tong.
     perUserLimit: { type: Number, default: 1, min: 0 },
     applicablePackageIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "TopupPackage" }],
+    applicablePlanIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "MembershipPlan" }],
     usedCount: { type: Number, default: 0, min: 0 },
     expireAt: { type: Date, required: true }
   },

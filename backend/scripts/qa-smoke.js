@@ -398,6 +398,81 @@ async function verifyAdminPackageDeletion(page, context, viewport) {
   }
 }
 
+async function verifyAdminVoucherPlanScopes(page, context, viewport) {
+  const initialLanguage = await page.locator("html").getAttribute("lang");
+  const initialTheme = await page.locator("html").getAttribute("data-theme");
+  const csrf = await context.request.get(`${frontendOrigin}/api/auth/csrf`).then((response) => response.json());
+  const plans = [];
+  for (const billingPeriod of ["day", "month"]) {
+    const response = await context.request.post(`${frontendOrigin}/api/admin/membership-plans`, {
+      headers: { "x-csrf-token": csrf.csrfToken, origin: frontendOrigin },
+      data: { code: `QA_SCOPE_${viewport}_${billingPeriod}`.toUpperCase(), name: `QA ${billingPeriod} ${viewport}`,
+        billingPeriod, price: 10000, durationDays: billingPeriod === "day" ? 1 : 30,
+        dailyDownloadLimit: billingPeriod === "day" ? 100 : 50, isActive: false },
+    });
+    if (!response.ok()) throw new Error(`Voucher plan fixture failed: ${await response.text()}`);
+    plans.push((await response.json()).plan);
+  }
+  const eventsPattern = "**/api/account/events";
+  const stopEvents = (route) => route.fulfill({ status: 204, body: "" });
+  await context.route(eventsPattern, stopEvents);
+  const setPresentation = async (language, theme) => {
+    if (!await page.locator(".languageToggleSingle button").isVisible()) await page.locator(".mobileMenuButton").click();
+    if (await page.locator("html").getAttribute("lang") !== language) await page.locator(".languageToggleSingle button").click();
+    if (await page.locator("html").getAttribute("data-theme") !== theme) await page.locator(".themeToggle").click();
+    if (await page.locator(".mobileMenuButton").getAttribute("aria-expanded") === "true") await page.locator(".mobileMenuButton").click();
+  };
+  try {
+    for (const language of ["vi", "en"]) {
+      for (const theme of ["light", "dark"]) {
+        await page.goto(`${frontendOrigin}/admin`, { waitUntil: "domcontentloaded" });
+        await page.getByRole("navigation", { name: "Admin sections", exact: true }).getByRole("button", { name: "Website", exact: true }).click();
+        await setPresentation(language, theme);
+        await page.getByRole("navigation", { name: "Admin subsections", exact: true }).getByRole("button", { name: /^Vouchers?\b/ }).click();
+        const panel = page.locator(".adminVoucherPanel");
+        await panel.getByRole("tablist").getByRole("button", { name: /^Pro\b/ }).click();
+        const form = panel.locator(".voucherEditor");
+        const picker = form.locator(".voucherPackagePicker");
+        const first = picker.getByRole("checkbox", { name: plans[0].name, exact: true });
+        const second = picker.getByRole("checkbox", { name: plans[1].name, exact: true });
+        await first.waitFor();
+        if (!await picker.innerText().then((text) => text.includes(language === "vi" ? "Tất cả Subscription" : "All Subscription plans"))) throw new Error("Empty voucher scope does not mean all plans");
+        await first.check();
+        const code = `SCOPE_${viewport}_${theme}_${language}`.toUpperCase();
+        await form.getByLabel(/Mã voucher|Voucher code/).fill(code);
+        await form.getByLabel(/Giảm giá|Discount/).fill("10");
+        await form.getByLabel(/Tổng lượt dùng|Total uses/).fill("10");
+        await form.getByLabel(/Hết hạn|Expires at/).fill("2035-01-01T23:59");
+        if (await form.evaluate((element) => element.scrollWidth > element.clientWidth + 2)) throw new Error("Voucher plan picker overflows");
+        await page.evaluate(() => globalThis.scrollTo(0, 0));
+        await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-voucher-plan-picker-${theme}-${language}.png`), fullPage: true });
+        const created = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/admin/voucher" && response.request().method() === "POST");
+        await form.getByRole("button", { name: /^(Tạo voucher|Create voucher)$/ }).click();
+        const response = await created;
+        if (!response.ok()) throw new Error(`Voucher creation failed: ${await response.text()}`);
+        const voucher = (await response.json()).voucher;
+        if (String(voucher.applicablePlanIds[0]?._id || voucher.applicablePlanIds[0]) !== String(plans[0]._id) || voucher.applicablePlanIds.length !== 1) throw new Error("Selected voucher plan was not saved");
+        const card = panel.locator(".voucherCard").filter({ hasText: code });
+        await card.locator(".voucherApplies strong").filter({ hasText: plans[0].name }).waitFor();
+        await card.getByRole("button", { name: /^(Sửa voucher|Edit voucher)$/ }).click();
+        if (!await first.isChecked() || await second.isChecked()) throw new Error("Editing voucher lost its selected plans");
+        await first.uncheck();
+        await second.check();
+        const updated = page.waitForResponse((candidate) => new URL(candidate.url()).pathname === `/api/admin/vouchers/${voucher._id}` && candidate.request().method() === "PUT");
+        await form.getByRole("button", { name: /^(Lưu chỉnh sửa|Save changes)$/ }).click();
+        const edited = await updated;
+        if (!edited.ok()) throw new Error(`Voucher editing failed: ${await edited.text()}`);
+        await card.locator(".voucherApplies strong").filter({ hasText: plans[1].name }).waitFor();
+        await card.getByRole("button", { name: /^(Sửa voucher|Edit voucher)$/ }).click();
+        if (await first.isChecked() || !await second.isChecked()) throw new Error("Updated voucher selection was not restored");
+      }
+    }
+  } finally {
+    await context.unroute(eventsPattern, stopEvents);
+    await setPresentation(initialLanguage, initialTheme);
+  }
+}
+
 async function verifyConfiguredCreditCopy(page, context, viewport) {
   let scenePrice = 20;
   const pattern = "**/api/settings";
@@ -470,9 +545,15 @@ async function verifySubscriptionCatalog(page, context, viewport) {
   }));
   const packagesHandler = (route) => route.fulfill({ json: { packages, payments: { paypal: { enabled: true } } } });
   const voucherPattern = "**/api/voucher/apply";
-  const voucherHandler = (route) => route.fulfill({ json: { voucher: {
-    code: "QA10", discountPercent: 10, creditBonus: 30, appliesToMembership: true, applicablePackageIds: [],
-  } } });
+  const voucherHandler = (route) => {
+    const body = route.request().postDataJSON();
+    const membership = body.target === "membership";
+    if (membership && body.planId !== plans[3]._id) throw new Error("Voucher preview did not send the selected Subscription plan");
+    return route.fulfill({ json: { voucher: {
+      code: "QA10", targetKind: membership ? "pro" : "credit", discountPercent: 10, creditBonus: membership ? 0 : 30,
+      appliesToMembership: membership, applicablePackageIds: [], applicablePlanIds: membership ? [plans[3]._id] : [],
+    } } });
+  };
   const checkoutRequests = [];
   const checkoutHandler = (route) => {
     checkoutRequests.push({ path: new URL(route.request().url()).pathname, ...route.request().postDataJSON() });
@@ -590,6 +671,34 @@ async function verifySubscriptionCatalog(page, context, viewport) {
         await page.locator(".topupOrderSummary .error").waitFor();
         const subscription = checkoutRequests[beforeSubscription];
         if (checkoutRequests.length !== beforeSubscription + 1 || subscription.path !== "/api/membership/checkout" || subscription.planId !== plans[3]._id || subscription.paymentProvider !== (language === "vi" ? "sepay" : "paypal") || subscription.voucherCode) throw new Error("Subscription checkout contract changed");
+        await page.locator("#topup-voucher").fill("QA10");
+        await page.locator(".topupVoucherForm").getByRole("button").click();
+        await page.waitForFunction((expected) => globalThis.document.querySelector(".topupOrderTotal dd")?.textContent.includes(expected), language === "vi" ? "180.000" : "US$1.80");
+        const otherPlan = page.locator(".subscriptionPlanCard").filter({ hasText: "month 50" });
+        if (!await otherPlan.locator(".subscriptionPlanPrice").innerText().then((text) => text.includes(language === "vi" ? "500.000" : "US$5.00"))) throw new Error("Voucher discounted an unselected Subscription plan");
+        await page.evaluate(() => globalThis.scrollTo(0, 0));
+        await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-topup-scoped-voucher-${theme}-${language}.png`), fullPage: true });
+        await otherPlan.getByRole("button").click();
+        if (!await page.locator(".topupOrderTotal dd").innerText().then((text) => text.includes(language === "vi" ? "500.000" : "US$5.00"))) throw new Error("Changing plan retained an inapplicable discount");
+        if (!await page.locator(".topupAppliedVoucher").innerText().then((text) => text.includes(language === "vi" ? "không áp dụng gói này" : "does not apply to this package"))) throw new Error("Inapplicable voucher state is missing");
+        for (const plan of [plans[4], plans[3]]) {
+          await page.locator(".subscriptionPlanCard").filter({ hasText: plan.name }).getByRole("button").click();
+          const before = checkoutRequests.length;
+          const submitted = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/membership/checkout" && response.request().method() === "POST");
+          await page.locator(".topupPayButton").click();
+          await submitted;
+          const request = checkoutRequests[before];
+          if (checkoutRequests.length !== before + 1 || request.planId !== plan._id || request.voucherCode !== (plan === plans[3] ? "QA10" : undefined)) throw new Error("Checkout sent a voucher for the wrong Subscription plan");
+        }
+        await page.locator("#topup-tab-credit").click();
+        if (await page.locator(".topupOrderTotal dd").innerText() !== creditPrice) throw new Error("Subscription voucher discounted a Credit package");
+        const creditSubmitted = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/topup" && response.request().method() === "POST");
+        const beforeCredit = checkoutRequests.length;
+        await page.locator(".topupPayButton").click();
+        await creditSubmitted;
+        if (checkoutRequests.length !== beforeCredit + 1 || checkoutRequests[beforeCredit].voucherCode) throw new Error("Credit checkout sent a Subscription voucher");
+        await page.locator("#topup-tab-pro").click();
+        await page.locator(".topupAppliedVoucher button").click();
         await page.locator(".subscriptionPeriodTabs button").first().click();
         await assertCatalog("day", language);
         const freeButton = page.locator(".topupPayButton");
@@ -893,6 +1002,7 @@ async function main() {
       });
       await verifyLanguageFlags(page, viewport.name, "admin");
       await verifyAdminPackageDeletion(page, context, viewport.name);
+      await verifyAdminVoucherPlanScopes(page, context, viewport.name);
       await verifyConfiguredCreditCopy(page, context, viewport.name);
       await verifyLiveAccountBalance(page, context);
       await verifySubscriptionCatalog(page, context, viewport.name);
@@ -912,6 +1022,8 @@ async function main() {
       languageFlags: true,
       adminPackageDeletion: true,
       unifiedSubscriptionToggles: true,
+      adminVoucherPlanScopes: true,
+      voucherPlanScopes: true,
       subscriptionCatalog: true,
       topupLayout: true,
       homepagePricingRemoved: true,

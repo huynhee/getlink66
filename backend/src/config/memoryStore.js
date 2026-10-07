@@ -227,6 +227,7 @@ function chain(result, isArray = true, projection = "") {
         parentId: "MarketplaceCategory",
         parentCategoryId: "MarketplaceCategory",
         applicablePackageIds: "TopupPackage",
+        applicablePlanIds: "MembershipPlan",
         createdBy: "User",
       };
       const targetName = collectionMap[field];

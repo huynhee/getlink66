@@ -114,7 +114,7 @@ export async function reservePaymentBenefits(kind, order) {
       if (!voucher || voucher.isActive === false || voucher.archivedAt || new Date(voucher.expireAt) <= new Date()) {
         throw paymentError("Voucher is no longer available", "VOUCHER_UNAVAILABLE", 409);
       }
-      assertVoucherTarget(voucher, { target: membership ? "membership" : "topup", packageId });
+      assertVoucherTarget(voucher, membership ? { target: "membership", planId: packageId } : { target: "topup", packageId });
       await assertReservedVoucherUserLimit(voucher, userId, session);
       const claimed = await Voucher.findOneAndUpdate({
         code: order.voucherCode, $expr: { $lt: ["$usedCount", "$usageLimit"] },

@@ -15,6 +15,12 @@ export function voucherApplicablePackageIds(voucher) {
     : [];
 }
 
+export function voucherApplicablePlanIds(voucher) {
+  return Array.isArray(voucher?.applicablePlanIds)
+    ? voucher.applicablePlanIds.map((id) => String(id?._id || id))
+    : [];
+}
+
 export async function approvedVoucherUseCount(userId, code) {
   const normalizedCode = String(code || "").trim().toUpperCase();
   if (!userId || !normalizedCode) return 0;
@@ -48,11 +54,12 @@ export function voucherTargetKind(voucher) {
   const hasCreditBonus = Number(voucher?.creditBonus || 0) > 0;
   const hasDiscount = Number(voucher?.discountPercent || 0) > 0;
   if (applicablePackageIds.length > 0 || hasCreditBonus) return "credit";
+  if (voucherApplicablePlanIds(voucher).length > 0) return "pro";
   if (hasDiscount) return "all";
   return "credit";
 }
 
-export function assertVoucherTarget(voucher, { target = "topup", packageId = "" } = {}) {
+export function assertVoucherTarget(voucher, { target = "topup", packageId = "", planId = "" } = {}) {
   if (!["topup", "membership"].includes(target)) {
     throw checkoutError("Loại thanh toán voucher không hợp lệ.");
   }
@@ -68,6 +75,10 @@ export function assertVoucherTarget(voucher, { target = "topup", packageId = "" 
     }
     if (Number(voucher?.discountPercent || 0) <= 0) {
       throw checkoutError("Voucher này chỉ cộng Credit, không áp dụng cho Pro.");
+    }
+    const planIds = voucherApplicablePlanIds(voucher);
+    if (planIds.length > 0 && !planIds.includes(String(planId?._id || planId))) {
+      throw checkoutError("Voucher không áp dụng cho gói Subscription này.");
     }
     return;
   }
@@ -106,6 +117,7 @@ export function safeVoucherPayload(voucher) {
     discountPercent: Number(voucher.discountPercent || 0),
     expireAt: voucher.expireAt,
     applicablePackageIds,
+    applicablePlanIds: voucherApplicablePlanIds(voucher),
     appliesToMembership:
       kind !== "credit" &&
       applicablePackageIds.length === 0 &&

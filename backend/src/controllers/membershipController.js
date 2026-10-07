@@ -159,7 +159,7 @@ export async function createMembershipCheckout(req, res, next) {
     let voucher = null;
     if (checkoutVoucherCode) {
       voucher = await findCheckoutVoucher(checkoutVoucherCode);
-      assertVoucherTarget(voucher, { target: "membership" });
+      assertVoucherTarget(voucher, { target: "membership", planId: plan._id });
       await assertVoucherUserLimit(voucher, req.user._id);
       discountAmount = Math.min(
         originalAmount,

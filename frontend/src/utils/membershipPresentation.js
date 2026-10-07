@@ -102,6 +102,12 @@ export function subscriptionCheckoutDescription(plan, membership, language = "vi
     : `${membershipDurationLabel(plan, language)}. One-time payment, no automatic renewal.`;
 }
 
+export function subscriptionVoucherApplies(voucher, plan) {
+  if (!voucher || !plan || voucher.appliesToMembership === false || voucher.targetKind === "credit" || Number(voucher.discountPercent || 0) <= 0) return false;
+  const ids = Array.isArray(voucher.applicablePlanIds) ? voucher.applicablePlanIds.map((id) => String(id?._id || id)) : [];
+  return ids.length === 0 || ids.includes(String(plan._id));
+}
+
 const VI_FEATURE_LABELS = new Map([
   ["member models", "Tải Model/Scene Pro"],
   ["pro models", "Tải Model/Scene Pro"],

@@ -48,6 +48,7 @@ const emptyVoucher = {
   usageLimit: "",
   perUserLimit: "",
   applicablePackageIds: [],
+  applicablePlanIds: [],
   expireAt: "",
   isActive: true
 };
@@ -240,6 +241,7 @@ function voucherTargetKind(voucher) {
   if (["credit", "pro", "all"].includes(explicit)) return explicit;
   const applicablePackageIds = Array.isArray(voucher?.applicablePackageIds) ? voucher.applicablePackageIds : [];
   if (Number(voucher?.creditBonus || 0) > 0 || applicablePackageIds.length > 0) return "credit";
+  if (voucher?.applicablePlanIds?.length > 0) return "pro";
   if (Number(voucher?.discountPercent || 0) > 0) return "all";
   return "credit";
 }
@@ -829,6 +831,9 @@ export default function Admin({ user, language = "vi" }) {
       applicablePackageIds: Array.isArray(voucher.applicablePackageIds)
         ? voucher.applicablePackageIds.map((pkg) => String(pkg?._id || pkg)).filter(Boolean)
         : [],
+      applicablePlanIds: Array.isArray(voucher.applicablePlanIds)
+        ? voucher.applicablePlanIds.filter(Boolean).map((plan) => String(plan?._id || plan))
+        : [],
       expireAt: toDatetimeLocal(voucher.expireAt),
       isActive: voucher.isActive !== false
     });
@@ -850,6 +855,7 @@ export default function Admin({ user, language = "vi" }) {
         perUserLimit:
           voucherForm.perUserLimit === "" ? undefined : Number(voucherForm.perUserLimit),
         applicablePackageIds: isCreditMode ? voucherForm.applicablePackageIds : [],
+        applicablePlanIds: voucherMode === "pro" ? voucherForm.applicablePlanIds : [],
         expireAt: new Date(voucherForm.expireAt).toISOString(),
         isActive: voucherForm.isActive !== false
       };
@@ -2596,14 +2602,18 @@ export default function Admin({ user, language = "vi" }) {
                 <input type="datetime-local" value={voucherForm.expireAt} onChange={(event) => setVoucherForm({ ...voucherForm, expireAt: event.target.value })} />
               </label>
             </div>
-            {voucherMode === "credit" ? (
+            {voucherMode !== "all" ? (
               <div className="voucherPackagePicker">
                 <div>
-                  <strong>{l("Áp dụng cho gói Credit", "Apply to Credit packages")}</strong>
+                  <strong>{voucherMode === "pro" ? l("Áp dụng cho gói Subscription", "Apply to Subscription plans") : l("Áp dụng cho gói Credit", "Apply to Credit packages")}</strong>
+                  {voucherMode === "pro" && <span>{voucherForm.applicablePlanIds.length
+                    ? l(`${voucherForm.applicablePlanIds.length} gói đã chọn`, `${voucherForm.applicablePlanIds.length} plans selected`)
+                    : l("Tất cả Subscription", "All Subscription plans")}</span>}
                 </div>
                 <div>
-                  {packages.map((pkg) => {
-                    const checked = voucherForm.applicablePackageIds.includes(pkg._id);
+                  {(voucherMode === "pro" ? membershipPlans : packages).map((pkg) => {
+                    const field = voucherMode === "pro" ? "applicablePlanIds" : "applicablePackageIds";
+                    const checked = voucherForm[field].includes(pkg._id);
                     return (
                       <label key={pkg._id}>
                         <input
@@ -2611,9 +2621,9 @@ export default function Admin({ user, language = "vi" }) {
                           checked={checked}
                           onChange={(event) => {
                             const nextIds = event.target.checked
-                              ? [...voucherForm.applicablePackageIds, pkg._id]
-                              : voucherForm.applicablePackageIds.filter((id) => id !== pkg._id);
-                            setVoucherForm({ ...voucherForm, applicablePackageIds: nextIds });
+                              ? [...voucherForm[field], pkg._id]
+                              : voucherForm[field].filter((id) => id !== pkg._id);
+                            setVoucherForm({ ...voucherForm, [field]: nextIds });
                           }}
                         />
                         <span>{pkg.name || t.defaultPackageName}</span>
@@ -2703,7 +2713,9 @@ export default function Admin({ user, language = "vi" }) {
                     <span>{t.appliesTo}</span>
                     <strong>
                       {proVoucher
-                        ? "Subscription"
+                        ? voucher.applicablePlanIds?.length
+                          ? voucher.applicablePlanIds.map((plan) => plan?.name || membershipPlans.find((item) => String(item._id) === String(plan))?.name || l("Gói đã ẩn", "Hidden plan")).join(", ")
+                          : l("Tất cả Subscription", "All Subscription plans")
                         : sharedVoucher
                           ? l("Credit và Subscription", "Credit and Subscription")
                           : Array.isArray(voucher.applicablePackageIds) && voucher.applicablePackageIds.length > 0

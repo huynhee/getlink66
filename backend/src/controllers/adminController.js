@@ -10,6 +10,7 @@ import ProductCache from "../models/ProductCache.js";
 import SystemLog from "../models/SystemLog.js";
 import Referral from "../models/Referral.js";
 import MembershipOrder from "../models/MembershipOrder.js";
+import MembershipPlan from "../models/MembershipPlan.js";
 import { isMemoryDb } from "../config/memoryStore.js";
 import { grantManualCredit, setManualCredit } from "../utils/manualCreditService.js";
 import { validate3D66Cookie } from "../utils/3d66Service.js";
@@ -25,7 +26,7 @@ import {
   rejectUnknownKeys,
 } from "../utils/validators.js";
 import { expirePendingSepayTopups } from "../utils/topupExpiryService.js";
-import { voucherTargetKind } from "../utils/voucherCheckoutService.js";
+import { voucherApplicablePlanIds, voucherTargetKind } from "../utils/voucherCheckoutService.js";
 import { hydrateAtlasUserField } from "../utils/crossDatabaseHydration.js";
 
 const MAX_MANUAL_CREDIT = Number(process.env.MAX_MANUAL_CREDIT || 1000000);
@@ -191,6 +192,7 @@ function normalizeVoucherPayload(body = {}, currentVoucher = null) {
     usageLimit,
     perUserLimit,
     applicablePackageIds = [],
+    applicablePlanIds = voucherApplicablePlanIds(currentVoucher),
     expireAt,
     description = "",
     targetKind = "",
@@ -219,6 +221,14 @@ function normalizeVoucherPayload(body = {}, currentVoucher = null) {
   const packageIds = Array.isArray(applicablePackageIds)
     ? applicablePackageIds.filter(Boolean).map((id) => String(id?._id || id))
     : [];
+  if (!Array.isArray(applicablePlanIds)) return { error: "Invalid voucher Subscription plan list" };
+  const planIds = [...new Set(applicablePlanIds.map((id) => String(id?._id || id)))];
+  if (planIds.length > 100 || planIds.some((id) => !isSafeId(id))) {
+    return { error: "Invalid voucher Subscription plan list" };
+  }
+  if (normalizedTargetKind !== "pro" && planIds.length > 0) {
+    return { error: "Only Subscription vouchers can select Subscription plans" };
+  }
   const expiresAt = new Date(expireAt);
 
   if (packageIds.length > 100 || packageIds.some((id) => !isSafeId(id))) {
@@ -266,11 +276,20 @@ function normalizeVoucherPayload(body = {}, currentVoucher = null) {
       usageLimit: limit,
       perUserLimit: accountLimit,
       applicablePackageIds: packageIds,
+      applicablePlanIds: planIds,
       expireAt: expiresAt,
       description: limitedString(description, 500),
       isActive: isActive === undefined ? currentVoucher?.isActive !== false : isActive,
     },
   };
+}
+
+async function voucherPlanScopeError(payload, currentVoucher = null) {
+  const previousIds = voucherApplicablePlanIds(currentVoucher);
+  const addedIds = payload.applicablePlanIds.filter((id) => !previousIds.includes(id));
+  if (!addedIds.length) return "";
+  const count = await MembershipPlan.countDocuments({ _id: { $in: addedIds }, isArchived: { $ne: true } });
+  return count === addedIds.length ? "" : "Unknown or archived Subscription plan";
 }
 
 function sortPackages(packages = []) {
@@ -1285,6 +1304,7 @@ export async function createVoucher(req, res, next) {
       "usageLimit",
       "perUserLimit",
       "applicablePackageIds",
+      "applicablePlanIds",
       "expireAt",
       "description",
       "isActive",
@@ -1295,6 +1315,8 @@ export async function createVoucher(req, res, next) {
 
     const { payload, error } = normalizeVoucherPayload(req.body);
     if (error) return res.status(400).json({ message: error });
+    const scopeError = await voucherPlanScopeError(payload);
+    if (scopeError) return res.status(400).json({ message: scopeError });
 
     const voucher = await Voucher.create(payload);
     res.json({ voucher });
@@ -1316,6 +1338,7 @@ export async function updateVoucher(req, res, next) {
       "usageLimit",
       "perUserLimit",
       "applicablePackageIds",
+      "applicablePlanIds",
       "expireAt",
       "description",
       "isActive",
@@ -1334,6 +1357,8 @@ export async function updateVoucher(req, res, next) {
 
     const { payload, error } = normalizeVoucherPayload(req.body, currentVoucher);
     if (error) return res.status(400).json({ message: error });
+    const scopeError = await voucherPlanScopeError(payload, currentVoucher);
+    if (scopeError) return res.status(400).json({ message: scopeError });
 
     const currentCode = normalizeVoucherCode(currentVoucher.code);
     const [topupReferences, membershipReferences] = await Promise.all([
@@ -1363,6 +1388,7 @@ export async function updateVoucher(req, res, next) {
     });
     if (typeof voucher?.populate === "function") {
       voucher = await voucher.populate("applicablePackageIds", "name price");
+      voucher = await voucher.populate("applicablePlanIds", "name billingPeriod dailyDownloadLimit");
     }
     res.json({ voucher });
   } catch (error) {
@@ -1379,6 +1405,7 @@ export async function listVouchers(_req, res, next) {
       .sort({ createdAt: -1 })
       .limit(200)
       .populate("applicablePackageIds", "name price")
+      .populate("applicablePlanIds", "name billingPeriod dailyDownloadLimit")
       .lean();
     const codes = vouchers.map((voucher) => voucher.code).filter(Boolean);
     const [topupRows, membershipRows] = codes.length

@@ -3,7 +3,7 @@ import { ArrowRight, Check, CheckCircle2, Copy, CreditCard, Gift, History, Loade
 import { api } from "../api.js";
 import { useMarketplacePrices } from "../utils/useMarketplacePrices.js";
 import { translations } from "../i18n.js";
-import { initialSubscriptionSelection, subscriptionApprovalMessage, subscriptionCheckoutDescription, subscriptionDateLabel, subscriptionPlanPrice } from "../utils/membershipPresentation.js";
+import { initialSubscriptionSelection, subscriptionApprovalMessage, subscriptionCheckoutDescription, subscriptionDateLabel, subscriptionPlanPrice, subscriptionVoucherApplies } from "../utils/membershipPresentation.js";
 import SubscriptionPlans from "../components/SubscriptionPlans.jsx";
 import SubscriptionSchedule from "../components/SubscriptionSchedule.jsx";
 import { checkoutCurrency, discountedPaymentPrice, formatPaymentMoney, packagePrice, submitPaymentCheckout } from "../utils/paymentPresentation.js";
@@ -426,7 +426,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   }
 
   function voucherAppliesToPackage(currentVoucher, item) {
-    if (!currentVoucher) return false;
+    if (!currentVoucher || currentVoucher.targetKind === "pro" || currentVoucher.applicablePlanIds?.length) return false;
     const packageIds = Array.isArray(currentVoucher.applicablePackageIds)
       ? currentVoucher.applicablePackageIds.map(String)
       : [];
@@ -459,10 +459,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   const selectedPackage = packages.find((item) => String(item._id) === String(selectedPackageId));
   const selectedMembershipPlan = membershipPlans.find((item) => String(item._id) === String(selectedMembershipPlanId));
   const voucherTargetsMembership =
-    appliedVoucher &&
     topupMode === "pro" &&
-    appliedVoucher.appliesToMembership !== false &&
-    Number(appliedVoucher.discountPercent || 0) > 0;
+    subscriptionVoucherApplies(appliedVoucher, selectedMembershipPlan);
   const canBuyCredit = selectedPackage && finalPrice(selectedPackage) !== null && (language !== "en" || paypalEnabled) && finalPrice(selectedPackage) >= (currency === "USD" ? 0.01 : 1000);
   const canBuyPro = subscriptionCheckoutEnabled && selectedMembershipPlan && membershipFinalPrice(selectedMembershipPlan) !== null && (language !== "en" || paypalEnabled || membershipFinalPrice(selectedMembershipPlan) === 0);
   const isSubscription = topupMode === "pro";
@@ -479,7 +477,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
 
   function membershipFinalPrice(plan) {
     const original = subscriptionPlanPrice(plan, language);
-    if (!voucherTargetsMembership) return original;
+    if (topupMode !== "pro" || !subscriptionVoucherApplies(appliedVoucher, plan)) return original;
     return discountedPaymentPrice(original, appliedVoucher.discountPercent, currency);
   }
 
@@ -611,13 +609,14 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           code: voucher,
           target: topupMode === "pro" ? "membership" : "topup",
           packageId: topupMode === "credit" && selectedPackage ? selectedPackage._id : undefined,
+          planId: topupMode === "pro" && selectedMembershipPlan ? selectedMembershipPlan._id : undefined,
         }),
       });
       setAppliedVoucher(data.voucher || null);
       setPayment(null);
       setLastPaidPayment(null);
       setVoucher("");
-      setVoucherMessage(data.message || (language === "vi" ? "Đã áp dụng voucher." : "Discount code applied."));
+      setVoucherMessage(language === "vi" ? data.message || "Đã áp dụng voucher." : "Discount code applied.");
     } catch (err) {
       setVoucherError(err.message);
     } finally {
