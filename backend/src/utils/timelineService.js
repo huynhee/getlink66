@@ -276,6 +276,7 @@ function mapReferral(item, userId) {
       rewardType,
       rewardCredit: credit,
       proDays,
+      modelDownloads: Number(isReferrer ? item.referrerRewardModelDownloads ?? (proDays ? 100 : 0) : item.referredRewardModelDownloads ?? (proDays ? 100 : 0)),
       proUntil: proDays > 0 ? proUntil : null,
       otherUser: userSummary(otherUser),
     },

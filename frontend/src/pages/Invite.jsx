@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Check, Copy, Gift, Link2, Share2, ShieldCheck, UserPlus, Users } from "lucide-react";
 import CoinAmount from "../components/CoinAmount.jsx";
 import { api } from "../api.js";
+import { formatReferralReward } from "../utils/referralPresentation.js";
 
 export default function Invite({ language = "vi" }) {
   const [summary, setSummary] = useState(null);
@@ -111,15 +112,11 @@ export default function Invite({ language = "vi" }) {
     );
   }
 
-  const rewardParts = [
-    Number(summary.rewardProDays || 0) > 0
-      ? `${summary.rewardProDays} ${isVi ? "ngày Pro" : "Pro day"}`
-      : "",
-    Number(summary.rewardCredit || 0) > 0
-      ? `${summary.rewardCredit} credit`
-      : "",
-  ].filter(Boolean);
-  const rewardLabel = rewardParts.join(" + ");
+  const rewardLabel = formatReferralReward({
+    proDays: summary.rewardProDays,
+    credit: summary.rewardCredit,
+    modelDownloads: summary.rewardModelDownloads ?? 100,
+  }, language);
   const rewardText =
     summary.mode === "referrer_only"
       ? isVi
@@ -231,6 +228,7 @@ export default function Invite({ language = "vi" }) {
               </span>
               <strong>
                 {item.proDays > 0 && `+${item.proDays} ${isVi ? "ngày Pro" : "Pro day"}`}
+                {item.proDays > 0 && ` (${item.modelDownloads ?? 100} ${isVi ? "lượt Model" : "Model downloads"})`}
                 {item.proDays > 0 && item.credit > 0 ? " + " : ""}
                 {item.credit > 0 && <CoinAmount value={item.credit} prefix="+" />}
               </strong>

@@ -85,9 +85,9 @@ const referralModeOptions = [
 ];
 
 const referralRewardOptions = [
-  { value: "both", credit: true, pro: true, vi: "1 ngày Pro + 28 credit", en: "1 Pro day + 28 credits" },
-  { value: "credit", credit: true, pro: false, vi: "Chỉ 28 credit", en: "28 credits only" },
-  { value: "pro", credit: false, pro: true, vi: "Chỉ 1 ngày Pro", en: "1 Pro day only" },
+  { value: "both", credit: true, pro: true, vi: "Credit + lượt tải Model", en: "Credits + Model downloads" },
+  { value: "credit", credit: true, pro: false, vi: "Chỉ Credit", en: "Credits only" },
+  { value: "pro", credit: false, pro: true, vi: "Chỉ lượt tải Model", en: "Model downloads only" },
 ];
 
 const HOME_TEXT_FIELDS = [
@@ -119,6 +119,8 @@ const defaultSiteSettings = {
   referralMode: "both",
   referralRewardCreditEnabled: true,
   referralRewardProEnabled: true,
+  referralRewardCredit: 28,
+  referralRewardModelDownloads: 100,
   heroEyebrow: "+ api 3d sdk",
   heroText: "MODEL 3D\nSCENES\nGETLINK",
   heroSubtitle: "Thư viện 3D 200,000+ models giá chỉ 66đ/1 model. Dịch vụ getlink trung gian mua trung quốc giá rẻ.",
@@ -329,6 +331,7 @@ export default function Admin({ user, language = "vi" }) {
   const [homeTextMsg, setHomeTextMsg] = useState("");
   const [homeTextLanguage, setHomeTextLanguage] = useState("vi");
   const [referralMsg, setReferralMsg] = useState("");
+  const [referralSaving, setReferralSaving] = useState(false);
   const [runtimeSettingsMsg, setRuntimeSettingsMsg] = useState("");
   const [cookieRecords, setCookieRecords] = useState([]);
   const [cookiePool, setCookiePool] = useState(null);
@@ -959,6 +962,8 @@ export default function Admin({ user, language = "vi" }) {
   }
 
   async function saveReferralSettings(patch) {
+    if (referralSaving) return;
+    setReferralSaving(true);
     try {
       setReferralMsg("");
       const next = { ...siteSettings, ...patch };
@@ -968,12 +973,16 @@ export default function Admin({ user, language = "vi" }) {
           referralMode: next.referralMode,
           referralRewardCreditEnabled: Boolean(next.referralRewardCreditEnabled),
           referralRewardProEnabled: Boolean(next.referralRewardProEnabled),
+          referralRewardCredit: next.referralRewardCredit,
+          referralRewardModelDownloads: next.referralRewardModelDownloads,
         })
       });
       setSiteSettings({ ...defaultSiteSettings, ...(data.settings || next) });
       setReferralMsg(l("Đã cập nhật chế độ giới thiệu.", "Referral settings updated."));
     } catch (err) {
       setReferralMsg(err.message);
+    } finally {
+      setReferralSaving(false);
     }
   }
 
@@ -2933,6 +2942,7 @@ export default function Admin({ user, language = "vi" }) {
                 key={option.value}
                 type="button"
                 className={siteSettings.referralMode === option.value ? "active" : ""}
+                disabled={referralSaving}
                 onClick={() => saveReferralSettings({ referralMode: option.value })}
               >
                 {l(option.vi, option.en)}
@@ -2949,6 +2959,7 @@ export default function Admin({ user, language = "vi" }) {
                   key={option.value}
                   type="button"
                   className={active ? "active" : ""}
+                  disabled={referralSaving}
                   onClick={() => saveReferralSettings({
                     referralRewardCreditEnabled: option.credit,
                     referralRewardProEnabled: option.pro,
@@ -2959,6 +2970,25 @@ export default function Admin({ user, language = "vi" }) {
               );
             })}
           </div>
+          <form className="adminReferralRewards" onSubmit={(event) => { event.preventDefault(); saveReferralSettings({}); }}>
+            <label>
+              <span>{l("Credit tặng mỗi lượt giới thiệu", "Credits per referral")}</span>
+              <input type="number" min="1" max="100000" step="1" required value={siteSettings.referralRewardCredit}
+                disabled={referralSaving || !siteSettings.referralRewardCreditEnabled}
+                onChange={(event) => setSiteSettings((current) => ({ ...current, referralRewardCredit: event.target.value }))} />
+            </label>
+            <label>
+              <span>{l("Quota tải Model trong ngày", "Model download quota for today")}</span>
+              <input type="number" min="1" max="100000" step="1" required value={siteSettings.referralRewardModelDownloads}
+                disabled={referralSaving || !siteSettings.referralRewardProEnabled}
+                onChange={(event) => setSiteSettings((current) => ({ ...current, referralRewardModelDownloads: event.target.value }))} />
+            </label>
+            <button type="submit" className="smallButton" disabled={referralSaving}>
+              {referralSaving ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
+              {l("Lưu mức thưởng", "Save rewards")}
+            </button>
+          </form>
+          <p className="muted">{l("Pro thưởng hết hạn cuối hôm nay; Subscription đang có không bị đổi thời hạn hoặc giảm quota. Model dùng 1 lượt, Scene dùng 5 lượt.", "Reward Pro ends today; existing Subscription expiry and quota are preserved. Model uses 1 download, Scene uses 5.")}</p>
           <p className="muted" style={{ marginTop: 10 }}>
             {siteSettings.referralMode === "both"
               ? l("Người mời và người được mời đều nhận loại phần thưởng đã chọn.", "Both referrer and invited user receive the selected reward.")
@@ -2985,9 +3015,11 @@ export default function Admin({ user, language = "vi" }) {
                 <code>{item.referralCode}</code>
                 <span>
                   {`+${Number(item.referrerRewardProDays || 0)} Pro + `}
+                  {item.referrerRewardProDays > 0 && `${item.referrerRewardModelDownloads ?? 100} ${l("lượt Model", "Model downloads")} · `}
                   <CoinAmount value={item.referrerRewardCredit ?? item.rewardCredit ?? 0} prefix="+" />
                   {" / "}
                   {`+${Number(item.referredRewardProDays || 0)} Pro + `}
+                  {item.referredRewardProDays > 0 && `${item.referredRewardModelDownloads ?? 100} ${l("lượt Model", "Model downloads")} · `}
                   <CoinAmount value={item.referredRewardCredit ?? item.rewardCredit ?? 0} prefix="+" />
                 </span>
                 <time>{new Date(item.rewardedAt || item.createdAt).toLocaleString(locale)}</time>

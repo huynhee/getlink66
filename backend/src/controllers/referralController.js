@@ -40,6 +40,7 @@ export async function referralHistory(req, res, next) {
           rewardType,
           credit,
           proDays,
+          modelDownloads: Number(isReferrer ? item.referrerRewardModelDownloads ?? (proDays ? 100 : 0) : item.referredRewardModelDownloads ?? (proDays ? 100 : 0)),
           proUntil: isReferrer ? item.referrerProUntil : item.referredProUntil,
           otherUser: otherUser
             ? {

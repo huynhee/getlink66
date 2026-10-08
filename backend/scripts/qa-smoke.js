@@ -473,6 +473,60 @@ async function verifyAdminVoucherPlanScopes(page, context, viewport) {
   }
 }
 
+async function verifyReferralRewardSettings(page, context, viewport) {
+  const initialLanguage = await page.locator("html").getAttribute("lang");
+  const initialTheme = await page.locator("html").getAttribute("data-theme");
+  const initial = await context.request.get(`${frontendOrigin}/api/settings`).then((response) => response.json());
+  const csrf = await context.request.get(`${frontendOrigin}/api/auth/csrf`).then((response) => response.json());
+  const fields = ["referralMode", "referralRewardCreditEnabled", "referralRewardProEnabled", "referralRewardCredit", "referralRewardModelDownloads"];
+  const restore = Object.fromEntries(fields.map((field) => [field, initial.settings[field]]));
+  let cleanupResponse;
+  const setPresentation = async (language, theme) => {
+    if (!await page.locator(".languageToggleSingle button").isVisible()) await page.locator(".mobileMenuButton").click();
+    if (await page.locator("html").getAttribute("lang") !== language) await page.locator(".languageToggleSingle button").click();
+    if (await page.locator("html").getAttribute("data-theme") !== theme) await page.locator(".themeToggle").click();
+    if (await page.locator(".mobileMenuButton").getAttribute("aria-expanded") === "true") await page.locator(".mobileMenuButton").click();
+  };
+  try {
+    for (const language of ["vi", "en"]) {
+      for (const theme of ["light", "dark"]) {
+        await page.goto(`${frontendOrigin}/admin`, { waitUntil: "domcontentloaded" });
+        await page.locator(".adminPage").waitFor({ state: "visible" });
+        await setPresentation(language, theme);
+        await page.getByRole("navigation", { name: "Admin sections", exact: true })
+          .getByRole("button", { name: /^(Chung|General)$/ }).click();
+        await page.getByRole("navigation", { name: "Admin subsections", exact: true })
+          .getByRole("button", { name: /^(Giới thiệu|Referrals)\b/ }).click();
+        const form = page.locator(".adminReferralRewards");
+        await form.waitFor();
+        await form.getByLabel(/Credit tặng mỗi lượt giới thiệu|Credits per referral/).fill("9");
+        await form.getByLabel(/Quota tải Model trong ngày|Model download quota for today/).fill("50");
+        if (await form.evaluate((element) => element.scrollWidth > element.clientWidth + 2)) throw new Error("Referral reward form overflows");
+        const saved = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/settings" && response.request().method() === "POST");
+        await form.getByRole("button", { name: /Lưu mức thưởng|Save rewards/ }).click();
+        const response = await saved;
+        if (!response.ok()) throw new Error(`Referral settings save failed: ${await response.text()}`);
+        const result = await response.json();
+        if (result.settings.referralRewardCredit !== 9 || result.settings.referralRewardModelDownloads !== 50) throw new Error("Referral settings did not persist");
+        await form.getByRole("button", { name: /Lưu mức thưởng|Save rewards/ }).waitFor({ state: "visible" });
+        await page.evaluate(() => globalThis.scrollTo(0, 0));
+        await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-referral-settings-${theme}-${language}.png`), fullPage: true });
+        for (const route of ["/", "/invite"]) {
+          await page.goto(`${frontendOrigin}${route}`, { waitUntil: "domcontentloaded" });
+          const copy = page.locator(route === "/" ? ".referralInvite" : ".inviteHeroCopy");
+          await copy.getByText(language === "vi" ? /50 lượt Model.*9 credit/ : /50 Model downloads.*9 credits/).waitFor();
+        }
+      }
+    }
+  } finally {
+    cleanupResponse = await context.request.post(`${frontendOrigin}/api/settings`, {
+      headers: { "x-csrf-token": csrf.csrfToken, origin: frontendOrigin }, data: restore,
+    });
+    await setPresentation(initialLanguage, initialTheme);
+  }
+  if (!cleanupResponse.ok()) throw new Error(`Referral fixture cleanup failed: ${await cleanupResponse.text()}`);
+}
+
 async function verifyConfiguredCreditCopy(page, context, viewport) {
   let scenePrice = 20;
   const pattern = "**/api/settings";
@@ -1003,6 +1057,7 @@ async function main() {
       await verifyLanguageFlags(page, viewport.name, "admin");
       await verifyAdminPackageDeletion(page, context, viewport.name);
       await verifyAdminVoucherPlanScopes(page, context, viewport.name);
+      await verifyReferralRewardSettings(page, context, viewport.name);
       await verifyConfiguredCreditCopy(page, context, viewport.name);
       await verifyLiveAccountBalance(page, context);
       await verifySubscriptionCatalog(page, context, viewport.name);
@@ -1023,6 +1078,7 @@ async function main() {
       adminPackageDeletion: true,
       unifiedSubscriptionToggles: true,
       adminVoucherPlanScopes: true,
+      referralRewardSettings: true,
       voucherPlanScopes: true,
       subscriptionCatalog: true,
       topupLayout: true,

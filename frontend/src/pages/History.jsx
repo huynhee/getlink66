@@ -212,6 +212,9 @@ function metadataLines(event, language) {
       m.rewardCredit
         ? `Credit: +${m.rewardCredit}`
         : "",
+      m.proDays && m.modelDownloads
+        ? `${language === "vi" ? "Quota thưởng hôm đó" : "Reward quota that day"}: ${m.modelDownloads} ${language === "vi" ? "lượt Model" : "Model downloads"}`
+        : "",
       m.proDays && m.proUntil
         ? `${language === "vi" ? "Hạn Pro sau thưởng" : "Pro expiry after reward"}: ${formatDate(m.proUntil, language)}`
         : "",

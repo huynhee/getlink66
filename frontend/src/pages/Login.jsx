@@ -6,6 +6,7 @@ import SiteFooter from "../components/SiteFooter.jsx";
 import PluginHero from "../components/PluginHero.jsx";
 import { ModelCard } from "./Models.jsx";
 import { translations } from "../i18n.js";
+import { referralInviteTitle } from "../utils/referralPresentation.js";
 
 const HOME_TEXT_DEFAULTS = {
   vi: {
@@ -174,11 +175,6 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   });
   const modelResolveMode = siteSettings.threed66ModelResolveMode || "search";
   const modeText = inputModeText(modelResolveMode, language);
-  if (referral?.mode === "referrer_only") {
-    t.referralTitle = language === "vi"
-      ? "Mời bạn bè để nhận 1 ngày Pro + 28 credit."
-      : "Invite friends to receive 1 Pro day + 28 credits.";
-  }
 
   React.useEffect(() => {
     setSiteSettings((current) => ({
@@ -338,29 +334,22 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   function referralTitle() {
     const mode = referral?.mode || siteSettings.referralMode;
     const proDays = Number(referral?.rewardProDays ?? (siteSettings.referralRewardProEnabled === false ? 0 : 1));
-    const credits = Number(referral?.rewardCredit ?? (siteSettings.referralRewardCreditEnabled === false ? 0 : 28));
-    const rewards = [
-      proDays > 0 ? (language === "vi" ? `${proDays} ngày Pro` : `${proDays} Pro day`) : "",
-      credits > 0 ? (language === "vi" ? `${credits} credit` : `${credits} credits`) : "",
-    ].filter(Boolean).join(" + ");
-    if (mode === "referrer_only") {
-      return language === "vi"
-        ? `Mời bạn bè để nhận ${rewards}.`
-        : `Invite friends to receive ${rewards}.`;
-    }
-    return language === "vi"
-      ? `Mời bạn bè, cả hai nhận ${rewards}.`
-      : `Invite friends and both receive ${rewards}.`;
+    const credits = Number(referral?.rewardCredit ?? (siteSettings.referralRewardCreditEnabled === false ? 0 : siteSettings.referralRewardCredit ?? 28));
+    const downloads = Number(referral?.rewardModelDownloads ?? siteSettings.referralRewardModelDownloads ?? 100);
+    return referralInviteTitle({ mode, proDays, credit: credits, modelDownloads: downloads }, language);
   }
 
   function homepageReferralTitle() {
     if (siteSettings.referralRewardCreditEnabled === false || siteSettings.referralRewardProEnabled === false) {
       return referralTitle();
     }
-    if ((referral?.mode || siteSettings.referralMode) === "referrer_only") {
-      return siteSettings.referralTitleReferrerOnly || referralTitle();
-    }
-    return siteSettings.referralTitleBoth || referralTitle();
+    const customTitle = (referral?.mode || siteSettings.referralMode) === "referrer_only"
+      ? siteSettings.referralTitleReferrerOnly : siteSettings.referralTitleBoth;
+    const legacyTitles = [
+      "Mời bạn bè, cả hai nhận 1 ngày Pro + 28 credit.", "Mời bạn bè để nhận 1 ngày Pro + 28 credit.",
+      "Invite friends and both receive 1 Pro day + 28 credits.", "Invite friends to receive 1 Pro day + 28 credits.",
+    ];
+    return customTitle && !legacyTitles.includes(customTitle) ? customTitle : referralTitle();
   }
 
   function submitCatalogSearch(event) {
@@ -540,7 +529,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                     value={referral?.referralUrl || ""}
                     placeholder={language === "vi" ? "Đăng nhập để nhận link mời riêng" : "Sign in to get your invite link"}
                     readOnly
-                    aria-label={t.referralTitle}
+                    aria-label={referralTitle()}
                   />
                   {referral?.referralUrl ? (
                     <button type="button" className="smallButton" onClick={copyReferralLink}>

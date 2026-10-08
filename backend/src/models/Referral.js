@@ -13,6 +13,8 @@ const referralSchema = new mongoose.Schema(
     rewardProDays: { type: Number, default: 0, min: 0 },
     referrerRewardProDays: { type: Number, default: 0, min: 0 },
     referredRewardProDays: { type: Number, default: 0, min: 0 },
+    referrerRewardModelDownloads: { type: Number, min: 0, max: 100000, validate: Number.isSafeInteger },
+    referredRewardModelDownloads: { type: Number, min: 0, max: 100000, validate: Number.isSafeInteger },
     referrerProUntil: Date,
     referredProUntil: Date,
     proExpiryPolicy: {

@@ -137,14 +137,17 @@ export async function refreshSubscriptionInTransaction(user, { at = new Date(), 
   return projectSchedule(user._id, at, session);
 }
 
-export async function grantReferralSubscription(user, { at = new Date(), session = null, sourceKey } = {}) {
+export async function grantReferralSubscription(user, { at = new Date(), session = null, sourceKey, dailyDownloadLimit = 100 } = {}) {
+  if (!Number.isSafeInteger(dailyDownloadLimit) || dailyDownloadLimit < 1 || dailyDownloadLimit > 100000) {
+    throw new Error("Invalid referral download quota");
+  }
   return scheduleMutation(user._id, async (transaction) => {
     user = await refreshSubscriptionInTransaction(user, { at, session: transaction });
     if (user.proUntil && time(user.proUntil) > time(at)) return user;
     await ensureSubscriptionBaseline(user, { at, session: transaction });
     await SubscriptionPeriod.findOneAndUpdate({ sourceKey }, { $setOnInsert: {
       sourceKey, userId: user._id, planCode: "REFERRAL", planName: "Referral reward",
-      billingPeriod: "day", durationDays: 1, dailyDownloadLimit: 100,
+      billingPeriod: "day", durationDays: 1, dailyDownloadLimit,
       startsAt: at, endsAt: nextVietnamReset(at), status: "valid",
     } }, { new: true, upsert: true, session: transaction });
     return projectSchedule(user._id, at, transaction);

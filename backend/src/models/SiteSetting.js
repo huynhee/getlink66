@@ -112,6 +112,8 @@ const siteSettingSchema = new mongoose.Schema(
     },
     referralRewardCreditEnabled: { type: Boolean, default: true },
     referralRewardProEnabled: { type: Boolean, default: true },
+    referralRewardCredit: { type: Number, default: 28, min: 1, max: 100000, validate: Number.isSafeInteger },
+    referralRewardModelDownloads: { type: Number, default: 100, min: 1, max: 100000, validate: Number.isSafeInteger },
     threed66GetlinkConcurrency: { type: Number, default: 1 },
     threed66PreviewConcurrency: { type: Number, default: 1 },
     threed66RefreshConcurrency: { type: Number, default: 1 },

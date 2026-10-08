@@ -2,6 +2,7 @@ import SiteSetting from "../models/SiteSetting.js";
 import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
 import { limitedString, rejectUnknownKeys, sanitizeHtml } from "../utils/validators.js";
 import { invalidateMarketplacePricingCache } from "../utils/marketplacePricingService.js";
+import { REFERRAL_REWARD_FIELDS, validReferralRewardAmount } from "../utils/referralRewardSettings.js";
 
 const REFERRAL_MODES = ["both", "referrer_only", "off"];
 const THREED66_MODEL_RESOLVE_MODES = ["search", "footprint", "direct"];
@@ -268,6 +269,8 @@ const defaultSettings = {
   referralMode: "both",
   referralRewardCreditEnabled: true,
   referralRewardProEnabled: true,
+  referralRewardCredit: 28,
+  referralRewardModelDownloads: 100,
   threed66GetlinkConcurrency: Number(process.env.THREED66_GETLINK_CONCURRENCY || 1),
   threed66PreviewConcurrency: Number(process.env.THREED66_PREVIEW_CONCURRENCY || 1),
   threed66RefreshConcurrency: Number(process.env.THREED66_REFRESH_CONCURRENCY || 1),
@@ -375,6 +378,7 @@ function publicSettings(settings = {}, { includeRuntime = false } = {}) {
         "referralMode",
         "referralRewardCreditEnabled",
         "referralRewardProEnabled",
+        ...Object.keys(REFERRAL_REWARD_FIELDS),
         "threed66ModelResolveMode",
         "marketplaceModelCreditPrice",
         "marketplaceSceneCreditPrice",
@@ -661,6 +665,7 @@ export async function updateSettings(req, res, next) {
       "referralMode",
       "referralRewardCreditEnabled",
       "referralRewardProEnabled",
+      ...Object.keys(REFERRAL_REWARD_FIELDS),
       "threed66GetlinkConcurrency",
       "threed66PreviewConcurrency",
       "threed66RefreshConcurrency",
@@ -704,8 +709,17 @@ export async function updateSettings(req, res, next) {
     }
 
     const update = {};
+    for (const field of Object.keys(REFERRAL_REWARD_FIELDS)) {
+      if (req.body[field] !== undefined && !validReferralRewardAmount(req.body[field], field)) {
+        return res.status(400).json({ code: "INVALID_REFERRAL_REWARD", field, message: "Referral rewards must be whole numbers between 1 and 100000." });
+      }
+    }
     fields.forEach((field) => {
       if (req.body[field] === undefined) return;
+      if (REFERRAL_REWARD_FIELDS[field]) {
+        update[field] = Number(req.body[field]);
+        return;
+      }
       if (field === "referralMode") {
         if (REFERRAL_MODES.includes(req.body[field])) update[field] = req.body[field];
         return;

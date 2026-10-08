@@ -13,22 +13,24 @@ import { synchronizeSubscriptionQuotaGrant } from "./marketplaceQuotaGrantServic
 import { lockPaymentBenefits, preparePaymentBenefitGuard, serializeMemoryPayments } from "./paymentBenefitService.js";
 import { publishAccountInvalidation } from "./accountEventBus.js";
 import logger from "./logger.js";
+import { referralRewardAmount } from "./referralRewardSettings.js";
 
 const REFERRAL_CODE_RE = /^[A-Z0-9]{6,24}$/;
 const REFERRAL_MODES = new Set(["both", "referrer_only", "off"]);
 const REFERRAL_PRO_DAYS = 1;
-const REFERRAL_CREDIT = 28;
 const MEMBER_DAILY_DOWNLOAD_LIMIT = 100;
 
 async function referralSettings() {
   const settings = await SiteSetting.findOne({ key: "homepage" })
-    .select("referralMode referralRewardCreditEnabled referralRewardProEnabled")
+    .select("referralMode referralRewardCreditEnabled referralRewardProEnabled referralRewardCredit referralRewardModelDownloads")
     .lean();
   const mode = String(settings?.referralMode || "both");
   return {
     mode: REFERRAL_MODES.has(mode) ? mode : "both",
     creditEnabled: settings?.referralRewardCreditEnabled !== false,
     proEnabled: settings?.referralRewardProEnabled !== false,
+    credit: referralRewardAmount(settings?.referralRewardCredit, "referralRewardCredit"),
+    modelDownloads: referralRewardAmount(settings?.referralRewardModelDownloads, "referralRewardModelDownloads"),
   };
 }
 
@@ -76,18 +78,18 @@ function proStateCondition(user) {
   return { $or: [{ proUntil: { $exists: false } }, { proUntil: null }] };
 }
 
-function proRewardFields(user, now) {
+function proRewardFields(user, now, modelDownloads) {
   const currentUntil = user?.proUntil ? new Date(user.proUntil) : null;
   const wasActive = Boolean(currentUntil && currentUntil > now);
   return {
     proUntil: referralRewardProUntil(user, now),
-    proDailyDownloadLimit: wasActive ? Number(user?.proDailyDownloadLimit || 100) : MEMBER_DAILY_DOWNLOAD_LIMIT,
+    proDailyDownloadLimit: wasActive ? Number(user?.proDailyDownloadLimit || MEMBER_DAILY_DOWNLOAD_LIMIT) : modelDownloads,
     ...(!wasActive && !user?.proActivatedAt ? { proActivatedAt: now } : {}),
   };
 }
 
 function referralRecord({ referrer, referredUser, referralCode, mode, rewards, now, referrerProUntil, referredProUntil }) {
-  const referrerCredit = rewards.creditEnabled ? REFERRAL_CREDIT : 0;
+  const referrerCredit = rewards.creditEnabled ? rewards.credit : 0;
   const referredCredit = mode === "both" ? referrerCredit : 0;
   const referrerProDays = rewards.proEnabled ? REFERRAL_PRO_DAYS : 0;
   const referredProDays = mode === "both" ? referrerProDays : 0;
@@ -102,6 +104,8 @@ function referralRecord({ referrer, referredUser, referralCode, mode, rewards, n
     rewardProDays: referrerProDays,
     referrerRewardProDays: referrerProDays,
     referredRewardProDays: referredProDays,
+    referrerRewardModelDownloads: rewards.proEnabled ? rewards.modelDownloads : 0,
+    referredRewardModelDownloads: referredProDays ? rewards.modelDownloads : 0,
     referrerProUntil: rewards.proEnabled ? referrerProUntil : null,
     referredProUntil: referredProDays ? referredProUntil : null,
     proExpiryPolicy: "same_day",
@@ -111,9 +115,9 @@ function referralRecord({ referrer, referredUser, referralCode, mode, rewards, n
   };
 }
 
-function referralRewardText(proDays, credit, language = "vi") {
+function referralRewardText(proDays, credit, modelDownloads, language = "vi") {
   const parts = [
-    proDays > 0 ? (language === "vi" ? `${proDays} ngày Pro` : `${proDays} Pro day`) : "",
+    proDays > 0 ? (language === "vi" ? `Pro hôm nay (${modelDownloads} lượt Model)` : `Pro today (${modelDownloads} Model downloads)`) : "",
     credit > 0 ? `${credit} credit` : "",
   ].filter(Boolean);
   return parts.join(language === "vi" ? " và " : " and ");
@@ -126,8 +130,9 @@ async function notifyReferralReward({
   referrerCredit,
   referredProDays,
   referredCredit,
+  modelDownloads,
 }) {
-  const referrerReward = referralRewardText(referrerProDays, referrerCredit);
+  const referrerReward = referralRewardText(referrerProDays, referrerCredit, modelDownloads);
   const notifications = [
     {
       title: `Phần thưởng giới thiệu: ${referrerReward}`,
@@ -141,7 +146,7 @@ async function notifyReferralReward({
   ];
 
   if (referredProDays > 0 || referredCredit > 0) {
-    const referredReward = referralRewardText(referredProDays, referredCredit);
+    const referredReward = referralRewardText(referredProDays, referredCredit, modelDownloads);
     notifications.push({
       title: `Phần thưởng chào mừng: ${referredReward}`,
       body: `Bạn đã đăng ký bằng link giới thiệu và nhận ${referredReward}.`,
@@ -163,14 +168,22 @@ async function prepareReferralProBenefits(result, previousUsers, now, session = 
     const previous = previousUsers[field];
     if (!isProActive(previous, now)) {
       result[field] = await grantReferralSubscription(previous, {
-        at: now, session, sourceKey: `referral:${previous._id}:${vietnamDayKey(now)}`,
+        at: now, session, sourceKey: `referral:${previous._id}:${vietnamDayKey(now)}`, dailyDownloadLimit: result.modelDownloads,
       });
     } else {
-      const amount = Math.max(0, 100 - Number(previous.proDailyDownloadLimit || 100));
+      const dayKey = vietnamDayKey(now);
+      const query = SubscriptionQuotaGrant.find({ userId: previous._id, dayKey });
+      const previousGrants = await (session ? query.session(session) : query).lean();
+      const floorPrefix = `referral-floor:${previous._id}:${dayKey}`;
+      // Count committed grants even while VPS synchronization is pending or retrying.
+      const granted = previousGrants.filter((grant) => grant.sourceKey === floorPrefix || String(grant.sourceKey || "").startsWith(floorPrefix + ":"))
+        .reduce((total, grant) => total + Number(grant.amount || 0), 0);
+      const baseQuota = Number(previous.proDailyDownloadLimit || MEMBER_DAILY_DOWNLOAD_LIMIT);
+      const amount = Math.max(0, result.modelDownloads - baseQuota - granted);
       if (amount > 0) {
-        const sourceKey = `referral-floor:${previous._id}:${vietnamDayKey(now)}`;
+        const sourceKey = `${floorPrefix}:${result.modelDownloads}:${baseQuota}:${granted}`;
         const grant = await SubscriptionQuotaGrant.findOneAndUpdate({ sourceKey }, { $setOnInsert: {
-          sourceKey, userId: previous._id, dayKey: vietnamDayKey(now), amount, status: "pending", attempts: 0,
+          sourceKey, userId: previous._id, dayKey, amount, status: "pending", attempts: 0,
         } }, { upsert: true, new: true, session });
         grants.push(grant);
       }
@@ -217,9 +230,9 @@ async function awardReferralSignupTransactional(referredUser, { mode, rewards, r
       const now = new Date();
       freshReferredUser = await refreshSubscriptionInTransaction(freshReferredUser, { at: now, session });
       referrer = await refreshSubscriptionInTransaction(referrer, { at: now, session });
-      const referrerReward = rewards.proEnabled ? proRewardFields(referrer, now) : {};
+      const referrerReward = rewards.proEnabled ? proRewardFields(referrer, now, rewards.modelDownloads) : {};
       const referredReward = mode === "both" && rewards.proEnabled
-        ? proRewardFields(freshReferredUser, now)
+        ? proRewardFields(freshReferredUser, now, rewards.modelDownloads)
         : {};
       const [referral] = await Referral.create(
         [referralRecord({
@@ -243,7 +256,7 @@ async function awardReferralSignupTransactional(referredUser, { mode, rewards, r
             referralRewardedAt: now,
             ...referredReward,
           },
-          ...(mode === "both" && rewards.creditEnabled ? { $inc: { credit: REFERRAL_CREDIT } } : {}),
+          ...(mode === "both" && rewards.creditEnabled ? { $inc: { credit: rewards.credit } } : {}),
         },
         { new: true, session },
       );
@@ -251,7 +264,7 @@ async function awardReferralSignupTransactional(referredUser, { mode, rewards, r
         { _id: referrer._id, ...(rewards.proEnabled ? proStateCondition(referrer) : {}) },
         {
           ...(rewards.proEnabled ? { $set: referrerReward } : {}),
-          ...(rewards.creditEnabled ? { $inc: { credit: REFERRAL_CREDIT } } : {}),
+          ...(rewards.creditEnabled ? { $inc: { credit: rewards.credit } } : {}),
         },
         { new: true, session },
       );
@@ -269,9 +282,10 @@ async function awardReferralSignupTransactional(referredUser, { mode, rewards, r
         proDays: rewards.proEnabled ? REFERRAL_PRO_DAYS : 0,
         referrerProDays: rewards.proEnabled ? REFERRAL_PRO_DAYS : 0,
         referredProDays: mode === "both" && rewards.proEnabled ? REFERRAL_PRO_DAYS : 0,
-        rewardCredit: rewards.creditEnabled ? REFERRAL_CREDIT : 0,
-        referrerCredit: rewards.creditEnabled ? REFERRAL_CREDIT : 0,
-        referredCredit: mode === "both" && rewards.creditEnabled ? REFERRAL_CREDIT : 0,
+        rewardCredit: rewards.creditEnabled ? rewards.credit : 0,
+        referrerCredit: rewards.creditEnabled ? rewards.credit : 0,
+        referredCredit: mode === "both" && rewards.creditEnabled ? rewards.credit : 0,
+        modelDownloads: rewards.proEnabled ? rewards.modelDownloads : 0,
         mode,
       };
       await prepareReferralProBenefits(result, { referrer, referredUser: freshReferredUser }, now, session);
@@ -334,8 +348,8 @@ async function awardReferralSignupInner(referredUser, rawCode) {
   const now = new Date();
   referrer = await refreshSubscriptionInTransaction(referrer, { at: now });
   referredUser = await refreshSubscriptionInTransaction(referredUser, { at: now });
-  const referrerReward = rewards.proEnabled ? proRewardFields(referrer, now) : {};
-  const referredReward = mode === "both" && rewards.proEnabled ? proRewardFields(referredUser, now) : {};
+  const referrerReward = rewards.proEnabled ? proRewardFields(referrer, now, rewards.modelDownloads) : {};
+  const referredReward = mode === "both" && rewards.proEnabled ? proRewardFields(referredUser, now, rewards.modelDownloads) : {};
   const referredPreviousState = previousProState(referredUser);
 
   try {
@@ -362,7 +376,7 @@ async function awardReferralSignupInner(referredUser, rawCode) {
         referralRewardedAt: now,
         ...referredReward,
       },
-      ...(mode === "both" && rewards.creditEnabled ? { $inc: { credit: REFERRAL_CREDIT } } : {}),
+      ...(mode === "both" && rewards.creditEnabled ? { $inc: { credit: rewards.credit } } : {}),
     },
     { new: true },
   );
@@ -376,7 +390,7 @@ async function awardReferralSignupInner(referredUser, rawCode) {
     { _id: referrer._id, ...(rewards.proEnabled ? proStateCondition(referrer) : {}) },
     {
       ...(rewards.proEnabled ? { $set: referrerReward } : {}),
-      ...(rewards.creditEnabled ? { $inc: { credit: REFERRAL_CREDIT } } : {}),
+      ...(rewards.creditEnabled ? { $inc: { credit: rewards.credit } } : {}),
     },
     { new: true },
   );
@@ -389,7 +403,7 @@ async function awardReferralSignupInner(referredUser, rawCode) {
       })
       : { $unset: { referredBy: "", referralRewardedAt: "" } };
     if (mode === "both" && rewards.creditEnabled) {
-      referredRollback.$inc = { credit: -REFERRAL_CREDIT };
+      referredRollback.$inc = { credit: -rewards.credit };
     }
     await User.findOneAndUpdate(
       { _id: referredUser._id, referredBy: referrer._id, referralRewardedAt: now },
@@ -406,9 +420,10 @@ async function awardReferralSignupInner(referredUser, rawCode) {
     proDays: rewards.proEnabled ? REFERRAL_PRO_DAYS : 0,
     referrerProDays: rewards.proEnabled ? REFERRAL_PRO_DAYS : 0,
     referredProDays: mode === "both" && rewards.proEnabled ? REFERRAL_PRO_DAYS : 0,
-    rewardCredit: rewards.creditEnabled ? REFERRAL_CREDIT : 0,
-    referrerCredit: rewards.creditEnabled ? REFERRAL_CREDIT : 0,
-    referredCredit: mode === "both" && rewards.creditEnabled ? REFERRAL_CREDIT : 0,
+    rewardCredit: rewards.creditEnabled ? rewards.credit : 0,
+    referrerCredit: rewards.creditEnabled ? rewards.credit : 0,
+    referredCredit: mode === "both" && rewards.creditEnabled ? rewards.credit : 0,
+    modelDownloads: rewards.proEnabled ? rewards.modelDownloads : 0,
     mode,
   };
 
@@ -470,7 +485,8 @@ export async function getReferralSummary(user, clientUrl) {
       referralCode: "",
       rewardType: rewards.proEnabled ? "pro" : "credit",
       rewardProDays: rewards.proEnabled ? REFERRAL_PRO_DAYS : 0,
-      rewardCredit: rewards.creditEnabled ? REFERRAL_CREDIT : 0,
+      rewardCredit: rewards.creditEnabled ? rewards.credit : 0,
+      rewardModelDownloads: rewards.proEnabled ? rewards.modelDownloads : 0,
       referralUrl: "",
       invitedCount: 0,
       invitedUsers: [],
@@ -490,7 +506,8 @@ export async function getReferralSummary(user, clientUrl) {
     referralCode,
     rewardType: rewards.proEnabled ? "pro" : "credit",
     rewardProDays: rewards.proEnabled ? REFERRAL_PRO_DAYS : 0,
-    rewardCredit: rewards.creditEnabled ? REFERRAL_CREDIT : 0,
+    rewardCredit: rewards.creditEnabled ? rewards.credit : 0,
+    rewardModelDownloads: rewards.proEnabled ? rewards.modelDownloads : 0,
     referralUrl: `${String(clientUrl || "").replace(/\/$/, "")}/?ref=${encodeURIComponent(referralCode)}`,
     invitedCount: referrals.length,
     invitedUsers: referrals.map((item) => ({
@@ -500,6 +517,7 @@ export async function getReferralSummary(user, clientUrl) {
       avatar: item.referredUserId?.avatar || "",
       rewardType: item.rewardType || "credit",
       rewardProDays: Number(item.referrerRewardProDays || 0),
+      rewardModelDownloads: Number(item.referrerRewardModelDownloads ?? (item.referrerRewardProDays > 0 ? MEMBER_DAILY_DOWNLOAD_LIMIT : 0)),
       rewardCredit: Number(item.referrerRewardCredit ?? item.rewardCredit ?? 0),
       proUntil: item.referrerProUntil || null,
       createdAt: item.createdAt,
