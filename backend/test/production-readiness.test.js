@@ -45,6 +45,13 @@ test("production readiness accepts the secure baseline", () => {
   assert.doesNotThrow(() => assertProductionReadiness(readyEnvironment()));
 });
 
+test("production readiness rejects an empty or malformed required Getlink marker", () => {
+  for (const marker of ["", "false", "# THREED66", "89635771 # comment"]) {
+    const issues = productionReadinessIssues(readyEnvironment({ THREED66_REQUIRED_ACCOUNT_MARKER: marker }));
+    assert.ok(issues.errors.some((item) => item.includes("THREED66_REQUIRED_ACCOUNT_MARKER")));
+  }
+});
+
 test("production readiness rejects Turnstile test keys and disabled admin 2FA", () => {
   const issues = productionReadinessIssues(readyEnvironment({
     TURNSTILE_SITE_KEY: "1x00000000000000000000AA",

@@ -1,4 +1,9 @@
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
+import {
+  assert3D66BrowserDownloadRequest, assert3D66CleanModelUrl, assert3D66DownloadFields,
+  is3D66CleanLinkError, modelIdsShareAssetIdentity,
+} from "./3d66CleanLink.js";
+export { modelIdsShareAssetIdentity } from "./3d66CleanLink.js";
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_BROWSER_CONCURRENCY = 2;
@@ -325,7 +330,8 @@ async function withBrowserContext(url, cookieValue, callback) {
       });
 
       try {
-        await installFastRoutes(context);
+        let validationError = null;
+        await installFastRoutes(context, (error) => { validationError ||= error; });
 
         const cookies = buildBrowserCookies(cookieValue, url);
         if (cookies.length) {
@@ -333,7 +339,13 @@ async function withBrowserContext(url, cookieValue, callback) {
         }
 
         const page = await context.newPage();
-        return await callback({ context, page });
+        try {
+          const result = await callback({ context, page });
+          if (validationError) throw validationError;
+          return result;
+        } catch (error) {
+          throw validationError || error;
+        }
       } finally {
         await context.close().catch(() => {});
         browserTasksSinceLaunch += 1;
@@ -348,6 +360,7 @@ async function withBrowserContext(url, cookieValue, callback) {
     try {
       return await runWithProxy(proxy);
     } catch (error) {
+      if (is3D66CleanLinkError(error)) throw error;
       if (proxyFailClosed()) throw error;
       notify3D66ProxyFallback({
         stage: "browser",
@@ -363,7 +376,7 @@ export async function close3D66Browser() {
   await closeActiveBrowser();
 }
 
-async function installFastRoutes(context) {
+async function installFastRoutes(context, onValidationError) {
   await context.route("**/*", async (route) => {
     const request = route.request();
     if (!isAllowed3D66BrowserRequestUrl(request.url())) {
@@ -371,6 +384,19 @@ async function installFastRoutes(context) {
       return;
     }
     if (shouldBlockAssets() && ["image", "font", "media"].includes(request.resourceType())) {
+      await route.abort("blockedbyclient");
+      return;
+    }
+
+    let sourceUrl = "";
+    try { sourceUrl = request.frame().url(); } catch { /* Worker requests have no frame. */ }
+    try {
+      assert3D66BrowserDownloadRequest({
+        url: request.url(), method: request.method(), body: request.postData(),
+        contentType: request.headers()["content-type"], sourceUrl,
+      });
+    } catch (error) {
+      onValidationError(error);
       await route.abort("blockedbyclient");
       return;
     }
@@ -521,41 +547,6 @@ function modelIdFromUrl(value = "") {
   } catch {
     return "";
   }
-}
-
-function modelIdentityParts(value = "") {
-  const match = String(value || "").trim().toUpperCase().match(/^([A-Z]{3})(\d{6,})$/);
-  if (!match) return null;
-  return { family: match[1].slice(1), digits: match[2] };
-}
-
-const MIN_ASSET_ID_SUFFIX_DIGITS = 5;
-
-function commonTrailingDigitCount(left = "", right = "") {
-  let count = 0;
-  while (
-    count < left.length &&
-    count < right.length &&
-    left[left.length - 1 - count] === right[right.length - 1 - count]
-  ) {
-    count += 1;
-  }
-  return count;
-}
-
-export function modelIdsShareAssetIdentity(left = "", right = "") {
-  const normalizedLeft = String(left || "").trim().toUpperCase();
-  const normalizedRight = String(right || "").trim().toUpperCase();
-  if (!normalizedLeft || !normalizedRight) return false;
-  if (normalizedLeft === normalizedRight) return true;
-
-  const leftParts = modelIdentityParts(normalizedLeft);
-  const rightParts = modelIdentityParts(normalizedRight);
-  if (!leftParts || !rightParts || leftParts.family !== rightParts.family) return false;
-  return (
-    commonTrailingDigitCount(leftParts.digits, rightParts.digits) >=
-    MIN_ASSET_ID_SUFFIX_DIGITS
-  );
 }
 
 export function resolvedFootprintUrlMatches(value = "", selectedProductId = "") {
@@ -1045,6 +1036,7 @@ async function confirmPaymentPopup(page) {
     );
   }
 
+  assert3D66CleanModelUrl(page.url());
   const responsePromise = waitForDownloadHandleResponse(page);
   await payButton.click({ timeout: Math.min(timeoutMs(), 10000), force: true });
   return responsePromise;
@@ -1173,10 +1165,13 @@ export async function resolve3D66ModelUrlFromFootprint(
 
 export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue) {
   assertSafe3D66Url(url);
+  const expectedProductId = assert3D66CleanModelUrl(url);
   return withBrowserContext(url, cookieValue, async ({ context, page }) => {
     await goto3D66Page(page, url);
 
     const metadata = await evaluateMetadataWithRetry(page, true);
+    assert3D66CleanModelUrl(page.url(), { expectedProductId });
+    assert3D66DownloadFields(metadata.dynamicFields?.llId || metadata.productId, page.url());
     const downloadButton = page.locator(".j_download").last();
     await downloadButton.click({
       timeout: Math.min(timeoutMs(), 15000),
@@ -1244,10 +1239,13 @@ export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue) {
 
 export async function download3D66WithBrowser(url, cookieValue, options = {}) {
   assertSafe3D66Url(url);
+  const expectedProductId = assert3D66CleanModelUrl(url);
   return withBrowserContext(url, cookieValue, async ({ context, page }) => {
     await goto3D66Page(page, url);
 
     const metadata = await evaluateMetadataWithRetry(page, true);
+    assert3D66CleanModelUrl(page.url(), { expectedProductId });
+    assert3D66DownloadFields(metadata.dynamicFields?.llId || metadata.productId, page.url());
     const downloadButton = page.locator(".j_download").last();
     await downloadButton.click({
       timeout: Math.min(timeoutMs(), 15000),

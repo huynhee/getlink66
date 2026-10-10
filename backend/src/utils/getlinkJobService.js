@@ -76,7 +76,8 @@ function publicError(error = {}) {
     message: raw || "Getlink failed.",
     code: String(error.code || "").slice(0, 80),
     status,
-    retryable: error.code !== "GETLINK_PRICE_CHANGED" && (status === 409 || status === 429 || status >= 500),
+    retryable: !["GETLINK_PRICE_CHANGED", "THREED66_CLEAN_LINK_REQUIRED"].includes(error.code)
+      && (status === 409 || status === 429 || status >= 500),
   };
 }
 

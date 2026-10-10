@@ -30,6 +30,27 @@ function publicRequest(user) {
   };
 }
 
+test("clean-link configuration failures are terminal even when their status is 503", async () => {
+  const user = await User.create({ email: "job-clean-link@example.test", credit: 100 });
+  const { job } = await createGetlinkJob({
+    userId: user._id, body: { modelId: "ACH89635771442400", clientRequestId: "clean_link_request_1" },
+  });
+  let calls = 0;
+  process.env.GETLINK_JOB_ENABLED = "true";
+  try {
+    await processGetlinkJobQueue({ executor: async () => {
+      calls += 1;
+      throw Object.assign(new Error("Clean link rejected"), { status: 503, code: "THREED66_CLEAN_LINK_REQUIRED" });
+    } });
+    await processGetlinkJobQueue({ executor: async () => { calls += 1; } });
+  } finally { process.env.GETLINK_JOB_ENABLED = "false"; }
+  const result = await GetlinkJob.findById(job._id);
+  assert.equal(result.status, "failed");
+  assert.equal(result.error.retryable, false);
+  assert.equal(calls, 1);
+  assert.equal((await User.findById(user._id)).credit, 100);
+});
+
 test("getlink jobs are idempotent and enforce one active job per account", async () => {
   const user = await User.create({ email: "job-idempotent@example.test", name: "Job", credit: 20 });
   const first = await createGetlinkJob({

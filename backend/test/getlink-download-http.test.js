@@ -23,7 +23,7 @@ test("concurrent HTTP ranges preserve file bytes, ownership, credit and one down
     userId: user._id,
     productId: "fixture-transfer",
     fileUrl: "https://download.3d66.com/fixture.zip",
-    sourceUrl: "https://3d.3d66.com/fixture.html",
+    sourceUrl: "https://3d.3d66.com/reshtmla/model/items/fixture/model.html?sof=ACH89635771442400&sign=fixture",
     creditUsed: 28,
   });
   const file = Buffer.alloc(32 * 1024);

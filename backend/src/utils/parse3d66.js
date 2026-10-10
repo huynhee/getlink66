@@ -1,11 +1,18 @@
 const MODEL_ID_PATTERN = /^[A-Z0-9_-]{8,64}$/i;
 const DEFAULT_ACCOUNT_ID = "177536980";
 
+function numericAccountSetting(value = "") {
+  // Compose can preserve a comment after an empty env value. Never extract
+  // digits from prose such as THREED66_ACCOUNT_ID into an account marker.
+  const numeric = String(value || "").split("#", 1)[0].trim();
+  return /^\d+$/.test(numeric) ? numeric : "";
+}
+
 function accountMarker() {
-  const explicitMarker = String(process.env.THREED66_ACCOUNT_MARKER || "").replace(/\D/g, "");
+  const explicitMarker = numericAccountSetting(process.env.THREED66_ACCOUNT_MARKER);
   if (explicitMarker) return explicitMarker;
 
-  const accountId = String(process.env.THREED66_ACCOUNT_ID || DEFAULT_ACCOUNT_ID).replace(/\D/g, "");
+  const accountId = numericAccountSetting(process.env.THREED66_ACCOUNT_ID) || DEFAULT_ACCOUNT_ID;
   const markerSource = accountId.length > 1 ? accountId.slice(0, -1) : accountId;
   const marker = markerSource.split("").reverse().join("").replace(/^0+/, "");
   return marker || "89635771";

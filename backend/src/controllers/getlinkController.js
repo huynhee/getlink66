@@ -32,6 +32,7 @@ import logger, { securityEvent } from "../utils/logger.js";
 import { writeSystemLog } from "../utils/systemLog.js";
 import { streamGetlinkFile } from "../utils/getlinkDownloadTransfer.js";
 import { downloadTransferLimiter } from "../utils/downloadTransfer.js";
+import { assert3D66StoredDownload, is3D66CleanLinkError } from "../utils/3d66CleanLink.js";
 
 const productLocks = new Map();
 const historyRefreshLocks = new Map();
@@ -295,6 +296,7 @@ async function useFreshCacheForHistory(history, selectedFormat = null) {
   ) {
     return null;
   }
+  assert3D66StoredDownload(cache);
 
   return Getlink.findByIdAndUpdate(
     history._id,
@@ -537,6 +539,7 @@ export function publicHistoryItem(req, item) {
 }
 
 function sendFreeRedownload(req, res, history, options = {}) {
+  assert3D66StoredDownload(history);
   const downloadUrl = publicDownloadUrl(req, history._id);
   const includePreviewImage = Boolean(options.includePreviewImage);
   return res.json({
@@ -785,6 +788,7 @@ function isFallbackMetadata(metadata = {}, inputProductId = "") {
 }
 
 async function upsertProductCache(payload, preferredCache = null) {
+  if (payload.fileUrl) assert3D66StoredDownload(payload);
   const normalizedPayload = {
     ...payload,
     creditCost: normalizeDownloadCreditCost(payload.creditCost, 1),
@@ -852,7 +856,8 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
         if (preferLive) {
           try {
             choiceInspection = await inspect3D66DownloadChoice(url, cookieValue);
-          } catch {
+          } catch (error) {
+            if (is3D66CleanLinkError(error)) throw error;
             // If the lightweight pop API is unavailable, keep the browser path.
           }
 
@@ -1051,6 +1056,7 @@ function looksLikeDownloadFile(upstream) {
 
 async function resolveProductCache(productId, url, downloadFormat = null) {
   const existing = await ProductCache.findOne({ productId });
+  if (existing?.fileUrl && cacheMatchesModelUrl(existing, url)) assert3D66StoredDownload(existing);
   if (
     isCacheFresh(existing) &&
     cacheMatchesModelUrl(existing, url) &&
@@ -1069,6 +1075,7 @@ async function resolveProductCache(productId, url, downloadFormat = null) {
       productId,
       (async () => {
         const cached = await ProductCache.findOne({ productId });
+        if (cached?.fileUrl && cacheMatchesModelUrl(cached, url)) assert3D66StoredDownload(cached);
         if (
           isCacheFresh(cached) &&
           cacheMatchesModelUrl(cached, url) &&
@@ -1094,6 +1101,7 @@ async function resolveProductCache(productId, url, downloadFormat = null) {
           cacheMatchesModelUrl(resolvedCache, url) &&
           cacheMatchesDownloadFormat(resolvedCache, downloadFormat)
         ) {
+          assert3D66StoredDownload(resolvedCache);
           return resolvedCache;
         }
 
@@ -1125,6 +1133,7 @@ async function resolveProductCache(productId, url, downloadFormat = null) {
           ...cacheFormatPatch(metadata.selectedFormat),
           isPurchased: true,
         };
+        assert3D66StoredDownload(cachePayload);
 
         if (writableCache?._id) {
           const updated = await ProductCache.findByIdAndUpdate(
@@ -1326,6 +1335,7 @@ export async function getLink(req, res, next) {
       }
     }
     if (activeRedownload) {
+      assert3D66StoredDownload(activeRedownload);
       if (!downloadFormat) {
         const redownloadCache = await ProductCache.findOne({ productId: activeRedownload.productId }).lean();
         const redownloadFormatSelection = await resolveDownloadFormatSelection(
@@ -1362,6 +1372,7 @@ export async function getLink(req, res, next) {
     if (cachePreview && !cacheMatchesModelUrl(cachePreview, url)) {
       cachePreview = null;
     }
+    if (cachePreview?.fileUrl) assert3D66StoredDownload(cachePreview);
     let expectedCreditCost = normalizeDownloadCreditCost(
       cachePreview?.creditCost,
       0,
@@ -1420,6 +1431,7 @@ export async function getLink(req, res, next) {
           }
         }
         if (previewRedownload) {
+          assert3D66StoredDownload(previewRedownload);
           if (!downloadFormat) {
             const redownloadCache = await ProductCache.findOne({ productId: previewRedownload.productId }).lean();
             const redownloadFormatSelection = await resolveDownloadFormatSelection(
@@ -1710,6 +1722,7 @@ export async function executeGetlinkForJob({ user, body, onProgress } = {}) {
 }
 
 async function refreshHistoryDownload(history, cookieValue, downloadFormatOverride = null) {
+  assert3D66StoredDownload(history);
   if (!history.sourceUrl && !history.resolvedSourceUrl) return history;
   const requestedFormat = downloadFormatOverride || history.downloadFormat || null;
   const refreshSourceUrl = history.resolvedSourceUrl || history.sourceUrl;
@@ -1755,6 +1768,7 @@ async function refreshHistoryDownload(history, cookieValue, downloadFormatOverri
       history.downloadFormat,
     creditUsed: history.creditUsed,
   };
+  assert3D66StoredDownload({ ...updatedFields, productId: history.productId });
 
   const cache = await ProductCache.findOne({ productId: history.productId });
   if (cache?._id) {
@@ -1846,6 +1860,7 @@ export async function prepareRedownload(req, res, next) {
       });
     }
 
+    assert3D66StoredDownload(history);
     const cache = await ProductCache.findOne({ productId: history.productId }).lean();
     let formatOptions = cacheDownloadFormatOptions(cache);
     const requestedFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
@@ -1869,6 +1884,7 @@ export async function prepareRedownload(req, res, next) {
         );
         formatOptions = sanitizeDownloadFormatOptions(formatSelection.formatOptions);
       } catch (formatError) {
+        if (is3D66CleanLinkError(formatError)) throw formatError;
         await writeSystemLog({
           type: "download",
           level: "warn",
@@ -1953,6 +1969,7 @@ export async function prepareRedownload(req, res, next) {
 }
 
 async function openDownloadResponse(history, req, signal) {
+  assert3D66StoredDownload(history);
   return with3D66Cookie(async (cookieValue) => {
     let activeHistory = history;
     if (!isCacheFresh(activeHistory)) {
@@ -2052,6 +2069,7 @@ export async function downloadGetlink(req, res, next) {
           "Download link da het han hoac khong hop le. Vui long mo lai tu trang Lich su / Getlink.",
       });
     }
+    assert3D66StoredDownload(history);
 
     downloadSlot = acquireDownloadSlot(req, ownerUserId, req.get("range"));
     if (!downloadSlot.ok) {

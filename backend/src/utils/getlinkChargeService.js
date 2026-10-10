@@ -4,6 +4,7 @@ import Getlink from "../models/Getlink.js";
 import { addCredit, deductCredit } from "./creditService.js";
 import logger from "./logger.js";
 import { publishAccountInvalidation } from "./accountEventBus.js";
+import { assert3D66StoredDownload } from "./3d66CleanLink.js";
 
 function transactionUnsupported(error) {
   const text = String(error?.message || error || "").toLowerCase();
@@ -78,6 +79,7 @@ async function chargeAndCreateGetlinkInternal(
 }
 
 export async function chargeAndCreateGetlink(input, dependencies) {
+  assert3D66StoredDownload(input.historyPayload);
   if (input.confirmedCreditCost != null && input.confirmedCreditCost !== input.creditCost) {
     throw Object.assign(new Error("Getlink price changed. Check the price and confirm again."), {
       status: 409, code: "GETLINK_PRICE_CHANGED", creditRequired: input.creditCost,
