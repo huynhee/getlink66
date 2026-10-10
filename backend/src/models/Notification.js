@@ -17,6 +17,7 @@ const notificationSchema = new mongoose.Schema(
       type: [{ type: String, enum: NOTIFICATION_PAGE_KEYS }],
       default: [],
     },
+    repeatOnVisit: { type: Boolean, default: false },
     imageUrl: { type: String, default: "" },
     actionLabel: { type: String, default: "" },
     actionUrl: { type: String, default: "" },

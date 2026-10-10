@@ -2,7 +2,7 @@ import Notification from "../models/Notification.js";
 import NotificationReceipt from "../models/NotificationReceipt.js";
 import User from "../models/User.js";
 import { hydrateAtlasUserFields } from "../utils/crossDatabaseHydration.js";
-import { notificationPageFromRequest, notificationPageQuery, parseNotificationDisplayPages } from "../utils/notificationPages.js";
+import { notificationPageFromRequest, notificationPageQuery, parseNotificationDisplayPages, parseNotificationRepeatOnVisit } from "../utils/notificationPages.js";
 import {
   isSafeId,
   limitedString,
@@ -42,6 +42,7 @@ function serializeNotification(item, userId, receiptIds = new Set()) {
     body: item.body,
     displayType: item.displayType || "dropdown",
     displayPages: Array.isArray(item.displayPages) ? item.displayPages : [],
+    repeatOnVisit: item.repeatOnVisit === true,
     imageUrl: item.imageUrl || "",
     actionLabel: item.actionLabel || "",
     actionUrl: item.actionUrl || "",
@@ -164,6 +165,7 @@ export async function adminCreateNotification(req, res, next) {
       "body",
       "displayType",
       "displayPages",
+      "repeatOnVisit",
       "imageUrl",
       "actionLabel",
       "actionUrl",
@@ -180,6 +182,7 @@ export async function adminCreateNotification(req, res, next) {
     const body = limitedString(req.body.body, 2000);
     const displayType = req.body.displayType === "fullscreen" ? "fullscreen" : "dropdown";
     const displayPages = parseNotificationDisplayPages(req.body.displayPages);
+    const repeatOnVisit = parseNotificationRepeatOnVisit(req.body.repeatOnVisit);
     const imageUrl = safeNotificationUrl(req.body.imageUrl, { allowRelative: false });
     const actionLabel = limitedString(req.body.actionLabel, 80);
     const actionUrl = safeNotificationUrl(req.body.actionUrl, { allowRelative: true });
@@ -229,6 +232,7 @@ export async function adminCreateNotification(req, res, next) {
       body,
       displayType,
       displayPages,
+      repeatOnVisit,
       imageUrl,
       actionLabel,
       actionUrl,
@@ -254,6 +258,7 @@ export async function adminUpdateNotification(req, res, next) {
       "body",
       "displayType",
       "displayPages",
+      "repeatOnVisit",
       "imageUrl",
       "actionLabel",
       "actionUrl",
@@ -272,6 +277,9 @@ export async function adminUpdateNotification(req, res, next) {
     const displayPagesPatch = req.body.displayPages === undefined
       ? {}
       : { displayPages: parseNotificationDisplayPages(req.body.displayPages) };
+    const repeatOnVisitPatch = req.body.repeatOnVisit === undefined
+      ? {}
+      : { repeatOnVisit: parseNotificationRepeatOnVisit(req.body.repeatOnVisit) };
     const imageUrl = safeNotificationUrl(req.body.imageUrl, { allowRelative: false });
     const actionLabel = limitedString(req.body.actionLabel, 80);
     const actionUrl = safeNotificationUrl(req.body.actionUrl, { allowRelative: true });
@@ -324,6 +332,7 @@ export async function adminUpdateNotification(req, res, next) {
           body,
           displayType,
           ...displayPagesPatch,
+          ...repeatOnVisitPatch,
           imageUrl,
           actionLabel,
           actionUrl,

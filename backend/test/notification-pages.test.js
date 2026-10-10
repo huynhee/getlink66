@@ -192,3 +192,44 @@ test("malformed or unknown page queries cannot widen listing or read operations"
   }
   assert.equal(await NotificationReceipt.countDocuments(), 0);
 });
+
+test("repeat-on-visit defaults off for old notices and remains available after reading", async () => {
+  await Notification.create({ ...baseBody, title: "Legacy", isActive: true });
+  const once = await create({ displayType: "fullscreen" });
+  assert.equal(once.repeatOnVisit, false);
+  const repeated = await create({ displayType: "fullscreen", displayPages: ["getlink"], repeatOnVisit: true });
+  await invoke(markNotificationRead, { params: { id: repeated._id }, query: { page: "getlink" } });
+  const notices = (await list("getlink")).notifications;
+  assert.equal(notices.find((item) => item.title === "Legacy").repeatOnVisit, false);
+  assert.equal(notices.find((item) => item._id === once._id).repeatOnVisit, false);
+  assert.equal(notices.find((item) => item._id === repeated._id).repeatOnVisit, true);
+  assert.equal(notices.find((item) => item._id === repeated._id).isRead, true);
+  assert.ok(!(await list("models")).notifications.some((item) => item._id === repeated._id));
+});
+
+test("admin can enable and disable repeat-on-visit while older edits preserve the setting", async () => {
+  const notice = await create({ displayType: "fullscreen" });
+  const update = async (patch) => {
+    const result = await invoke(adminUpdateNotification, {
+      params: { id: notice._id }, body: { ...baseBody, displayType: "fullscreen", ...patch },
+    });
+    assert.equal(result.error, null);
+    return result.payload.notification;
+  };
+  assert.equal((await update({ repeatOnVisit: true })).repeatOnVisit, true);
+  assert.equal((await update({ title: "Older admin edit" })).repeatOnVisit, true);
+  assert.equal((await update({ repeatOnVisit: false })).repeatOnVisit, false);
+});
+
+test("invalid repeat flags cannot be coerced into enabling popup replay", async () => {
+  const notice = await create({ repeatOnVisit: true });
+  for (const repeatOnVisit of [null, "true", "false", 0, 1, [], {}]) {
+    const body = { ...baseBody, repeatOnVisit };
+    const created = await invoke(adminCreateNotification, { body });
+    const updated = await invoke(adminUpdateNotification, { params: { id: notice._id }, body });
+    assert.equal(created.error?.status, 400);
+    assert.equal(updated.error?.status, 400);
+    assert.equal((await Notification.findById(notice._id)).repeatOnVisit, true);
+  }
+  assert.equal(await Notification.countDocuments(), 1);
+});

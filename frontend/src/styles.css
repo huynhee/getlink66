@@ -6888,6 +6888,10 @@ label {
   accent-color: var(--neon-green);
 }
 
+.notificationRepeatToggle {
+  margin-top: 14px;
+}
+
 .notificationPageSummary {
   display: block;
   margin-top: 4px;

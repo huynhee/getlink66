@@ -11,6 +11,13 @@ export function parseNotificationDisplayPages(value = []) {
   return [...new Set(value)];
 }
 
+export function parseNotificationRepeatOnVisit(value = false) {
+  if (typeof value !== "boolean") {
+    throw Object.assign(new Error("Invalid notification repeat setting"), { status: 400 });
+  }
+  return value;
+}
+
 export function notificationPageFromRequest(req) {
   const page = req.query?.page;
   if (page === undefined) return "";

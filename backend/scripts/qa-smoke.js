@@ -454,6 +454,14 @@ async function verifyNotificationPageScopes(page, context, viewport) {
     await page.goto(`${frontendOrigin}/${selectedPage}`, { waitUntil: "domcontentloaded" });
     if (new URL((await result).url()).searchParams.get("page") !== selectedPage) throw new Error("Notification polling lost its current page");
   };
+  const navigateInApp = async (selectedPage, { expectRequest = true } = {}) => {
+    const timeOrigin = await page.evaluate(() => globalThis.performance.timeOrigin);
+    if (viewport === "mobile" && await page.locator(".mobileMenuButton").getAttribute("aria-expanded") !== "true") await page.locator(".mobileMenuButton").click();
+    const result = expectRequest ? page.waitForResponse((response) => new URL(response.url()).pathname === "/api/notifications") : null;
+    await page.locator(".topbar .tabs").getByRole("button", { name: selectedPage === "getlink" ? /Getlink/i : /Models?/i }).click();
+    if (result && new URL((await result).url()).searchParams.get("page") !== selectedPage) throw new Error("SPA notification navigation lost its page");
+    if (await page.evaluate(() => globalThis.performance.timeOrigin) !== timeOrigin) throw new Error("Notification visit test unexpectedly reloaded the page");
+  };
   await context.route(eventsPattern, stopEvents);
   await context.route(adminPattern, adminHandler);
   await context.route(publicPattern, publicHandler);
@@ -500,15 +508,40 @@ async function verifyNotificationPageScopes(page, context, viewport) {
         await updated;
         await visit("getlink");
         await page.locator(".fullscreenNotice h2").filter({ hasText: title }).waitFor();
-        await page.locator(".fullscreenNotice").screenshot({ path: path.join(screenshotRoot, `${viewport}-getlink-notice-${theme}-${language}.png`) });
-        await page.evaluate(() => {
-          globalThis.history.pushState({}, "", "/models");
-          globalThis.dispatchEvent(new globalThis.PopStateEvent("popstate"));
-        });
-        await page.locator(".fullscreenNotice").waitFor({ state: "hidden" });
+        await page.locator(".fullscreenNoticeClose").click();
+        await navigateInApp("models");
+        await navigateInApp("getlink");
+        await openBell("getlink");
+        if (await page.locator(".fullscreenNotice").count()) throw new Error("Default popup replayed after dismissal without opting in");
 
         await openEditor();
         await row.getByRole("button", { name: /^(Sửa|Edit)$/ }).click();
+        const repeatToggle = form.getByRole("checkbox", { name: /Luôn hiện khi vào trang|Show on every page visit/ });
+        if (await repeatToggle.isChecked()) throw new Error("Popup replay defaulted on");
+        await repeatToggle.check();
+        const repeated = page.waitForResponse((candidate) => new URL(candidate.url()).pathname === `/api/admin/notifications/${notice._id}` && candidate.request().method() === "PUT");
+        await save().click();
+        if (!(await (await repeated).json()).notification.repeatOnVisit) throw new Error("Repeat-on-visit was not persisted");
+        await visit("getlink");
+        await page.locator(".fullscreenNotice h2").filter({ hasText: title }).waitFor();
+        await page.locator(".fullscreenNotice").screenshot({ path: path.join(screenshotRoot, `${viewport}-getlink-notice-${theme}-${language}.png`) });
+        await page.locator(".fullscreenNoticeClose").click();
+        await navigateInApp("getlink", { expectRequest: false });
+        await page.locator(".fullscreenNotice h2").filter({ hasText: title }).waitFor();
+        await page.locator(".fullscreenNoticeClose").click();
+        await navigateInApp("models");
+        await page.locator(".fullscreenNotice").waitFor({ state: "hidden" });
+        await navigateInApp("getlink");
+        await page.locator(".fullscreenNotice h2").filter({ hasText: title }).waitFor();
+        await page.locator(".fullscreenNoticeClose").click();
+        await page.goBack({ waitUntil: "domcontentloaded" });
+        await page.locator(".fullscreenNotice").waitFor({ state: "hidden" });
+        await page.goForward({ waitUntil: "domcontentloaded" });
+        await page.locator(".fullscreenNotice h2").filter({ hasText: title }).waitFor();
+
+        await openEditor();
+        await row.getByRole("button", { name: /^(Sửa|Edit)$/ }).click();
+        if (!await repeatToggle.isChecked()) throw new Error("Editing lost repeat-on-visit");
         await form.getByRole("radio", { name: /Tất cả trang|All pages/ }).check();
         const restored = page.waitForResponse((candidate) => new URL(candidate.url()).pathname === `/api/admin/notifications/${notice._id}` && candidate.request().method() === "PUT");
         await save().click();
@@ -1209,6 +1242,7 @@ async function main() {
       unifiedSubscriptionToggles: true,
       adminVoucherPlanScopes: true,
       notificationPageScopes: true,
+      notificationRepeatOnVisit: true,
       referralRewardSettings: true,
       voucherPlanScopes: true,
       subscriptionCatalog: true,

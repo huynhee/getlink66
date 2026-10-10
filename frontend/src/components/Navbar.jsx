@@ -127,6 +127,7 @@ export default function Navbar({
   const notificationRef = useRef(null);
   const [notifications, setNotifications] = useState([]);
   const [sessionHiddenFullscreenIds, setSessionHiddenFullscreenIds] = useState(() => new Set());
+  const [visitHiddenFullscreenIds, setVisitHiddenFullscreenIds] = useState(() => new Set());
   const userId = user?._id;
   const notificationPage = page || "home";
   const visibleNotifications = notifications.filter((item) => notificationMatchesPage(item, notificationPage));
@@ -134,7 +135,8 @@ export default function Navbar({
     (item) => item.displayType !== "fullscreen" && !item.isRead
   ).length;
   const fullscreenNotification = visibleNotifications.find(
-    (item) => item.displayType === "fullscreen" && !sessionHiddenFullscreenIds.has(item._id)
+    (item) => item.displayType === "fullscreen"
+      && !(item.repeatOnVisit === true ? visitHiddenFullscreenIds : sessionHiddenFullscreenIds).has(item._id)
   );
 
   useEffect(() => {
@@ -152,6 +154,7 @@ export default function Navbar({
     let cancelled = false;
     const controller = new AbortController();
     setNotifications([]);
+    setVisitHiddenFullscreenIds(new Set());
     async function loadNotifications() {
       if (!userId) {
         setNotifications([]);
@@ -250,16 +253,19 @@ export default function Navbar({
 
   function goHome() {
     closeMenu();
+    setVisitHiddenFullscreenIds(new Set());
     onNavigate?.("/");
   }
 
   function goPage(key) {
     closeMenu();
+    setVisitHiddenFullscreenIds(new Set());
     setPage(key);
   }
 
   function goPath(path) {
     closeMenu();
+    setVisitHiddenFullscreenIds(new Set());
     onNavigate?.(path);
   }
 
@@ -313,7 +319,9 @@ export default function Navbar({
 
   function closeFullscreenNotification(id) {
     if (!id) return;
-    setSessionHiddenFullscreenIds((current) => {
+    const item = notifications.find((notification) => notification._id === id);
+    const hide = item?.repeatOnVisit === true ? setVisitHiddenFullscreenIds : setSessionHiddenFullscreenIds;
+    hide((current) => {
       const next = new Set(current);
       next.add(id);
       return next;

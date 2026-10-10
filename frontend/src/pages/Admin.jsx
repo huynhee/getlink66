@@ -60,6 +60,7 @@ const emptyNotification = {
   displayType: "dropdown",
   displayPageScope: "all",
   displayPages: [],
+  repeatOnVisit: false,
   imageUrl: "",
   actionLabel: "",
   actionUrl: "",
@@ -946,6 +947,7 @@ export default function Admin({ user, language = "vi" }) {
       displayType: item.displayType || "dropdown",
       displayPageScope: item.displayPages?.length ? "pages" : "all",
       displayPages: Array.isArray(item.displayPages) ? item.displayPages : [],
+      repeatOnVisit: item.repeatOnVisit === true,
       imageUrl: item.imageUrl || "",
       actionLabel: item.actionLabel || "",
       actionUrl: item.actionUrl || "",
@@ -2829,6 +2831,16 @@ export default function Admin({ user, language = "vi" }) {
                   ))}
                 </div>
               )}
+              {notificationForm.displayType === "fullscreen" && (
+                <label className="notificationRepeatToggle">
+                  <input
+                    type="checkbox"
+                    checked={notificationForm.repeatOnVisit}
+                    onChange={(event) => setNotificationForm((form) => ({ ...form, repeatOnVisit: event.target.checked }))}
+                  />
+                  {l("Luôn hiện khi vào trang", "Show on every page visit")}
+                </label>
+              )}
             </fieldset>
             <div className="inputRow">
               <input
@@ -2907,6 +2919,9 @@ export default function Admin({ user, language = "vi" }) {
                     ? `${item.userIds?.length || 0} ${l("người nhận", "recipients")}`
                     : l("Tất cả người dùng", "All users")}
                   <small className="notificationPageSummary">{notificationPageLabels(item.displayPages, language)}</small>
+                  {item.displayType === "fullscreen" && item.repeatOnVisit && (
+                    <small className="notificationPageSummary">{l("Luôn hiện khi vào trang", "Show on every page visit")}</small>
+                  )}
                 </span>
                 <span>{item.body}</span>
                 <time>{new Date(item.createdAt).toLocaleString("vi-VN")}</time>
