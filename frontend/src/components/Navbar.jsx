@@ -5,6 +5,7 @@ import CoinAmount from "./CoinAmount.jsx";
 import { translations } from "../i18n.js";
 import { setFaviconNotificationCount } from "../utils/faviconProgress.js";
 import { suppressGoogleOneTap } from "../utils/useGoogleOneTap.js";
+import { notificationMatchesPage } from "../utils/notificationPages.js";
 
 const DEFAULT_MODEL_CATALOG_PATH = "/api/marketplace/models?page=1&limit=60&sort=newest";
 
@@ -127,10 +128,12 @@ export default function Navbar({
   const [notifications, setNotifications] = useState([]);
   const [sessionHiddenFullscreenIds, setSessionHiddenFullscreenIds] = useState(() => new Set());
   const userId = user?._id;
-  const unreadCount = notifications.filter(
+  const notificationPage = page || "home";
+  const visibleNotifications = notifications.filter((item) => notificationMatchesPage(item, notificationPage));
+  const unreadCount = visibleNotifications.filter(
     (item) => item.displayType !== "fullscreen" && !item.isRead
   ).length;
-  const fullscreenNotification = notifications.find(
+  const fullscreenNotification = visibleNotifications.find(
     (item) => item.displayType === "fullscreen" && !sessionHiddenFullscreenIds.has(item._id)
   );
 
@@ -147,13 +150,15 @@ export default function Navbar({
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    setNotifications([]);
     async function loadNotifications() {
       if (!userId) {
         setNotifications([]);
         return;
       }
       try {
-        const data = await api("/api/notifications");
+        const data = await api(`/api/notifications?page=${encodeURIComponent(notificationPage)}`, { signal: controller.signal });
         if (!cancelled) setNotifications(data.notifications || []);
       } catch {
         if (!cancelled) setNotifications([]);
@@ -163,9 +168,10 @@ export default function Navbar({
     const timer = userId ? window.setInterval(loadNotifications, 60_000) : null;
     return () => {
       cancelled = true;
+      controller.abort();
       if (timer) window.clearInterval(timer);
     };
-  }, [userId]);
+  }, [userId, notificationPage]);
 
   useEffect(() => {
     setFaviconNotificationCount(unreadCount);
@@ -267,17 +273,19 @@ export default function Navbar({
       items.map((item) => (item._id === id ? { ...item, isRead: true } : item))
     );
     try {
-      await api(`/api/notifications/${id}/read`, { method: "POST" });
+      await api(`/api/notifications/${id}/read?page=${encodeURIComponent(notificationPage)}`, { method: "POST" });
     } catch {
       // UI can stay read locally; next poll will correct it if the request failed.
     }
   }
 
   async function markAllNotificationsRead() {
-    if (!notifications.some((item) => !item.isRead)) return;
-    setNotifications((items) => items.map((item) => ({ ...item, isRead: true })));
+    if (!visibleNotifications.some((item) => !item.isRead)) return;
+    setNotifications((items) => items.map((item) => (
+      notificationMatchesPage(item, notificationPage) ? { ...item, isRead: true } : item
+    )));
     try {
-      await api("/api/notifications/read-all", { method: "POST" });
+      await api(`/api/notifications/read-all?page=${encodeURIComponent(notificationPage)}`, { method: "POST" });
     } catch {
       // The next notification poll restores server state if persistence failed.
     }
@@ -386,7 +394,7 @@ export default function Navbar({
                 </button>
                 <div className="notificationDropdown">
                   <strong>{t.notifications}</strong>
-                  {notifications.slice(0, 8).map((item) => (
+                  {visibleNotifications.slice(0, 8).map((item) => (
                     <button
                       key={item._id}
                       type="button"
@@ -398,7 +406,7 @@ export default function Navbar({
                       <time>{new Date(item.createdAt).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</time>
                     </button>
                   ))}
-                  {!notifications.length && <p>{t.noNotifications}</p>}
+                  {!visibleNotifications.length && <p>{t.noNotifications}</p>}
                 </div>
               </div>
               <ThemeToggle theme={theme} language={language} onThemeToggle={onThemeToggle} />

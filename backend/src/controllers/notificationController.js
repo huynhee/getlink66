@@ -2,18 +2,20 @@ import Notification from "../models/Notification.js";
 import NotificationReceipt from "../models/NotificationReceipt.js";
 import User from "../models/User.js";
 import { hydrateAtlasUserFields } from "../utils/crossDatabaseHydration.js";
+import { notificationPageFromRequest, notificationPageQuery, parseNotificationDisplayPages } from "../utils/notificationPages.js";
 import {
   isSafeId,
   limitedString,
   rejectUnknownKeys,
 } from "../utils/validators.js";
 
-function activeNotificationQuery(userId) {
+function activeNotificationQuery(userId, page = "") {
   const now = new Date();
   return {
     isActive: true,
     $or: [{ targetType: "all" }, { targetType: "users", userIds: userId }],
     $and: [
+      notificationPageQuery(page),
       {
         $or: [
           { startsAt: { $exists: false } },
@@ -39,6 +41,7 @@ function serializeNotification(item, userId, receiptIds = new Set()) {
     title: item.title,
     body: item.body,
     displayType: item.displayType || "dropdown",
+    displayPages: Array.isArray(item.displayPages) ? item.displayPages : [],
     imageUrl: item.imageUrl || "",
     actionLabel: item.actionLabel || "",
     actionUrl: item.actionUrl || "",
@@ -67,7 +70,7 @@ function safeNotificationUrl(value = "", { allowRelative = true } = {}) {
 export async function listNotifications(req, res, next) {
   try {
     const notifications = await Notification.find(
-      activeNotificationQuery(req.user._id),
+      activeNotificationQuery(req.user._id, notificationPageFromRequest(req)),
     )
       .sort({ createdAt: -1 })
       .limit(50)
@@ -103,7 +106,7 @@ export async function markNotificationRead(req, res, next) {
     }
     const notification = await Notification.findOne({
       _id: req.params.id,
-      ...activeNotificationQuery(req.user._id),
+      ...activeNotificationQuery(req.user._id, notificationPageFromRequest(req)),
     });
     if (!notification) {
       return res.status(404).json({ message: "Notification not found" });
@@ -122,7 +125,7 @@ export async function markNotificationRead(req, res, next) {
 export async function markAllNotificationsRead(req, res, next) {
   try {
     const notifications = await Notification.find(
-      activeNotificationQuery(req.user._id),
+      activeNotificationQuery(req.user._id, notificationPageFromRequest(req)),
     )
       .select("_id")
       .limit(50)
@@ -160,6 +163,7 @@ export async function adminCreateNotification(req, res, next) {
       "title",
       "body",
       "displayType",
+      "displayPages",
       "imageUrl",
       "actionLabel",
       "actionUrl",
@@ -175,6 +179,7 @@ export async function adminCreateNotification(req, res, next) {
     const title = limitedString(req.body.title, 120);
     const body = limitedString(req.body.body, 2000);
     const displayType = req.body.displayType === "fullscreen" ? "fullscreen" : "dropdown";
+    const displayPages = parseNotificationDisplayPages(req.body.displayPages);
     const imageUrl = safeNotificationUrl(req.body.imageUrl, { allowRelative: false });
     const actionLabel = limitedString(req.body.actionLabel, 80);
     const actionUrl = safeNotificationUrl(req.body.actionUrl, { allowRelative: true });
@@ -223,6 +228,7 @@ export async function adminCreateNotification(req, res, next) {
       title,
       body,
       displayType,
+      displayPages,
       imageUrl,
       actionLabel,
       actionUrl,
@@ -247,6 +253,7 @@ export async function adminUpdateNotification(req, res, next) {
       "title",
       "body",
       "displayType",
+      "displayPages",
       "imageUrl",
       "actionLabel",
       "actionUrl",
@@ -262,6 +269,9 @@ export async function adminUpdateNotification(req, res, next) {
     const title = limitedString(req.body.title, 120);
     const body = limitedString(req.body.body, 2000);
     const displayType = req.body.displayType === "fullscreen" ? "fullscreen" : "dropdown";
+    const displayPagesPatch = req.body.displayPages === undefined
+      ? {}
+      : { displayPages: parseNotificationDisplayPages(req.body.displayPages) };
     const imageUrl = safeNotificationUrl(req.body.imageUrl, { allowRelative: false });
     const actionLabel = limitedString(req.body.actionLabel, 80);
     const actionUrl = safeNotificationUrl(req.body.actionUrl, { allowRelative: true });
@@ -313,6 +323,7 @@ export async function adminUpdateNotification(req, res, next) {
           title,
           body,
           displayType,
+          ...displayPagesPatch,
           imageUrl,
           actionLabel,
           actionUrl,

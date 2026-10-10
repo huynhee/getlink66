@@ -11,6 +11,7 @@ import { api } from "../api.js";
 import { text, translations } from "../i18n.js";
 import { formatPaymentMoney, parseAdminUsdPrice } from "../utils/paymentPresentation.js";
 import { subscriptionBillingPeriod } from "../utils/membershipPresentation.js";
+import { NOTIFICATION_PAGES, notificationPageLabels } from "../utils/notificationPages.js";
 
 const emptyPackage = {
   name: "",
@@ -57,6 +58,8 @@ const emptyNotification = {
   title: "",
   body: "",
   displayType: "dropdown",
+  displayPageScope: "all",
+  displayPages: [],
   imageUrl: "",
   actionLabel: "",
   actionUrl: "",
@@ -905,10 +908,16 @@ export default function Admin({ user, language = "vi" }) {
     event.preventDefault();
     try {
       setNotificationMsg("");
+      const { displayPageScope, ...payload } = notificationForm;
+      if (displayPageScope === "pages" && !payload.displayPages.length) {
+        setNotificationMsg(l("Chọn ít nhất một trang hiển thị.", "Select at least one display page."));
+        return;
+      }
       await api(editingNotificationId ? `/api/admin/notifications/${editingNotificationId}` : "/api/admin/notifications", {
         method: editingNotificationId ? "PUT" : "POST",
         body: JSON.stringify({
-          ...notificationForm,
+          ...payload,
+          displayPages: displayPageScope === "all" ? [] : payload.displayPages,
           startsAt: notificationForm.startsAt
             ? new Date(notificationForm.startsAt).toISOString()
             : undefined,
@@ -935,6 +944,8 @@ export default function Admin({ user, language = "vi" }) {
       title: item.title || "",
       body: item.body || "",
       displayType: item.displayType || "dropdown",
+      displayPageScope: item.displayPages?.length ? "pages" : "all",
+      displayPages: Array.isArray(item.displayPages) ? item.displayPages : [],
       imageUrl: item.imageUrl || "",
       actionLabel: item.actionLabel || "",
       actionUrl: item.actionUrl || "",
@@ -2778,6 +2789,47 @@ export default function Admin({ user, language = "vi" }) {
                 <option value="fullscreen">{l("Popup phủ toàn màn hình", "Fullscreen popup")}</option>
               </select>
             </div>
+            <fieldset className="notificationPageScope">
+              <legend>{l("Trang hiển thị", "Display pages")}</legend>
+              <div className="notificationScopeModes">
+                {[
+                  { value: "all", label: l("Tất cả trang", "All pages") },
+                  { value: "pages", label: l("Trang cụ thể", "Selected pages") },
+                ].map((scope) => (
+                  <label key={scope.value}>
+                    <input
+                      type="radio"
+                      name="notification-page-scope"
+                      checked={notificationForm.displayPageScope === scope.value}
+                      onChange={() => setNotificationForm((form) => ({ ...form, displayPageScope: scope.value }))}
+                    />
+                    {scope.label}
+                  </label>
+                ))}
+              </div>
+              {notificationForm.displayPageScope === "pages" && (
+                <div className="notificationPageOptions">
+                  {NOTIFICATION_PAGES.map((option) => (
+                    <label key={option.key}>
+                      <input
+                        type="checkbox"
+                        checked={notificationForm.displayPages.includes(option.key)}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setNotificationForm((form) => ({
+                            ...form,
+                            displayPages: checked
+                              ? [...form.displayPages, option.key]
+                              : form.displayPages.filter((key) => key !== option.key),
+                          }));
+                        }}
+                      />
+                      {l(option.vi, option.en)}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </fieldset>
             <div className="inputRow">
               <input
                 type="datetime-local"
@@ -2832,7 +2884,8 @@ export default function Admin({ user, language = "vi" }) {
             <div className="inputRow" style={{ justifyContent: "start" }}>
               <button
                 className="smallButton"
-                disabled={!notificationForm.title || !notificationForm.body}
+                disabled={!notificationForm.title || !notificationForm.body
+                  || (notificationForm.displayPageScope === "pages" && !notificationForm.displayPages.length)}
                 style={{ justifySelf: "start", minHeight: 42, padding: "0 20px" }}
               >
                 <Megaphone size={16} /> {editingNotificationId ? l("Cập nhật thông báo", "Update notification") : l("Gửi thông báo", "Send notification")}
@@ -2853,6 +2906,7 @@ export default function Admin({ user, language = "vi" }) {
                   {item.displayType === "fullscreen" ? "Popup" : l("Chuông", "Bell")} - {item.targetType === "users"
                     ? `${item.userIds?.length || 0} ${l("người nhận", "recipients")}`
                     : l("Tất cả người dùng", "All users")}
+                  <small className="notificationPageSummary">{notificationPageLabels(item.displayPages, language)}</small>
                 </span>
                 <span>{item.body}</span>
                 <time>{new Date(item.createdAt).toLocaleString("vi-VN")}</time>

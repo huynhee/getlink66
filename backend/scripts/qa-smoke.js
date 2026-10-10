@@ -398,6 +398,135 @@ async function verifyAdminPackageDeletion(page, context, viewport) {
   }
 }
 
+async function verifyNotificationPageScopes(page, context, viewport) {
+  const initialLanguage = await page.locator("html").getAttribute("lang");
+  const initialTheme = await page.locator("html").getAttribute("data-theme");
+  const eventsPattern = "**/api/account/events";
+  const stopEvents = (route) => route.fulfill({ status: 204, body: "" });
+  const adminPattern = /\/api\/admin\/notifications(?:\/[^/?]+)?(?:\?.*)?$/;
+  const publicPattern = /\/api\/notifications(?:\/[^?]+)?(?:\?.*)?$/;
+  let notifications = [];
+  const adminHandler = (route) => {
+    const request = route.request();
+    if (request.method() === "GET") return route.fulfill({ json: { notifications } });
+    const data = request.postDataJSON();
+    const id = request.method() === "PUT" ? new URL(request.url()).pathname.split("/").at(-1) : "a".repeat(24);
+    const notification = { ...data, _id: id, isRead: false, createdAt: new Date().toISOString() };
+    notifications = [...notifications.filter((item) => item._id !== id), notification];
+    return route.fulfill({ json: { notification } });
+  };
+  const publicHandler = (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === "GET") {
+      // Return the broad fixture list to exercise immediate client-side filtering too.
+      return route.fulfill({ json: { notifications } });
+    }
+    const selected = url.searchParams.get("page");
+    for (const item of notifications) {
+      if (!item.displayPages?.length || item.displayPages.includes(selected)) item.isRead = true;
+    }
+    return route.fulfill({ json: { ok: true } });
+  };
+  const setPresentation = async (language, theme) => {
+    const button = page.locator(".languageToggleSingle button");
+    await button.waitFor({ state: "attached" });
+    if (viewport === "mobile" && !await button.isVisible()) await page.locator(".mobileMenuButton").click();
+    if (await page.locator("html").getAttribute("lang") !== language) await button.click();
+    if (await page.locator("html").getAttribute("data-theme") !== theme) await page.locator(".themeToggle").click();
+    if (await page.locator(".mobileMenuButton").getAttribute("aria-expanded") === "true") await page.locator(".mobileMenuButton").click();
+  };
+  const openEditor = async () => {
+    await page.goto(`${frontendOrigin}/admin`, { waitUntil: "domcontentloaded" });
+    await page.getByRole("navigation", { name: "Admin sections", exact: true }).getByRole("button", { name: "Website", exact: true }).click();
+    await page.getByRole("navigation", { name: "Admin subsections", exact: true }).getByRole("button", { name: /Thông báo|Notifications/ }).click();
+    await page.locator(".notificationEditor").waitFor();
+  };
+  const openBell = async (selectedPage) => {
+    await page.locator(".notificationButton").waitFor({ state: "attached" });
+    if (viewport === "mobile" && !await page.locator(".notificationButton").isVisible()) await page.locator(".mobileMenuButton").click();
+    const read = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/notifications/read-all");
+    await page.locator(".notificationButton").click();
+    if (new URL((await read).url()).searchParams.get("page") !== selectedPage) throw new Error("Notification mark-all lost its current page");
+  };
+  const visit = async (selectedPage) => {
+    const result = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/notifications");
+    await page.goto(`${frontendOrigin}/${selectedPage}`, { waitUntil: "domcontentloaded" });
+    if (new URL((await result).url()).searchParams.get("page") !== selectedPage) throw new Error("Notification polling lost its current page");
+  };
+  await context.route(eventsPattern, stopEvents);
+  await context.route(adminPattern, adminHandler);
+  await context.route(publicPattern, publicHandler);
+  try {
+    for (const language of ["vi", "en"]) {
+      for (const theme of ["light", "dark"]) {
+        notifications = [];
+        await openEditor();
+        await setPresentation(language, theme);
+        const form = page.locator(".notificationEditor");
+        const title = `QA Getlink notice ${viewport} ${theme} ${language}`;
+        await form.locator(".notificationTitleInput").fill(title);
+        await form.locator("textarea").last().fill("QA page-scoped notification");
+        await form.getByRole("radio", { name: /Trang cụ thể|Selected pages/ }).check();
+        const save = () => form.getByRole("button", { name: /^(Gửi thông báo|Send notification|Cập nhật thông báo|Update notification)$/ });
+        if (await save().isEnabled()) throw new Error("An empty selected-page scope can be submitted");
+        await form.getByRole("checkbox", { name: "Getlink", exact: true }).check();
+        await form.getByRole("checkbox", { name: /^Models?$/ }).check();
+        if (await form.locator(".notificationPageScope").evaluate((element) => element.scrollWidth > element.clientWidth + 2)) throw new Error("Notification page selector overflows");
+        await form.screenshot({ path: path.join(screenshotRoot, `${viewport}-notification-pages-${theme}-${language}.png`) });
+        await form.getByRole("checkbox", { name: /^Models?$/ }).uncheck();
+        const created = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/admin/notifications" && response.request().method() === "POST");
+        await save().click();
+        const response = await created;
+        const notice = (await response.json()).notification;
+        if (notice.displayPages.join(",") !== "getlink" || "displayPageScope" in notice) throw new Error("Notification scope was not saved correctly");
+        notifications.push({ _id: "b".repeat(24), title: "QA global notice", body: "Global fixture", displayPages: [], displayType: "dropdown", isRead: false });
+
+        await visit("models");
+        await openBell("models");
+        if (await page.locator(".notificationDropdown button").filter({ hasText: title }).count()) throw new Error("Getlink-only bell notice leaked into Models");
+        await visit("getlink");
+        await openBell("getlink");
+        if (await page.locator(".notificationDropdown button").filter({ hasText: title }).count() !== 1) throw new Error("Getlink-only bell notice is missing on Getlink");
+
+        await openEditor();
+        const row = page.locator(".tableRow").filter({ has: page.locator("strong").filter({ hasText: title }) });
+        await row.getByRole("button", { name: /^(Sửa|Edit)$/ }).click();
+        if (!await form.getByRole("checkbox", { name: "Getlink", exact: true }).isChecked()
+          || await form.getByRole("checkbox", { name: /^Models?$/ }).isChecked()) throw new Error("Editing lost notification page scope");
+        await form.locator("select").nth(1).selectOption("fullscreen");
+        const updated = page.waitForResponse((candidate) => new URL(candidate.url()).pathname === `/api/admin/notifications/${notice._id}` && candidate.request().method() === "PUT");
+        await save().click();
+        await updated;
+        await visit("getlink");
+        await page.locator(".fullscreenNotice h2").filter({ hasText: title }).waitFor();
+        await page.locator(".fullscreenNotice").screenshot({ path: path.join(screenshotRoot, `${viewport}-getlink-notice-${theme}-${language}.png`) });
+        await page.evaluate(() => {
+          globalThis.history.pushState({}, "", "/models");
+          globalThis.dispatchEvent(new globalThis.PopStateEvent("popstate"));
+        });
+        await page.locator(".fullscreenNotice").waitFor({ state: "hidden" });
+
+        await openEditor();
+        await row.getByRole("button", { name: /^(Sửa|Edit)$/ }).click();
+        await form.getByRole("radio", { name: /Tất cả trang|All pages/ }).check();
+        const restored = page.waitForResponse((candidate) => new URL(candidate.url()).pathname === `/api/admin/notifications/${notice._id}` && candidate.request().method() === "PUT");
+        await save().click();
+        if ((await (await restored).json()).notification.displayPages.length) throw new Error("All-page notification scope was not restored");
+        await visit("models");
+        await page.locator(".fullscreenNotice h2").filter({ hasText: title }).waitFor();
+        notifications = [];
+      }
+    }
+  } finally {
+    await context.unroute(adminPattern, adminHandler);
+    await context.unroute(publicPattern, publicHandler);
+    await page.goto(`${frontendOrigin}/models`, { waitUntil: "domcontentloaded" });
+    await setPresentation(initialLanguage, initialTheme);
+    await context.unroute(eventsPattern, stopEvents);
+  }
+}
+
 async function verifyAdminVoucherPlanScopes(page, context, viewport) {
   const initialLanguage = await page.locator("html").getAttribute("lang");
   const initialTheme = await page.locator("html").getAttribute("data-theme");
@@ -1057,6 +1186,7 @@ async function main() {
       await verifyLanguageFlags(page, viewport.name, "admin");
       await verifyAdminPackageDeletion(page, context, viewport.name);
       await verifyAdminVoucherPlanScopes(page, context, viewport.name);
+      await verifyNotificationPageScopes(page, context, viewport.name);
       await verifyReferralRewardSettings(page, context, viewport.name);
       await verifyConfiguredCreditCopy(page, context, viewport.name);
       await verifyLiveAccountBalance(page, context);
@@ -1078,6 +1208,7 @@ async function main() {
       adminPackageDeletion: true,
       unifiedSubscriptionToggles: true,
       adminVoucherPlanScopes: true,
+      notificationPageScopes: true,
       referralRewardSettings: true,
       voucherPlanScopes: true,
       subscriptionCatalog: true,

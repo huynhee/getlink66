@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 import { marketplaceModel } from "../config/modelFactory.js";
+import { NOTIFICATION_PAGE_KEYS } from "../utils/notificationPages.js";
 
 const notificationSchema = new mongoose.Schema(
   {
@@ -11,6 +12,10 @@ const notificationSchema = new mongoose.Schema(
       enum: ["dropdown", "fullscreen"],
       default: "dropdown",
       index: true,
+    },
+    displayPages: {
+      type: [{ type: String, enum: NOTIFICATION_PAGE_KEYS }],
+      default: [],
     },
     imageUrl: { type: String, default: "" },
     actionLabel: { type: String, default: "" },
