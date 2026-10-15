@@ -1,4 +1,5 @@
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
+import { create3D66CollectionResolver } from "./3d66CollectionResolver.js";
 import {
   assert3D66BrowserDownloadRequest, assert3D66CleanModelUrl, assert3D66DownloadFields,
   is3D66CleanLinkError, modelIdsShareAssetIdentity,
@@ -316,7 +317,7 @@ function runBrowserTask(task) {
   });
 }
 
-async function withBrowserContext(url, cookieValue, callback) {
+async function withBrowserContext(url, cookieValue, callback, { allowProxyFallback = true } = {}) {
   return runBrowserTask(async () => {
     const browser = await getSharedBrowser();
     const proxy = browserProxyConfig();
@@ -360,7 +361,7 @@ async function withBrowserContext(url, cookieValue, callback) {
     try {
       return await runWithProxy(proxy);
     } catch (error) {
-      if (is3D66CleanLinkError(error)) throw error;
+      if (!allowProxyFallback || is3D66CleanLinkError(error)) throw error;
       if (proxyFailClosed()) throw error;
       notify3D66ProxyFallback({
         stage: "browser",
@@ -1060,6 +1061,10 @@ export async function fetch3D66PageWithBrowser(url, cookieValue) {
     };
   });
 }
+
+export const resolve3D66ModelUrlFromCollection = create3D66CollectionResolver({
+  withBrowserContext, navigate: goto3D66Page, serializeCookies, timeoutMs,
+});
 
 export async function resolve3D66ModelUrlFromFootprint(
   url,

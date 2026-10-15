@@ -52,6 +52,14 @@ test("production readiness rejects an empty or malformed required Getlink marker
   }
 });
 
+test("collection resolution requires an explicit favorites folder and public user ID", () => {
+  const missing = productionReadinessIssues(readyEnvironment({ THREED66_MODEL_RESOLVE_MODE: "collection" }));
+  assert.ok(missing.errors.some((item) => item.includes("THREED66_COLLECTION_ID")));
+  const configured = productionReadinessIssues(readyEnvironment({ THREED66_MODEL_RESOLVE_MODE: "collection",
+    THREED66_COLLECTION_ID: "123456", THREED66_COLLECTION_USER: "ACJ00000001" }));
+  assert.equal(configured.errors.length, 0);
+});
+
 test("production readiness rejects Turnstile test keys and disabled admin 2FA", () => {
   const issues = productionReadinessIssues(readyEnvironment({
     TURNSTILE_SITE_KEY: "1x00000000000000000000AA",

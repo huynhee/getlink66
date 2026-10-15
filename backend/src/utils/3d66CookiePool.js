@@ -4,6 +4,7 @@ import { notify3D66CookiesUnavailable } from "./telegramNotifier.js";
 import { get3D66GetlinkQueueStatus } from "./3d66Queue.js";
 import { writeSystemLog } from "./systemLog.js";
 import { is3D66CleanLinkError } from "./3d66CleanLink.js";
+import { is3D66CollectionError } from "./3d66CollectionResolver.js";
 
 const REQUIRED_COOKIE_KEYS = ["PHPSESSID", "login_token", "login_sign"];
 const DEFAULT_REQUEST_INTERVAL_MS = 2500;
@@ -166,7 +167,7 @@ async function alert3D66CookiesUnavailable(reason, error) {
 }
 
 export function isSwitchable3D66Error(error) {
-  if (is3D66CleanLinkError(error)) return false;
+  if (is3D66CleanLinkError(error) || is3D66CollectionError(error)) return false;
   const status = Number(error?.status || error?.statusCode || 0);
   const text = `${error?.message || ""} ${JSON.stringify(error?.details || {})}`.toLowerCase();
 

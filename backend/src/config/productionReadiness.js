@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { paypalConfigurationIssues } from "./paypalConfig.js";
 import { required3D66AccountMarker } from "../utils/3d66CleanLink.js";
+import { collectionResolutionConfig } from "../utils/3d66CollectionResolver.js";
 
 const TURNSTILE_TEST_SITE_KEYS = new Set([
   "1x00000000000000000000AA",
@@ -38,6 +39,10 @@ export function productionReadinessIssues(env = process.env) {
   const errors = [];
   try { required3D66AccountMarker(env); }
   catch { errors.push("THREED66_REQUIRED_ACCOUNT_MARKER must be 6-12 digits; the required clean-link check cannot be disabled"); }
+  if (text(env, "THREED66_MODEL_RESOLVE_MODE").toLowerCase() === "collection") {
+    try { collectionResolutionConfig(env); }
+    catch { errors.push("Collection resolution requires a valid THREED66_COLLECTION_ID and THREED66_COLLECTION_USER"); }
+  }
   errors.push(...paypalConfigurationIssues(env));
   const warnings = [];
   const turnstileEnabled = isTrue(env, "TURNSTILE_ENABLED");

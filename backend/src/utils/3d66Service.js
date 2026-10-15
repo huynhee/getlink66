@@ -6,7 +6,9 @@ import {
   inspect3D66DownloadFormatsWithBrowser,
   modelIdsShareAssetIdentity,
   resolve3D66ModelUrlFromFootprint,
+  resolve3D66ModelUrlFromCollection,
 } from "./3d66BrowserService.js";
+import { collectionModelPage, collectionResolutionConfig } from "./3d66CollectionResolver.js";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 import { normalizeAccountModelId } from "./parse3d66.js";
 import {
@@ -28,7 +30,7 @@ const PROXY_STAGE_ENV = {
 };
 const ACCOUNT_SEARCH_ENDPOINT = "https://www.3d66.com/api/v1/search/checkKeyword";
 const SEARCH_REFERER = "https://user.3d66.com/";
-const MODEL_RESOLVE_MODES = new Set(["search", "footprint", "direct"]);
+const MODEL_RESOLVE_MODES = new Set(["search", "footprint", "direct", "collection"]);
 const FOOTPRINT_CACHE_TTL_MS = 2 * 60 * 1000;
 const FOOTPRINT_CACHE_MAX = 500;
 const PROXY_AGENT_CACHE_MAX = 5;
@@ -522,12 +524,25 @@ async function resolveAccountModelUrl(
   const productIds = requestedProductIdCandidatesFromUrl(normalized.toString());
   const resolvedLogicalProductId = footprintLogicalProductId(normalized.toString());
   const productId = resolvedLogicalProductId || productIds[0] || "";
-  if (!productIds.length || process.env.THREED66_MOCK !== "false") {
+  if (process.env.THREED66_MOCK !== "false") {
     return { productId, url: normalized.toString(), usedAccountSearch: false };
   }
   required3D66AccountMarker();
 
   const mode = modelResolveMode();
+  if (mode === "collection") {
+    const config = collectionResolutionConfig();
+    const page = collectionModelPage(normalized.toString());
+    const collectionProductId = normalized.searchParams.get("sof") || normalized.searchParams.get("id") || "";
+    const key = `collection:${config.user}:${config.id}:${required3D66AccountMarker()}:${page.origin}${page.pathname}:${footprintCacheKey([], cookieValue)}`;
+    const cached = cachedFootprintModelUrl(key);
+    const result = cached || await resolve3D66ModelUrlFromCollection(normalized.toString(), cookieValue, collectionProductId, config);
+    assert3D66CleanModelUrl(result.url, { expectedProductId: collectionProductId || result.productId });
+    if (!cached) cacheFootprintModelUrl(key, result);
+    return { ...result, productId: collectionProductId || result.productId, resolvedProductId: result.productId,
+      usedAccountSearch: false, usedFootprint: false, cookies };
+  }
+  if (!productIds.length) return { productId, url: normalized.toString(), usedAccountSearch: false };
   const generatedFromModelId = isGeneratedModelIdUrl(normalized.toString());
   if (stage !== "preview" && isFootprintResolvedUrl(normalized.toString())) {
     assert3D66CleanModelUrl(normalized.toString(), { expectedProductId: productId });
@@ -2268,8 +2283,10 @@ export async function fetch3D66Preview(url, cookieValue) {
     };
   }
 
+  const initialCookies = requireCookie(cookieValue);
+  const accountModel = await resolveAccountModelUrl(url, cookieValue, initialCookies);
+  cookieValue = accountModel.cookieValue || cookieValue;
   const cookies = requireCookie(cookieValue);
-  const accountModel = await resolveAccountModelUrl(url, cookieValue, cookies);
   const normalized = normalizeModelUrl(accountModel.url);
   const requestedProductId = accountModel.productId || requestedProductIdFromUrl(normalized.toString());
   const popPreview = await previewFromDownloadPopOnly(normalized.toString(), cookieValue, cookies);

@@ -65,6 +65,11 @@ cannot resolve a clean signed context, it stops. It never retries the original
 foreign-account ID, synthesizes an unsigned download URL, or replaces `sof` while
 keeping an old signature. A URL returned by 3D66 must pass the guard unchanged.
 
+`collection` mode explicitly saves the submitted model to a configured favorites
+folder and reads its signed card. See [collection setup](GETLINK_COLLECTION_RESOLUTION.md).
+Its result must pass the same mandatory guard; errors never fall back to search
+or rotate cookies.
+
 `footprint` mode may obtain context from account history, but the result must have
 the required marker and matching apparent asset. Its search fallback follows the
 same strict rules. `direct` mode is not an opt-out: it accepts only an already

@@ -266,3 +266,13 @@ test("an empty required marker cannot disable validation or trigger upstream cal
   await assert.rejects(fetchFrom3D66(sourceUrl(), cookie), { code: "THREED66_CLEAN_LINK_REQUIRED", status: 503 });
   assert.equal(calls, 0);
 });
+
+for (const execute of [fetch3D66Preview, fetchFrom3D66]) {
+  test(`collection mode validates configuration before ${execute.name}, without search or download fallback`, async (t) => {
+    configure(t, { THREED66_MODEL_RESOLVE_MODE: "collection", THREED66_COLLECTION_ID: "", THREED66_COLLECTION_USER: "" });
+    let calls = 0;
+    t.mock.method(globalThis, "fetch", async () => { calls += 1; assert.fail("No upstream request allowed"); });
+    await assert.rejects(execute(sourceUrl(), cookie), { status: 503, code: "THREED66_COLLECTION_RESOLUTION_FAILED" });
+    assert.equal(calls, 0);
+  });
+}
