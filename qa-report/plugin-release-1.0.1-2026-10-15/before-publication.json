@@ -1,0 +1,91 @@
+{
+  "version": "1.0.0",
+  "etag": "\"sha256:a1334b0b46f6bf57b2b9b8b61e8fa3e64d3893e9be9457793b6d49ef80070106\"",
+  "checkedAt": "2026-10-15T16:24:06.7230497+00:00",
+  "manifest": {
+    "manifestVersion": 3,
+    "channel": "live-test",
+    "version": "1.0.0",
+    "minimumVersion": "1.0.0",
+    "maxVersions": [
+      "2020",
+      "2021",
+      "2022",
+      "2023",
+      "2024",
+      "2025",
+      "2026",
+      "2027"
+    ],
+    "publishedAt": "2026-10-10T07:34:34.802Z",
+    "signatureAlgorithm": "ES256",
+    "desktopArtifact": {
+      "component": "desktop",
+      "maxFamily": "",
+      "maxVersions": [
+        "2020",
+        "2021",
+        "2022",
+        "2023",
+        "2024",
+        "2025",
+        "2026",
+        "2027"
+      ],
+      "channel": "live-test",
+      "version": "1.0.0",
+      "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.0/3DiPL-Asset-Manager-Desktop-LiveTest-1.0.0-max2022-binding-20261010.zip",
+      "sha256": "dc96cafb839229e87d7cf04bbcdc03c8c30b1f9563ff07a46c98bf0802b8dd7c",
+      "protocolMinimum": 2,
+      "protocolMaximum": 2,
+      "requiresMaxRestart": false,
+      "signatureAlgorithm": "ES256",
+      "publishedAt": "2026-10-10T07:34:34.802Z"
+    },
+    "bridgeArtifacts": [
+      {
+        "component": "maxBridgeLegacy",
+        "maxFamily": "2020-2025",
+        "maxVersions": [
+          "2020",
+          "2021",
+          "2022",
+          "2023",
+          "2024",
+          "2025"
+        ],
+        "channel": "live-test",
+        "version": "1.0.0",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.0/3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.0-max2022-binding-20261010.mzp",
+        "sha256": "103df5b10064b599d6714eedd08470d8cae109e6f2e1a3af11439e9611b9dc5c",
+        "protocolMinimum": 2,
+        "protocolMaximum": 2,
+        "requiresMaxRestart": true,
+        "signatureAlgorithm": "ES256",
+        "publishedAt": "2026-10-10T07:34:34.802Z"
+      },
+      {
+        "component": "maxBridgeModern",
+        "maxFamily": "2026-2027",
+        "maxVersions": [
+          "2026",
+          "2027"
+        ],
+        "channel": "live-test",
+        "version": "1.0.0",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.0/3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.0-max2022-binding-20261010.mzp",
+        "sha256": "ca85a8a7c71a0cb9a202021876490f09c5726687b0a96353f0281648b2cb74cc",
+        "protocolMinimum": 2,
+        "protocolMaximum": 2,
+        "requiresMaxRestart": true,
+        "signatureAlgorithm": "ES256",
+        "publishedAt": "2026-10-10T07:34:34.802Z"
+      }
+    ],
+    "releaseNotes": {
+      "vi": "Sửa lỗi nạp thư viện .NET Framework trên Max 2020–2025, gồm lỗi Unsafe 4.0.4.1 ở Max 2022. Giữ sửa lỗi thẻ Free và Getlink.",
+      "en": "Fix .NET Framework dependency binding for Max 2020-2025, including the Unsafe 4.0.4.1 startup error in Max 2022. Includes prior Free badge and Getlink fixes."
+    },
+    "signature": "3Gl+YaC20R1h9bRcmVju2to7XOaZDbNkHCXQn0311OFQU+6Q1xb0bHHCM37rkJ6Gb0RpvEWYmmeSILJmxgOq3g=="
+  }
+}

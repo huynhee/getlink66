@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "checkedAt": "2026-10-15T16:29:15.395Z",
+  "version": "1.0.1",
+  "channel": "live-test",
+  "feedSignatureValid": true,
+  "downloadsValid": true,
+  "pageStatus": 200,
+  "etagRevalidation": 304,
+  "files": [
+    {
+      "name": "3DiPL-Asset-Manager-Desktop-LiveTest-1.0.1.zip",
+      "bytes": 100959120,
+      "sha256": "d4f3e23e9dd9f0d116e9fb4129e817bfc50c1822c7eccfde9a8e4fbf992022f6",
+      "range": true
+    },
+    {
+      "name": "3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.1.mzp",
+      "bytes": 101460525,
+      "sha256": "7a2a5685d40988bce83524a91a8df4c162d664730e5e2507a6c669e9d28f4e4c",
+      "range": true
+    },
+    {
+      "name": "3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.1.mzp",
+      "bytes": 101089811,
+      "sha256": "9ddb313b2b988df149ee470e571c68248cc83044a45d57579ce269e522d35ba7",
+      "range": true
+    }
+  ]
+}

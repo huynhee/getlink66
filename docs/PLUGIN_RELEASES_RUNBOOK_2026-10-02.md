@@ -1,7 +1,9 @@
 # Plugin Update V3: Admin, VPS and Desktop
 
-Status: local implementation and automated verification completed. No release
-was uploaded, published or deployed to the VPS. Production remains closed.
+Current status: LiveTest 1.0.1 was published on the existing web/VPS release
+channel on 2026-10-15 and rechecked on 2026-10-16. Production remains closed.
+See section 13 for current publication evidence; earlier sections retain their
+historical local-only verification status.
 This document supersedes the updater gaps in `PLUGIN_UPDATE_HANDOFF_1.0.0_2026-10-01.md`.
 
 The user accepted an unsigned-Authenticode Production option on 2026-10-02.
@@ -494,3 +496,35 @@ available locally. Section 10's unsigned-Windows option is not permission to
 reuse that key or fabricate acceptance. Rebuild Production 1.0.0 only with its
 own key, approved license and reviewed integration evidence. Existing historical
 artifacts, public pins and feeds were not modified.
+
+## 13. LiveTest 1.0.1 Published: Bridge Merge Repair
+
+At the user's explicit request, the repaired plugin was published through the
+existing database-backed LiveTest channel. The previously public 1.0.0 release
+was retained unchanged; no Production channel or approval flags were enabled.
+
+- Actual publication: 2026-10-15 23:26:34 Asia/Saigon (16:26:34 UTC).
+- Current release ID: `6ad0fe9e86baeeaabcc7751b`; channel revision: `6`.
+- Previous release ID: `6ac015e6eef6cb2b6a153c8f`; previous revision: `5`.
+- Version: `1.0.1`; minimum version: `1.0.0`; protocol remains 2.
+- Source: `D:\LTinh\plugin\artifacts\release-1.0.1-livetest-bridge-merge-web-2026-10-15`.
+- The backend's normal chunk, signature, archive, checksum and transactional
+  publication services were used from an explicitly authorized VPS operation,
+  with a distinct VPS-operator audit identity, not an impersonated web account.
+- No backend/frontend deployment, environment/secret change, database migration,
+  payment or user-cache modification was performed.
+
+Public page: https://3dipl.org/plugin.
+Both Max-family MZPs are advertised by `/api/plugin/downloads`. Users must
+install the matching MZP and fully restart Max to replace the bridge; a Desktop
+restart alone does not apply the legacy pipe fix.
+
+Verification: 373 .NET tests passed for version 1.0.1, packaged EXE smoke passed,
+and the signed manifest plus all three archives passed independent verification.
+All three files were then fully fetched over public HTTPS and matched SHA-256;
+Range requests returned 206 with correct bytes, ETag revalidation returned 304,
+and the pre-publication ETag returned 200 with the new feed. Previous artifact
+URLs remained accessible. A fresh check on 2026-10-16 confirmed version 1.0.1.
+
+Exact artifact hashes, evidence, rollback and remaining limitations:
+`docs/PLUGIN_RELEASE_1.0.1_WEB_2026-10-15.md`.
