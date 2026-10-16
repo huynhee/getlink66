@@ -6,7 +6,22 @@ Collection resolution is an opt-in alternative to `search`, `footprint` and
 `direct`. It applies to both preview and download resolution; existing payment,
 Credit, cached-purchase and download APIs are unchanged.
 
-Configure `/etc/3dipl/production/backend.env` only after deploying this code:
+After deploying backend and frontend, open **Admin -> Getlink -> Tasks ->
+Resolve via collection** (Vietnamese: **Lam sach qua bo suu tap**). Enter the
+collection ID and public profile AUI, then save Getlink settings. Both fields
+are required before this mode can be enabled. Settings are stored in Atlas Core
+and applied at runtime without another container restart. An existing saved
+admin choice takes precedence over the environment, including an explicit
+choice to switch back to another mode. Collection details are only returned to
+verified admins; public settings expose the input mode, not the collection IDs.
+
+For this account, use collection ID `25575806` and AUI `ACJ08966155`. The required
+account marker remains server-side in `THREED66_REQUIRED_ACCOUNT_MARKER`; admin
+cannot disable the mandatory clean-link guard.
+
+Environment configuration below seeds new/missing settings, not an override of
+an existing admin choice. Configure `/etc/3dipl/production/backend.env` only
+after deploying this code:
 
 ```dotenv
 THREED66_MODEL_RESOLVE_MODE=collection
@@ -62,16 +77,18 @@ this mode does not rewrite history or automatically repurchase dirty records.
 
 After review and push, rebuild/recreate the backend and run the production env
 check. A plain `docker compose restart` does not reload `backend.env`.
-No database migration or frontend rebuild is needed for this backend mode.
+The admin selector requires both backend and frontend deployment. No reviewed
+database migration is needed; missing collection fields inherit their startup
+environment defaults once, while existing admin values are preserved.
 
 ```bash
 cd /opt/3dipl/app
 git pull --ff-only origin main
-sudo docker compose -f compose.production.yml build backend </dev/null
+sudo docker compose -f compose.production.yml build backend frontend </dev/null
 sudo docker compose -f compose.production.yml run --rm --no-deps \
   -T --interactive=false -e NODE_ENV=production backend npm run env:check </dev/null
 sudo docker compose -f compose.production.yml up -d --no-deps \
-  --force-recreate --wait --wait-timeout 180 backend </dev/null
+  --force-recreate --wait --wait-timeout 180 backend frontend </dev/null
 curl -fsS http://127.0.0.1:5000/ready
 ```
 
@@ -81,6 +98,7 @@ usable account: the exact folder contains that model, its returned link has the
 expected marker/signature, and an already-saved model remains saved on repeat.
 Do not test repeatedly on a restricted account or log cookies/signed URLs.
 
-Rollback by restoring `THREED66_MODEL_RESOLVE_MODE=search` (or the previously
-reviewed mode), rerunning `env:check` and recreating backend. Saved favorites
-are deliberately retained; rollback does not modify purchases or user Credit.
+Rollback by selecting `search` (or the previously reviewed mode) in admin and
+saving. Environment edits alone do not replace a persisted admin choice. Saved
+favorites are deliberately retained; rollback does not modify purchases or
+user Credit.

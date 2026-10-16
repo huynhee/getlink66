@@ -120,9 +120,11 @@ const siteSettingSchema = new mongoose.Schema(
     threed66PaytypeValue: { type: String, default: "4" },
     threed66ModelResolveMode: {
       type: String,
-      enum: ["search", "footprint", "direct"],
+      enum: ["search", "footprint", "direct", "collection"],
       default: "search"
     },
+    threed66CollectionId: { type: String },
+    threed66CollectionUser: { type: String },
     threed66RequestIntervalMs: { type: Number, default: 2500 },
     threed66BrowserConcurrency: { type: Number, default: 1 },
     threed66BrowserAlways: { type: Boolean },

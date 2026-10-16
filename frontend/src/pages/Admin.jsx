@@ -174,6 +174,8 @@ const defaultSiteSettings = {
   threed66RefreshConcurrency: 1,
   threed66PaytypeValue: "4",
   threed66ModelResolveMode: "search",
+  threed66CollectionId: "",
+  threed66CollectionUser: "",
   threed66RequestIntervalMs: 2500,
   threed66BrowserConcurrency: 1,
   threed66BrowserAlways: false,
@@ -1049,6 +1051,8 @@ export default function Admin({ user, language = "vi" }) {
           threed66RefreshConcurrency: Number(siteSettings.threed66RefreshConcurrency || 1),
           threed66PaytypeValue: String(siteSettings.threed66PaytypeValue || "4").trim(),
           threed66ModelResolveMode: String(siteSettings.threed66ModelResolveMode || "search"),
+          threed66CollectionId: String(siteSettings.threed66CollectionId || "").trim(),
+          threed66CollectionUser: String(siteSettings.threed66CollectionUser || "").trim(),
           threed66RequestIntervalMs: Number(siteSettings.threed66RequestIntervalMs || 2500),
           threed66BrowserConcurrency: Number(siteSettings.threed66BrowserConcurrency || 1),
           threed66BrowserAlways: Boolean(siteSettings.threed66BrowserAlways),
@@ -1782,6 +1786,14 @@ export default function Admin({ user, language = "vi" }) {
     },
   ];
   const modelResolveModes = [
+    {
+      value: "collection",
+      label: l("Làm sạch qua bộ sưu tập", "Resolve via collection"),
+      help: l(
+        "Lấy link model từ bộ sưu tập đã chọn. Giữ model đã lưu và bắt buộc đúng ID tài khoản.",
+        "Read the model link from the selected collection. Keep saved models and require the configured account ID.",
+      ),
+    },
     {
       value: "search",
       label: l("Tìm bằng ID", "Search by ID"),
@@ -3126,7 +3138,7 @@ export default function Admin({ user, language = "vi" }) {
               {threed66SettingsTab === "tasks" && (
                 <div className="runtimeSettingGroup">
                   <h3>{l("Tác vụ sang 3D66", "3D66 task settings")}</h3>
-                  <div className="runtimeModeGrid" style={{ marginBottom: 12 }}>
+                  <div className="runtimeModeGrid collectionModeGrid" style={{ marginBottom: 12 }}>
                     {modelResolveModes.map((mode) => (
                       <button
                         key={mode.value}
@@ -3140,6 +3152,42 @@ export default function Admin({ user, language = "vi" }) {
                       </button>
                     ))}
                   </div>
+                  {siteSettings.threed66ModelResolveMode === "collection" && (
+                    <div className="runtimeSettingList collectionSettings">
+                      <label className="runtimeSettingRow">
+                        <span className="runtimeSettingText">
+                          <strong>{l("ID bộ sưu tập", "Collection ID")}</strong>
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[1-9][0-9]{0,18}"
+                          maxLength={19}
+                          required
+                          value={siteSettings.threed66CollectionId || ""}
+                          placeholder="25575806"
+                          onChange={(event) => updateRuntimeSetting("threed66CollectionId", event.target.value)}
+                        />
+                      </label>
+                      <label className="runtimeSettingRow">
+                        <span className="runtimeSettingText">
+                          <strong>{l("AUI hồ sơ công khai", "Public profile AUI")}</strong>
+                        </span>
+                        <input
+                          type="text"
+                          pattern="[A-Z]{3}[0-9]{5,20}"
+                          maxLength={23}
+                          required
+                          autoCapitalize="characters"
+                          autoComplete="off"
+                          spellCheck={false}
+                          value={siteSettings.threed66CollectionUser || ""}
+                          placeholder="ACJ08966155"
+                          onChange={(event) => updateRuntimeSetting("threed66CollectionUser", event.target.value)}
+                        />
+                      </label>
+                    </div>
+                  )}
                   <div className="runtimeSettingList">
                     {threed66RuntimeSettings.map((setting) => (
                       <label className="runtimeSettingRow" key={setting.field}>

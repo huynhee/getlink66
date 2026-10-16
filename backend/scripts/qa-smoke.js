@@ -689,6 +689,72 @@ async function verifyReferralRewardSettings(page, context, viewport) {
   if (!cleanupResponse.ok()) throw new Error(`Referral fixture cleanup failed: ${await cleanupResponse.text()}`);
 }
 
+async function verifyCollectionResolutionSettings(page, context, viewport) {
+  const eventsPattern = "**/api/account/events";
+  const stopEvents = (route) => route.fulfill({ status: 204, body: "" });
+  await context.route(eventsPattern, stopEvents);
+  const initialLanguage = await page.locator("html").getAttribute("lang");
+  const initialTheme = await page.locator("html").getAttribute("data-theme");
+  const initial = await context.request.get(`${frontendOrigin}/api/settings`).then((response) => response.json());
+  const csrf = await context.request.get(`${frontendOrigin}/api/auth/csrf`).then((response) => response.json());
+  const restore = Object.fromEntries(["threed66ModelResolveMode", "threed66CollectionId", "threed66CollectionUser"]
+    .map((field) => [field, initial.settings[field] ?? ""]));
+  let cleanupResponse;
+  const setPresentation = async (language, theme) => {
+    if (!await page.locator(".languageToggleSingle button").isVisible()) await page.locator(".mobileMenuButton").click();
+    if (await page.locator("html").getAttribute("lang") !== language) await page.locator(".languageToggleSingle button").click();
+    if (await page.locator("html").getAttribute("data-theme") !== theme) await page.locator(".themeToggle").click();
+    if (await page.locator(".mobileMenuButton").getAttribute("aria-expanded") === "true") await page.locator(".mobileMenuButton").click();
+  };
+  const openSettings = async () => {
+    await page.goto(`${frontendOrigin}/admin`, { waitUntil: "domcontentloaded" });
+    await page.locator(".adminPage").waitFor();
+    await page.getByRole("navigation", { name: "Admin sections", exact: true }).getByRole("button", { name: "Getlink", exact: true }).click();
+    await page.locator(".threed66SettingsTabs").getByRole("button", { name: /^(Tác vụ|Tasks)$/ }).click();
+  };
+  try {
+    const invalid = await context.request.post(`${frontendOrigin}/api/settings`, {
+      headers: { "x-csrf-token": csrf.csrfToken, origin: frontendOrigin },
+      data: { threed66ModelResolveMode: "collection", threed66CollectionId: "", threed66CollectionUser: "" },
+    });
+    if (invalid.status() !== 400 || (await invalid.json()).code !== "INVALID_THREED66_COLLECTION_CONFIG") throw new Error("Incomplete collection configuration was accepted");
+    for (const language of ["vi", "en"]) {
+      for (const theme of ["light", "dark"]) {
+        await openSettings();
+        await setPresentation(language, theme);
+        await page.getByRole("button", { name: /Làm sạch qua bộ sưu tập|Resolve via collection/ }).click();
+        const form = page.locator("form").filter({ has: page.locator(".collectionSettings") });
+        await form.getByLabel(/ID bộ sưu tập|Collection ID/).fill("123456");
+        await form.getByLabel(/AUI hồ sơ công khai|Public profile AUI/).fill("ACJ00000001");
+        if (theme === "light") {
+          const saved = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/settings" && response.request().method() === "POST");
+          await form.getByRole("button", { name: /Lưu cài đặt Getlink|Save Getlink settings/ }).click();
+          const response = await saved;
+          if (!response.ok()) throw new Error(`Collection settings save failed: ${await response.text()}`);
+        }
+        await openSettings();
+        const mode = page.getByRole("button", { name: /Làm sạch qua bộ sưu tập|Resolve via collection/ });
+        if (await mode.getAttribute("aria-pressed") !== "true") throw new Error("Collection mode was lost after reload");
+        if (await page.getByLabel(/ID bộ sưu tập|Collection ID/).inputValue() !== "123456"
+          || await page.getByLabel(/AUI hồ sơ công khai|Public profile AUI/).inputValue() !== "ACJ00000001") throw new Error("Collection configuration was not restored");
+        if (await page.locator(".collectionSettings").evaluate((element) => element.scrollWidth > element.clientWidth + 2)) throw new Error("Collection settings overflow");
+        await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-collection-settings-${theme}-${language}.png`), fullPage: true });
+        for (const route of ["/", "/getlink"]) {
+          await page.goto(`${frontendOrigin}${route}`, { waitUntil: "domcontentloaded" });
+          await page.getByPlaceholder(language === "vi" ? "Dán link model 3D66" : "Paste the full 3D model 3D66 link", { exact: true }).waitFor();
+        }
+      }
+    }
+  } finally {
+    cleanupResponse = await context.request.post(`${frontendOrigin}/api/settings`, {
+      headers: { "x-csrf-token": csrf.csrfToken, origin: frontendOrigin }, data: restore,
+    });
+    await context.unroute(eventsPattern, stopEvents);
+    await setPresentation(initialLanguage, initialTheme);
+  }
+  if (!cleanupResponse.ok()) throw new Error(`Collection fixture cleanup failed: ${await cleanupResponse.text()}`);
+}
+
 async function verifyConfiguredCreditCopy(page, context, viewport) {
   let scenePrice = 20;
   const pattern = "**/api/settings";
@@ -1221,6 +1287,7 @@ async function main() {
       await verifyAdminVoucherPlanScopes(page, context, viewport.name);
       await verifyNotificationPageScopes(page, context, viewport.name);
       await verifyReferralRewardSettings(page, context, viewport.name);
+      await verifyCollectionResolutionSettings(page, context, viewport.name);
       await verifyConfiguredCreditCopy(page, context, viewport.name);
       await verifyLiveAccountBalance(page, context);
       await verifySubscriptionCatalog(page, context, viewport.name);
@@ -1244,6 +1311,7 @@ async function main() {
       notificationPageScopes: true,
       notificationRepeatOnVisit: true,
       referralRewardSettings: true,
+      collectionResolutionSettings: true,
       voucherPlanScopes: true,
       subscriptionCatalog: true,
       topupLayout: true,

@@ -5,7 +5,11 @@ import { invalidateMarketplacePricingCache } from "../utils/marketplacePricingSe
 import { REFERRAL_REWARD_FIELDS, validReferralRewardAmount } from "../utils/referralRewardSettings.js";
 
 const REFERRAL_MODES = ["both", "referrer_only", "off"];
-const THREED66_MODEL_RESOLVE_MODES = ["search", "footprint", "direct"];
+const THREED66_MODEL_RESOLVE_MODES = ["search", "footprint", "direct", "collection"];
+const COLLECTION_FIELDS = {
+  threed66CollectionId: { env: "THREED66_COLLECTION_ID", pattern: /^[1-9]\d{0,18}$/ },
+  threed66CollectionUser: { env: "THREED66_COLLECTION_USER", pattern: /^[A-Z]{3}\d{5,20}$/ },
+};
 const HOME_TEXT_FIELDS = [
   "heroText",
   "heroSubtitle",
@@ -280,6 +284,8 @@ const defaultSettings = {
   )
     ? String(process.env.THREED66_MODEL_RESOLVE_MODE).trim().toLowerCase()
     : "search",
+  threed66CollectionId: String(process.env.THREED66_COLLECTION_ID || "").trim(),
+  threed66CollectionUser: String(process.env.THREED66_COLLECTION_USER || "").trim(),
   threed66RequestIntervalMs: Number(process.env.THREED66_REQUEST_INTERVAL_MS || 2500),
   threed66BrowserConcurrency: Number(process.env.THREED66_BROWSER_CONCURRENCY || 1),
   threed66BrowserAlways: RUNTIME_BOOLEAN_FIELDS.threed66BrowserAlways.fallback,
@@ -500,6 +506,9 @@ function applyRuntimeSettings(settings = {}) {
   process.env.THREED66_MODEL_RESOLVE_MODE = normalizeModelResolveMode(
     settings.threed66ModelResolveMode,
   );
+  Object.entries(COLLECTION_FIELDS).forEach(([field, config]) => {
+    process.env[config.env] = String(settings[field] ?? defaultSettings[field]).trim();
+  });
   const storedProxyUrl = rawSettingValue(settings, "threed66ProxyUrl");
   if (storedProxyUrl !== undefined && String(storedProxyUrl || "").trim()) {
     process.env.THREED66_PROXY_URL = decryptProxyUrl(storedProxyUrl);
@@ -595,6 +604,9 @@ async function loadSettings() {
   ) {
     runtimePatch.threed66ModelResolveMode = normalizedModelResolveMode;
   }
+  Object.keys(COLLECTION_FIELDS).forEach((field) => {
+    if (rawSettings[field] === undefined) runtimePatch[field] = defaultSettings[field];
+  });
   Object.entries(RUNTIME_BOOLEAN_FIELDS).forEach(([field, config]) => {
     const isSchemaDefault =
       typeof settings.$isDefault === "function" && settings.$isDefault(field);
@@ -671,6 +683,7 @@ export async function updateSettings(req, res, next) {
       "threed66RefreshConcurrency",
       "threed66PaytypeValue",
       "threed66ModelResolveMode",
+      ...Object.keys(COLLECTION_FIELDS),
       "threed66RequestIntervalMs",
       "threed66BrowserConcurrency",
       "threed66BrowserAlways",
@@ -709,6 +722,16 @@ export async function updateSettings(req, res, next) {
     }
 
     const update = {};
+    if (req.body.threed66ModelResolveMode !== undefined
+      && !THREED66_MODEL_RESOLVE_MODES.includes(String(req.body.threed66ModelResolveMode).trim().toLowerCase())) {
+      return res.status(400).json({ code: "INVALID_THREED66_RESOLVE_MODE", message: "Invalid 3D66 resolution mode." });
+    }
+    for (const [field, config] of Object.entries(COLLECTION_FIELDS)) {
+      const value = req.body[field];
+      if (value !== undefined && (typeof value !== "string" || (value.trim() && !config.pattern.test(value.trim())))) {
+        return res.status(400).json({ code: "INVALID_THREED66_COLLECTION_CONFIG", field, message: "Invalid collection ID or public profile AUI." });
+      }
+    }
     for (const field of Object.keys(REFERRAL_REWARD_FIELDS)) {
       if (req.body[field] !== undefined && !validReferralRewardAmount(req.body[field], field)) {
         return res.status(400).json({ code: "INVALID_REFERRAL_REWARD", field, message: "Referral rewards must be whole numbers between 1 and 100000." });
@@ -748,6 +771,10 @@ export async function updateSettings(req, res, next) {
         update[field] = normalizeModelResolveMode(req.body[field]);
         return;
       }
+      if (COLLECTION_FIELDS[field]) {
+        update[field] = req.body[field].trim();
+        return;
+      }
       if (field === "threed66ProxyUrl") {
         const normalized = normalizeProxyUrl(req.body[field]);
         if (normalized) update[field] = encryptSecret(normalized);
@@ -768,6 +795,20 @@ export async function updateSettings(req, res, next) {
     });
 
     const currentSettings = await loadSettingsWithRetry();
+    // Persist the mode and its identifiers together so partial writes cannot split the configuration.
+    if (["threed66ModelResolveMode", ...Object.keys(COLLECTION_FIELDS)].some((field) => update[field] !== undefined)) {
+      update.threed66ModelResolveMode ??= currentSettings.threed66ModelResolveMode;
+      Object.keys(COLLECTION_FIELDS).forEach((field) => {
+        update[field] ??= currentSettings[field] ?? defaultSettings[field];
+      });
+    }
+    if ((update.threed66ModelResolveMode ?? currentSettings.threed66ModelResolveMode) === "collection"
+      && Object.entries(COLLECTION_FIELDS).some(([field, config]) => !config.pattern.test(update[field] ?? currentSettings[field] ?? ""))) {
+      return res.status(400).json({
+        code: "INVALID_THREED66_COLLECTION_CONFIG",
+        message: "Collection resolution requires a valid collection ID and public profile AUI.",
+      });
+    }
     const creditRewardEnabled = update.referralRewardCreditEnabled
       ?? currentSettings.referralRewardCreditEnabled
       ?? true;
