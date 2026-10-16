@@ -150,3 +150,8 @@ sudo docker compose -f compose.production.yml up -d
 sudo docker image prune -f
 curl -fsS https://3dipl.org/ready
 ```
+
+For disk warnings, build-cache cleanup, and applying bounded container logs,
+follow [VPS Disk Maintenance](VPS_DISK_MAINTENANCE.md). Logging changes require
+container recreation; schedule MongoDB/Meilisearch recreation separately with
+verified backups and a maintenance window.
