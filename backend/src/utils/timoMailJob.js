@@ -141,8 +141,12 @@ export async function reconcileTimoOnce() {
     await TimoMailState.findOneAndUpdate({ _id: config.mailbox, lockOwner: owner }, { $set: { lastSuccessAt: new Date(), lastError: "" } });
     return { processed: events.length };
   } catch (error) {
-    await TimoMailState.findOneAndUpdate({ _id: config.mailbox, lockOwner: owner }, { $set: { lastError: /^TIMO_/.test(error.code || "") ? error.code : "TIMO_GMAIL_UNAVAILABLE" } });
-    throw Object.assign(new Error("Timo mailbox reconciliation is unavailable"), { code: /^TIMO_/.test(error.code || "") ? error.code : "TIMO_GMAIL_UNAVAILABLE" });
+    const code = /^TIMO_[A-Z0-9_]{1,64}$/.test(error.code || "") ? error.code : "TIMO_RECONCILIATION_FAILED";
+    const diagnostic = error.code === "TIMO_GMAIL_UNAVAILABLE"
+      ? { gmailStatus: error.gmailStatus, gmailReason: error.gmailReason, gmailHint: error.gmailHint } : {};
+    const reason = diagnostic.gmailReason ? ` (${diagnostic.gmailReason})` : "";
+    await TimoMailState.findOneAndUpdate({ _id: config.mailbox, lockOwner: owner }, { $set: { lastError: `${code}${reason}` } });
+    throw Object.assign(new Error(`Timo mailbox reconciliation is unavailable${reason}`), { code, status: 503, ...diagnostic });
   } finally {
     await TimoMailState.findOneAndUpdate({ _id: config.mailbox, lockOwner: owner }, { $set: { lockUntil: new Date(0), lockOwner: "" } });
   }
@@ -154,7 +158,7 @@ export function startTimoMailJob() {
   stopping = false;
   const tick = () => {
     if (running) return;
-    running = reconcileTimoOnce().catch((error) => logger.warn({ code: error.code }, "Timo mailbox reconciliation failed"))
+    running = reconcileTimoOnce().catch((error) => logger.warn({ code: error.code, gmailReason: error.gmailReason, gmailStatus: error.gmailStatus }, "Timo mailbox reconciliation failed"))
       .finally(() => { running = null; });
   };
   timer = setInterval(tick, 30_000);

@@ -39,5 +39,6 @@ try {
   console.log("Read-only check complete. No database connection, payment approval, message change or balance update.");
 } catch (error) {
   console.error(error.code || "TIMO_CONFIGURATION_ERROR", error.message);
+  if (error.gmailReason) console.error(JSON.stringify({ googleHttp: error.gmailStatus || null, reason: error.gmailReason, hint: error.gmailHint }, null, 2));
   process.exitCode = 1;
 }

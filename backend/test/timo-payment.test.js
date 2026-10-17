@@ -276,6 +276,51 @@ test("an unavailable Gmail account prevents creating a new payment order", async
   assert.equal(await Topup.countDocuments({}), 0);
 });
 
+test("Gmail failures expose only allowlisted diagnostics, never Google response secrets", async () => {
+  const cases = [
+    [{ response: { status: 401, data: { error: "invalid_client", error_description: "PRIVATE-CREDENTIAL" } } }, "INVALID_CLIENT"],
+    [{ response: { status: 400, data: { error: "invalid_grant" } } }, "INVALID_GRANT"],
+    [{ response: { status: 403, data: { error: { message: "PRIVATE-CREDENTIAL", details: [{ reason: "SERVICE_DISABLED" }] } } } }, "GMAIL_API_DISABLED"],
+    [{ response: { status: 403, data: { error: { errors: [{ reason: "insufficientPermissions" }] } } } }, "INSUFFICIENT_SCOPE"],
+    [{ response: { status: 429, data: {} } }, "RATE_LIMITED"],
+    [{ code: "ENOTFOUND" }, "DNS_FAILED"],
+    [{ code: "ETIMEDOUT" }, "TIMEOUT"],
+    [{ code: "CERT_HAS_EXPIRED" }, "TLS_FAILED"],
+    [{ response: { status: 500, data: { error: "PRIVATE-CREDENTIAL" } } }, "GOOGLE_UNAVAILABLE"],
+    [{ response: { status: 400, data: { error: "PRIVATE-CREDENTIAL" } } }, "BAD_REQUEST"],
+  ];
+  for (const [failure, reason] of cases) {
+    mock.method(OAuth2Client.prototype, "request", async () => { throw Object.assign(new Error("PRIVATE-CREDENTIAL"), failure, { config: { headers: { authorization: "Bearer PRIVATE-CREDENTIAL" } } }); });
+    await assert.rejects(assertTimoMailbox(), (error) => {
+      assert.equal(error.code, "TIMO_GMAIL_UNAVAILABLE");
+      assert.equal(error.status, 503);
+      assert.equal(error.gmailReason, reason);
+      assert.ok(error.gmailHint);
+      assert.equal(error.gmailStatus, failure.response?.status || 0);
+      assert.equal(`${error.stack}\n${JSON.stringify(error)}`.includes("PRIVATE-CREDENTIAL"), false);
+      return true;
+    });
+  }
+});
+
+test("mailbox reconciliation preserves sanitized Gmail reason and returns 503, not 500", async () => {
+  mock.method(OAuth2Client.prototype, "request", async () => { throw Object.assign(new Error("PRIVATE-CREDENTIAL"), {
+    response: { status: 400, data: { error: "invalid_grant", error_description: "PRIVATE-CREDENTIAL" } },
+  }); });
+  await assert.rejects(reconcileTimoOnce(), (error) => {
+    assert.equal(error.status, 503);
+    assert.equal(error.code, "TIMO_GMAIL_UNAVAILABLE");
+    assert.equal(error.gmailReason, "INVALID_GRANT");
+    assert.equal(JSON.stringify(error).includes("PRIVATE-CREDENTIAL"), false);
+    return true;
+  });
+  const state = await State.findById(process.env.TIMO_GMAIL_ADDRESS);
+  assert.equal(state.lastError, "TIMO_GMAIL_UNAVAILABLE (INVALID_GRANT)");
+  assert.equal(state.lockOwner, "");
+  assert.equal(await PaymentReceipt.countDocuments({}), 0);
+  assert.equal((await User.findById(user._id)).credit, 0);
+});
+
 test("admin cancellation releases Timo voucher and purchase reservations for both order kinds", async () => {
   await Voucher.create({ code: "TIMOFIXTURE", discountPercent: 10, usageLimit: 10, usedCount: 0,
     perUserLimit: 2, appliesTo: "all", isActive: true, expireAt: new Date(Date.now() + 3600_000) });

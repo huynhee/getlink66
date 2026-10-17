@@ -166,6 +166,37 @@ a Timo or PayPal order.
 - If Gmail authorization is revoked, reauthorize the dedicated mailbox, update
   its refresh token and recreate backend. Do not replace the Drive token.
 
+### Diagnose Gmail Connection Failures
+
+`env:check` validates configuration shape, not Google credentials or connectivity.
+After changing env, a running container still has its old values until recreated.
+To check the current env file without recreating the service or touching payments:
+
+```bash
+cd /opt/3dipl/app
+sudo docker compose -f compose.production.yml run --rm --no-deps -T \
+  backend npm run timo:check </dev/null
+```
+
+Failures expose only an allowlisted reason, Google HTTP status and a fixed hint.
+Never print a raw Google error/response/request: it can contain OAuth secrets,
+tokens and request headers. Worker health and logs retain the safe reason too.
+
+| Reason | Action |
+| --- | --- |
+| `INVALID_CLIENT` | Check client ID and secret are from the same dedicated OAuth client. |
+| `INVALID_GRANT` | Reauthorize the intended mailbox with that client; use its refresh token, not access token or authorization code. Check revoked/expired grants and Testing-mode expiry. |
+| `GMAIL_API_DISABLED` | Enable Gmail API in the OAuth client's Google Cloud project. |
+| `INSUFFICIENT_SCOPE` | Reauthorize with `gmail.readonly` and offline access. |
+| `TIMO_GMAIL_ACCOUNT_MISMATCH` | The granted Google account is not `TIMO_GMAIL_ADDRESS`; authorize the intended mailbox. |
+| `DNS_FAILED` / `TIMEOUT` / `NETWORK_FAILED` | Check DNS/outbound HTTPS from the backend container; retry after recovery. |
+| `TLS_FAILED` | Check server clock and CA certificates; do not disable TLS verification. |
+| `RATE_LIMITED` / `GOOGLE_UNAVAILABLE` | Retry after Google recovers; do not recreate orders or ask for payment again. |
+
+If `run --rm` succeeds but the running backend still fails, recreate backend to
+load the updated env. Once mailbox access passes, verify an original bank notice
+with `timo:check -- --verify-latest` before accepting new orders.
+
 ## Rollback
 
 First select **SePay** in admin (or VPS default with
@@ -177,7 +208,7 @@ this drain; never delete events, receipts or subscription periods to roll back.
 
 ## Validation Handoff
 
-- `npm run check`: 600 tests, lint and frontend release build passed, including
+- `npm run check`: 602 tests, lint and frontend release build passed, including
   admin provider authorization, configuration gates and old-order replay.
 - Mock browser QR checkout/recovery/settlement: VI/EN, light/dark, desktop/mobile
   (eight combinations) passed. Whole-site smoke passed on both viewports.
