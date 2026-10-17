@@ -15,6 +15,7 @@ import { approvePendingTopup } from "../utils/topupApprovalService.js";
 import { adminPaypalPrice, paymentError } from "../utils/paymentMoney.js";
 import { paymentSummary, paymentRecordFields } from "../utils/paymentReporting.js";
 import { cancelPaypalPayment, paypalPaymentId, processPaypalPayment } from "../utils/paypalPaymentService.js";
+import { releasePaymentReservation } from "../utils/paymentBenefitService.js";
 import { approvePendingMembershipOrder, isProActive, nextVietnamReset, vietnamDayKey } from "../utils/membershipService.js";
 import { adjustSubscription, subscriptionDetails, refreshSubscriptionUser } from "../utils/subscriptionScheduleService.js";
 import { assertPlanCatalogWrite, getSubscriptionCatalog, subscriptionBillingPeriod, withSubscriptionCatalogWrite } from "../utils/subscriptionCatalogService.js";
@@ -505,6 +506,7 @@ export async function adminCancelTopup(req, res, next) {
       { new: true },
     );
     if (!topup) return res.status(404).json({ message: "Pending topup not found" });
+    if (topup.gatewayProvider === "timo") await releasePaymentReservation("topup", topup);
     res.json({ topup });
   } catch (error) {
     next(error);
@@ -538,6 +540,7 @@ export async function adminCancelMembershipOrder(req, res, next) {
       { new: true },
     );
     if (!order) return res.status(404).json({ message: "Pending membership order not found" });
+    if (order.gatewayProvider === "timo") await releasePaymentReservation("membership", order);
     res.json({ order });
   } catch (error) {
     next(error);

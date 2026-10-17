@@ -353,7 +353,7 @@ function notifyMembershipApproval(result, approvalFields = {}) {
   notifyMembershipApproved({
     order: result.order,
     user: result.user,
-    source: approvalFields.gatewayTransactionId ? "Payment webhook" : "Admin",
+    source: approvalFields.gatewayProvider === "timo" ? "Timo bank notification" : approvalFields.gatewayTransactionId ? "Payment webhook" : "Admin",
   });
 }
 

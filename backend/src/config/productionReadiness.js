@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { paypalConfigurationIssues } from "./paypalConfig.js";
+import { timoConfigurationIssues } from "./timoConfig.js";
 import { required3D66AccountMarker } from "../utils/3d66CleanLink.js";
 import { collectionResolutionConfig } from "../utils/3d66CollectionResolver.js";
 
@@ -44,6 +45,7 @@ export function productionReadinessIssues(env = process.env) {
     catch { errors.push("Collection resolution requires a valid THREED66_COLLECTION_ID and THREED66_COLLECTION_USER"); }
   }
   errors.push(...paypalConfigurationIssues(env));
+  errors.push(...timoConfigurationIssues(env));
   const warnings = [];
   const turnstileEnabled = isTrue(env, "TURNSTILE_ENABLED");
   const turnstileSiteKey = text(env, "TURNSTILE_SITE_KEY");

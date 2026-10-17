@@ -13,6 +13,7 @@
     "start": "npm start --prefix backend",
     "env:check": "npm run env:check --prefix backend",
     "paypal:check": "npm run paypal:check --prefix backend",
+    "timo:check": "npm run timo:check --prefix backend",
     "drive:auth": "npm run drive:auth --prefix backend",
     "drive:check": "npm run drive:check --prefix backend",
     "backup:databases": "npm run backup:databases --prefix backend",

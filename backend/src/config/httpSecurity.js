@@ -46,6 +46,7 @@ export function buildHelmetOptions({
           "'self'",
           "https://respic.3d66.com",
           "https://api.vietqr.io",
+          "https://img.vietqr.io",
           "data:",
         ],
         connectSrc: appendIf(

@@ -21,7 +21,7 @@ const topupSchema = new mongoose.Schema(
     credit: { type: Number, required: true },
     type: {
       type: String,
-      enum: ["manual", "auto", "fake", "vnpay", "vietqr", "sepay", "paypal"],
+      enum: ["manual", "auto", "fake", "vnpay", "vietqr", "sepay", "paypal", "timo"],
       default: "auto",
     },
     status: {

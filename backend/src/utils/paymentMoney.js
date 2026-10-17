@@ -3,8 +3,8 @@ export function paymentError(message, code, status = 400) {
 }
 
 export function paymentProvider(value) {
-  const provider = value === undefined ? "sepay" : String(value);
-  if (!["sepay", "paypal"].includes(provider)) {
+  const provider = value === undefined ? String(process.env.VND_PAYMENT_PROVIDER || "sepay") : String(value);
+  if (!["sepay", "paypal", "timo"].includes(provider)) {
     throw paymentError("Invalid payment provider", "PAYMENT_PROVIDER_INVALID");
   }
   return provider;

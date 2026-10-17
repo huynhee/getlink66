@@ -20,6 +20,10 @@ import SiteSetting from "../models/SiteSetting.js";
 import { billingPeriodFor } from "../utils/subscriptionTime.js";
 import { subscriptionDetails, refreshSubscriptionUser } from "../utils/subscriptionScheduleService.js";
 import { getSubscriptionCatalog, subscriptionPlanQuery, withSubscriptionCatalogWrite } from "../utils/subscriptionCatalogService.js";
+import { assertTimoConfigured, vndPaymentAvailability } from "../config/timoConfig.js";
+import { createTimoCheckout } from "../utils/timoPaymentService.js";
+import { releasePaymentReservation } from "../utils/paymentBenefitService.js";
+import { assertTimoMailbox } from "../utils/timoGmail.js";
 
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{16,128}$/;
 
@@ -36,7 +40,7 @@ export async function listMembershipPlans(_req, res, next) {
     const catalog = await getSubscriptionCatalog();
     const plans = await MembershipPlan.find(subscriptionPlanQuery()).lean();
     res.json({ plans: sortPlans(plans.filter((plan) => plan.price !== null && plan.price !== undefined)),
-      checkoutEnabled: catalog.checkoutEnabled, payments: { paypal: paypalAvailability() } });
+      checkoutEnabled: catalog.checkoutEnabled, payments: { paypal: paypalAvailability(), vnd: vndPaymentAvailability() } });
   } catch (error) {
     next(error);
   }
@@ -86,7 +90,8 @@ async function existingMembershipCheckoutResponse(existing, user, plan) {
   }
   const payment = existing.status === "approved"
     ? null
-    : existing.gatewayProvider === "paypal" ? await createPaypalCheckout("membership", existing) : createMembershipSepayCheckout({ order: existing, user, plan });
+    : existing.gatewayProvider === "paypal" ? await createPaypalCheckout("membership", existing)
+      : existing.gatewayProvider === "timo" ? await createTimoCheckout("membership", existing) : createMembershipSepayCheckout({ order: existing, user, plan });
   return {
     order: existing,
     payment,
@@ -169,6 +174,10 @@ export async function createMembershipCheckout(req, res, next) {
     const amount = Math.max(0, originalAmount - discountAmount);
     if (amount > 0) {
       if (isPaypal) paypalConfiguration({ newCheckout: true });
+      else if (provider === "timo") {
+        assertTimoConfigured({ newCheckout: true });
+        await assertTimoMailbox();
+      }
       else assertSepayConfigured();
     }
     const paymentCode = createMembershipPaymentCode();
@@ -227,7 +236,8 @@ export async function createMembershipCheckout(req, res, next) {
     if (amount === 0) {
       return res.json(await freeMembershipCheckoutResponse(order, req.user));
     }
-    const payment = isPaypal ? await createPaypalCheckout("membership", order) : createMembershipSepayCheckout({ order, user: req.user, plan });
+    const payment = isPaypal ? await createPaypalCheckout("membership", order)
+      : provider === "timo" ? await createTimoCheckout("membership", order) : createMembershipSepayCheckout({ order, user: req.user, plan });
     const updatedOrder = await MembershipOrder.findByIdAndUpdate(
       order._id,
       { checkoutUrl: payment.checkoutUrl },
@@ -287,6 +297,7 @@ export async function cancelMembershipOrder(req, res, next) {
       if (!existing) return res.status(404).json({ message: "Membership order not found" });
       return res.json({ order: existing, status: existing.status, membership: membershipSnapshot(req.user) });
     }
+    if (order.gatewayProvider === "timo") await releasePaymentReservation("membership", order);
     res.json({ order, status: order.status, membership: membershipSnapshot(req.user) });
   } catch (error) {
     next(error);

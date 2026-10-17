@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { productionReadinessIssues } from "../src/config/productionReadiness.js";
 import { paypalConfigurationIssues } from "../src/config/paypalConfig.js";
+import { timoConfigurationIssues } from "../src/config/timoConfig.js";
 
 const envPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.env");
 const raw = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
@@ -12,6 +13,8 @@ const errors = [];
 const warnings = [];
 const ok = [];
 errors.push(...paypalConfigurationIssues(process.env));
+errors.push(...timoConfigurationIssues(process.env));
+if (process.env.TIMO_ENABLED === "true") ok.push("Timo bank transfer configured (read-only Gmail reconciliation)");
 if (process.env.PAYPAL_ENABLED === "true") {
   ok.push("PayPal configured (server-side credentials)");
   if (process.env.PAYPAL_ENV !== "live") warnings.push("PayPal uses Sandbox; no real payments are accepted");

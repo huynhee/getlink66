@@ -11,6 +11,7 @@
     "start": "node server.js",
     "env:check": "node scripts/env-check.js",
     "paypal:check": "node scripts/paypal-check.js",
+    "timo:check": "node scripts/timo-check.js",
     "drive:auth": "node scripts/google-drive-auth.js",
     "drive:check": "node scripts/google-drive-check.js",
     "backup:databases": "node scripts/database-backup.js --database=all",
@@ -50,6 +51,7 @@
     "marketplace:scenes:reset:dry-run": "node scripts/reset-marketplace-model-catalog.js --asset-type=scene",
     "marketplace:scenes:reset": "node scripts/reset-marketplace-model-catalog.js --asset-type=scene --execute --confirm=RESET_SCENE_CATALOG",
     "qa:smoke": "node scripts/qa-smoke.js",
+    "qa:timo": "node scripts/qa-timo-payments.js",
     "qa:plugin-releases": "node scripts/qa-plugin-releases.js",
     "plugin:release:verify": "node scripts/verify-plugin-release.js",
     "test": "node --test"
@@ -60,9 +62,13 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.22.3",
+    "get-link-3d66": "file:..",
     "google-auth-library": "^10.9.1",
     "helmet": "^8.2.0",
+    "html-to-text": "^10.0.1",
     "jsonwebtoken": "^9.0.3",
+    "mailauth": "^4.13.3",
+    "mailparser": "^3.9.40",
     "mongoose": "^8.24.1",
     "otpauth": "^9.5.1",
     "passport": "^0.7.0",
@@ -77,6 +83,11 @@
     "yauzl": "3.4.0"
   },
   "overrides": {
+    "mailauth": {
+      "joi": "18.2.9",
+      "nodemailer": "10.1.2",
+      "undici": "7.30.1"
+    },
     "axios": "1.20.0",
     "body-parser": "1.20.6",
     "qs": "6.16.0"

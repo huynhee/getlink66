@@ -4,6 +4,7 @@ import { createRateLimit } from "../middleware/rateLimit.js";
 import { webhookIpGuard } from "../middleware/webhookGuard.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { capturePaypalOrder, paypalWebhook } from "../controllers/paypalController.js";
+import { bankPaymentStatus } from "../controllers/timoPaymentController.js";
 
 const router = Router();
 const webhookLimit = createRateLimit({
@@ -23,5 +24,6 @@ router.post("/payments/vietqr/webhook", webhookIpGuard, webhookLimit, vietQrWebh
 router.post("/payments/sepay/ipn", sepayWebhookLimit, sepayIpn);
 router.post("/payments/paypal/webhook", createRateLimit({ keyPrefix: "paypal-webhook", windowMs: 60_000, max: 120, keyGenerator: (req) => req.ip }), paypalWebhook);
 router.post("/payments/paypal/orders/:kind/:id/capture", requireAuth, createRateLimit({ keyPrefix: "paypal-capture", windowMs: 60_000, max: 30 }), capturePaypalOrder);
+router.get("/payments/bank/:kind/:id", requireAuth, createRateLimit({ keyPrefix: "bank-status", windowMs: 60_000, max: 60 }), bankPaymentStatus);
 
 export default router;

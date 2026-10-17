@@ -99,6 +99,7 @@ import {
 } from "../controllers/guideController.js";
 import { adminOnly } from "../middleware/adminOnly.js";
 import { auditAdmin, listAuditLogs } from "../middleware/auditLog.js";
+import { adminTimoStatus, adminReconcileTimo, adminRetryTimo } from "../controllers/timoPaymentController.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireNotBanned } from "../middleware/requireNotBanned.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
@@ -145,6 +146,9 @@ router.post(
 );
 
 router.use(requireAuth, requireNotBanned, adminOnly);
+router.get("/payments/timo", adminTimoStatus);
+router.post("/payments/timo/reconcile", adminWriteLimit, auditAdmin("RECONCILE_TIMO_PAYMENTS"), adminReconcileTimo);
+router.post("/payments/timo/events/:id/retry", adminWriteLimit, auditAdmin("RETRY_TIMO_NOTIFICATION"), adminRetryTimo);
 const pluginUploadLimit = createRateLimit({ keyPrefix: "admin-plugin-upload", windowMs: 60_000, max: 300, keyGenerator: (req) => req.user._id });
 router.get("/plugin/releases", listPluginReleases);
 router.post("/plugin/releases", adminWriteLimit, auditAdmin("CREATE_PLUGIN_RELEASE"), createPluginRelease);

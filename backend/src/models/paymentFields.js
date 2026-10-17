@@ -3,7 +3,7 @@ export const paymentMoneyFields = {
   originalAmountMinor: { type: Number, min: 0 },
   discountAmountMinor: { type: Number, min: 0 },
   amountMinor: { type: Number, min: 0 },
-  requestedPaymentProvider: { type: String, enum: ["sepay", "paypal"] },
+  requestedPaymentProvider: { type: String, enum: ["sepay", "paypal", "timo"] },
   paypalEnvironment: { type: String, enum: ["sandbox", "live"] },
   paypalOrderId: String,
   paypalCaptureId: String,

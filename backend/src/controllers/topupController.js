@@ -19,6 +19,10 @@ import { expirePendingSepayTopups } from "../utils/topupExpiryService.js";
 import { moneySnapshot, paymentProvider, paypalPrice } from "../utils/paymentMoney.js";
 import { paypalAvailability, paypalConfiguration } from "../utils/paypal.js";
 import { cancelPaypalPayment, createPaypalCheckout } from "../utils/paypalPaymentService.js";
+import { assertTimoConfigured, vndPaymentAvailability } from "../config/timoConfig.js";
+import { createTimoCheckout } from "../utils/timoPaymentService.js";
+import { releasePaymentReservation } from "../utils/paymentBenefitService.js";
+import { assertTimoMailbox } from "../utils/timoGmail.js";
 
 const MIN_TOPUP_AMOUNT = Number(process.env.MIN_TOPUP_AMOUNT || 1000);
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{16,128}$/;
@@ -223,7 +227,7 @@ export async function getPackages(_req, res, next) {
     let packages = await TopupPackage.find();
     await syncDefaultTopupPackages(packages);
     packages = sortPackages(await TopupPackage.find({ isActive: true, isArchived: { $ne: true } }).lean());
-    res.json({ packages, payments: { paypal: paypalAvailability() } });
+    res.json({ packages, payments: { paypal: paypalAvailability(), vnd: vndPaymentAvailability() } });
   } catch (error) {
     next(error);
   }
@@ -283,7 +287,8 @@ export async function createTopup(req, res, next) {
         }
         const payment = existingTopup.status === "approved"
           ? null
-          : type === "paypal" ? await createPaypalCheckout("topup", existingTopup) : createSepayCheckout({ topup: existingTopup, user: req.user, pack });
+          : type === "paypal" ? await createPaypalCheckout("topup", existingTopup)
+            : type === "timo" ? await createTimoCheckout("topup", existingTopup) : createSepayCheckout({ topup: existingTopup, user: req.user, pack });
         return res.json({
           topup: existingTopup,
           payment,
@@ -298,9 +303,14 @@ export async function createTopup(req, res, next) {
     const isAuto = type === "auto" || type === "fake";
     const isSepay = type === "sepay";
     const isPaypal = type === "paypal";
+    const isTimo = type === "timo";
     const status = isAuto ? "approved" : "pending";
     if (isSepay) assertSepayConfigured();
     if (isPaypal) paypalConfiguration({ newCheckout: true });
+    if (isTimo) {
+      assertTimoConfigured({ newCheckout: true });
+      await assertTimoMailbox();
+    }
     const originalAmount = isPaypal ? paypalPrice(pack) : packagePayAmount(pack);
     let discountAmount = 0;
     let voucherCreditBonus = 0;
@@ -349,7 +359,7 @@ export async function createTopup(req, res, next) {
     let attempt = 0;
     while (attempt < 3) {
       attempt += 1;
-      const paymentCode = isSepay ? createPaymentCode() : undefined;
+      const paymentCode = isSepay || isTimo ? createPaymentCode() : undefined;
       try {
         topup = await Topup.create({ ...baseTopupPayload, paymentCode });
         break;
@@ -399,6 +409,10 @@ export async function createTopup(req, res, next) {
     }
 
     let payment = null;
+    if (isTimo && topup.status !== "approved") {
+      payment = await createTimoCheckout("topup", topup);
+      topup = await Topup.findById(topup._id);
+    }
     if (isPaypal && topup.status !== "approved") {
       payment = await createPaypalCheckout("topup", topup);
       topup = await Topup.findById(topup._id);
@@ -502,7 +516,7 @@ export async function cancelTopup(req, res, next) {
       {
         _id: req.params.id,
         userId: req.user._id,
-        gatewayProvider: "sepay",
+        gatewayProvider: { $in: ["sepay", "timo"] },
         status: "pending",
       },
       {
@@ -522,6 +536,8 @@ export async function cancelTopup(req, res, next) {
       });
     }
 
+    if (topup?.gatewayProvider === "timo" && topup.status === "rejected") await releasePaymentReservation("topup", topup);
+
     if (!topup) {
       return res.status(404).json({ message: "Topup not found" });
     }
@@ -533,7 +549,7 @@ export async function cancelTopup(req, res, next) {
       message:
         topup.status === "approved"
           ? "Giao dịch đã được xác nhận thanh toán."
-          : "Đã hủy đơn thanh toán SePay.",
+          : "Đã hủy đơn thanh toán.",
     });
   } catch (error) {
     next(error);

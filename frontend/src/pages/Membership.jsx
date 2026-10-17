@@ -5,6 +5,8 @@ import { initialSubscriptionSelection, subscriptionApprovalMessage, subscription
 import { checkoutCurrency, formatPaymentMoney, submitPaymentCheckout } from "../utils/paymentPresentation.js";
 import SubscriptionPlans from "../components/SubscriptionPlans.jsx";
 import SubscriptionSchedule from "../components/SubscriptionSchedule.jsx";
+import BankTransferCheckout from "../components/BankTransferCheckout.jsx";
+import { bankPaymentRequest, rememberBankPayment, clearBankPayment } from "../utils/paymentPresentation.js";
 
 const PENDING_MEMBERSHIP_ORDER_KEY = "pendingMembershipOrderId";
 
@@ -16,6 +18,9 @@ function createIdempotencyKey() {
 export default function Membership({ user, onUserChange, language = "vi" }) {
   const locale = language === "vi" ? "vi-VN" : "en-US";
   const [paypalEnabled, setPaypalEnabled] = useState(false);
+  const [vndProvider, setVndProvider] = useState("sepay");
+  const [vndEnabled, setVndEnabled] = useState(true);
+  const [bankRequest, setBankRequest] = useState(() => { const request = bankPaymentRequest(); return request?.kind === "membership" ? request : null; });
   const money = (plan) => formatPaymentMoney(subscriptionPlanPrice(plan, language), checkoutCurrency(language), locale);
   const [plans, setPlans] = useState([]);
   const [membership, setMembership] = useState(null);
@@ -30,6 +35,8 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
   const loadPlans = useCallback(async () => {
     const data = await api("/api/membership/plans");
     setPaypalEnabled(data.payments?.paypal?.enabled === true);
+    setVndProvider(data.payments?.vnd?.provider === "timo" ? "timo" : "sepay");
+    setVndEnabled(data.payments?.vnd?.enabled !== false);
     setPlans(data.plans || []);
     setCheckoutEnabled(data.checkoutEnabled !== false);
     const selection = initialSubscriptionSelection(data.plans, new URLSearchParams(window.location.search).get("planId"));
@@ -102,7 +109,7 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
       const data = await api("/api/membership/checkout", {
         method: "POST",
         headers: { "Idempotency-Key": requestKeyRef.current },
-        body: JSON.stringify({ planId: selectedPlanId, paymentProvider: language === "en" ? "paypal" : "sepay" }),
+        body: JSON.stringify({ planId: selectedPlanId, paymentProvider: language === "en" ? "paypal" : vndProvider }),
       });
       if (data.status === "approved") {
         window.sessionStorage.removeItem(PENDING_MEMBERSHIP_ORDER_KEY);
@@ -119,6 +126,10 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
         return;
       }
       window.sessionStorage.setItem(PENDING_MEMBERSHIP_ORDER_KEY, data.order._id);
+      if (data.payment?.provider === "timo") {
+        setBankRequest(rememberBankPayment("membership", data.order._id));
+        return;
+      }
       setMessage(language === "vi" ? "Đang chuyển sang cổng thanh toán..." : "Redirecting to payment...");
       if (!submitPaymentCheckout(data.payment)) {
         setMessage(language === "vi" ? "Đã tạo đơn Subscription. Vui lòng hoàn tất thanh toán." : "Subscription order created.");
@@ -133,10 +144,22 @@ export default function Membership({ user, onUserChange, language = "vi" }) {
 
   const selectedPlan = plans.find((plan) => String(plan._id) === String(selectedPlanId));
   const selectedPrice = selectedPlan ? subscriptionPlanPrice(selectedPlan, language) : null;
-  const canBuy = checkoutEnabled && selectedPrice !== null && (language !== "en" || selectedPrice === 0 || paypalEnabled);
+  const canBuy = checkoutEnabled && selectedPrice !== null && (selectedPrice === 0 || (language === "en" ? paypalEnabled : vndEnabled));
+
+  async function bankPaid(request) {
+    const result = await api(`/api/membership/orders/${request.id}/status`);
+    setMembership(result.membership);
+    onUserChange?.((current) => current ? { ...current,
+      proUntil: result.membership?.proUntil, isPro: result.membership?.active,
+      proDailyDownloadLimit: result.membership?.dailyDownloadLimit } : current);
+    setMessage(subscriptionApprovalMessage(result, language));
+    window.sessionStorage.removeItem(PENDING_MEMBERSHIP_ORDER_KEY);
+    clearBankPayment();
+  }
 
   return (
     <div className="stack subscriptionPage">
+      {user && bankRequest && <BankTransferCheckout request={bankRequest} language={language} onClose={() => setBankRequest(null)} onPaid={bankPaid} />}
       <section className="membershipHero">
         <div>
           <p className="eyebrowSignal">3DIPL MEMBER</p>

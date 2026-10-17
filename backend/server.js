@@ -177,6 +177,9 @@ const { startStorageHealthJob, stopStorageHealthJob } = await import("./src/util
 const { startPluginReleaseCleanupJob, stopPluginReleaseCleanupJob } = await import("./src/utils/pluginReleaseCleanupJob.js");
 const { startGetlinkJobWorker, stopGetlinkJobWorker } = await import("./src/utils/getlinkJobService.js");
 const { startPaypalReconciliationJob, stopPaypalReconciliationJob } = await import("./src/utils/paypalReconciliationJob.js");
+const { startTimoMailJob, stopTimoMailJob } = await import("./src/utils/timoMailJob.js");
+const { default: TimoMailEvent } = await import("./src/models/TimoMailEvent.js");
+const { default: TimoMailState } = await import("./src/models/TimoMailState.js");
 const { ensurePaypalIndexes } = await import("./src/utils/paypalIndexes.js");
 const { close3D66Browser } = await import("./src/utils/3d66BrowserService.js");
 const { close3D66ProxyAgents } = await import("./src/utils/3d66Service.js");
@@ -184,6 +187,10 @@ const { close3D66ProxyAgents } = await import("./src/utils/3d66Service.js");
 await ensureTopupIndexes();
 await ensurePaymentReceiptIndexes();
 await ensurePaypalIndexes();
+if (!isMemoryDb()) {
+  await TimoMailEvent.init();
+  await TimoMailState.init();
+}
 await ensureNotificationReceiptIndexes();
 await ensureMarketplaceReportIndexes();
 await ensureBackupRunIndexes();
@@ -217,6 +224,7 @@ startStorageHealthJob();
 startPluginReleaseCleanupJob();
 startGetlinkJobWorker();
 startPaypalReconciliationJob();
+startTimoMailJob();
 
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "true") app.set("trust proxy", 1);
@@ -449,6 +457,7 @@ async function gracefulShutdown(signal) {
   stopStorageHealthJob();
   await stopPluginReleaseCleanupJob();
   await stopPaypalReconciliationJob();
+  await stopTimoMailJob();
   const getlinkWorkerStop = stopGetlinkJobWorker({ timeoutMs: 25_000 });
   logger.info({ signal }, "Graceful shutdown started");
 

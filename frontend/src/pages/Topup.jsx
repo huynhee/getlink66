@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowRight, Check, CheckCircle2, Copy, CreditCard, Gift, History, Loader2, ShieldCheck, Sparkles, Wallet, X } from "lucide-react";
+import { ArrowRight, Check, CheckCircle2, Copy, CreditCard, Gift, History, Loader2, QrCode, ShieldCheck, Sparkles, Wallet, X } from "lucide-react";
 import { api } from "../api.js";
 import { useMarketplacePrices } from "../utils/useMarketplacePrices.js";
 import { translations } from "../i18n.js";
 import { initialSubscriptionSelection, subscriptionApprovalMessage, subscriptionCheckoutDescription, subscriptionDateLabel, subscriptionPlanPrice, subscriptionVoucherApplies } from "../utils/membershipPresentation.js";
 import SubscriptionPlans from "../components/SubscriptionPlans.jsx";
 import SubscriptionSchedule from "../components/SubscriptionSchedule.jsx";
+import BankTransferCheckout from "../components/BankTransferCheckout.jsx";
+import { bankPaymentRequest, rememberBankPayment, clearBankPayment } from "../utils/paymentPresentation.js";
 import { checkoutCurrency, discountedPaymentPrice, formatPaymentMoney, packagePrice, submitPaymentCheckout } from "../utils/paymentPresentation.js";
 import "./topup.css";
 
@@ -54,6 +56,9 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   const currency = checkoutCurrency(language);
   const money = (value, valueLocale = locale, valueCurrency = currency) => formatPaymentMoney(value, valueCurrency, valueLocale);
   const [paypalEnabled, setPaypalEnabled] = useState(false);
+  const [vndProvider, setVndProvider] = useState("sepay");
+  const [vndEnabled, setVndEnabled] = useState(true);
+  const [bankRequest, setBankRequest] = useState(bankPaymentRequest);
   const [packages, setPackages] = useState([]);
   const [packagesLoading, setPackagesLoading] = useState(true);
   const [membershipPlans, setMembershipPlans] = useState([]);
@@ -115,6 +120,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     api("/api/topup/packages").then((data) => {
       if (canceled) return;
       setPaypalEnabled(data.payments?.paypal?.enabled === true);
+      setVndProvider(data.payments?.vnd?.provider === "timo" ? "timo" : "sepay");
+      setVndEnabled(data.payments?.vnd?.enabled !== false);
       const nextPackages = data.packages || [];
       setPackages(nextPackages);
       const packageId = queryParam("packageId");
@@ -461,8 +468,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   const voucherTargetsMembership =
     topupMode === "pro" &&
     subscriptionVoucherApplies(appliedVoucher, selectedMembershipPlan);
-  const canBuyCredit = selectedPackage && finalPrice(selectedPackage) !== null && (language !== "en" || paypalEnabled) && finalPrice(selectedPackage) >= (currency === "USD" ? 0.01 : 1000);
-  const canBuyPro = subscriptionCheckoutEnabled && selectedMembershipPlan && membershipFinalPrice(selectedMembershipPlan) !== null && (language !== "en" || paypalEnabled || membershipFinalPrice(selectedMembershipPlan) === 0);
+  const canBuyCredit = selectedPackage && finalPrice(selectedPackage) !== null && (language === "en" ? paypalEnabled : vndEnabled) && finalPrice(selectedPackage) >= (currency === "USD" ? 0.01 : 1000);
+  const canBuyPro = subscriptionCheckoutEnabled && selectedMembershipPlan && membershipFinalPrice(selectedMembershipPlan) !== null && (membershipFinalPrice(selectedMembershipPlan) === 0 || (language === "en" ? paypalEnabled : vndEnabled));
   const isSubscription = topupMode === "pro";
   const selectedItem = isSubscription ? selectedMembershipPlan : selectedPackage;
   const selectedPrice = selectedItem ? isSubscription ? membershipFinalPrice(selectedItem) : finalPrice(selectedItem) : null;
@@ -473,7 +480,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
   const catalogLoading = isSubscription ? plansLoading : packagesLoading;
   const paymentProviderLabel = isSubscription && selectedPrice === 0
     ? language === "vi" ? "Kích hoạt miễn phí" : "Free activation"
-    : language === "en" ? "PayPal · USD" : "SePay · VND";
+    : language === "en" ? "PayPal · USD" : vndProvider === "timo" ? "VietQR · Timo · VND" : "SePay · VND";
 
   function membershipFinalPrice(plan) {
     const original = subscriptionPlanPrice(plan, language);
@@ -512,7 +519,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         headers: { "Idempotency-Key": membershipRequestKeyRef.current },
         body: JSON.stringify({
           planId: selectedMembershipPlan._id,
-          paymentProvider: language === "en" ? "paypal" : "sepay",
+          paymentProvider: language === "en" ? "paypal" : vndProvider,
           voucherCode: voucherTargetsMembership ? appliedVoucher?.code : undefined,
         }),
       });
@@ -532,6 +539,11 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
       }
       if (data.order?._id) {
         window.sessionStorage.setItem(PENDING_MEMBERSHIP_ORDER_KEY, data.order._id);
+      }
+      if (data.payment?.provider === "timo") {
+        setBankRequest(rememberBankPayment("membership", data.order._id));
+        setProMessage("");
+        return;
       }
       setProMessage(language === "vi" ? "Đang chuyển sang cổng thanh toán..." : "Redirecting to payment...");
       if (!submitPaymentCheckout(data.payment)) {
@@ -565,13 +577,20 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
         headers: { "Idempotency-Key": topupRequestKeyRef.current },
         body: JSON.stringify({
           packageId: selectedPackage._id,
-          paymentProvider: language === "en" ? "paypal" : "sepay",
+          paymentProvider: language === "en" ? "paypal" : vndProvider,
           voucherCode: voucherAppliesToPackage(appliedVoucher, selectedPackage) ? appliedVoucher?.code : undefined,
         }),
       });
       setPayment(data.topup);
       if (data.topup?._id) {
         window.sessionStorage.setItem(PENDING_TOPUP_ID_KEY, data.topup._id);
+      }
+      if (data.payment?.provider === "timo") {
+        setBankRequest(rememberBankPayment("topup", data.topup._id));
+        setMessage("");
+        topupRequestKeyRef.current = "";
+        setSubmitting(false);
+        return;
       }
       setMessage(t.redirectingPayment);
       if (!submitPaymentCheckout(data.payment)) {
@@ -624,8 +643,28 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
     }
   }
 
+  async function bankPaid(request) {
+    if (request.kind === "topup") {
+      const result = await api(`/api/topup/${request.id}/status`);
+      onUserChange((current) => current ? { ...current, credit: result.userCredit } : current);
+      setLastPaidPayment(result.topup);
+      setPayment(null);
+      setMessage(t.paymentDone);
+      window.sessionStorage.removeItem(PENDING_TOPUP_ID_KEY);
+    } else {
+      const result = await api(`/api/membership/orders/${request.id}/status`);
+      setMembership(result.membership);
+      onUserChange((current) => current ? { ...current, proUntil: result.membership?.proUntil,
+        isPro: result.membership?.active, proDailyDownloadLimit: result.membership?.dailyDownloadLimit } : current);
+      setProMessage(subscriptionApprovalMessage(result, language));
+      window.sessionStorage.removeItem(PENDING_MEMBERSHIP_ORDER_KEY);
+    }
+    clearBankPayment();
+  }
+
   return (
     <div className="topupPage subscriptionPage">
+      {user && bankRequest && <BankTransferCheckout request={bankRequest} language={language} onClose={() => setBankRequest(null)} onPaid={bankPaid} />}
       <header className="topupPageHeader">
         <div>
           <h1>{language === "vi" ? "Nạp tài khoản" : "Top up your account"}</h1>
@@ -728,7 +767,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
           )}
           {!isSubscription && payment && (
             <section className="topupPaymentDetails">
-              <h3>{t.paymentInfo}</h3>
+              <h3>{payment.gatewayProvider === "sepay" ? t.paymentInfo : language === "vi" ? "Thông tin thanh toán" : "Payment details"}</h3>
               <dl className="topupPaymentRows">
                 <div><dt>{t.amount}</dt><dd>{money(payment.amount, locale, payment.currency || "VND")}</dd>
                   <button className="topupIconButton" type="button" title={t.copy} aria-label={t.copy + " " + t.amount} onClick={() => copyText(payment.amount, "amount")}>{copied === "amount" ? <Check size={16} /> : <Copy size={16} />}</button></div>
@@ -779,6 +818,8 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
               <div className="topupOrderTotal"><dt>{language === "vi" ? "Tổng thanh toán" : "Total"}</dt><dd>{selectedItem ? money(selectedPrice) : "-"}</dd></div>
             </dl>
             <div className="topupPaymentProvider"><CreditCard size={16} /><span>{paymentProviderLabel}</span></div>
+            {!bankRequest && bankPaymentRequest() && <button type="button" className="googleButton" onClick={() => setBankRequest(bankPaymentRequest())}>
+              <QrCode size={16} />{language === "vi" ? "Mở đơn chuyển khoản" : "Open bank transfer order"}</button>}
             <button className="primaryButton topupPayButton" type="button" disabled={!checkoutAllowed || checkoutBusy || voucherLoading}
               onClick={isSubscription ? checkoutMembership : topup}>
               {checkoutBusy ? <Loader2 size={17} className="topupSpinner" /> : <ArrowRight size={17} />}
@@ -788,6 +829,7 @@ export default function Topup({ user, onUserChange, language = "vi" }) {
             </button>
             {selectedItem && selectedPrice === null && <p className="topupFeedback" role="status">{language === "vi" ? "Gói chưa có giá để mua." : "USD price is not available for this package yet."}</p>}
             {selectedItem && selectedPrice !== null && selectedPrice > 0 && language === "en" && !paypalEnabled && <p className="topupFeedback" role="status">PayPal checkout is not available yet.</p>}
+            {selectedPrice > 0 && language === "vi" && !vndEnabled && <p className="topupFeedback" role="status">Chuyển khoản hiện tạm ngưng nhận đơn mới.</p>}
             {(isSubscription ? proMessage : message) && <p className="topupFeedback success" role="status">{isSubscription ? proMessage : message}</p>}
             {(isSubscription ? proError : error) && <p className="topupFeedback error" role="alert">{isSubscription ? proError : error}</p>}
           </div>

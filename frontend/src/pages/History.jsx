@@ -425,6 +425,11 @@ export default function History({ language = "vi" }) {
                     {language === "vi" ? "Kiểm tra thanh toán PayPal" : "Check PayPal payment"}
                   </a>
                 )}
+                {metadata.gatewayProvider === "timo" && event.status === "pending" && ["credit", "pro"].includes(event.type) && (
+                  <a className="smallButton" href={`/topup?mode=${event.type === "pro" ? "pro" : "credit"}&bankKind=${event.type === "pro" ? "membership" : "topup"}&bankOrder=${encodeURIComponent(metadata.orderId || metadata.topupId)}`}>
+                    <RefreshCw size={14} />{language === "vi" ? "Mở thanh toán Timo" : "Open Timo payment"}
+                  </a>
+                )}
               </div>
               <div className="timelineEventSide">
                 {amount && <strong>{amount}</strong>}

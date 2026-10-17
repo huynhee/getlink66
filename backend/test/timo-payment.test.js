@@ -1,0 +1,305 @@
+import test, { beforeEach, mock } from "node:test";
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { OAuth2Client } from "google-auth-library";
+import { dkimSign } from "mailauth/lib/dkim/sign.js";
+import { dkimVerify } from "mailauth/lib/dkim/verify.js";
+import { useMemoryDb } from "../src/config/memoryStore.js";
+import { timoConfiguration, timoConfigurationIssues } from "../src/config/timoConfig.js";
+import { parseTimoBody, verifyTimoNotification } from "../src/utils/timoNotification.js";
+useMemoryDb();
+const { default: User } = await import("../src/models/User.js");
+const { default: Topup } = await import("../src/models/Topup.js");
+const { default: Pack } = await import("../src/models/TopupPackage.js");
+const { default: Plan } = await import("../src/models/MembershipPlan.js");
+const { default: MembershipOrder } = await import("../src/models/MembershipOrder.js");
+const { default: PaymentReceipt } = await import("../src/models/PaymentReceipt.js");
+const { default: Event } = await import("../src/models/TimoMailEvent.js");
+const { default: State } = await import("../src/models/TimoMailState.js");
+const { default: Reservation } = await import("../src/models/PaymentBenefitReservation.js");
+const { default: Voucher } = await import("../src/models/Voucher.js");
+const { default: SiteSetting } = await import("../src/models/SiteSetting.js");
+const { default: SubscriptionPeriod } = await import("../src/models/SubscriptionPeriod.js");
+const { createTimoCheckout, settleTimoMailEvent } = await import("../src/utils/timoPaymentService.js");
+const { createTopup } = await import("../src/controllers/topupController.js");
+const { createMembershipCheckout } = await import("../src/controllers/membershipController.js");
+const { bankPaymentStatus } = await import("../src/controllers/timoPaymentController.js");
+const { reconcileTimoOnce } = await import("../src/utils/timoMailJob.js");
+const { assertTimoMailbox } = await import("../src/utils/timoGmail.js");
+const { sepayIpn } = await import("../src/controllers/paymentController.js");
+const { adminCancelTopup, adminCancelMembershipOrder } = await import("../src/controllers/adminV1Controller.js");
+
+let user;
+let pack;
+beforeEach(async () => {
+  mock.restoreAll();
+  Object.assign(process.env, {
+    VND_PAYMENT_PROVIDER: "timo", TIMO_ENABLED: "true", TIMO_MAIL_WORKER_ENABLED: "true",
+    TIMO_ACCOUNT_NO: "1000000000000", TIMO_ACCOUNT_NAME: "TEST MERCHANT",
+    TIMO_GMAIL_ADDRESS: "timo-fixture@gmail.com", TIMO_GMAIL_CLIENT_ID: "fixture-client",
+    TIMO_GMAIL_CLIENT_SECRET: "fixture-secret", TIMO_GMAIL_REFRESH_TOKEN: "fixture-refresh",
+    TIMO_MAIL_START_AT: new Date(Date.now() - 3600_000).toISOString(),
+    TELEGRAM_ENABLED: "false", TOPUP_PACKAGE_CATALOG_MIGRATION_ENABLED: "false",
+  });
+  mock.method(OAuth2Client.prototype, "request", async (options) => {
+    assert.equal(options.method, "GET");
+    assert.equal(options.url, "https://gmail.googleapis.com/gmail/v1/users/me/profile");
+    return { data: { emailAddress: process.env.TIMO_GMAIL_ADDRESS } };
+  });
+  for (const Model of [User, Topup, Pack, Plan, MembershipOrder, PaymentReceipt, Event, State, Reservation, Voucher, SiteSetting, SubscriptionPeriod]) await Model.deleteMany({});
+  user = await User.create({ name: "Fixture", email: "fixture@example.test", credit: 0 });
+  pack = await Pack.create({ name: "Credit fixture", price: 10000, credit: 50, isActive: true });
+});
+
+async function invoke(controller, body = {}, { params = {}, owner = user, key = "timo-fixture-idempotency-0001" } = {}) {
+  let payload;
+  let status = 200;
+  await controller({ body, params, user: owner, get: (name) => name.toLowerCase() === "idempotency-key" ? key : "" }, {
+    status(code) { status = code; return this; }, set() {}, json(value) { payload = value; return value; },
+  }, (error) => { throw error; });
+  return { payload, status };
+}
+
+async function checkout(body = {}) {
+  const result = await invoke(createTopup, { packageId: pack._id, paymentProvider: "timo", ...body });
+  return result.payload;
+}
+
+async function verifiedEvent(order, changes = {}) {
+  return Event.create({ _id: crypto.randomUUID(), mailbox: process.env.TIMO_GMAIL_ADDRESS, gmailMessageId: "aabbcc", accountNo: process.env.TIMO_ACCOUNT_NO,
+    state: "verified", signedMessageIdHash: crypto.randomBytes(32).toString("hex"), paymentCode: order.paymentCode,
+    amount: order.amountMinor, occurredAt: new Date(), nextAttemptAt: new Date(0), ...changes });
+}
+
+function body(code = "NAPEXAMPLE123456", direction = "tăng", amount = "10.000") {
+  return `TEST MERCHANT thân mến, Tài khoản Spend Account vừa ${direction} ${amount} VND vào 18/10/2026 04:06. Số dư hiện tại: 999.999.999 VND. Mô tả: Sender ${code}. Cảm ơn Quý khách đã sử dụng dịch vụ Timo Digital Bank by BVBank!`;
+}
+
+test("Timo configuration is opt-in and requires dedicated credentials and a worker", () => {
+  assert.deepEqual(timoConfigurationIssues({}), []);
+  assert.deepEqual(timoConfigurationIssues(process.env), []);
+  const errors = timoConfigurationIssues({ ...process.env, TIMO_GMAIL_REFRESH_TOKEN: "", TIMO_MAIL_WORKER_ENABLED: "false" });
+  assert.ok(errors.some((message) => message.includes("REFRESH_TOKEN")));
+  assert.ok(errors.some((message) => message.includes("WORKER_ENABLED")));
+});
+
+test("parse actual bank template, never confuse balance with incoming amount", () => {
+  const notice = parseTimoBody(body(), timoConfiguration());
+  assert.equal(notice.amount, 10000);
+  assert.equal(notice.paymentCode, "NAPEXAMPLE123456");
+  assert.equal(notice.occurredAt.toISOString(), "2026-10-17T21:06:00.000Z");
+  assert.equal(parseTimoBody(body("NAPEXAMPLE123456", "giảm"), timoConfiguration()).ignored, true);
+  assert.throws(() => parseTimoBody(body("NAPEXAMPLE123456 PROEXAMPLE123456"), timoConfiguration()), { code: "TIMO_AMBIGUOUS_PAYMENT_CODE" });
+  assert.throws(() => parseTimoBody(body().replace("TEST MERCHANT", "OTHER OWNER"), timoConfiguration()), { code: "TIMO_OWNER_MISMATCH" });
+  assert.throws(() => parseTimoBody(body().replace("18/10/2026", "31/02/2026"), timoConfiguration()), { code: "TIMO_DATE_INVALID" });
+  assert.throws(() => parseTimoBody(body("", "tăng", "10.00"), timoConfiguration()), { code: "TIMO_AMOUNT_INVALID" });
+  assert.throws(() => parseTimoBody(body(""), timoConfiguration()), { code: "TIMO_PAYMENT_CODE_MISSING" });
+});
+
+const keys = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+const privateKey = keys.privateKey.export({ format: "pem", type: "pkcs8" });
+const publicKey = keys.publicKey.export({ format: "der", type: "spki" }).toString("base64");
+async function signedEmail({ code, to = process.env.TIMO_GMAIL_ADDRESS, domain = "timo.vn", limited = false } = {}) {
+  const raw = `From: Timo Support <support@timo.vn>\r\nTo: ${to}\r\nSubject: Thông báo thay đổi số dư tài khoản\r\nMessage-ID: <fixture-${crypto.randomUUID()}@timo.vn>\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>${body(code)}</p>\r\n`;
+  const signed = await dkimSign(raw, { signTime: new Date(Date.now() - 60_000), headerList: "from:to:subject:message-id:mime-version:content-type", signatureData: [{ signingDomain: domain, selector: "fixture", privateKey, ...(limited ? { maxBodyLength: 10 } : {}) }] });
+  assert.equal(signed.errors.length, 0);
+  return Buffer.from(signed.signatures + raw);
+}
+const verifyFixture = (raw, options) => dkimVerify(raw, { ...options, resolver: async () => [[`v=DKIM1; k=rsa; p=${publicKey}`]] });
+
+test("verify cryptographic DKIM, reject changed body, forged auth headers and wrong mailbox", async () => {
+  const raw = await signedEmail();
+  const config = timoConfiguration();
+  const notice = await verifyTimoNotification(raw, config, { verify: verifyFixture });
+  assert.equal(notice.amount, 10000);
+  assert.match(notice.signedMessageIdHash, /^[a-f0-9]{64}$/);
+  await assert.rejects(verifyTimoNotification(Buffer.from(raw.toString().replace("10.000", "50.000")), config, { verify: verifyFixture }), { code: "TIMO_DKIM_INVALID" });
+  const unsigned = raw.toString().slice(raw.toString().indexOf("From:"));
+  await assert.rejects(verifyTimoNotification(Buffer.from("Authentication-Results: mx.google.com; dkim=pass header.d=timo.vn\r\n" + unsigned), config, { verify: verifyFixture }), { code: "TIMO_DKIM_INVALID" });
+  await assert.rejects(verifyTimoNotification(await signedEmail({ to: "other@gmail.com" }), config, { verify: verifyFixture }), { code: "TIMO_RECIPIENT_MISMATCH" });
+  await assert.rejects(verifyTimoNotification(await signedEmail({ domain: "attacker.test" }), config, { verify: verifyFixture }), { code: "TIMO_DKIM_INVALID" });
+  await assert.rejects(verifyTimoNotification(await signedEmail({ limited: true }), config, { verify: verifyFixture }), { code: "TIMO_DKIM_INVALID" });
+});
+
+test("Timo checkout uses immutable VND and bank snapshots without granting credit", async () => {
+  const first = await checkout();
+  assert.equal(first.payment.provider, "timo");
+  assert.equal(first.topup.currency, "VND");
+  assert.equal(first.topup.accountName, "TEST MERCHANT");
+  assert.equal((await User.findById(user._id)).credit, 0);
+  const url = new URL(first.payment.qrUrl);
+  assert.equal(url.origin, "https://img.vietqr.io");
+  assert.equal(url.searchParams.get("amount"), "10000");
+  assert.equal(url.searchParams.get("addInfo"), first.topup.paymentCode);
+  await Pack.findByIdAndUpdate(pack._id, { price: 20000, credit: 999 });
+  process.env.TIMO_ACCOUNT_NO = "2000000000000";
+  const replay = await checkout();
+  assert.equal(replay.topup.amount, 10000);
+  assert.equal(replay.topup.credit, 50);
+  assert.equal(replay.payment.accountNo, "1000000000000");
+  assert.equal(await Topup.countDocuments({}), 1);
+});
+
+test("concurrent and replayed email settlement grants credit once", async () => {
+  const { topup } = await checkout();
+  const event = await verifiedEvent(topup);
+  await Promise.all([settleTimoMailEvent(event._id), settleTimoMailEvent(event._id)]);
+  await settleTimoMailEvent(event._id);
+  assert.equal((await User.findById(user._id)).credit, 50);
+  assert.equal(await PaymentReceipt.countDocuments({}), 1);
+  assert.equal((await Event.findById(event._id)).state, "applied");
+});
+
+test("underpayment, overpayment, old transfer and wrong account never grant benefits", async () => {
+  const { topup } = await checkout();
+  for (const changes of [{ amount: 9999 }, { amount: 10001 }, { accountNo: "3000000000000" }, { occurredAt: new Date(Date.now() - 600_000) }]) {
+    const event = await verifiedEvent(topup, changes);
+    await assert.rejects(settleTimoMailEvent(event._id));
+  }
+  assert.equal((await User.findById(user._id)).credit, 0);
+  assert.equal(await PaymentReceipt.countDocuments({}), 0);
+});
+
+test("a bank-issued message ID cannot pay a second order", async () => {
+  const first = await checkout();
+  const one = await verifiedEvent(first.topup);
+  await settleTimoMailEvent(one._id);
+  const second = await invoke(createTopup, { packageId: pack._id, paymentProvider: "timo" }, { key: "timo-fixture-second-order-0002" });
+  const two = await verifiedEvent(second.payload.topup, { signedMessageIdHash: one.signedMessageIdHash });
+  await assert.rejects(settleTimoMailEvent(two._id), { code: "TIMO_RECEIPT_CONFLICT" });
+  assert.equal((await User.findById(user._id)).credit, 50);
+});
+
+test("bank payment detail is bound to the signed-in owner", async () => {
+  const { topup } = await checkout();
+  const other = await User.create({ email: "other@example.test", name: "Other" });
+  const response = await invoke(bankPaymentStatus, {}, { params: { kind: "topup", id: topup._id }, owner: other });
+  assert.equal(response.status, 404);
+  const own = await invoke(bankPaymentStatus, {}, { params: { kind: "topup", id: topup._id } });
+  assert.equal(own.payload.payment.accountName, "TEST MERCHANT");
+  assert.equal(own.payload.order.gatewayPayload, undefined);
+});
+
+test("subscription and free trial keep existing activation and scheduling rules", async () => {
+  const plan = await Plan.create({ code: "MONTH50", name: "Month50", price: 10000, durationDays: 30, dailyDownloadLimit: 50, billingPeriod: "month", isActive: true });
+  const response = await invoke(createMembershipCheckout, { planId: plan._id, paymentProvider: "timo" });
+  assert.equal(response.payload.payment.provider, "timo");
+  const order = await MembershipOrder.findById(response.payload.order._id);
+  const event = await verifiedEvent(order);
+  await settleTimoMailEvent(event._id);
+  assert.equal((await MembershipOrder.findById(order._id)).status, "approved");
+  assert.equal((await User.findById(user._id)).proDailyDownloadLimit, 50);
+  const trial = await Plan.create({ code: "TRIAL", name: "Trial", price: 0, durationDays: 7, dailyDownloadLimit: 100, isActive: true });
+  const free = await invoke(createMembershipCheckout, { planId: trial._id, paymentProvider: "timo" }, { key: "timo-fixture-free-trial-0001" });
+  assert.equal(free.payload.status, "approved");
+  assert.equal(free.payload.payment, null);
+  assert.equal(free.payload.order.gatewayProvider, "internal_free");
+});
+
+test("Gmail credentials are checked against the configured mailbox and only GETs are allowed", async () => {
+  mock.method(OAuth2Client.prototype, "request", async (options) => {
+    assert.equal(options.method, "GET");
+    assert.equal(new URL(options.url).origin, "https://gmail.googleapis.com");
+    return { data: { emailAddress: "wrong@gmail.com" } };
+  });
+  await assert.rejects(assertTimoMailbox(), { code: "TIMO_GMAIL_ACCOUNT_MISMATCH" });
+});
+
+test("worker recovers verified payment after restart and polls mail with durable checkpoints", async () => {
+  const { topup } = await checkout();
+  await verifiedEvent(topup);
+  mock.method(OAuth2Client.prototype, "request", async (options) => {
+    assert.equal(options.method, "GET");
+    const path = new URL(options.url).pathname;
+    if (path.endsWith("/profile")) return { data: { emailAddress: process.env.TIMO_GMAIL_ADDRESS } };
+    if (path.endsWith("/messages")) return { data: { messages: [] } };
+    throw new Error("Unexpected Gmail operation");
+  });
+  await reconcileTimoOnce();
+  assert.equal((await User.findById(user._id)).credit, 50);
+  const state = await State.findById(process.env.TIMO_GMAIL_ADDRESS);
+  assert.ok(state.lastSuccessAt);
+  assert.equal(state.lockOwner, "");
+  await reconcileTimoOnce();
+  assert.equal((await User.findById(user._id)).credit, 50);
+});
+
+test("disabling new Timo checkout does not disable reconciliation of paid orders", async () => {
+  const { topup } = await checkout();
+  const event = await verifiedEvent(topup);
+  process.env.TIMO_ENABLED = "false";
+  process.env.VND_PAYMENT_PROVIDER = "sepay";
+  await settleTimoMailEvent(event._id);
+  assert.equal((await User.findById(user._id)).credit, 50);
+  await assert.rejects(createTimoCheckout("topup", await Topup.create({ userId: user._id, amountMinor: 10000, amount: 10000, currency: "VND", credit: 50,
+    status: "pending", gatewayProvider: "timo", paymentCode: "NAPNEWORDER1234", expiresAt: new Date(Date.now() + 60000) })), { code: "TIMO_NOT_CONFIGURED" });
+});
+
+test("SePay cannot approve a Timo order even with a valid SePay IPN secret", async () => {
+  const { topup } = await checkout();
+  process.env.SEPAY_SECRET_KEY = "fixture-sepay-secret";
+  let payload;
+  await sepayIpn({ body: { notification_type: "ORDER_PAID", order: { order_invoice_number: topup.paymentCode },
+    transaction: { transaction_status: "APPROVED", transaction_id: "fixture-tx", transaction_amount: 10000 } },
+  get(name) { return name === "content-type" ? "application/json" : name === "x-secret-key" ? process.env.SEPAY_SECRET_KEY : ""; } },
+  { json(value) { payload = value; }, status() { return this; } }, (error) => { throw error; });
+  assert.equal(payload.ok, false);
+  assert.equal((await User.findById(user._id)).credit, 0);
+  assert.equal(await PaymentReceipt.countDocuments({}), 0);
+});
+
+test("late genuine transfers are not lost after local order cancellation", async () => {
+  const { topup } = await checkout();
+  await Topup.findByIdAndUpdate(topup._id, { status: "rejected", rejectionReason: "expired", expiresAt: new Date(0) });
+  const event = await verifiedEvent(topup);
+  await settleTimoMailEvent(event._id);
+  assert.equal((await User.findById(user._id)).credit, 50);
+  const second = await verifiedEvent(topup);
+  await assert.rejects(settleTimoMailEvent(second._id), { code: "TIMO_ORDER_ALREADY_HANDLED" });
+  assert.equal((await User.findById(user._id)).credit, 50);
+});
+
+test("an unavailable Gmail account prevents creating a new payment order", async () => {
+  mock.method(OAuth2Client.prototype, "request", async () => { throw Object.assign(new Error("private access token secret"), { response: { status: 401 } }); });
+  await assert.rejects(checkout(), (error) => {
+    assert.equal(error.code, "TIMO_GMAIL_UNAVAILABLE");
+    assert.equal(JSON.stringify(error).includes("secret"), false);
+    assert.equal(error.message.includes("token"), false);
+    return true;
+  });
+  assert.equal(await Topup.countDocuments({}), 0);
+});
+
+test("admin cancellation releases Timo voucher and purchase reservations for both order kinds", async () => {
+  await Voucher.create({ code: "TIMOFIXTURE", discountPercent: 10, usageLimit: 10, usedCount: 0,
+    perUserLimit: 2, appliesTo: "all", isActive: true, expireAt: new Date(Date.now() + 3600_000) });
+  const { topup } = await checkout({ voucherCode: "TIMOFIXTURE" });
+  const plan = await Plan.create({ code: "MONTH50", name: "Month50", price: 10000, durationDays: 30,
+    dailyDownloadLimit: 50, billingPeriod: "month", isActive: true });
+  const membership = await invoke(createMembershipCheckout, { planId: plan._id, paymentProvider: "timo", voucherCode: "TIMOFIXTURE" });
+  assert.equal(await Reservation.countDocuments({ state: "held" }), 2);
+  assert.equal((await Voucher.findOne({ code: "TIMOFIXTURE" })).usedCount, 2);
+  await invoke(adminCancelTopup, {}, { params: { id: topup._id } });
+  await invoke(adminCancelMembershipOrder, {}, { params: { id: membership.payload.order._id } });
+  assert.equal(await Reservation.countDocuments({ state: "held" }), 0);
+  assert.equal((await Voucher.findOne({ code: "TIMOFIXTURE" })).usedCount, 0);
+  assert.equal((await User.findById(user._id)).credit, 0);
+  assert.equal(await PaymentReceipt.countDocuments({}), 0);
+});
+
+test("a mismatched Gmail message identity stays in review without granting funds", async () => {
+  const { topup } = await checkout();
+  const eventId = `${process.env.TIMO_GMAIL_ADDRESS}:abc123`;
+  await Event.create({ _id: eventId, gmailMessageId: "abc123", mailbox: process.env.TIMO_GMAIL_ADDRESS,
+    accountNo: process.env.TIMO_ACCOUNT_NO, state: "pending", attempts: 0, nextAttemptAt: new Date(0) });
+  const raw = await signedEmail({ code: topup.paymentCode });
+  mock.method(OAuth2Client.prototype, "request", async (options) => {
+    if (options.url.endsWith("/profile")) return { data: { emailAddress: process.env.TIMO_GMAIL_ADDRESS } };
+    if (options.url.endsWith("/messages")) return { data: { messages: [] } };
+    // A malformed MIME representation from the mailbox must never reach settlement.
+    return { data: { id: "wrong-id", internalDate: String(Date.now()), raw: raw.toString("base64url") } };
+  });
+  await reconcileTimoOnce();
+  assert.equal((await Event.findById(eventId)).state, "review");
+  assert.equal((await User.findById(user._id)).credit, 0);
+});

@@ -318,7 +318,7 @@ function notifyApproval(result, approvalFields = {}) {
   notifyTopupApproved({
     topup: result.topup,
     user: result.user,
-    source: approvalFields.gatewayTransactionId ? "Payment webhook" : "Admin",
+    source: approvalFields.gatewayProvider === "timo" ? "Timo bank notification" : approvalFields.gatewayTransactionId ? "Payment webhook" : "Admin",
   });
 }
 

@@ -57,3 +57,25 @@ export function submitPaymentCheckout(payment) {
   form.submit();
   return true;
 }
+export function bankPaymentRequest() {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const kind = params.get("bankKind");
+  const id = params.get("bankOrder");
+  return ["topup", "membership"].includes(kind) && /^[a-f0-9]{24}$/i.test(id || "") ? { kind, id } : null;
+}
+
+export function rememberBankPayment(kind, id) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("bankKind", kind);
+  url.searchParams.set("bankOrder", id);
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  return { kind, id };
+}
+
+export function clearBankPayment() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("bankKind");
+  url.searchParams.delete("bankOrder");
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
