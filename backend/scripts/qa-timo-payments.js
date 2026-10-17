@@ -89,6 +89,7 @@ try {
             await page.goto(`${base}/topup?mode=credit&packageId=${packageId}&bankKind=topup&bankOrder=${id}`, { waitUntil: "networkidle" });
           }
           await page.getByRole("dialog").waitFor();
+          await page.getByRole("dialog").getByRole("heading", { name: language === "vi" ? "Thanh toán" : "Payment", exact: true }).waitFor();
           await page.getByRole("dialog").getByText(code, { exact: true }).waitFor();
           await page.waitForFunction(() => [...globalThis.document.querySelectorAll(".bankTransferQr img")].every((img) => img.complete && img.naturalWidth > 0));
           const dimensions = await page.getByRole("dialog").boundingBox();

@@ -1032,6 +1032,59 @@ async function verifySubscriptionCatalog(page, context, viewport) {
   }
 }
 
+async function verifyPaymentProviderRouting(page, context, viewport) {
+  const pattern = "**/api/admin/payments/provider";
+  let provider = "sepay", source = "env", failSave = false, timoEnabled = true;
+  const handler = (route) => {
+    if (route.request().method() === "PATCH") {
+      if (failSave) return route.fulfill({ status: 409, json: { message: "Payment provider is not configured", issues: ["TIMO_GMAIL_REFRESH_TOKEN is required"] } });
+      provider = route.request().postDataJSON().provider;
+      source = "database";
+    }
+    return route.fulfill({ json: { provider, source, enabled: true, envProvider: "sepay", options: [
+      { provider: "sepay", enabled: true, issues: [] },
+      { provider: "timo", enabled: timoEnabled, issues: timoEnabled ? [] : ["TIMO_GMAIL_REFRESH_TOKEN is required"] },
+    ] } });
+  };
+  await context.route(pattern, handler);
+  try {
+    for (const language of ["vi", "en"]) {
+      for (const theme of ["light", "dark"]) {
+        await page.goto(`${frontendOrigin}/admin`, { waitUntil: "domcontentloaded" });
+        await page.locator(".adminPage").waitFor();
+        if (!await page.locator(".languageToggleSingle button").isVisible()) await page.locator(".mobileMenuButton").click();
+        if (await page.locator("html").getAttribute("lang") !== language) await page.locator(".languageToggleSingle button").click();
+        if (await page.locator("html").getAttribute("data-theme") !== theme) await page.locator(".themeToggle").click();
+        if (await page.locator(".mobileMenuButton").getAttribute("aria-expanded") === "true") await page.locator(".mobileMenuButton").click();
+        await page.getByRole("navigation", { name: "Admin sections", exact: true }).getByRole("button", { name: /^(Chung|General)$/ }).click();
+        await page.getByRole("navigation", { name: "Admin subsections", exact: true }).getByRole("button", { name: /^(Lịch sử nạp|Top-up history)\b/ }).click();
+        const form = page.locator(".adminPaymentRouting");
+        const select = form.locator("select");
+        const save = form.getByRole("button", { name: /^(Lưu|Save)$/ });
+        await select.selectOption("timo");
+        await save.click();
+        await form.getByRole("status").waitFor();
+        if (provider !== "timo") throw new Error("Admin payment provider was not updated");
+        if (await form.evaluate((element) => element.scrollWidth > element.clientWidth + 2)) throw new Error("Payment provider controls overflow");
+        await form.screenshot({ path: path.join(screenshotRoot, `${viewport}-payment-provider-${theme}-${language}.png`) });
+        await select.selectOption("sepay");
+        await save.click();
+        await form.getByRole("status").waitFor();
+        failSave = true;
+        await select.selectOption("timo");
+        await save.click();
+        await form.getByRole("alert").waitFor();
+        if (provider !== "sepay") throw new Error("Failed provider switch changed the active provider");
+        failSave = false;
+        timoEnabled = false;
+        await form.getByRole("button", { name: /^(Kiểm tra cấu hình|Refresh configuration)$/ }).click();
+        await page.waitForFunction(() => globalThis.document.querySelector('.adminPaymentRouting option[value="timo"]')?.disabled);
+        timoEnabled = true;
+      }
+    }
+  } finally { await context.unroute(pattern, handler); }
+}
+
 async function main() {
   if (!fs.existsSync(path.join(buildRoot, "index.html"))) {
     throw new Error(`Build is missing: ${buildRoot}`);
@@ -1062,6 +1115,9 @@ async function main() {
       THREED66_MOCK: "true",
       SEPAY_ENABLED: "false",
       PAYPAL_ENABLED: "false",
+      VND_PAYMENT_PROVIDER: "sepay",
+      TIMO_ENABLED: "false",
+      TIMO_MAIL_WORKER_ENABLED: "false",
       SUBSCRIPTION_SCHEDULE_JOB_ENABLED: "false",
       PAYPAL_CLIENT_ID: "",
       PAYPAL_CLIENT_SECRET: "",
@@ -1291,6 +1347,7 @@ async function main() {
       await verifyConfiguredCreditCopy(page, context, viewport.name);
       await verifyLiveAccountBalance(page, context);
       await verifySubscriptionCatalog(page, context, viewport.name);
+      await verifyPaymentProviderRouting(page, context, viewport.name);
       await context.close();
     }
 
@@ -1315,6 +1372,7 @@ async function main() {
       voucherPlanScopes: true,
       subscriptionCatalog: true,
       topupLayout: true,
+      adminPaymentProviderRouting: true,
       homepagePricingRemoved: true,
       completedGetlinkBalanceReplay: false,
       externalFailures: externalFailures.length,

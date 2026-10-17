@@ -1,6 +1,8 @@
 import test, { beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import express from "express";
+import cookieParser from "cookie-parser";
 import { OAuth2Client } from "google-auth-library";
 import { dkimSign } from "mailauth/lib/dkim/sign.js";
 import { dkimVerify } from "mailauth/lib/dkim/verify.js";
@@ -23,7 +25,10 @@ const { default: SubscriptionPeriod } = await import("../src/models/Subscription
 const { createTimoCheckout, settleTimoMailEvent } = await import("../src/utils/timoPaymentService.js");
 const { createTopup } = await import("../src/controllers/topupController.js");
 const { createMembershipCheckout } = await import("../src/controllers/membershipController.js");
-const { bankPaymentStatus } = await import("../src/controllers/timoPaymentController.js");
+const { bankPaymentStatus, adminPaymentProvider, adminUpdatePaymentProvider } = await import("../src/controllers/timoPaymentController.js");
+const { vndPaymentRouting, newPaymentProvider } = await import("../src/utils/vndPaymentRouting.js");
+const { default: adminRoutes } = await import("../src/routes/adminRoutes.js");
+const { csrfProtection, issueCsrfToken } = await import("../src/middleware/csrf.js");
 const { reconcileTimoOnce } = await import("../src/utils/timoMailJob.js");
 const { assertTimoMailbox } = await import("../src/utils/timoGmail.js");
 const { sepayIpn } = await import("../src/controllers/paymentController.js");
@@ -40,6 +45,7 @@ beforeEach(async () => {
     TIMO_GMAIL_CLIENT_SECRET: "fixture-secret", TIMO_GMAIL_REFRESH_TOKEN: "fixture-refresh",
     TIMO_MAIL_START_AT: new Date(Date.now() - 3600_000).toISOString(),
     TELEGRAM_ENABLED: "false", TOPUP_PACKAGE_CATALOG_MIGRATION_ENABLED: "false",
+    SEPAY_ENABLED: "true", SEPAY_MERCHANT_ID: "fixture-merchant", SEPAY_SECRET_KEY: "fixture-sepay-secret",
   });
   mock.method(OAuth2Client.prototype, "request", async (options) => {
     assert.equal(options.method, "GET");
@@ -302,4 +308,120 @@ test("a mismatched Gmail message identity stays in review without granting funds
   await reconcileTimoOnce();
   assert.equal((await Event.findById(eventId)).state, "review");
   assert.equal((await User.findById(user._id)).credit, 0);
+});
+
+test("admin switches VND routing persistently without changing env or leaking credentials", async () => {
+  const initial = await invoke(adminPaymentProvider);
+  assert.equal(initial.payload.source, "env");
+  assert.equal(initial.payload.provider, "timo");
+  const result = await invoke(adminUpdatePaymentProvider, { provider: "sepay" });
+  assert.equal(result.payload.source, "database");
+  assert.equal(result.payload.provider, "sepay");
+  assert.equal(process.env.VND_PAYMENT_PROVIDER, "timo");
+  assert.equal(JSON.stringify(result.payload).includes("fixture-secret"), false);
+  assert.equal((await vndPaymentRouting()).provider, "sepay");
+  await invoke(adminUpdatePaymentProvider, { provider: "env" });
+  assert.equal((await vndPaymentRouting()).provider, "timo");
+  assert.equal((await vndPaymentRouting()).source, "env");
+});
+
+test("switching to incomplete or mismatched Gmail configuration never changes routing", async () => {
+  await invoke(adminUpdatePaymentProvider, { provider: "sepay" });
+  process.env.TIMO_GMAIL_REFRESH_TOKEN = "";
+  const missing = await invoke(adminUpdatePaymentProvider, { provider: "timo" });
+  assert.equal(missing.status, 409);
+  assert.equal(missing.payload.code, "PAYMENT_PROVIDER_NOT_READY");
+  process.env.TIMO_GMAIL_REFRESH_TOKEN = "fixture-refresh";
+  mock.method(OAuth2Client.prototype, "request", async () => ({ data: { emailAddress: "wrong@gmail.com" } }));
+  await assert.rejects(invoke(adminUpdatePaymentProvider, { provider: "timo" }), { code: "TIMO_GMAIL_ACCOUNT_MISMATCH" });
+  assert.equal((await vndPaymentRouting()).provider, "sepay");
+});
+
+test("routing rejects unsupported providers and credential fields in admin requests", async () => {
+  for (const body of [{ provider: "paypal" }, { provider: "timo", secret: "injected" }, { provider: { value: "timo" } }]) {
+    assert.equal((await invoke(adminUpdatePaymentProvider, body)).status, 400);
+  }
+  assert.equal(await SiteSetting.countDocuments({}), 0);
+});
+
+test("legacy Credit and Subscription requests use the current admin-selected VND provider", async () => {
+  process.env.VND_PAYMENT_PROVIDER = "sepay";
+  await invoke(adminUpdatePaymentProvider, { provider: "timo" });
+  const topup = await invoke(createTopup, { packageId: pack._id });
+  const plan = await Plan.create({ code: "MONTH50", name: "Month50", price: 10000, durationDays: 30,
+    dailyDownloadLimit: 50, billingPeriod: "month", isActive: true });
+  const membership = await invoke(createMembershipCheckout, { planId: plan._id });
+  assert.equal(topup.payload.payment.provider, "timo");
+  assert.equal(membership.payload.payment.provider, "timo");
+});
+
+test("a provider switch preserves pending Credit and Subscription replays and settlement", async () => {
+  const { topup } = await checkout();
+  const plan = await Plan.create({ code: "MONTH50", name: "Month50", price: 10000, durationDays: 30,
+    dailyDownloadLimit: 50, billingPeriod: "month", isActive: true });
+  const membership = await invoke(createMembershipCheckout, { planId: plan._id, paymentProvider: "timo" });
+  await invoke(adminUpdatePaymentProvider, { provider: "sepay" });
+  const replay = await invoke(createTopup, { packageId: pack._id });
+  const replayMembership = await invoke(createMembershipCheckout, { planId: plan._id });
+  assert.equal(replay.payload.payment.provider, "timo");
+  assert.equal(replayMembership.payload.payment.provider, "timo");
+  const event = await verifiedEvent(topup);
+  await settleTimoMailEvent(event._id);
+  assert.equal((await User.findById(user._id)).credit, 50);
+  assert.equal(await MembershipOrder.countDocuments({}), 1);
+  assert.equal(membership.payload.order._id, replayMembership.payload.order._id);
+});
+
+test("stale VND checkout is rejected before creating an order; PayPal remains independent", async () => {
+  await invoke(adminUpdatePaymentProvider, { provider: "sepay" });
+  await assert.rejects(checkout(), { code: "PAYMENT_PROVIDER_CHANGED" });
+  assert.equal(await Topup.countDocuments({}), 0);
+  assert.equal(await newPaymentProvider("paypal"), "paypal");
+  const latest = await invoke(createTopup, { packageId: pack._id });
+  assert.equal(latest.payload.payment.provider, "sepay");
+});
+
+test("legacy internal-free orders without a requested provider still replay after switching", async () => {
+  const plan = await Plan.create({ code: "TRIAL", name: "Trial", price: 0, durationDays: 7,
+    dailyDownloadLimit: 100, isActive: true });
+  const first = await invoke(createMembershipCheckout, { planId: plan._id });
+  await MembershipOrder.findByIdAndUpdate(first.payload.order._id, { $unset: { requestedPaymentProvider: "" } });
+  await invoke(adminUpdatePaymentProvider, { provider: "sepay" });
+  const replay = await invoke(createMembershipCheckout, { planId: plan._id });
+  assert.equal(replay.payload.status, "approved");
+  assert.equal(replay.payload.payment, null);
+  assert.equal(await MembershipOrder.countDocuments({}), 1);
+});
+
+test("HTTP admin provider changes require login, admin, 2FA and CSRF", async (t) => {
+  process.env.ADMIN_EMAILS = user.email;
+  process.env.ADMIN_2FA_REQUIRED = "true";
+  const app = express();
+  app.use(express.json(), cookieParser());
+  app.use((req, _res, next) => {
+    req.user = req.get("x-fixture-role") ? { ...user, role: req.get("x-fixture-role"), isTwoFactorEnabled: true } : undefined;
+    req.jwtPayload = { is2FAVerified: req.get("x-fixture-2fa") === "yes" };
+    req.isAuthenticated = () => Boolean(req.user);
+    next();
+  });
+  app.get("/api/auth/csrf", issueCsrfToken);
+  app.use(csrfProtection);
+  app.use("/api/admin", adminRoutes);
+  const server = await new Promise((resolve) => { const listener = app.listen(0, "127.0.0.1", () => resolve(listener)); });
+  t.after(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const tokenResponse = await fetch(base + "/api/auth/csrf");
+  const { csrfToken } = await tokenResponse.json();
+  const headers = { "content-type": "application/json", "x-csrf-token": csrfToken,
+    cookie: tokenResponse.headers.get("set-cookie").split(";")[0], "x-fixture-role": "admin", "x-fixture-2fa": "yes" };
+  const patch = (overrides) => fetch(base + "/api/admin/payments/provider", {
+    method: "PATCH", headers: { ...headers, ...overrides }, body: JSON.stringify({ provider: "sepay" }),
+  });
+  assert.equal((await patch({ "x-fixture-role": "" })).status, 401);
+  assert.equal((await patch({ "x-fixture-role": "user" })).status, 403);
+  assert.equal((await patch({ "x-fixture-2fa": "" })).status, 403);
+  assert.equal((await patch({ "x-csrf-token": "" })).status, 403);
+  assert.equal(await SiteSetting.countDocuments({}), 0);
+  assert.equal((await patch({})).status, 200);
+  assert.equal((await vndPaymentRouting()).provider, "sepay");
 });

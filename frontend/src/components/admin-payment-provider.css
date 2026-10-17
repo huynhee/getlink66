@@ -1,0 +1,8 @@
+.adminPaymentRouting { padding: 16px 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.adminPaymentRouting h3 { margin: 0 0 12px; font-size: 18px; }
+.adminPaymentRouting p { margin: 8px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.adminPaymentRoutingControls { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; }
+.adminPaymentRoutingControls label { display: grid; gap: 6px; font-size: 13px; min-width: 0; flex: 0 1 320px; }
+.adminPaymentRoutingControls select { width: 100%; min-width: 0; height: 40px; }
+.adminPaymentRoutingControls button { min-height: 40px; flex-shrink: 0; }
+@media (max-width: 600px) { .adminPaymentRoutingControls label { flex-basis: 100%; } }

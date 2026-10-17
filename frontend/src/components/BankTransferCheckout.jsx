@@ -81,7 +81,7 @@ export default function BankTransferCheckout({ request, language, onClose, onPai
 
   return <div className="bankTransferBackdrop">
     <section ref={dialog} className="bankTransferDialog" role="dialog" aria-modal="true" aria-labelledby="bank-transfer-title">
-      <header><h2 id="bank-transfer-title">{vi ? "Chuyển khoản Timo" : "Timo bank transfer"}</h2>
+      <header><h2 id="bank-transfer-title">{vi ? "Thanh toán" : "Payment"}</h2>
         <button type="button" className="bankTransferIcon" onClick={onClose} title={vi ? "Đóng" : "Close"} aria-label={vi ? "Đóng" : "Close"}><X size={20} /></button></header>
       {!data && !error && <p role="status"><Loader2 size={18} /> {vi ? "Đang tải thông tin thanh toán..." : "Loading payment details..."}</p>}
       {error && <p className="error" role="alert">{error}</p>}

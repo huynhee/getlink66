@@ -46,7 +46,7 @@ do not request mailbox access from website customers.
 Store the following only in `/etc/3dipl/production/backend.env`:
 
 ```dotenv
-VND_PAYMENT_PROVIDER=timo
+VND_PAYMENT_PROVIDER=sepay
 TIMO_ENABLED=true
 TIMO_MAIL_WORKER_ENABLED=true
 TIMO_ACCOUNT_NO=<receiving account number>
@@ -68,6 +68,42 @@ redirect URI `https://developers.google.com/oauthplayground`, select **Use your
 own OAuth credentials**, **Offline**, and the Gmail read-only scope. Authorize
 the intended mailbox and exchange the authorization code. Do not use the
 Playground's shared/default credentials, whose grants are short-lived.
+
+### Obtain Gmail OAuth Credentials
+
+1. In Google Cloud Console, create/select a separate project and enable **Gmail
+   API**. Do not replace the website Login or Drive credentials.
+2. Configure the Google Auth consent screen for your own mailbox. Use production
+   publishing status for continued operation; the Gmail scope is restricted and
+   Google's applicable verification/personal-use rules still apply.
+3. Create an OAuth client of type **Web application**. Add the exact authorized
+   redirect URI `https://developers.google.com/oauthplayground`. Its client ID and
+   secret become `TIMO_GMAIL_CLIENT_ID` and `TIMO_GMAIL_CLIENT_SECRET`.
+4. Open OAuth Playground's settings, enable **Use your own OAuth credentials**,
+   enter that client ID/secret, and choose **Offline** access.
+5. Authorize only `https://www.googleapis.com/auth/gmail.readonly`, signing into
+   the mailbox receiving original bank notices. Exchange the authorization code;
+   put the resulting **refresh token**, not access token, in
+   `TIMO_GMAIL_REFRESH_TOKEN` on the VPS.
+6. Never paste those three values into chat or tracked files. The read-only scope
+   can read the entire mailbox, so a dedicated notification mailbox is preferred.
+
+### Switch Providers In Admin
+
+- **Admin > General > Top-up history > VND payment provider** selects SePay,
+  Timo/VietQR, or **VPS default**. Save takes effect for new VND orders without
+  restarting or rebuilding. EN/PayPal is unchanged.
+- The database setting overrides `VND_PAYMENT_PROVIDER`. VPS default removes the
+  override; it does not delete existing orders. The default above preserves
+  SePay until the operator selects Timo after verification.
+- Secrets, receiving-account binding and worker enablement still live only in
+  `backend.env`. Configure each provider once, then switch in admin. A provider
+  with missing credentials/disabled gates cannot be selected; Timo additionally
+  checks that OAuth belongs to the configured mailbox.
+- Admin changes require authentication, admin role, 2FA, CSRF, rate limiting and
+  an audit entry. Frontends with a stale provider get a refresh-required error
+  before any new order is created. Existing orders and idempotent retries retain
+  the original provider; keep workers/secrets available until they settle.
 
 Build the new backend before running the new check script:
 
@@ -132,15 +168,17 @@ a Timo or PayPal order.
 
 ## Rollback
 
-Set `VND_PAYMENT_PROVIDER=sepay`, `TIMO_ENABLED=false` and restore SePay new-order
-configuration to switch new VND checkouts back. Keep
+First select **SePay** in admin (or VPS default with
+`VND_PAYMENT_PROVIDER=sepay`), then set `TIMO_ENABLED=false` if needed. Merely
+changing the env default does not override an active database selection. Keep
 `TIMO_MAIL_WORKER_ENABLED=true`, the bank binding and Gmail credentials until all
 outstanding Timo payments have been reconciled. Keep the current backend during
 this drain; never delete events, receipts or subscription periods to roll back.
 
 ## Validation Handoff
 
-- Local `npm run check`: 592 tests, lint and frontend release build passed.
+- `npm run check`: 600 tests, lint and frontend release build passed, including
+  admin provider authorization, configuration gates and old-order replay.
 - Mock browser QR checkout/recovery/settlement: VI/EN, light/dark, desktop/mobile
   (eight combinations) passed. Whole-site smoke passed on both viewports.
 - Production dependency audit reported no vulnerabilities at implementation time.

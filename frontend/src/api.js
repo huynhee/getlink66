@@ -53,6 +53,12 @@ async function readResponseData(response) {
 }
 
 function responseErrorMessage(response, data = {}) {
+  if (data.code === "PAYMENT_PROVIDER_CHANGED") {
+    let english = false;
+    try { english = typeof window !== "undefined" && window.localStorage.getItem("language") === "en"; } catch { /* Keep the default locale. */ }
+    return english ? "The payment method has changed. Refresh this page before creating a new order."
+      : "Cổng thanh toán đã thay đổi. Vui lòng tải lại trang trước khi tạo đơn mới.";
+  }
   if (["PAYPAL_API_ERROR", "PAYPAL_API_TIMEOUT", "PAYPAL_CONNECTION_FAILED"].includes(data.code)) {
     let english = false;
     try { english = typeof window !== "undefined" && window.localStorage.getItem("language") === "en"; } catch { /* Keep the fallback locale when storage is unavailable. */ }

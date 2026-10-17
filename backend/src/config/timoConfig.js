@@ -44,8 +44,3 @@ export function assertTimoConfigured({ newCheckout = false } = {}) {
   }
   return config;
 }
-
-export function vndPaymentAvailability() {
-  const provider = String(process.env.VND_PAYMENT_PROVIDER || "sepay");
-  return { provider, enabled: provider === "timo" ? timoConfiguration().enabled && !timoConfigurationIssues().length : process.env.SEPAY_ENABLED !== "false" };
-}

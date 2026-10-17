@@ -19,7 +19,8 @@ import { expirePendingSepayTopups } from "../utils/topupExpiryService.js";
 import { moneySnapshot, paymentProvider, paypalPrice } from "../utils/paymentMoney.js";
 import { paypalAvailability, paypalConfiguration } from "../utils/paypal.js";
 import { cancelPaypalPayment, createPaypalCheckout } from "../utils/paypalPaymentService.js";
-import { assertTimoConfigured, vndPaymentAvailability } from "../config/timoConfig.js";
+import { assertTimoConfigured } from "../config/timoConfig.js";
+import { newPaymentProvider, vndPaymentRouting } from "../utils/vndPaymentRouting.js";
 import { createTimoCheckout } from "../utils/timoPaymentService.js";
 import { releasePaymentReservation } from "../utils/paymentBenefitService.js";
 import { assertTimoMailbox } from "../utils/timoGmail.js";
@@ -227,7 +228,7 @@ export async function getPackages(_req, res, next) {
     let packages = await TopupPackage.find();
     await syncDefaultTopupPackages(packages);
     packages = sortPackages(await TopupPackage.find({ isActive: true, isArchived: { $ne: true } }).lean());
-    res.json({ packages, payments: { paypal: paypalAvailability(), vnd: vndPaymentAvailability() } });
+    res.json({ packages, payments: { paypal: paypalAvailability(), vnd: await vndPaymentRouting() } });
   } catch (error) {
     next(error);
   }
@@ -265,7 +266,7 @@ export async function createTopup(req, res, next) {
       return res.status(400).json({ message: "Invalid idempotency key" });
     }
 
-    const type = paymentProvider(req.body.paymentProvider);
+    const explicitProvider = req.body.paymentProvider === undefined ? null : paymentProvider(req.body.paymentProvider);
     const pack = packageId
       ? await TopupPackage.findById(packageId)
       : await TopupPackage.findOne({ price, isActive: true, isArchived: { $ne: true } });
@@ -280,6 +281,7 @@ export async function createTopup(req, res, next) {
         idempotencyKey,
       });
       if (existingTopup) {
+        const type = explicitProvider || existingTopup.requestedPaymentProvider || existingTopup.gatewayProvider || "sepay";
         if (!isSameIdempotentTopupRequest(existingTopup, pack, normalizedVoucherCode, type)) {
           return res.status(409).json({
             message: "Idempotency key was already used for another topup request",
@@ -298,6 +300,7 @@ export async function createTopup(req, res, next) {
         });
       }
     }
+    const type = await newPaymentProvider(explicitProvider ?? undefined);
     await ensurePackageTopupLimit(pack, req.user._id);
 
     const isAuto = type === "auto" || type === "fake";

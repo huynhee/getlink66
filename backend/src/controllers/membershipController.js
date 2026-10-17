@@ -20,7 +20,8 @@ import SiteSetting from "../models/SiteSetting.js";
 import { billingPeriodFor } from "../utils/subscriptionTime.js";
 import { subscriptionDetails, refreshSubscriptionUser } from "../utils/subscriptionScheduleService.js";
 import { getSubscriptionCatalog, subscriptionPlanQuery, withSubscriptionCatalogWrite } from "../utils/subscriptionCatalogService.js";
-import { assertTimoConfigured, vndPaymentAvailability } from "../config/timoConfig.js";
+import { assertTimoConfigured } from "../config/timoConfig.js";
+import { newPaymentProvider, vndPaymentRouting } from "../utils/vndPaymentRouting.js";
 import { createTimoCheckout } from "../utils/timoPaymentService.js";
 import { releasePaymentReservation } from "../utils/paymentBenefitService.js";
 import { assertTimoMailbox } from "../utils/timoGmail.js";
@@ -40,7 +41,7 @@ export async function listMembershipPlans(_req, res, next) {
     const catalog = await getSubscriptionCatalog();
     const plans = await MembershipPlan.find(subscriptionPlanQuery()).lean();
     res.json({ plans: sortPlans(plans.filter((plan) => plan.price !== null && plan.price !== undefined)),
-      checkoutEnabled: catalog.checkoutEnabled, payments: { paypal: paypalAvailability(), vnd: vndPaymentAvailability() } });
+      checkoutEnabled: catalog.checkoutEnabled, payments: { paypal: paypalAvailability(), vnd: await vndPaymentRouting() } });
   } catch (error) {
     next(error);
   }
@@ -56,7 +57,7 @@ export async function membershipMe(req, res, next) {
 function isSameMembershipCheckout(order, plan, voucherCode, provider) {
   return String(order?.planId?._id || order?.planId) === String(plan?._id) &&
     String(order?.voucherCode || "") === String(voucherCode || "") &&
-    (order.requestedPaymentProvider || (order.gatewayProvider === "paypal" ? "paypal" : "sepay")) === provider;
+    (order.requestedPaymentProvider || (["paypal", "timo"].includes(order.gatewayProvider) ? order.gatewayProvider : "sepay")) === provider;
 }
 
 async function freeMembershipCheckoutResponse(order, user, { idempotentReplay = false } = {}) {
@@ -109,7 +110,7 @@ export async function createMembershipCheckout(req, res, next) {
     const planId = String(req.body.planId || "");
     const idempotencyKey = String(req.get("idempotency-key") || "").trim();
     const normalizedVoucherCode = normalizeVoucherCode(req.body.voucherCode);
-    const provider = paymentProvider(req.body.paymentProvider);
+    const explicitProvider = req.body.paymentProvider === undefined ? null : paymentProvider(req.body.paymentProvider);
     if (!isSafeId(planId)) return res.status(400).json({ message: "Invalid membership plan" });
     if (normalizedVoucherCode && !isVoucherCode(normalizedVoucherCode)) {
       return res.status(400).json({ message: "Invalid voucher code" });
@@ -124,6 +125,8 @@ export async function createMembershipCheckout(req, res, next) {
     if (idempotencyKey) {
       const existing = await MembershipOrder.findOne({ userId: req.user._id, idempotencyKey });
       if (existing) {
+        const provider = explicitProvider || existing.requestedPaymentProvider
+          || (["paypal", "timo"].includes(existing.gatewayProvider) ? existing.gatewayProvider : "sepay");
         if (!isSameMembershipCheckout(existing, plan, Number(existing.originalAmount) > 0 ? normalizedVoucherCode : "", provider)) {
           return res.status(409).json({
             message: "Idempotency key was already used for another membership request",
@@ -132,6 +135,7 @@ export async function createMembershipCheckout(req, res, next) {
         return res.json(await existingMembershipCheckoutResponse(existing, req.user, plan));
       }
     }
+    const provider = await newPaymentProvider(explicitProvider ?? undefined);
     const setting = await SiteSetting.findOne({ key: "homepage" });
     if (setting?.subscriptionCheckoutEnabled === false) {
       return res.status(503).json({ code: "SUBSCRIPTION_CHECKOUT_PAUSED", message: "New subscription purchases are paused" });

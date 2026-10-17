@@ -5,6 +5,7 @@ import AdminDownloadHistory from "../components/AdminDownloadHistory.jsx";
 import AdminMarketplace from "../components/AdminMarketplace.jsx";
 import AdminPluginReleases from "../components/AdminPluginReleases.jsx";
 import AdminTimoPayments from "../components/AdminTimoPayments.jsx";
+import AdminPaymentProvider from "../components/AdminPaymentProvider.jsx";
 import CoinAmount from "../components/CoinAmount.jsx";
 import Pagination from "../components/Pagination.jsx";
 import SubscriptionSchedule from "../components/SubscriptionSchedule.jsx";
@@ -3548,6 +3549,7 @@ export default function Admin({ user, language = "vi" }) {
       {activeSection === "general" && generalSection === "topups" && (
         <section className="panel">
           <h2><CreditCard size={20} /> {l("Giao dịch Credit / Subscription", "Credit / Subscription transactions")}</h2>
+          <AdminPaymentProvider language={language} />
           <AdminTimoPayments language={language} />
           <div className="adminSubTabs" role="tablist" aria-label={l("Loại giao dịch", "Transaction type")}>
             {[

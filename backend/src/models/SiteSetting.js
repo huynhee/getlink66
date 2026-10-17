@@ -52,6 +52,7 @@ const HOME_TEXT_DEFAULTS_EN = {
 const siteSettingSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true, default: "homepage" },
+    vndPaymentProvider: { type: String, enum: ["sepay", "timo"] },
     subscriptionCatalogVersion: { type: Number, enum: [1, 2], default: 1 },
     subscriptionCheckoutEnabled: { type: Boolean, default: true },
     subscriptionCatalogRevision: { type: Number, default: 0 },
