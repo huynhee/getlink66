@@ -117,7 +117,7 @@ export default function BankTransferCheckout({ request, language, onClose, onPai
     <section ref={dialog} className="bankTransferDialog" role="dialog" aria-modal="true" aria-labelledby="bank-transfer-title">
       <header><h2 id="bank-transfer-title">{vi ? "Thanh toán" : "Payment"}</h2>
         <button type="button" className="bankTransferIcon" onClick={onClose} title={vi ? "Đóng" : "Close"} aria-label={vi ? "Đóng" : "Close"}><X size={20} /></button></header>
-      {!data && !error && <p role="status"><Loader2 size={18} /> {vi ? "Đang tải thông tin thanh toán..." : "Loading payment details..."}</p>}
+      {!data && !error && <p role="status"><Loader2 className="spin" size={18} /> {vi ? "Đang tải thông tin thanh toán..." : "Loading payment details..."}</p>}
       {error && <p className="error" role="alert">{error}</p>}
       {pending && payment && <>
         <div className="bankTransferBody">
@@ -131,8 +131,8 @@ export default function BankTransferCheckout({ request, language, onClose, onPai
         </div>
         <p className="bankTransferNotice">{vi ? "Chuyển đúng số tiền và giữ nguyên nội dung. Đơn được xác nhận sau khi nhận thông báo từ ngân hàng." : "Transfer the exact amount with the unchanged description. Confirmation follows the bank notification."}</p>
         {expired && <p className="error" role="status">{vi ? "Đơn đã quá thời hạn thanh toán. Nếu đã chuyển tiền, không thanh toán lại; liên hệ hỗ trợ để đối soát." : "This payment has expired. If you already transferred, do not pay again; contact support for reconciliation."}</p>}
-        <footer><span role="status"><Loader2 size={16} />{vi ? "Chờ xác nhận thanh toán" : "Awaiting payment confirmation"}</span>
-          <button type="button" className="googleButton" disabled={busy} onClick={() => refresh.current?.()}><RefreshCw size={16} />{vi ? "Kiểm tra" : "Check"}</button></footer>
+        <footer><span role="status"><Loader2 className="spin" size={16} />{vi ? "Chờ xác nhận thanh toán" : "Awaiting payment confirmation"}</span>
+          <button type="button" className="googleButton" disabled={busy} onClick={() => refresh.current?.()}><RefreshCw className={busy ? "spin" : ""} size={16} />{vi ? "Kiểm tra" : "Check"}</button></footer>
       </>}
       {order?.status === "approved" && <p className="success" role="status"><CheckCircle2 size={20} />{vi ? "Thanh toán thành công." : "Payment confirmed."}</p>}
       {order?.status === "rejected" && <p role="status">{vi ? "Đơn đã hủy hoặc hết hạn. Nếu đã chuyển tiền, không thanh toán lại; liên hệ hỗ trợ để đối soát." : "This order was canceled or expired. If you already paid, do not pay again; contact support for reconciliation."}</p>}

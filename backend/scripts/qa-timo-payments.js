@@ -75,7 +75,7 @@ try {
         await context.route(`${base}/fixture-qr.png`, (route) => route.fulfill({ contentType: "image/png", body: qr }));
         await context.route("https://**", (route) => route.abort());
         const page = await context.newPage();
-        page.on("pageerror", (error) => errors.push(error.message));
+        page.on("pageerror", (error) => errors.push(error.stack || error.message));
         try {
           await page.goto(`${base}/topup?mode=credit&packageId=${packageId}`, { waitUntil: "networkidle" });
           if (language === "vi") {
@@ -92,6 +92,11 @@ try {
           await page.getByRole("dialog").getByRole("heading", { name: language === "vi" ? "Thanh toán" : "Payment", exact: true }).waitFor();
           await page.getByRole("dialog").getByText(code, { exact: true }).waitFor();
           await page.waitForFunction(() => [...globalThis.document.querySelectorAll(".bankTransferQr img")].every((img) => img.complete && img.naturalWidth > 0));
+          await page.waitForFunction(() => {
+            const icon = globalThis.document.querySelector(".bankTransferDialog footer [role='status'] svg");
+            const animation = icon?.getAnimations().find((item) => item.animationName === "spin");
+            return animation?.playState === "running" && Number(animation.currentTime) > 50;
+          });
           const dimensions = await page.getByRole("dialog").boundingBox();
           assert.ok(dimensions.x >= 0 && dimensions.x + dimensions.width <= viewport.width + 1);
           assert.ok(dimensions.y >= 0 && dimensions.y + dimensions.height <= viewport.height + 1);
@@ -110,11 +115,12 @@ try {
           settled = true;
           if (language === "en") await page.evaluate(() => globalThis.dispatchEvent(new Event("focus")));
           await page.getByText(language === "vi" ? "Thanh toán thành công." : "Payment confirmed.", { exact: true }).waitFor({ timeout: language === "en" ? 2000 : 6000 });
+          assert.equal(await page.locator(".bankTransferDialog .spin").count(), 0);
           await page.waitForFunction(() => globalThis.document.querySelector(".topupAccountStrip")?.textContent.includes("50"));
           await page.keyboard.press("Escape");
           await page.getByRole("dialog").waitFor({ state: "hidden" });
           assert.equal(errors.length, 0, errors.join("\n"));
-          console.log(`${name}: checkout, QR, recovery, automatic ${language === "en" ? "focus" : "poll"} confirmation and balance passed`);
+          console.log(`${name}: checkout, QR, animated spinner, recovery, automatic ${language === "en" ? "focus" : "poll"} confirmation and balance passed`);
         } finally { await context.close(); }
       }
     }
