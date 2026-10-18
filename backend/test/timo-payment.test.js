@@ -6,6 +6,8 @@ import cookieParser from "cookie-parser";
 import { OAuth2Client } from "google-auth-library";
 import { dkimSign } from "mailauth/lib/dkim/sign.js";
 import { dkimVerify } from "mailauth/lib/dkim/verify.js";
+import { sealMessage } from "mailauth/lib/arc/index.js";
+import { Resolver } from "node:dns/promises";
 import { useMemoryDb } from "../src/config/memoryStore.js";
 import { timoConfiguration, timoConfigurationIssues } from "../src/config/timoConfig.js";
 import { parseTimoBody, verifyTimoNotification } from "../src/utils/timoNotification.js";
@@ -25,7 +27,7 @@ const { default: SubscriptionPeriod } = await import("../src/models/Subscription
 const { createTimoCheckout, settleTimoMailEvent } = await import("../src/utils/timoPaymentService.js");
 const { createTopup } = await import("../src/controllers/topupController.js");
 const { createMembershipCheckout } = await import("../src/controllers/membershipController.js");
-const { bankPaymentStatus, adminPaymentProvider, adminUpdatePaymentProvider } = await import("../src/controllers/timoPaymentController.js");
+const { bankPaymentStatus, adminPaymentProvider, adminUpdatePaymentProvider, adminRetryTimo } = await import("../src/controllers/timoPaymentController.js");
 const { vndPaymentRouting, newPaymentProvider } = await import("../src/utils/vndPaymentRouting.js");
 const { default: adminRoutes } = await import("../src/routes/adminRoutes.js");
 const { csrfProtection, issueCsrfToken } = await import("../src/middleware/csrf.js");
@@ -105,8 +107,12 @@ test("parse actual bank template, never confuse balance with incoming amount", (
 const keys = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
 const privateKey = keys.privateKey.export({ format: "pem", type: "pkcs8" });
 const publicKey = keys.publicKey.export({ format: "der", type: "spki" }).toString("base64");
-async function signedEmail({ code, to = process.env.TIMO_GMAIL_ADDRESS, domain = "timo.vn", limited = false } = {}) {
-  const raw = `From: Timo Support <support@timo.vn>\r\nTo: ${to}\r\nSubject: Thông báo thay đổi số dư tài khoản\r\nMessage-ID: <fixture-${crypto.randomUUID()}@timo.vn>\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>${body(code)}</p>\r\n`;
+async function signedEmail({ code, to = process.env.TIMO_GMAIL_ADDRESS, domain = "timo.vn", limited = false, multipart = false, currentTime = false } = {}) {
+  const now = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date()).replace(",", "");
+  const html = `<p>${currentTime ? body(code).replace("18/10/2026 04:06", now) : body(code)}</p>\r\n`;
+  const content = multipart ? `--fixture-body\r\nContent-Type: text/html; charset=utf-8\r\n\r\n${html}--fixture-body--\r\n` : html;
+  const contentType = multipart ? 'multipart/mixed; boundary="fixture-body"' : "text/html; charset=utf-8";
+  const raw = `From: Timo Support <support@timo.vn>\r\nTo: ${to}\r\nSubject: Thông báo thay đổi số dư tài khoản\r\nMessage-ID: <fixture-${crypto.randomUUID()}@timo.vn>\r\nMIME-Version: 1.0\r\nContent-Type: ${contentType}\r\n\r\n${content}`;
   const signed = await dkimSign(raw, { signTime: new Date(Date.now() - 60_000), headerList: "from:to:subject:message-id:mime-version:content-type", signatureData: [{ signingDomain: domain, selector: "fixture", privateKey, ...(limited ? { maxBodyLength: 10 } : {}) }] });
   assert.equal(signed.errors.length, 0);
   return Buffer.from(signed.signatures + raw);
@@ -228,6 +234,45 @@ test("worker recovers verified payment after restart and polls mail with durable
   assert.equal(state.lockOwner, "");
   await reconcileTimoOnce();
   assert.equal((await User.findById(user._id)).credit, 50);
+});
+
+test("retry re-reads and cryptographically verifies Gmail ARC before settling once", async () => {
+  const { topup } = await checkout();
+  const original = await signedEmail({ code: topup.paymentCode, multipart: true, currentTime: true });
+  const bank = await verifyFixture(original);
+  const google = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const record = `v=DKIM1; k=rsa; p=${google.publicKey.export({ format: "der", type: "spki" }).toString("base64")}`;
+  const arcHeaders = await sealMessage(original, { signingDomain: "google.com", selector: "fixture",
+    privateKey: google.privateKey.export({ format: "pem", type: "pkcs8" }), algorithm: "rsa-sha256", cv: "none",
+    signTime: new Date(Date.now() - 30_000), headerList: "from:to:subject:message-id:mime-version:dkim-signature",
+    authResults: `mx.google.com; dkim=pass header.i=@timo.vn header.s=fixture header.b=${bank.results[0].signature.slice(0, 8)}; dmarc=pass header.from=timo.vn` });
+  const raw = Buffer.concat([arcHeaders, original]);
+  mock.method(Resolver.prototype, "resolveTxt", async (domain) => {
+    assert.ok(["fixture._domainkey.timo.vn", "fixture._domainkey.google.com"].includes(domain));
+    // The bank's current DNS key no longer verifies the original bank signature.
+    return [[record]];
+  });
+  const id = `${process.env.TIMO_GMAIL_ADDRESS}:abc123`;
+  await Event.create({ _id: id, mailbox: process.env.TIMO_GMAIL_ADDRESS, gmailMessageId: "abc123", accountNo: process.env.TIMO_ACCOUNT_NO,
+    state: "review", reason: "TIMO_DKIM_INVALID", attempts: 1 });
+  mock.method(OAuth2Client.prototype, "request", async (options) => {
+    if (options.url.endsWith("/profile")) return { data: { emailAddress: process.env.TIMO_GMAIL_ADDRESS } };
+    if (options.url.endsWith("/messages")) return { data: { messages: [{ id: "abc123" }] } };
+    assert.ok(options.url.endsWith("/messages/abc123"));
+    return { data: { id: "abc123", internalDate: String(Date.now()), raw: raw.toString("base64url") } };
+  });
+  const retry = await invoke(adminRetryTimo, {}, { params: { id } });
+  assert.equal(retry.payload.queued, true);
+  assert.equal((await User.findById(user._id)).credit, 0);
+  await reconcileTimoOnce();
+  const event = await Event.findById(id);
+  assert.equal(event.state, "applied");
+  assert.equal(event.authenticationMethod, "gmail_arc");
+  assert.equal((await Topup.findById(topup._id)).gatewayPayload.authenticationMethod, "gmail_arc");
+  assert.equal((await User.findById(user._id)).credit, 50);
+  await reconcileTimoOnce();
+  assert.equal((await User.findById(user._id)).credit, 50);
+  assert.equal(await PaymentReceipt.countDocuments({}), 1);
 });
 
 test("disabling new Timo checkout does not disable reconciliation of paid orders", async () => {

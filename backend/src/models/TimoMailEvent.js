@@ -7,6 +7,7 @@ const schema = new mongoose.Schema({
   gmailMessageId: { type: String, required: true },
   state: { type: String, enum: ["pending", "verified", "applied", "ignored", "review"], default: "pending" },
   signedMessageIdHash: String,
+  authenticationMethod: { type: String, enum: ["dkim", "gmail_arc"] },
   paymentCode: String,
   amount: Number,
   occurredAt: Date,

@@ -86,7 +86,8 @@ export async function settleTimoMailEvent(eventId) {
     try {
       await approve(order, {
         gatewayProvider: "timo", gatewayTransactionId,
-        gatewayPayload: { mailEventId: event._id, signedMessageIdHash: event.signedMessageIdHash, receivedAmount: event.amount, occurredAt: event.occurredAt },
+        gatewayPayload: { mailEventId: event._id, signedMessageIdHash: event.signedMessageIdHash,
+          authenticationMethod: event.authenticationMethod || "dkim", receivedAmount: event.amount, occurredAt: event.occurredAt },
       });
     } catch (error) {
       if (error.code !== "DUPLICATE_GATEWAY_TRANSACTION") throw error;

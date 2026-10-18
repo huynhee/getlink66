@@ -14,10 +14,27 @@ PayPal/USD and immediate internal activation of free plans are unchanged.
 - Gmail OAuth must have only `https://www.googleapis.com/auth/gmail.readonly`.
   Gmail grants mailbox-wide read access, not access restricted to one sender.
   Use a separate OAuth client/project from public Google Login and Google Drive.
-- The worker verifies the original MIME message using DKIM and DNS, not a
-  display name, From header alone, screenshot or Authentication-Results header.
-  Only `support@timo.vn`, a full-body SHA-256 signature from `timo.vn`, and signed
-  From/To/Subject/Message-ID/Content-Type headers are accepted.
+- The worker verifies the original MIME message using cryptographic DKIM/ARC
+  signatures and DNS, not a display name, From header alone, screenshot or bare
+  Authentication-Results header. Direct DKIM requires `support@timo.vn`, a
+  full-body SHA-256 signature from `timo.vn`, signed From/To/Subject/Message-ID/
+  MIME-Version/Content-Type, and signed Content-Transfer-Encoding when present.
+- A narrow Gmail ARC path also supports notices whose bank signature can no
+  longer be verified with the bank's current DNS key. It requires exactly one
+  direct Google ARC hop, valid Google seal and full-body AMS signatures with
+  RSA-SHA256 keys of at least 2048 bits, and a signed `mx.google.com` result
+  endorsing the exact bank signature plus aligned passing DMARC for `timo.vn`.
+  The original bank signature must still cover all required identity headers
+  and the entire unchanged body, without `l=` or an invalid signing time.
+  Other sealers, forwarded/multi-hop chains, forged results and weak keys fail.
+- Gmail AMS need not sign the outer Content-Type. ARC processing therefore
+  ignores unsigned outer MIME controls: it accepts only a self-describing
+  multipart body, derives its boundary from that signed body, and uses
+  `mailparser` with a fixed multipart envelope and signed identity headers.
+  Inner MIME headers/encodings are inside the signed body. Unsigned outer
+  charset, transfer encoding or disposition cannot change the interpreted
+  amount/code; unsupported body layouts and attachments stay in review.
+  Events/settlement snapshots record `authenticationMethod=dkim|gmail_arc`.
 - The Vietnamese template must identify the configured account holder, a Spend
   Account increase, amount, Vietnam-local time and exactly one NAP/PRO code.
   Current balance is never used as the transferred amount. Outgoing transfers
@@ -129,6 +146,20 @@ bank-email authenticity but can never pay a website order. The local
 Check DKIM/DNS access on the actual VPS; do not fall back to trusting email
 headers when DNS is unavailable.
 
+### Diagnose Signature Review
+
+`TIMO_DKIM_INVALID` means the notice could not authenticate through direct bank
+DKIM or the restricted Gmail ARC path. `TIMO_DKIM_DNS_UNAVAILABLE` is retryable;
+`TIMO_ARC_MIME_UNSUPPORTED` needs an original supported multipart notice, not a
+relaxed parser or manual header trust. `timo:check -- --verify-latest` reports
+the successful authentication method without approving an order.
+
+After deploying a verifier fix, review events are not silently reset in bulk.
+Use the admin **Retry** action on the affected original notice: it queues a new
+Gmail fetch and full signature/amount/account/order verification. It does not
+mark the email verified or approve the order directly. Receipt identity remains
+the original bank Message-ID hash, so replay/retry cannot grant benefits twice.
+
 Once configuration and the receiving account are verified, recreate services:
 
 ```bash
@@ -208,20 +239,24 @@ this drain; never delete events, receipts or subscription periods to roll back.
 
 ## Validation Handoff
 
-- `npm run check`: 602 tests, lint and frontend release build passed, including
-  admin provider authorization, configuration gates and old-order replay.
+- `npm run check`: 615 tests, lint and frontend release build passed, including
+  cryptographic Gmail ARC fixtures, MIME/identity tampering, DNS failure, weak
+  keys, verified worker retry/idempotency and existing provider authorization.
 - Mock browser QR checkout/recovery/settlement: VI/EN, light/dark, desktop/mobile
   (eight combinations) passed. Whole-site smoke passed on both viewports.
 - Production dependency audit reported no vulnerabilities at implementation time.
 - Automated payment tests use fixtures only; no real money or production database
   is touched. The supplied personal bank email is not tracked in Git.
 - Live Gmail OAuth and cryptographic verification of an original bank notice on
-  the actual VPS remain deployment prerequisites. Local DNS could not confirm
-  the supplied original signature; an Authentication-Results header is not proof.
+  the actual VPS remain deployment prerequisites. A bare Authentication-Results
+  header is not proof; Gmail ARC is accepted only after both Google signatures,
+  the sealed bank endorsement and the constrained signed MIME body are checked.
 
 ## References
 
 - [Google Gmail scopes](https://developers.google.com/workspace/gmail/api/auth/scopes)
 - [Google token expiry](https://developers.google.com/identity/protocols/oauth2#expiration)
 - [Google personal-use exception](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification#personal-use)
+- [DKIM signatures (RFC 6376)](https://www.rfc-editor.org/rfc/rfc6376)
+- [Authenticated Received Chain (RFC 8617)](https://www.rfc-editor.org/rfc/rfc8617)
 - [Timo transaction notifications](https://timo.vn/blogs/tin-tuc-khuyen-mai-blogs/timo-thong-bao-giao-dich-qua-cac-hinh-thuc-nao/)

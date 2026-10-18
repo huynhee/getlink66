@@ -24,7 +24,7 @@ export async function adminTimoStatus(_req, res, next) {
     const config = timoConfiguration();
     const state = await TimoMailState.findById(config.mailbox).select("lastScanAt lastSuccessAt lastError accountNo").lean();
     const events = await TimoMailEvent.find({ mailbox: config.mailbox }).sort({ createdAt: -1 }).limit(50)
-      .select("_id state paymentCode amount occurredAt receivedAt kind orderId attempts nextAttemptAt reason createdAt").lean();
+      .select("_id state paymentCode amount occurredAt receivedAt kind orderId attempts nextAttemptAt reason authenticationMethod createdAt").lean();
     res.set("Cache-Control", "private, no-store");
     res.json({ ...await vndPaymentRouting(), workerEnabled: config.workerEnabled,
       mailbox: config.mailbox, accountNo: config.accountNo, accountName: config.accountName,

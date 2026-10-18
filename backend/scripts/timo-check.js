@@ -12,10 +12,12 @@ try {
   async function inspect(raw) {
     try {
       const notice = await verifyTimoNotification(raw, config);
-      return { bankEmailAuthentic: true, ignored: notice.ignored === true, hasPaymentCode: Boolean(notice.paymentCode) };
+      return { bankEmailAuthentic: true, authenticationMethod: notice.authenticationMethod,
+        ignored: notice.ignored === true, hasPaymentCode: Boolean(notice.paymentCode) };
     } catch (error) {
       if (error.timoAuthenticated && error.code === "TIMO_PAYMENT_CODE_MISSING") {
-        return { bankEmailAuthentic: true, hasPaymentCode: false, reason: "Personal transfer notice; not a website order" };
+        return { bankEmailAuthentic: true, authenticationMethod: error.timoAuthenticationMethod,
+          hasPaymentCode: false, reason: "Personal transfer notice; not a website order" };
       }
       throw error;
     }
