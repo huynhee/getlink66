@@ -21,27 +21,61 @@ export default function BankTransferCheckout({ request, language, onClose, onPai
   useEffect(() => {
     let active = true;
     let fetching = false;
+    let timer;
+    let failures = 0;
+    let retryAt = 0;
+    const controller = new AbortController();
     paid.current = false;
+    function schedule(delay) {
+      window.clearTimeout(timer);
+      if (active && !paid.current && !document.hidden) timer = window.setTimeout(load, delay);
+    }
     async function load() {
-      if (fetching || paid.current) return;
+      if (fetching || paid.current || !active || document.hidden) return;
+      if (retryAt > Date.now()) { schedule(retryAt - Date.now()); return; }
+      window.clearTimeout(timer);
       fetching = true;
       setBusy(true);
+      let delay = 3000;
       try {
-        const result = await api(`/api/payments/bank/${request.kind}/${request.id}`);
+        const result = await api(`/api/payments/bank/${request.kind}/${request.id}`, { signal: controller.signal });
         if (!active) return;
+        failures = 0;
         setData(result);
         setError("");
+        if (result.order.status !== "pending") delay = 30_000;
         if (result.order.status === "approved" && !paid.current) {
           paid.current = true;
           await paidCallback.current?.(request);
         }
-      } catch (err) { if (active) { paid.current = false; setError(err.message); } }
-      finally { fetching = false; if (active) setBusy(false); }
+      } catch (err) {
+        if (active) {
+          paid.current = false;
+          failures += 1;
+          delay = err.status === 429 ? 60_000 : Math.min(30_000, 3000 * 2 ** Math.min(failures, 4));
+          if (err.status === 429) retryAt = Date.now() + delay;
+          setError(err.message);
+        }
+      } finally {
+        fetching = false;
+        if (active) { setBusy(false); schedule(delay); }
+      }
+    }
+    function wake() {
+      if (document.hidden) window.clearTimeout(timer);
+      else load();
     }
     refresh.current = load;
     load();
-    const timer = window.setInterval(load, 5000);
-    return () => { active = false; window.clearInterval(timer); };
+    window.addEventListener("focus", wake);
+    document.addEventListener("visibilitychange", wake);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", wake);
+      document.removeEventListener("visibilitychange", wake);
+    };
   }, [request]);
 
   useEffect(() => {

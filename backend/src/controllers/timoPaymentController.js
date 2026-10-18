@@ -5,7 +5,7 @@ import { timoConfiguration, timoConfigurationIssues } from "../config/timoConfig
 import SiteSetting from "../models/SiteSetting.js";
 import { vndPaymentRouting, vndProviderIssues } from "../utils/vndPaymentRouting.js";
 import { assertTimoMailbox } from "../utils/timoGmail.js";
-import { reconcileTimoOnce } from "../utils/timoMailJob.js";
+import { reconcileTimoOnce, wakeTimoMailJob } from "../utils/timoMailJob.js";
 import { isSafeId } from "../utils/validators.js";
 
 export async function bankPaymentStatus(req, res, next) {
@@ -14,6 +14,7 @@ export async function bankPaymentStatus(req, res, next) {
     const order = await bankOrderModel(req.params.kind).findOne({ _id: req.params.id, userId: req.user._id, gatewayProvider: "timo" })
       .select("_id status amount amountMinor currency gatewayProvider paymentCode accountNo accountName bankId expiresAt rejectionReason credit planName paidAt").lean();
     if (!order) return res.status(404).json({ message: "Payment not found" });
+    if (order.status === "pending" && new Date(order.expiresAt).getTime() > Date.now()) wakeTimoMailJob();
     res.set("Cache-Control", "private, no-store");
     res.json({ kind: req.params.kind, order, payment: order.status === "pending" ? timoQrPayment(order) : null });
   } catch (error) { next(error); }
@@ -22,7 +23,7 @@ export async function bankPaymentStatus(req, res, next) {
 export async function adminTimoStatus(_req, res, next) {
   try {
     const config = timoConfiguration();
-    const state = await TimoMailState.findById(config.mailbox).select("lastScanAt lastSuccessAt lastError accountNo").lean();
+    const state = await TimoMailState.findById(config.mailbox).select("lastScanAt lastSuccessAt lastError accountNo lastAttemptAt pollBackoffUntil pollFailureCount").lean();
     const events = await TimoMailEvent.find({ mailbox: config.mailbox }).sort({ createdAt: -1 }).limit(50)
       .select("_id state paymentCode amount occurredAt receivedAt kind orderId attempts nextAttemptAt reason authenticationMethod createdAt").lean();
     res.set("Cache-Control", "private, no-store");
@@ -74,6 +75,7 @@ export async function adminRetryTimo(req, res, next) {
       $set: { state: "pending", nextAttemptAt: new Date(), reason: "" },
     }, { new: true });
     if (!event) return res.status(404).json({ message: "Unsettled bank notification not found" });
+    wakeTimoMailJob();
     res.json({ queued: true });
   } catch (error) { next(error); }
 }

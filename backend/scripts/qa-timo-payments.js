@@ -101,14 +101,20 @@ try {
           await page.reload({ waitUntil: "networkidle" });
           await page.getByRole("dialog").waitFor();
           await page.getByRole("dialog").getByText(code, { exact: true }).waitFor();
-          settled = true;
+          // Manual refresh must not mark an unpaid fixture as paid.
+          const unpaidCheck = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/payments/bank/topup/${id}`);
           await page.getByRole("button", { name: language === "vi" ? "Kiểm tra" : "Check", exact: true }).click();
-          await page.getByText(language === "vi" ? "Thanh toán thành công." : "Payment confirmed.", { exact: true }).waitFor();
+          await unpaidCheck;
+          await page.waitForFunction(() => !globalThis.document.querySelector(".bankTransferDialog footer button")?.disabled);
+          await page.getByRole("dialog").getByText(code, { exact: true }).waitFor();
+          settled = true;
+          if (language === "en") await page.evaluate(() => globalThis.dispatchEvent(new Event("focus")));
+          await page.getByText(language === "vi" ? "Thanh toán thành công." : "Payment confirmed.", { exact: true }).waitFor({ timeout: language === "en" ? 2000 : 6000 });
           await page.waitForFunction(() => globalThis.document.querySelector(".topupAccountStrip")?.textContent.includes("50"));
           await page.keyboard.press("Escape");
           await page.getByRole("dialog").waitFor({ state: "hidden" });
           assert.equal(errors.length, 0, errors.join("\n"));
-          console.log(`${name}: checkout, QR, refresh recovery, settlement and balance passed`);
+          console.log(`${name}: checkout, QR, recovery, automatic ${language === "en" ? "focus" : "poll"} confirmation and balance passed`);
         } finally { await context.close(); }
       }
     }

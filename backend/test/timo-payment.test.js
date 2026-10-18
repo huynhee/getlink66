@@ -73,6 +73,15 @@ async function checkout(body = {}) {
   return result.payload;
 }
 
+function mockEmptyMailbox() {
+  mock.method(OAuth2Client.prototype, "request", async (options) => {
+    assert.equal(options.method, "GET");
+    if (options.url.endsWith("/profile")) return { data: { emailAddress: process.env.TIMO_GMAIL_ADDRESS } };
+    if (options.url.endsWith("/messages")) return { data: { messages: [] } };
+    throw new Error("Unexpected fixture Gmail request");
+  });
+}
+
 async function verifiedEvent(order, changes = {}) {
   return Event.create({ _id: crypto.randomUUID(), mailbox: process.env.TIMO_GMAIL_ADDRESS, gmailMessageId: "aabbcc", accountNo: process.env.TIMO_ACCOUNT_NO,
     state: "verified", signedMessageIdHash: crypto.randomBytes(32).toString("hex"), paymentCode: order.paymentCode,
@@ -212,6 +221,7 @@ test("bank payment detail is bound to the signed-in owner", async () => {
   const own = await invoke(bankPaymentStatus, {}, { params: { kind: "topup", id: topup._id } });
   assert.equal(own.payload.payment.accountName, "TEST MERCHANT");
   assert.equal(own.payload.order.gatewayPayload, undefined);
+  assert.equal(await State.countDocuments({}), 0);
 });
 
 test("subscription and free trial keep existing activation and scheduling rules", async () => {
@@ -258,6 +268,103 @@ test("worker recovers verified payment after restart and polls mail with durable
   assert.equal(state.lockOwner, "");
   await reconcileTimoOnce();
   assert.equal((await User.findById(user._id)).credit, 50);
+});
+
+test("Timo scans every five seconds for either pending order kind and returns to idle when canceled", async () => {
+  mockEmptyMailbox();
+  assert.equal((await reconcileTimoOnce()).nextPollMs, 30000);
+  const { topup } = await checkout();
+  assert.equal((await reconcileTimoOnce()).nextPollMs, 5000);
+  await invoke(adminCancelTopup, {}, { params: { id: topup._id } });
+  assert.equal((await reconcileTimoOnce()).nextPollMs, 30000);
+  const plan = await Plan.create({ code: "MONTH50", name: "Month50", price: 10000, durationDays: 30,
+    dailyDownloadLimit: 50, billingPeriod: "month", isActive: true });
+  const response = await invoke(createMembershipCheckout, { planId: plan._id, paymentProvider: "timo" });
+  assert.equal((await reconcileTimoOnce()).nextPollMs, 5000);
+  await invoke(adminCancelMembershipOrder, {}, { params: { id: response.payload.order._id } });
+  assert.equal((await reconcileTimoOnce()).nextPollMs, 30000);
+});
+
+test("scheduled scans share a durable five-second cooldown and mailbox lease", async () => {
+  const { topup } = await checkout();
+  let profileCalls = 0;
+  let listCalls = 0;
+  mock.method(OAuth2Client.prototype, "request", async (options) => {
+    if (options.url.endsWith("/profile")) { profileCalls += 1; return { data: { emailAddress: process.env.TIMO_GMAIL_ADDRESS } }; }
+    assert.ok(options.url.endsWith("/messages"));
+    listCalls += 1;
+    return { data: { messages: [] } };
+  });
+  const results = await Promise.all(Array.from({ length: 20 }, () => reconcileTimoOnce({ scheduled: true })));
+  assert.equal(results.filter((result) => !result.busy).length, 1);
+  assert.equal(results.find((result) => !result.busy).nextPollMs, 5000);
+  assert.equal(profileCalls, 1);
+  assert.equal(listCalls, 1);
+  assert.equal((await reconcileTimoOnce({ scheduled: true })).busy, true);
+  assert.equal(profileCalls, 1);
+  await State.findByIdAndUpdate(process.env.TIMO_GMAIL_ADDRESS, { lastAttemptAt: new Date(Date.now() - 6000) });
+  assert.equal((await reconcileTimoOnce({ scheduled: true })).processed, 0);
+  assert.equal(profileCalls, 2);
+  assert.equal((await Topup.findById(topup._id)).status, "pending");
+  assert.equal((await User.findById(user._id)).credit, 0);
+});
+
+test("Gmail failures persist exponential backoff across wakes and a successful admin check resets it", async () => {
+  let calls = 0;
+  mock.method(OAuth2Client.prototype, "request", async () => {
+    calls += 1;
+    throw Object.assign(new Error("PRIVATE-CREDENTIAL"), { response: { status: 400, data: { error: "invalid_grant" } } });
+  });
+  await assert.rejects(reconcileTimoOnce({ scheduled: true }), (error) => error.gmailReason === "INVALID_GRANT" && error.retryAfterMs === 30000);
+  assert.equal(calls, 1);
+  assert.equal((await reconcileTimoOnce({ scheduled: true })).busy, true);
+  assert.equal(calls, 1);
+  await assert.rejects(reconcileTimoOnce(), (error) => error.retryAfterMs === 60000);
+  const state = await State.findById(process.env.TIMO_GMAIL_ADDRESS);
+  assert.equal(state.pollFailureCount, 2);
+  assert.ok(new Date(state.pollBackoffUntil).getTime() > Date.now() + 59000);
+  assert.equal((await reconcileTimoOnce({ scheduled: true })).busy, true);
+  assert.equal(calls, 2);
+  mockEmptyMailbox();
+  await reconcileTimoOnce();
+  const recovered = await State.findById(process.env.TIMO_GMAIL_ADDRESS);
+  assert.equal(recovered.pollFailureCount, 0);
+  assert.equal(recovered.pollBackoffUntil, null);
+  assert.equal(recovered.lastError, "");
+});
+
+test("rate limits fetching a bank message also back off the entire scheduled scanner", async () => {
+  const id = `${process.env.TIMO_GMAIL_ADDRESS}:abc123`;
+  await Event.create({ _id: id, gmailMessageId: "abc123", mailbox: process.env.TIMO_GMAIL_ADDRESS,
+    accountNo: process.env.TIMO_ACCOUNT_NO, state: "pending", nextAttemptAt: new Date(0) });
+  let reads = 0;
+  mock.method(OAuth2Client.prototype, "request", async (options) => {
+    if (options.url.endsWith("/profile")) return { data: { emailAddress: process.env.TIMO_GMAIL_ADDRESS } };
+    if (options.url.endsWith("/messages")) return { data: { messages: [] } };
+    reads += 1;
+    throw Object.assign(new Error("Fixture rate limit"), { response: { status: 429, data: {} } });
+  });
+  await assert.rejects(reconcileTimoOnce({ scheduled: true }), (error) => error.gmailReason === "RATE_LIMITED" && error.retryAfterMs === 30000);
+  assert.equal((await Event.findById(id)).state, "pending");
+  assert.equal((await State.findById(process.env.TIMO_GMAIL_ADDRESS)).pollFailureCount, 1);
+  assert.equal((await reconcileTimoOnce({ scheduled: true })).busy, true);
+  assert.equal(reads, 1);
+  assert.equal(await PaymentReceipt.countDocuments({}), 0);
+});
+
+test("scheduled batches cap raw mail processing and still grant a duplicated payment once", async () => {
+  const { topup } = await checkout();
+  for (let index = 0; index < 6; index += 1) await verifiedEvent(topup);
+  mockEmptyMailbox();
+  const first = await reconcileTimoOnce({ scheduled: true });
+  assert.equal(first.processed, 5);
+  assert.equal(first.nextPollMs, 5000);
+  assert.equal(await Event.countDocuments({ state: "verified" }), 1);
+  assert.equal((await User.findById(user._id)).credit, 50);
+  await State.findByIdAndUpdate(process.env.TIMO_GMAIL_ADDRESS, { lastAttemptAt: new Date(Date.now() - 6000) });
+  assert.equal((await reconcileTimoOnce({ scheduled: true })).processed, 1);
+  assert.equal((await User.findById(user._id)).credit, 50);
+  assert.equal(await PaymentReceipt.countDocuments({}), 1);
 });
 
 test("retry re-reads and cryptographically verifies Gmail ARC before settling once", async () => {

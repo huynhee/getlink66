@@ -10,10 +10,13 @@ import { settleTimoMailEvent } from "./timoPaymentService.js";
 import { releasePaymentReservation } from "./paymentBenefitService.js";
 import { sendTelegramNotification } from "./telegramNotifier.js";
 import logger from "./logger.js";
+import { createTimoPollScheduler, TIMO_ACTIVE_POLL_MS, TIMO_IDLE_POLL_MS, TIMO_MAX_BACKOFF_MS } from "./timoPollScheduler.js";
 
-let timer;
-let running;
 let stopping = false;
+const poller = createTimoPollScheduler({
+  run: () => reconcileTimoOnce({ scheduled: true }),
+  onError: (error) => logger.warn({ code: error.code, gmailReason: error.gmailReason, gmailStatus: error.gmailStatus }, "Timo mailbox reconciliation failed"),
+});
 
 async function renewLease(mailbox, owner) {
   const state = await TimoMailState.findOneAndUpdate({ _id: mailbox, lockOwner: owner }, {
@@ -99,6 +102,7 @@ async function processEvent(event, config) {
       const alert = await TimoMailEvent.findOneAndUpdate({ _id: event._id, alertedAt: { $exists: false } }, { $set: { alertedAt: new Date() } }, { new: true });
       if (alert) await sendTelegramNotification(`<b>Timo payment requires review</b>\nEvent: ${event.gmailMessageId}\nCode: ${alert.reason}`, { dedupeKey: `timo-review:${event._id}` });
     }
+    if (error.code === "TIMO_GMAIL_UNAVAILABLE") throw error;
   }
 }
 
@@ -114,7 +118,7 @@ async function expireTimoOrders() {
   }
 }
 
-export async function reconcileTimoOnce() {
+export async function reconcileTimoOnce({ scheduled = false } = {}) {
   const config = assertTimoConfigured();
   const owner = crypto.randomUUID();
   try {
@@ -122,31 +126,49 @@ export async function reconcileTimoOnce() {
       accountNo: config.accountNo, lastScanAt: new Date(config.startAt), lockUntil: new Date(0),
     } }, { upsert: true });
   } catch (error) { if (error.code !== 11000) throw error; }
+  const now = new Date();
   const state = await TimoMailState.findOneAndUpdate({
-    _id: config.mailbox, lockUntil: { $lt: new Date() },
-  }, { $set: { lockOwner: owner, lockUntil: new Date(Date.now() + 120_000) } }, { new: true });
-  if (!state) return { busy: true };
+    _id: config.mailbox, lockUntil: { $lt: now },
+    ...(scheduled ? { $and: [
+      { $or: [{ lastAttemptAt: { $exists: false } }, { lastAttemptAt: null }, { lastAttemptAt: { $lte: new Date(now.getTime() - TIMO_ACTIVE_POLL_MS) } }] },
+      { $or: [{ pollBackoffUntil: { $exists: false } }, { pollBackoffUntil: null }, { pollBackoffUntil: { $lte: now } }] },
+    ] } : {}),
+  }, { $set: { lockOwner: owner, lockUntil: new Date(now.getTime() + 120_000), lastAttemptAt: now } }, { new: true });
+  if (!state) {
+    const current = await TimoMailState.findById(config.mailbox).select("lastAttemptAt pollBackoffUntil").lean();
+    const due = Math.max(new Date(current?.lastAttemptAt || 0).getTime() + TIMO_ACTIVE_POLL_MS, new Date(current?.pollBackoffUntil || 0).getTime());
+    return { busy: true, nextPollMs: Math.min(TIMO_MAX_BACKOFF_MS, Math.max(TIMO_ACTIVE_POLL_MS, due - Date.now())) };
+  }
   try {
     if (state.accountNo !== config.accountNo) throw Object.assign(new Error("Mailbox is bound to another bank account"), { code: "TIMO_MAILBOX_BINDING_CHANGED" });
     await assertTimoMailbox();
     await scanMailbox(config, state, owner);
+    const batchSize = scheduled ? 5 : 10;
     const events = await TimoMailEvent.find({ mailbox: config.mailbox, state: { $in: ["pending", "verified"] }, nextAttemptAt: { $lte: new Date() } })
-      .sort({ nextAttemptAt: 1 }).limit(10).lean();
+      .sort({ nextAttemptAt: 1 }).limit(batchSize).lean();
     for (const event of events) {
       if (stopping) break;
       await renewLease(config.mailbox, owner);
       await processEvent(event, config);
     }
     await expireTimoOrders();
-    await TimoMailState.findOneAndUpdate({ _id: config.mailbox, lockOwner: owner }, { $set: { lastSuccessAt: new Date(), lastError: "" } });
-    return { processed: events.length };
+    const pendingQuery = { gatewayProvider: "timo", status: "pending", expiresAt: { $gt: new Date() } };
+    const active = Boolean(await Topup.exists(pendingQuery) || await MembershipOrder.exists(pendingQuery));
+    await TimoMailState.findOneAndUpdate({ _id: config.mailbox, lockOwner: owner }, {
+      $set: { lastSuccessAt: new Date(), lastError: "", pollFailureCount: 0, pollBackoffUntil: null },
+    });
+    return { processed: events.length, nextPollMs: active || events.length >= batchSize ? TIMO_ACTIVE_POLL_MS : TIMO_IDLE_POLL_MS };
   } catch (error) {
     const code = /^TIMO_[A-Z0-9_]{1,64}$/.test(error.code || "") ? error.code : "TIMO_RECONCILIATION_FAILED";
     const diagnostic = error.code === "TIMO_GMAIL_UNAVAILABLE"
       ? { gmailStatus: error.gmailStatus, gmailReason: error.gmailReason, gmailHint: error.gmailHint } : {};
     const reason = diagnostic.gmailReason ? ` (${diagnostic.gmailReason})` : "";
-    await TimoMailState.findOneAndUpdate({ _id: config.mailbox, lockOwner: owner }, { $set: { lastError: `${code}${reason}` } });
-    throw Object.assign(new Error(`Timo mailbox reconciliation is unavailable${reason}`), { code, status: 503, ...diagnostic });
+    const retryAfterMs = Math.min(TIMO_MAX_BACKOFF_MS, TIMO_IDLE_POLL_MS * 2 ** Math.min(Number(state.pollFailureCount || 0), 4));
+    await TimoMailState.findOneAndUpdate({ _id: config.mailbox, lockOwner: owner }, {
+      $set: { lastError: `${code}${reason}`, pollBackoffUntil: new Date(Date.now() + retryAfterMs) },
+      $inc: { pollFailureCount: 1 },
+    });
+    throw Object.assign(new Error(`Timo mailbox reconciliation is unavailable${reason}`), { code, status: 503, retryAfterMs, ...diagnostic });
   } finally {
     await TimoMailState.findOneAndUpdate({ _id: config.mailbox, lockOwner: owner }, { $set: { lockUntil: new Date(0), lockOwner: "" } });
   }
@@ -156,18 +178,15 @@ export function startTimoMailJob() {
   if (!timoConfiguration().workerEnabled) return;
   assertTimoConfigured();
   stopping = false;
-  const tick = () => {
-    if (running) return;
-    running = reconcileTimoOnce().catch((error) => logger.warn({ code: error.code, gmailReason: error.gmailReason, gmailStatus: error.gmailStatus }, "Timo mailbox reconciliation failed"))
-      .finally(() => { running = null; });
-  };
-  timer = setInterval(tick, 30_000);
-  timer.unref();
-  tick();
+  poller.start();
+}
+
+export function wakeTimoMailJob() {
+  if (stopping || !timoConfiguration().workerEnabled) return false;
+  return poller.wake();
 }
 
 export async function stopTimoMailJob() {
   stopping = true;
-  clearInterval(timer);
-  await running;
+  await poller.stop();
 }

@@ -180,11 +180,25 @@ a Timo or PayPal order.
 ## Operations
 
 - VI checkouts use the advertised VND provider. EN uses PayPal as before.
-- Users remain on the site, see QR/details, and poll their owned order every
-  five seconds. The URL retains the order identity across refresh. Success uses
+- Users remain on the site and see QR/details. The visible checkout polls its
+  owned order every three seconds and refreshes immediately on focus/return
+  from a bank app. Hidden tabs pause polling; requests never overlap and errors
+  back off. The URL retains the order identity across refresh. Success uses
   existing account events, immediate balance refresh and Telegram notifications.
-- The worker polls every 30 seconds with a persistent lease, paginated scan
-  checkpoint, overlap window and durable pending events in Atlas Core.
+- The worker polls every five seconds while an unexpired Timo Credit or
+  Subscription order is pending, and every 30 seconds when idle. Checking an
+  owned pending order wakes the shared worker, not a separate scan per browser.
+  Active scanning continues even if the browser closes.
+- A persistent mailbox lease and five-second cooldown prevent concurrent scans
+  across processes. Gmail failures persist exponential backoff from 30 seconds
+  to five minutes; browser wakes cannot bypass it. Scheduled batches process at
+  most five events, with paginated scan checkpoints, an overlap window and
+  durable pending events in Atlas Core. Admin reconciliation retains its batch
+  of ten and can explicitly retry after fixing a mailbox problem.
+- No new OAuth scope, env setting or Pub/Sub configuration is needed for faster
+  polling. Confirmation still depends on Timo delivering the original email and
+  Gmail making it readable; five seconds is a scan interval, not a guaranteed
+  bank-to-account confirmation time. Signature verification is unchanged.
 - Restart does not lose verified payments. Benefit grants and receipts use the
   same Atlas transaction services as existing payments. No raw emails, tokens,
   full bank balances or attachments are stored in the database or logs.
@@ -242,7 +256,10 @@ this drain; never delete events, receipts or subscription periods to roll back.
 
 ## Validation Handoff
 
-- `npm run check`: 616 tests, lint and frontend release build passed, including
+- Regression coverage includes adaptive polling, shared cooldown/lease,
+  persisted Gmail backoff, focus refresh, automatic checkout confirmation and
+  once-only grants across duplicate events.
+- `npm run check`: 628 tests, lint and frontend release build passed, including
   cryptographic Gmail ARC fixtures, MIME/identity tampering, DNS failure, weak
   keys, verified worker retry/idempotency, dedicated Timo QR for new orders,
   immutable legacy BVBank QR replay/settlement and existing provider authorization.
