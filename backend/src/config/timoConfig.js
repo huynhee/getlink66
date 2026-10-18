@@ -4,7 +4,7 @@ export function timoConfiguration(env = process.env) {
   return {
     enabled: value(env, "TIMO_ENABLED") === "true",
     workerEnabled: value(env, "TIMO_MAIL_WORKER_ENABLED") === "true",
-    bankId: "970454",
+    bankId: "963388",
     accountNo: value(env, "TIMO_ACCOUNT_NO"),
     accountName: value(env, "TIMO_ACCOUNT_NAME"),
     mailbox: value(env, "TIMO_GMAIL_ADDRESS").toLowerCase(),

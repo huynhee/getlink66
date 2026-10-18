@@ -86,6 +86,7 @@ function body(code = "NAPEXAMPLE123456", direction = "tăng", amount = "10.000")
 test("Timo configuration is opt-in and requires dedicated credentials and a worker", () => {
   assert.deepEqual(timoConfigurationIssues({}), []);
   assert.deepEqual(timoConfigurationIssues(process.env), []);
+  assert.equal(timoConfiguration().bankId, "963388");
   const errors = timoConfigurationIssues({ ...process.env, TIMO_GMAIL_REFRESH_TOKEN: "", TIMO_MAIL_WORKER_ENABLED: "false" });
   assert.ok(errors.some((message) => message.includes("REFRESH_TOKEN")));
   assert.ok(errors.some((message) => message.includes("WORKER_ENABLED")));
@@ -136,11 +137,14 @@ test("verify cryptographic DKIM, reject changed body, forged auth headers and wr
 test("Timo checkout uses immutable VND and bank snapshots without granting credit", async () => {
   const first = await checkout();
   assert.equal(first.payment.provider, "timo");
+  assert.equal(first.payment.bankId, "963388");
+  assert.equal(first.topup.bankId, "963388");
   assert.equal(first.topup.currency, "VND");
   assert.equal(first.topup.accountName, "TEST MERCHANT");
   assert.equal((await User.findById(user._id)).credit, 0);
   const url = new URL(first.payment.qrUrl);
   assert.equal(url.origin, "https://img.vietqr.io");
+  assert.equal(url.pathname, "/image/963388-1000000000000-compact2.png");
   assert.equal(url.searchParams.get("amount"), "10000");
   assert.equal(url.searchParams.get("addInfo"), first.topup.paymentCode);
   await Pack.findByIdAndUpdate(pack._id, { price: 20000, credit: 999 });
@@ -150,6 +154,24 @@ test("Timo checkout uses immutable VND and bank snapshots without granting credi
   assert.equal(replay.topup.credit, 50);
   assert.equal(replay.payment.accountNo, "1000000000000");
   assert.equal(await Topup.countDocuments({}), 1);
+});
+
+test("legacy BVBank QR snapshots still replay and settle without switching the stored bank", async () => {
+  const { topup } = await checkout();
+  await Topup.findByIdAndUpdate(topup._id, { bankId: "970454" });
+  const legacy = await checkout();
+  assert.equal(legacy.topup._id, topup._id);
+  assert.equal(legacy.payment.bankId, "970454");
+  assert.equal(new URL(legacy.payment.qrUrl).pathname, "/image/970454-1000000000000-compact2.png");
+  const own = await invoke(bankPaymentStatus, {}, { params: { kind: "topup", id: topup._id } });
+  assert.equal(own.payload.payment.bankId, "970454");
+  const event = await verifiedEvent(legacy.topup);
+  await settleTimoMailEvent(event._id);
+  await settleTimoMailEvent(event._id);
+  assert.equal((await User.findById(user._id)).credit, 50);
+  assert.equal(await PaymentReceipt.countDocuments({}), 1);
+  const next = await invoke(createTopup, { packageId: pack._id, paymentProvider: "timo" }, { key: "timo-new-bank-second-order-0002" });
+  assert.equal(next.payload.payment.bankId, "963388");
 });
 
 test("concurrent and replayed email settlement grants credit once", async () => {
@@ -196,6 +218,8 @@ test("subscription and free trial keep existing activation and scheduling rules"
   const plan = await Plan.create({ code: "MONTH50", name: "Month50", price: 10000, durationDays: 30, dailyDownloadLimit: 50, billingPeriod: "month", isActive: true });
   const response = await invoke(createMembershipCheckout, { planId: plan._id, paymentProvider: "timo" });
   assert.equal(response.payload.payment.provider, "timo");
+  assert.equal(response.payload.payment.bankId, "963388");
+  assert.equal(new URL(response.payload.payment.qrUrl).pathname, "/image/963388-1000000000000-compact2.png");
   const order = await MembershipOrder.findById(response.payload.order._id);
   const event = await verifiedEvent(order);
   await settleTimoMailEvent(event._id);
