@@ -2,7 +2,7 @@ import Cookie from "../models/Cookie.js";
 import User from "../models/User.js";
 import Voucher from "../models/Voucher.js";
 import Topup from "../models/Topup.js";
-import { adminPaypalPrice } from "../utils/paymentMoney.js";
+import { adminPaypalPrice, paymentReceiptMoney } from "../utils/paymentMoney.js";
 import { paymentSummary, paymentRecordFields } from "../utils/paymentReporting.js";
 import TopupPackage from "../models/TopupPackage.js";
 import Getlink from "../models/Getlink.js";
@@ -389,7 +389,7 @@ function recentVietnamDayKeys(length = 7, now = new Date()) {
   });
 }
 
-function buildRevenueChart(approvedTopups, period = "day") {
+function buildRevenueChart(approvedPayments, period = "day", currency = "VND") {
   const now = new Date();
   const config = {
     day: { length: 14 },
@@ -431,16 +431,16 @@ function buildRevenueChart(approvedTopups, period = "day") {
   });
 
   const revenueBucket = new Map(revenueChart.map((item) => [item.date, item]));
-  approvedTopups.forEach((topup) => {
+  approvedPayments.forEach((payment) => {
     const bucket = revenueBucket.get(
-      vietnamChartKey(topup.paidAt || topup.updatedAt || topup.createdAt || now, period),
+      vietnamChartKey(payment.paidAt || payment.updatedAt || payment.createdAt || now, period),
     );
     if (!bucket) return;
-    bucket.revenue += Number(topup.amount || 0);
+    bucket.revenue += paymentReceiptMoney(payment).amountMinor;
     bucket.count += 1;
   });
 
-  return revenueChart;
+  return revenueChart.map((bucket) => ({ ...bucket, revenue: bucket.revenue / (currency === "USD" ? 100 : 1) }));
 }
 
 export async function listUsers(req, res, next) {
@@ -600,7 +600,7 @@ export async function getOverview(req, res, next) {
     const revenuePeriod = ["day", "month", "year"].includes(requestedPeriod)
       ? requestedPeriod
       : "day";
-    const [users, packages, vouchers, topups, getlinks, caches, cookiePool] =
+    const [users, packages, vouchers, topups, getlinks, caches, cookiePool, approvedMembershipOrders] =
       await Promise.all([
         User.find(),
         TopupPackage.find(),
@@ -609,15 +609,20 @@ export async function getOverview(req, res, next) {
         Getlink.find(),
         ProductCache.find(),
         get3D66CookiePoolStatus(),
+        MembershipOrder.find({ status: "approved" })
+          .select("amount amountMinor currency gatewayProvider paypalFeeMinor paypalRefundMinor paidAt updatedAt createdAt").lean(),
       ]);
 
     const allApprovedTopups = topups.filter((topup) => topup.status === "approved");
     const approvedTopups = allApprovedTopups.filter((topup) => (topup.currency || "VND") === "VND");
+    const allApprovedPayments = [...allApprovedTopups, ...approvedMembershipOrders];
+    const vndApprovedPayments = allApprovedPayments.filter((payment) => (payment.currency || "VND") === "VND");
+    const revenueByCurrency = paymentSummary(allApprovedTopups, approvedMembershipOrders);
     const pendingTopups = topups.filter((topup) => topup.status === "pending");
     const now = new Date();
     const todayKey = vietnamChartKey(now, "day");
     const recentWeekKeys = new Set(recentVietnamDayKeys(7, now));
-    const revenueChart = buildRevenueChart(approvedTopups, revenuePeriod);
+    const revenueChart = buildRevenueChart(vndApprovedPayments, revenuePeriod);
     const userById = new Map(
       users.map((user) => [String(user._id), user]),
     );
@@ -688,15 +693,12 @@ export async function getOverview(req, res, next) {
     const topPackages = [...packageStats.values()]
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
-    const approvedRevenue = approvedTopups.reduce(
-      (sum, topup) => sum + Number(topup.amount || 0),
-      0,
-    );
+    const approvedRevenue = revenueByCurrency.VND.grossMinor;
 
     res.json({
       overview: {
-        revenueByCurrency: paymentSummary(allApprovedTopups),
-        usdRevenueChart: buildRevenueChart(allApprovedTopups.filter((topup) => topup.currency === "USD"), revenuePeriod),
+        revenueByCurrency,
+        usdRevenueChart: buildRevenueChart(allApprovedPayments.filter((payment) => payment.currency === "USD"), revenuePeriod, "USD"),
         totalUsers: users.length,
         totalCredit: users.reduce(
           (sum, user) => sum + Number(user.credit || 0),
@@ -714,14 +716,14 @@ export async function getOverview(req, res, next) {
         rejectedTopups: topups.filter((topup) => topup.status === "rejected")
           .length,
         revenue: approvedRevenue,
-        todayRevenue: approvedTopups
-          .filter((topup) => isToday(topup.paidAt || topup.updatedAt || topup.createdAt))
-          .reduce((sum, topup) => sum + Number(topup.amount || 0), 0),
-        weekRevenue: approvedTopups
-          .filter((topup) => isInRecentWeek(topup.paidAt || topup.updatedAt || topup.createdAt))
-          .reduce((sum, topup) => sum + Number(topup.amount || 0), 0),
+        todayRevenue: vndApprovedPayments
+          .filter((payment) => isToday(payment.paidAt || payment.updatedAt || payment.createdAt))
+          .reduce((sum, payment) => sum + paymentReceiptMoney(payment).amountMinor, 0),
+        weekRevenue: vndApprovedPayments
+          .filter((payment) => isInRecentWeek(payment.paidAt || payment.updatedAt || payment.createdAt))
+          .reduce((sum, payment) => sum + paymentReceiptMoney(payment).amountMinor, 0),
         averageTopupAmount: approvedTopups.length
-          ? Math.round(approvedRevenue / approvedTopups.length)
+          ? Math.round(revenueByCurrency.VND.creditRevenueMinor / approvedTopups.length)
           : 0,
         revenuePeriod,
         revenueChart,

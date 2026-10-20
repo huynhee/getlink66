@@ -2115,7 +2115,7 @@ export default function Admin({ user, language = "vi" }) {
               </div>
               <div className="chartControls">
                 <select aria-label={l("Tiền tệ doanh thu", "Revenue currency")} value={revenueCurrency} onChange={(event) => setRevenueCurrency(event.target.value)}>
-                  <option value="VND">VND · SePay</option>
+                  <option value="VND">VND · SePay + Timo</option>
                   <option value="USD">USD · PayPal</option>
                 </select>
                 {[

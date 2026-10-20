@@ -263,6 +263,64 @@ async function verifyLanguageFlags(page, viewport, accountType) {
   }
 }
 
+async function verifyAdminRevenueChart(page, context, viewport) {
+  const original = await context.request.get(`${frontendOrigin}/api/admin/overview`).then((response) => response.json());
+  const preferences = await page.evaluate(() => ({ language: localStorage.getItem("language"), theme: localStorage.getItem("3dipl-theme") }));
+  const pattern = /\/api\/admin\/overview(?:\?.*)?$/;
+  const eventsPattern = "**/api/account/events";
+  const stopEvents = (route) => route.fulfill({ status: 204, body: "" });
+  const handler = (route) => route.fulfill({ json: { ...original, overview: { ...original.overview,
+    revenueChart: [{ date: "fixture-1", label: "01/10", revenue: 70000, count: 3 }, { date: "fixture-2", label: "02/10", revenue: 50000, count: 2 }],
+    usdRevenueChart: [{ date: "fixture-1", label: "01/10", revenue: 1.25, count: 1 }, { date: "fixture-2", label: "02/10", revenue: 3.75, count: 1 }],
+  } } });
+  await context.route(pattern, handler);
+  await context.route(eventsPattern, stopEvents);
+  try {
+    for (const language of ["vi", "en"]) {
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate(({ language, theme }) => {
+          localStorage.setItem("language", language);
+          localStorage.setItem("3dipl-theme", theme);
+        }, { language, theme });
+        await page.goto(`${frontendOrigin}/admin`, { waitUntil: "networkidle" });
+        const selector = page.getByLabel(language === "vi" ? "Tiền tệ doanh thu" : "Revenue currency", { exact: true });
+        await selector.waitFor();
+        if (await selector.locator("option").count() !== 2) throw new Error("Revenue must have only VND and USD options");
+        if (await selector.locator("option[value='VND']").innerText() !== "VND · SePay + Timo") throw new Error("VND revenue is missing the combined provider label");
+        const waitForTotal = (usd) => page.waitForFunction((usd) => {
+          const total = globalThis.document.querySelector(".revenueChartPanel .chartTotal strong")?.textContent || "";
+          return usd ? /US\$5[.,]00/.test(total) : /120[.,]000đ/.test(total);
+        }, usd);
+        await waitForTotal(false);
+        if (await page.locator(".revenueChart .chartBarItem").count() !== 2) throw new Error("Revenue chart must use the combined series");
+        await selector.selectOption("USD");
+        await waitForTotal(true);
+        for (const [period, label] of [["month", language === "vi" ? "Tháng" : "Month"], ["year", language === "vi" ? "Năm" : "Year"]]) {
+          await page.locator(".chartControls").getByRole("button", { name: label, exact: true }).click();
+          await page.locator(`.revenueChart.${period}`).waitFor();
+          await waitForTotal(true);
+        }
+        await selector.selectOption("VND");
+        await waitForTotal(false);
+        const panel = page.locator(".revenueChartPanel");
+        if (!await panel.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)) throw new Error("Revenue panel overflows");
+        if (viewport === "mobile" && !await selector.evaluate((element) => element.clientWidth >= element.parentElement.clientWidth - 16)) {
+          throw new Error("The combined revenue provider label needs its own row on mobile");
+        }
+        await panel.screenshot({ path: path.join(screenshotRoot, `${viewport}-${language}-${theme}-revenue.png`) });
+      }
+    }
+  } finally {
+    await context.unroute(pattern, handler);
+    await page.evaluate(({ language, theme }) => {
+      if (language == null) localStorage.removeItem("language"); else localStorage.setItem("language", language);
+      if (theme == null) localStorage.removeItem("3dipl-theme"); else localStorage.setItem("3dipl-theme", theme);
+    }, preferences);
+    await page.goto(`${frontendOrigin}/admin`, { waitUntil: "networkidle" });
+    await context.unroute(eventsPattern, stopEvents);
+  }
+}
+
 async function verifyAdminPackageDeletion(page, context, viewport) {
   const pattern = /\/api\/admin\/(topup-packages|membership-plans)(?:\/[^/?]+)?$/;
   let packages = [], plans = [], deletes = 0, failDelete = false, failToggle = false, releaseDelete;
@@ -1339,6 +1397,7 @@ async function main() {
         fullPage: true,
       });
       await verifyLanguageFlags(page, viewport.name, "admin");
+      await verifyAdminRevenueChart(page, context, viewport.name);
       await verifyAdminPackageDeletion(page, context, viewport.name);
       await verifyAdminVoucherPlanScopes(page, context, viewport.name);
       await verifyNotificationPageScopes(page, context, viewport.name);

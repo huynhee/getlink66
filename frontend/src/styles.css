@@ -4259,6 +4259,13 @@ button:disabled {
 
   .chartControls {
     width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .chartControls select {
+    flex: 0 0 100%;
+    width: 100%;
+    min-width: 0;
   }
 
   .chartControls button {
