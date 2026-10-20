@@ -40,8 +40,11 @@ try {
         const context = await browser.newContext({ viewport });
         let settled = false;
         let submitted = "";
+        let admin = false;
+        let reconciliations = 0;
+        let retries = 0;
         const errors = [];
-        const user = () => ({ _id: "000000000000000000000444", name: "QA", email: "fixture@example.test", credit: settled ? 50 : 0, role: "user" });
+        const user = () => ({ _id: "000000000000000000000444", name: "QA", email: "fixture@example.test", credit: settled ? 50 : 0, role: admin ? "admin" : "user", isTwoFactorEnabled: true });
         const order = () => ({ _id: id, gatewayProvider: "timo", status: settled ? "approved" : "pending", currency: "VND", amount: 10000,
           paymentCode: code, credit: 50, expiresAt: new Date(Date.now() + 1800_000).toISOString() });
         const payment = { provider: "timo", bankName: "Timo by BVBank", accountNo: "1000000000000", accountName: "TEST MERCHANT",
@@ -70,6 +73,16 @@ try {
           }
           if (url.pathname === `/api/payments/bank/topup/${id}`) data = { kind: "topup", order: order(), payment: settled ? null : payment };
           if (url.pathname === `/api/topup/${id}/status`) data = { topup: order(), status: order().status, userCredit: user().credit };
+          if (url.pathname === "/api/admin/payments/provider") data = { provider: "timo", source: "database", enabled: true, envProvider: "timo", options: [{ provider: "timo", enabled: true, issues: [] }] };
+          if (url.pathname === "/api/admin/payments/timo") data = { provider: "timo", workerEnabled: true, accountName: payment.accountName,
+            accountNo: payment.accountNo, mailbox: "bank-fixture@example.test", state: { lastSuccessAt: new Date().toISOString() }, issues: [],
+            events: Array.from({ length: 25 }, (_, index) => ({ _id: `fixture-${index}`, state: index === 0 ? "review" : "applied",
+              amount: 10000, paymentCode: `NAPADMINFIXTURE${index}`, receivedAt: new Date().toISOString() })) };
+          if (url.pathname === "/api/admin/payments/timo/reconcile" && request.method() === "POST") { reconciliations += 1; data = { processed: 0 }; }
+          if (url.pathname === "/api/admin/payments/timo/events/fixture-0/retry" && request.method() === "POST") { retries += 1; data = { queued: true }; }
+          if (url.pathname === "/api/admin/transactions") data = { transactions: [{ id: `credit:${id}`, rawId: id, kind: "credit", title: "Credit fixture",
+            amount: 10000, currency: "VND", credit: 50, status: "approved", gatewayProvider: "timo", user: user(), paidAt: new Date().toISOString() }],
+            pagination: { page: 1, pageSize: 10, total: 1, totalPages: 1 } };
           return route.fulfill({ json: data });
         });
         await context.route(`${base}/fixture-qr.png`, (route) => route.fulfill({ contentType: "image/png", body: qr }));
@@ -119,8 +132,40 @@ try {
           await page.waitForFunction(() => globalThis.document.querySelector(".topupAccountStrip")?.textContent.includes("50"));
           await page.keyboard.press("Escape");
           await page.getByRole("dialog").waitFor({ state: "hidden" });
+          admin = true;
+          await page.goto(`${base}/admin`, { waitUntil: "networkidle" });
+          await page.getByRole("navigation", { name: "Admin sections", exact: true }).getByRole("button", { name: /^(Chung|General)$/ }).click();
+          await page.getByRole("navigation", { name: "Admin subsections", exact: true }).getByRole("button", { name: /^(Lịch sử nạp|Top-up history)\b/ }).click();
+          const disclosure = page.locator(".adminTimoPayments");
+          const content = disclosure.locator(".adminTimoPaymentsContent");
+          const summary = disclosure.locator("summary");
+          await disclosure.waitFor();
+          assert.equal(await disclosure.evaluate((element) => element.open), false);
+          assert.equal(await content.isVisible(), false);
+          await page.locator(".topupAuditTable").getByText("fixture@example.test", { exact: true }).waitFor();
+          assert.ok((await disclosure.boundingBox()).height < 90, "Collapsed mailbox details should leave room for user payment history");
+          await summary.focus();
+          await summary.press("Enter");
+          await content.waitFor();
+          assert.equal(await content.locator("tbody tr").count(), 25);
+          assert.equal(reconciliations, 0);
+          assert.equal(retries, 0);
+          const reconcileRefresh = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/admin/payments/timo" && response.request().method() === "GET");
+          await content.getByRole("button", { name: language === "vi" ? "Đối soát ngay" : "Reconcile now", exact: true }).click();
+          await reconcileRefresh;
+          assert.equal(reconciliations, 1);
+          assert.equal(await disclosure.evaluate((element) => element.open), true);
+          const retryRefresh = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/admin/payments/timo" && response.request().method() === "GET");
+          await content.getByRole("button", { name: language === "vi" ? "Xác thực và đối soát lại" : "Verify and reconcile again", exact: true }).click();
+          await retryRefresh;
+          assert.equal(retries, 1);
+          assert.equal(await disclosure.evaluate((element) => element.open), true);
+          await summary.click();
+          assert.equal(await content.isVisible(), false);
+          await page.locator(".topupAuditTable").scrollIntoViewIfNeeded();
+          await page.screenshot({ path: path.join(output, `${name}-admin-collapsed.png`), fullPage: true });
           assert.equal(errors.length, 0, errors.join("\n"));
-          console.log(`${name}: checkout, QR, animated spinner, recovery, automatic ${language === "en" ? "focus" : "poll"} confirmation and balance passed`);
+          console.log(`${name}: checkout, spinner, automatic ${language === "en" ? "focus" : "poll"} confirmation, balance and collapsed admin reconciliation passed`);
         } finally { await context.close(); }
       }
     }

@@ -1,0 +1,12 @@
+.adminTimoPayments { margin: 20px 0; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.adminTimoPayments > summary { padding: 8px 0; cursor: pointer; list-style: none; }
+.adminTimoPayments > summary::-webkit-details-marker { display: none; }
+.adminTimoPayments > summary h3 { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; font-size: 18px; }
+.adminTimoPayments > summary svg { flex-shrink: 0; transform: rotate(-90deg); transition: transform 160ms ease; }
+.adminTimoPayments[open] > summary svg { transform: rotate(0); }
+.adminTimoPayments > summary:focus-visible { outline: 2px solid var(--neon-green); outline-offset: 4px; }
+.adminTimoPaymentsContent { padding-top: 12px; }
+.adminTimoPaymentsContent .adminSectionHeader { flex-wrap: wrap; gap: 12px; }
+.adminTimoPaymentsAccount { min-width: 0; }
+.adminTimoPaymentsAccount p { margin: 0 0 6px; font-size: 13px; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .adminTimoPayments > summary svg { transition: none; } }

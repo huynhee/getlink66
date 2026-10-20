@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { RefreshCw, RotateCcw } from "lucide-react";
+import { ChevronDown, RefreshCw, RotateCcw } from "lucide-react";
 import { api } from "../api.js";
 import { formatPaymentMoney } from "../utils/paymentPresentation.js";
+import "./admin-timo-payments.css";
 
 export default function AdminTimoPayments({ language }) {
   const [data, setData] = useState(null);
@@ -31,12 +32,16 @@ export default function AdminTimoPayments({ language }) {
   if (data && !data.workerEnabled && data.provider !== "timo" && !data.events?.length) return null;
   const states = vi ? { pending: "Chờ đọc", verified: "Đã xác thực", applied: "Đã duyệt", review: "Cần đối soát", ignored: "Bỏ qua" }
     : { pending: "Pending", verified: "Verified", applied: "Settled", review: "Needs review", ignored: "Ignored" };
-  return <div className="stack" style={{ margin: "20px 0", borderBottom: "1px solid var(--border)", paddingBottom: 20 }}>
-    <div className="adminSectionHeader"><h3>{vi ? "Đối soát Timo / Gmail" : "Timo / Gmail reconciliation"}</h3>
+  return <details className="adminTimoPayments">
+    <summary><h3>{vi ? "Đối soát Timo / Gmail" : "Timo / Gmail reconciliation"}<ChevronDown size={18} aria-hidden="true" /></h3></summary>
+    <div className="stack adminTimoPaymentsContent">
+    <div className="adminSectionHeader">
+      <div className="adminTimoPaymentsAccount">
+        <p>{data?.accountName} · {data?.accountNo} · {data?.mailbox}</p>
+        <p>{vi ? "Đọc mail thành công lần cuối: " : "Last successful mailbox poll: "}{date(data?.state?.lastSuccessAt)}</p>
+      </div>
       <button type="button" className="googleButton" disabled={busy} onClick={() => action(data?.workerEnabled ? "/api/admin/payments/timo/reconcile" : null)}>
         <RefreshCw size={16} />{vi ? "Đối soát ngay" : "Reconcile now"}</button></div>
-    <p>{data?.accountName} · {data?.accountNo} · {data?.mailbox}</p>
-    <p>{vi ? "Đọc mail thành công lần cuối: " : "Last successful mailbox poll: "}{date(data?.state?.lastSuccessAt)}</p>
     {data?.state?.lastError && <p className="error">{data.state.lastError}</p>}
     {data?.issues?.map((issue) => <p key={issue} className="error">{issue}</p>)}
     {error && <p role="alert" className="error">{error}</p>}
@@ -50,5 +55,6 @@ export default function AdminTimoPayments({ language }) {
           onClick={() => action(`/api/admin/payments/timo/events/${encodeURIComponent(event._id)}/retry`)}><RotateCcw size={16} /></button>}</td>
       </tr>)}</tbody>
     </table></div>
-  </div>;
+    </div>
+  </details>;
 }
