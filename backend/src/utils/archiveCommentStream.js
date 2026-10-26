@@ -53,9 +53,14 @@ export async function prepareArchiveComment(session, comment, options = {}) {
   if (format !== "zip" && format !== "rar") throw archiveFormatError("Archive comments currently support ZIP and plain single-volume RAR5 on web downloads only.");
   const start = format === "zip" ? Math.max(0, total - ZIP_TAIL_BYTES) : 0;
   const end = format === "zip" ? total - 1 : Math.min(total, RAR_PREFIX_BYTES) - 1;
-  let sample = await inspectBytes(session, start, end, options);
+  let sourceValidator = "";
+  if (options.pinDriveVersion && session.storageProvider === "google_drive") {
+    sourceValidator = await getStorageSourceValidator(session, { signal: options.signal });
+  }
+  let sample = await inspectBytes(session, start, end, sourceValidator
+    ? { ...options, validator: sourceValidator, sourceValidator } : options);
   if (!sample.validator && session.storageProvider === "google_drive") {
-    const sourceValidator = await getStorageSourceValidator(session, { signal: options.signal });
+    sourceValidator = await getStorageSourceValidator(session, { signal: options.signal });
     // Re-read after pinning the version; the first, unvalidated probe must not define the output.
     sample = await inspectBytes(session, start, end, { ...options, validator: sourceValidator, sourceValidator });
   }
@@ -96,7 +101,9 @@ export async function openCommentedArchive(session, plan, options = {}) {
   add(plan.start + plan.bytes.length, session.fileSize - plan.end, plan.end);
   const upstreamOptions = { ...options, validator: plan.validator, sourceValidator: plan.sourceValidator };
   let current = null;
-  if (blocks[0] && !blocks[0].bytes) current = await openRange(session, blocks[0].start, blocks[0].end, upstreamOptions);
+  const firstSource = blocks.find((block) => !block.bytes);
+  if (firstSource) current = await openRange(session, firstSource.start, firstSource.end, upstreamOptions);
+  else if (plan.sourceValidator && await getStorageSourceValidator(session, { signal: options.signal }) !== plan.sourceValidator) throw changed();
   const stream = Readable.from((async function* () {
     try {
       for (const block of blocks) {

@@ -5,6 +5,7 @@ import { getStorageSourceValidator, openStorageStream } from "../src/utils/stora
 import { openCommentedArchive, prepareArchiveComment } from "../src/utils/archiveCommentStream.js";
 import { rar5Block, rarVint } from "../src/utils/archiveCommentFormat.js";
 import { zipFixture } from "./fixtures/archiveFixture.js";
+import { serializeArchiveCommentPlan, restoreArchiveCommentPlan } from "../src/utils/archiveCommentPlan.js";
 
 process.env.GOOGLE_DRIVE_ACCESS_TOKEN = "archive-validator-fixture-token";
 
@@ -148,4 +149,65 @@ test("legacy HTTP validators keep the original path without extra metadata reque
   assert.equal(plan.sourceValidator, "");
   assert.equal(plan.validator, "Mon, 26 Oct 2026 00:00:00 GMT");
   assert.equal(requests, 1);
+});
+
+test("new Drive sessions pin once, persist a bounded patch and open without repeating archive probes", async (t) => {
+  const f = driveFixture(t);
+  const comment = "3dipl.org\n\nipl1.fixture";
+  const plan = await prepareArchiveComment(f.session, comment, { pinDriveVersion: true });
+  assert.equal(f.requests.length, 3, "Metadata pin, one bounded media probe, then version verification");
+  assert.equal(f.mediaCount, 1);
+  const session = { ...f.session, sourceFileSize: f.session.fileSize, fileSize: plan.size,
+    archiveComment: comment, archiveSourceFingerprint: plan.fingerprint,
+    archiveCommentPlan: serializeArchiveCommentPlan(f.session, comment, plan) };
+  assert.ok(session.archiveCommentPlan.length < 2000);
+  const restored = restoreArchiveCommentPlan(JSON.parse(JSON.stringify(session)));
+  assert.deepEqual(restored.bytes, plan.bytes);
+  assert.equal(restored.etag, plan.etag);
+  const beforeOpen = f.requests.length;
+  const file = await openCommentedArchive(f.session, restored, { range: "bytes=0-63" });
+  assert.equal(f.requests.length - beforeOpen, 2, "Opening checks only the requested media and a fresh version");
+  assert.equal(f.requests.at(-2).range, "bytes=0-63");
+  assert.deepEqual(await consume(file), f.payload.subarray(0, 64));
+  f.metadata.version = "18446744073709551613";
+  await assert.rejects(openCommentedArchive(f.session, restored, { range: "bytes=0-63" }), { code: "ARCHIVE_SOURCE_CHANGED" });
+});
+
+test("saved patches are bound to the comment and source; malformed or corrupted snapshots cannot be used", async (t) => {
+  const f = driveFixture(t);
+  const comment = "3dipl.org\n\nipl1.fixture";
+  const plan = await prepareArchiveComment(f.session, comment, { pinDriveVersion: true });
+  const session = { ...f.session, sourceFileSize: f.session.fileSize, fileSize: plan.size,
+    archiveComment: comment, archiveSourceFingerprint: plan.fingerprint,
+    archiveCommentPlan: serializeArchiveCommentPlan(f.session, comment, plan) };
+  for (const change of [{ archiveCommentPlan: "{" }, { archiveCommentPlan: "x".repeat(200001) },
+    { driveFileId: "other" }, { archiveComment: "changed" }, { sourceFileSize: 42 }, { fileSize: 42 },
+    { archiveSourceFingerprint: "a".repeat(64) }, { archiveFormat: "rar" }]) {
+    assert.throws(() => restoreArchiveCommentPlan({ ...session, ...change }), { code: "ARCHIVE_SOURCE_CHANGED" });
+  }
+  const corrupt = JSON.parse(session.archiveCommentPlan);
+  corrupt.bytes = Buffer.from("corrupt").toString("base64");
+  assert.throws(() => restoreArchiveCommentPlan({ ...session, archiveCommentPlan: JSON.stringify(corrupt) }), { code: "ARCHIVE_SOURCE_CHANGED" });
+  const { checksum: _checksum, ...data } = JSON.parse(session.archiveCommentPlan);
+  for (const change of [{ start: -1 }, { end: session.sourceFileSize + 1 }, { end: data.start },
+    { bytes: "not base64" }, { bytes: "" }, { size: session.fileSize + 1 }, { sourceValidator: '"not-a-Drive-version"' },
+    { v: 2 }, { lastModified: "bad\r\nheader" }]) {
+    const invalid = { ...data, ...change };
+    const encoded = JSON.stringify({ ...invalid, checksum: crypto.createHash("sha256").update(JSON.stringify(invalid)).digest("hex") });
+    assert.throws(() => restoreArchiveCommentPlan({ ...session, archiveCommentPlan: encoded }), { code: "ARCHIVE_SOURCE_CHANGED" });
+  }
+  assert.equal(restoreArchiveCommentPlan({}), null, "Older sessions keep the validated legacy path");
+});
+
+test("a patch-only range still verifies Drive before billing, and a patch-first range preopens its source", async (t) => {
+  const f = driveFixture(t, rarFixture());
+  f.session.archiveFormat = "rar";
+  const plan = await prepareArchiveComment(f.session, "comment", { pinDriveVersion: true });
+  const patchRange = `bytes=${plan.start}-${plan.start + plan.bytes.length - 1}`;
+  const before = f.mediaCount;
+  assert.deepEqual(await consume(await openCommentedArchive(f.session, plan, { range: patchRange })), plan.bytes);
+  assert.equal(f.mediaCount, before, "A generated-only range requires metadata, not a media probe");
+  f.metadata.version = "18446744073709551613";
+  await assert.rejects(openCommentedArchive(f.session, plan, { range: patchRange }), { code: "ARCHIVE_SOURCE_CHANGED" });
+  await assert.rejects(openCommentedArchive(f.session, plan, { range: `bytes=${plan.start}-` }), { code: "ARCHIVE_SOURCE_CHANGED" });
 });

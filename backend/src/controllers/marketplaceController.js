@@ -50,6 +50,7 @@ import { marketplacePublicDeletionQuery } from "../utils/marketplaceDeletionServ
 import { pipeMarketplaceDownloadStream } from "../utils/marketplaceDownloadStream.js";
 import { downloadTransferLimiter, normalizeDownloadRange, streamDownloadFile } from "../utils/downloadTransfer.js";
 import { openCommentedArchive, prepareArchiveComment } from "../utils/archiveCommentStream.js";
+import { restoreArchiveCommentPlan } from "../utils/archiveCommentPlan.js";
 import { sendMarketplaceImage } from "../utils/marketplaceImageDelivery.js";
 import {
   marketplaceRankingMetadata,
@@ -1587,7 +1588,7 @@ export async function downloadSessionFile(req, res, next) {
       const options = { range, ifRange: req.get("if-range") || "", signal: controller.signal };
       if (session.archiveComment) {
         const source = { ...(session.toObject ? session.toObject() : session), fileSize: Number(session.sourceFileSize) };
-        const plan = await prepareArchiveComment(source, session.archiveComment, options);
+        const plan = restoreArchiveCommentPlan(session) || await prepareArchiveComment(source, session.archiveComment, options);
         if (plan.fingerprint !== session.archiveSourceFingerprint) throw Object.assign(new Error("The archive changed. Create a new download session."), {
           status: 409, code: "ARCHIVE_SOURCE_CHANGED",
         });

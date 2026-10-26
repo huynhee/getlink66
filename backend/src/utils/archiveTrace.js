@@ -63,5 +63,5 @@ export function readArchiveTrace(input, env = process.env) {
 
 export function archiveCommentText(text, token) {
   if (!validArchiveComment(text)) throw new Error("Invalid archive comment.");
-  return `${text.replace(/\r\n?/g, "\n").trim()}\n\nRef: ${token}`.trimStart();
+  return `${text.replace(/\r\n?/g, "\n").trim()}\n\n${token}`.trimStart();
 }

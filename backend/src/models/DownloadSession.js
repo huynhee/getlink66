@@ -46,6 +46,7 @@ const downloadSessionSchema = new mongoose.Schema(
     sha256: { type: String, default: "" },
     archiveComment: { type: String, default: "", select: false },
     archiveSourceFingerprint: { type: String, default: "", select: false },
+    archiveCommentPlan: { type: String, default: "", maxlength: 200000, select: false },
     sourceFileSize: { type: Number, default: 0 },
     assetRevision: { type: String, default: "" },
     mainMaxFile: { type: String, default: "" },

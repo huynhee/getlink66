@@ -19,13 +19,19 @@
 
 The flag, text, and a reference are snapshotted when a session is created. A new session gets a new 96-bit random nonce. Requests with the same idempotency key, parallel range connections, HEAD, retries, and resume reuse the existing session reference. Editing/disabling settings only affects new sessions, not bytes already being resumed.
 
+New comments place the opaque `ipl1....` token on its own line without a `Ref:` label. Existing sessions and archives keep their original bytes; admin lookup accepts either format.
+
 ## Delivery and Resources
 
 The service reads at most 65,557 trailing ZIP bytes or 128 KiB of RAR prefix to build a byte-splice plan. It streams original compressed payload bytes around a small generated patch. There is no full-file buffering, archive extraction, temporary full-file copy, or recompression. Preflight adds a small ranged upstream request; the primary cost remains network bandwidth.
 
 The virtual representation has its own `Content-Length`, strong session-specific ETag, and byte-range mapping. A stale/weak/unknown If-Range causes a complete response. The source size, probe fingerprint, and upstream validator are pinned; a changed source is rejected instead of mixing old and new bytes. Storage must support exact byte-range responses. A transient source/open failure is never silently downgraded to an unmarked download or public Drive redirect.
 
-Google Drive media responses can omit ETag and Last-Modified. In that case the service pins the read-only file metadata (`id`, `version`, `size`, and available MD5), then repeats the archive probe. Each source media stream is held until a fresh metadata check confirms that version. The private version fingerprint is never sent as an HTTP If-Range header. Missing version, changed size/version, or unavailable metadata fails closed before releasing that stream; no revisions are modified or retained on Drive.
+New Drive sessions pin the read-only file metadata (`id`, `version`, `size`, and available MD5) before a single archive probe, and confirm that version after opening the probe. They save the small generated patch and byte mapping privately in DownloadSession, not the original file or full probe. The bounded snapshot (normally under 2 KiB, maximum 200,000 JSON characters) is tied to the source, comment, transformed size and fingerprint, with an integrity checksum. It is not exposed in the session API. It survives backend restarts and expires with the existing session retention; no extra cache or migration is required.
+
+File/HEAD/Range requests reuse that snapshot rather than reading the archive prefix/tail again. Each source media stream is still held until a fresh metadata check confirms the pinned version. Generated-only ranges also check the version; ranges beginning in the patch preopen their first source stream before billing. The private fingerprint is never sent as an HTTP If-Range header. Missing version, changed size/version, invalid snapshots, or unavailable metadata fail closed before releasing that stream; no revisions are modified or retained on Drive.
+
+Sessions created before saved patches retain the previous preflight path and fingerprints. If their Drive response lacks ETag/Last-Modified, the legacy path pins metadata and repeats the probe as before. Non-Drive storage keeps the existing HTTP validator checks.
 
 RAR main-header locator records are removed and the header CRC is recomputed so quick-open locations are discovered sequentially. Existing CMT data is replaced; file headers/compressed payload and quick-open-relative file distances stay unchanged. RAR recovery-record archives are deliberately refused because modifying prefix bytes would invalidate recovery information.
 

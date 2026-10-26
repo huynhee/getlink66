@@ -685,7 +685,7 @@ export async function markMarketplaceDownloadRedeemed(session) {
 }
 
 export async function verifyDownloadSession(sessionId, token, expectedUserId = "") {
-  const session = await DownloadSession.findById(sessionId).select(isMemoryDb() ? "" : "+archiveComment +archiveSourceFingerprint");
+  const session = await DownloadSession.findById(sessionId).select(isMemoryDb() ? "" : "+archiveComment +archiveSourceFingerprint +archiveCommentPlan");
   // "used" van duoc phep tai lai trong TTL: download manager/browser co the mo
   // nhieu ket noi hoac retry; quota da duoc tinh khi tao session, khong tinh lai.
   if (!session || !["active", "used"].includes(session.status)) {

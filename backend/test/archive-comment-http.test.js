@@ -33,6 +33,7 @@ const { downloadSessionFile } = await import("../src/controllers/marketplaceCont
 const { readArchiveTrace } = await import("../src/utils/archiveTrace.js");
 const { getSettings } = await import("../src/controllers/settingsController.js");
 const { invalidateMarketplacePricingCache } = await import("../src/utils/marketplacePricingService.js");
+const { prepareArchiveComment } = await import("../src/utils/archiveCommentStream.js");
 let sequence = 0;
 
 async function fixture(t, { assetType = "model", archiveExt = "zip", paymentMethod = "credit", httpValidators = true, payload = zipFixture(Buffer.alloc(300000, 82)) } = {}) {
@@ -110,6 +111,8 @@ for (const httpValidators of [true, false]) test(`marked web ranges, HEAD, retri
   const retryCreate = await f.create("trace-first-0001");
   assert.equal(created.session._id, retryCreate.session._id);
   const stored = await DownloadSession.findById(created.session._id);
+  assert.ok(stored.archiveCommentPlan);
+  assert.ok(!stored.archiveComment.includes("Ref:"));
   const trace = readArchiveTrace(stored.archiveComment);
   assert.equal(trace.userId, String(f.user._id));
   assert.equal(trace.assetType, "scene");
@@ -121,6 +124,7 @@ for (const httpValidators of [true, false]) test(`marked web ranges, HEAD, retri
   assert.equal(head.status, 200);
   assert.equal(Number(head.headers.get("content-length")), created.session.fileSize);
   assert.equal((await User.findById(f.user._id)).credit, 100);
+  const beforeRanges = f.requests.length;
   const responses = await Promise.all(Array.from({ length: 6 }, (_, index) => {
     const start = Math.floor(index * created.session.fileSize / 6);
     const end = Math.floor((index + 1) * created.session.fileSize / 6) - 1;
@@ -132,6 +136,7 @@ for (const httpValidators of [true, false]) test(`marked web ranges, HEAD, retri
     assert.equal(response.headers.get("cache-control"), "no-store, no-transform");
     return Buffer.from(await response.arrayBuffer());
   }));
+  assert.ok(f.requests.length - beforeRanges <= 12, "Six ZIP ranges must not repeat six archive preflights");
   const full = await f.fetch(url);
   const output = Buffer.from(await full.arrayBuffer());
   assert.deepEqual(Buffer.concat(chunks), output);
@@ -180,7 +185,7 @@ test("unsafe archive/key/Drive failure rejects session before quota, Credit or d
   const f = await fixture(t, { paymentMethod: "free_quota", payload: Buffer.alloc(100, 82), archiveExt: "rar" });
   await assert.rejects(f.create("trace-invalid-rar"), { code: "ARCHIVE_COMMENT_UNSUPPORTED" });
   f.fail();
-  await assert.rejects(f.create("trace-drive-fail"), /Google Drive download failed/);
+  await assert.rejects(f.create("trace-drive-fail"), /Google Drive .*failed/);
   const secret = process.env.ARCHIVE_TRACE_SECRET;
   delete process.env.ARCHIVE_TRACE_SECRET;
   try { await assert.rejects(f.create("trace-key-absent"), { code: "ARCHIVE_TRACE_KEY_REQUIRED" }); }
@@ -210,6 +215,35 @@ test("Drive version preflight failure does not create a session or consume Free 
   assert.equal(await ModelDownload.countDocuments({ userId: f.user._id }), 0);
   assert.equal(await DailyDownloadQuota.countDocuments({ userId: f.user._id }), 0);
   assert.equal((await User.findById(f.user._id)).credit, 100);
+});
+
+test("sessions created before patch snapshots retain their original comment and validated output", async (t) => {
+  const f = await fixture(t);
+  const created = await f.create("trace-legacy-plan-01");
+  const stored = await DownloadSession.findById(created.session._id);
+  const comment = stored.archiveComment.replace("\n\nipl1.", "\n\nRef: ipl1.");
+  const plan = await prepareArchiveComment({ ...stored, fileSize: stored.sourceFileSize }, comment);
+  await DownloadSession.findByIdAndUpdate(stored._id, { $set: { archiveCommentPlan: "", archiveComment: comment,
+    archiveSourceFingerprint: plan.fingerprint, fileSize: plan.size } });
+  const response = await f.fetch(f.base + created.downloadUrl);
+  assert.equal(response.status, 200);
+  assert.ok(Buffer.from(await response.arrayBuffer()).includes(Buffer.from(comment)));
+  assert.equal((await User.findById(f.user._id)).credit, 95);
+});
+
+test("corrupt snapshots and changed Drive versions on generated-only ranges never debit Credit", async (t) => {
+  const f = await fixture(t, { httpValidators: false });
+  const created = await f.create("trace-corrupt-plan-01");
+  const stored = await DownloadSession.findById(created.session._id);
+  const saved = stored.archiveCommentPlan;
+  await DownloadSession.findByIdAndUpdate(stored._id, { $set: { archiveCommentPlan: "{" } });
+  assert.equal((await f.fetch(f.base + created.downloadUrl)).status, 409);
+  await DownloadSession.findByIdAndUpdate(stored._id, { $set: { archiveCommentPlan: saved } });
+  f.change();
+  const { start } = JSON.parse(saved);
+  assert.equal((await f.fetch(f.base + created.downloadUrl, { headers: { range: `bytes=${start}-` } })).status, 409);
+  assert.equal((await User.findById(f.user._id)).credit, 100);
+  assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), 0);
 });
 
 test("legacy plugins retain exact size, SHA-256 and original bytes when web tracing is enabled", async (t) => {

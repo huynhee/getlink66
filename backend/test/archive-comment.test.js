@@ -23,6 +23,9 @@ test("randomized authenticated references hide IDs, survive session expiry, and 
   const decoded = readArchiveTrace(archiveCommentText("3dipl.org\r\nLicensed asset", first), env);
   const { at, ...identity } = claims;
   assert.deepEqual(decoded, { ...identity, issuedAt: new Date(at).toISOString() });
+  assert.equal(archiveCommentText("3dipl.org", first), `3dipl.org\n\n${first}`);
+  assert.equal(archiveCommentText("", first), first);
+  assert.deepEqual(readArchiveTrace(`3dipl.org\n\nRef: ${first}`, env), decoded, "Old marked archives remain searchable");
 });
 
 test("trace key, ciphertext and input validation are fail closed", () => {
