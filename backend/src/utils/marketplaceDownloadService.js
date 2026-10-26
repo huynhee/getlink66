@@ -22,6 +22,7 @@ import {
   getMarketplaceCreditEntitlement,
 } from "./marketplaceCreditBillingService.js";
 import { marketplaceCreditPrice } from "./marketplacePricingService.js";
+import { archiveCommentSnapshot } from "../services/archiveCommentService.js";
 
 const SESSION_TTL_MS = 15 * 60 * 1000;
 
@@ -382,6 +383,7 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     remaining: 0,
     resetAt: nextVietnamReset(),
   };
+  const sessionId = crypto.randomBytes(12).toString("hex");
   let creditCost = 0;
   let creditEntitlementUntil = null;
   if (paymentMethod === "credit") {
@@ -405,9 +407,13 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     }
     quota.remaining = currentQuota.remaining;
     quota.resetAt = currentQuota.resetAt;
-  } else {
-    quota = await chargeQuota(req, tier, quotaCost);
   }
+  const archiveSnapshot = await archiveCommentSnapshot({
+    _id: sessionId, userId: req.user._id, modelId: model._id, assetType, clientType: normalizedClientType,
+    storageProvider: model.storageProvider, storageKey: model.storageKey, driveFileId: model.driveFileId,
+    fileSize: Number(model.fileSize || 0), fileName: safeDownloadFileName(model), archiveFormat: safeArchiveExt(model.archiveExt),
+  });
+  if (paymentMethod !== "credit") quota = await chargeQuota(req, tier, quotaCost);
   const pluginTokenNonce = idempotencyKey || normalizedClientType === "plugin" ? makeToken() : "";
   let token = pluginTokenNonce ? "" : makeToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
@@ -415,6 +421,7 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
   let session = null;
   try {
     session = await DownloadSession.create({
+      ...(archiveSnapshot.archiveComment ? { _id: sessionId } : {}),
       assetType,
       modelId: model._id,
       userId: req.user._id,
@@ -445,6 +452,7 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
       archiveFormat: safeArchiveExt(model.archiveExt),
       quotaRemaining: quota.remaining,
       quotaResetAt: quota.resetAt,
+      ...archiveSnapshot,
     });
     if (pluginTokenNonce) {
       token = deterministicSessionToken(session._id, pluginTokenNonce);
@@ -677,7 +685,7 @@ export async function markMarketplaceDownloadRedeemed(session) {
 }
 
 export async function verifyDownloadSession(sessionId, token, expectedUserId = "") {
-  const session = await DownloadSession.findById(sessionId);
+  const session = await DownloadSession.findById(sessionId).select(isMemoryDb() ? "" : "+archiveComment +archiveSourceFingerprint");
   // "used" van duoc phep tai lai trong TTL: download manager/browser co the mo
   // nhieu ket noi hoac retry; quota da duoc tinh khi tao session, khong tinh lai.
   if (!session || !["active", "used"].includes(session.status)) {

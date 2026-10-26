@@ -1,0 +1,22 @@
+.adminArchiveComments { margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+.adminArchiveComments > summary { display: flex; align-items: center; gap: 10px; padding: 14px 0; cursor: pointer; list-style: none; }
+.adminArchiveComments > summary::-webkit-details-marker { display: none; }
+.adminArchiveComments > summary strong { flex: 1; min-width: 0; }
+.adminArchiveComments > summary svg { flex-shrink: 0; }
+.adminArchiveComments > summary svg:last-child { transform: rotate(-90deg); }
+.adminArchiveComments[open] > summary svg:last-child { transform: none; }
+.adminArchiveComments > summary:focus-visible { outline: 2px solid var(--neon-green); outline-offset: 2px; }
+.adminArchiveCommentsBody { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 8px 0 20px; }
+.adminArchiveCommentsBody > * { min-width: 0; }
+.adminArchiveCommentsBody textarea { width: 100%; min-width: 0; resize: vertical; }
+.adminArchiveCommentsBody p { margin: 0; overflow-wrap: anywhere; }
+.adminArchiveTraceLookup { border-left: 1px solid var(--border); padding-left: 24px; }
+.adminArchiveTraceLookup h3 { margin: 0; font-size: 16px; }
+.adminArchiveTraceResult dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px; }
+.adminArchiveTraceResult dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .adminArchiveCommentsBody { grid-template-columns: 1fr; }
+  .adminArchiveTraceLookup { border-left: 0; border-top: 1px solid var(--border); padding: 20px 0 0; }
+  .adminArchiveTraceResult dl { grid-template-columns: 1fr; gap: 4px; }
+  .adminArchiveTraceResult dd { margin-bottom: 8px; }
+}

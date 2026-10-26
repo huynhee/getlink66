@@ -1,4 +1,5 @@
 import { Router, raw } from "express";
+import { adminArchiveCommentSettings, adminUpdateArchiveCommentSettings, adminLookupArchiveTrace } from "../controllers/archiveCommentController.js";
 import { adminActivateSubscriptionCatalog, adminPrepareSubscriptionCatalog, adminSetSubscriptionCheckout } from "../controllers/subscriptionCatalogController.js";
 import {
   createPluginRelease, deletePluginRelease, getPluginRelease, getPluginReleaseUpload,
@@ -146,6 +147,9 @@ router.post(
 );
 
 router.use(requireAuth, requireNotBanned, adminOnly);
+router.get("/archive-comments", adminArchiveCommentSettings);
+router.put("/archive-comments", adminWriteLimit, auditAdmin("UPDATE_ARCHIVE_COMMENTS"), adminUpdateArchiveCommentSettings);
+router.post("/archive-comments/lookup", adminWriteLimit, auditAdmin("LOOKUP_ARCHIVE_TRACE"), adminLookupArchiveTrace);
 router.get("/payments/provider", adminPaymentProvider);
 router.patch("/payments/provider", adminWriteLimit, auditAdmin("UPDATE_VND_PAYMENT_PROVIDER"), adminUpdatePaymentProvider);
 router.get("/payments/timo", adminTimoStatus);

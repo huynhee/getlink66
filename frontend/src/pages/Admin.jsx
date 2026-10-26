@@ -2,6 +2,7 @@
 import { Activity, AlertTriangle, Archive, ArrowDown, ArrowUp, Ban, BarChart3, Box, Check, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Flag, Gauge, Gift, Globe2, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Trash2, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
 import AdminDownloadHistory from "../components/AdminDownloadHistory.jsx";
+import AdminArchiveComments from "../components/AdminArchiveComments.jsx";
 import AdminMarketplace from "../components/AdminMarketplace.jsx";
 import AdminPluginReleases from "../components/AdminPluginReleases.jsx";
 import AdminTimoPayments from "../components/AdminTimoPayments.jsx";
@@ -3533,6 +3534,8 @@ export default function Admin({ user, language = "vi" }) {
       )}
 
       {activeSection === "general" && generalSection === "downloads" && (
+        <div>
+        <section className="panel"><AdminArchiveComments language={language} /></section>
         <AdminDownloadHistory
           language={language}
           getlinkRecords={getlinkRecords}
@@ -3544,6 +3547,7 @@ export default function Admin({ user, language = "vi" }) {
           getlinkPagination={getlinkPagination}
           onGetlinkPageChange={setGetlinkPage}
         />
+        </div>
       )}
 
       {activeSection === "general" && generalSection === "topups" && (

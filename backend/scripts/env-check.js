@@ -149,6 +149,10 @@ if (production) {
   }
 }
 
+if (has("ARCHIVE_TRACE_SECRET") && !/^[a-f0-9]{64}$/i.test(process.env.ARCHIVE_TRACE_SECRET)) {
+  errors.push("ARCHIVE_TRACE_SECRET must contain exactly 64 hexadecimal characters");
+}
+
 if (has("GOOGLE_CLIENT_ID") || has("GOOGLE_CLIENT_SECRET")) {
   requireValue("GOOGLE_CLIENT_ID");
   requireValue("GOOGLE_CLIENT_SECRET");

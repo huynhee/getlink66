@@ -49,6 +49,7 @@ import {
 import { marketplacePublicDeletionQuery } from "../utils/marketplaceDeletionService.js";
 import { pipeMarketplaceDownloadStream } from "../utils/marketplaceDownloadStream.js";
 import { downloadTransferLimiter, normalizeDownloadRange, streamDownloadFile } from "../utils/downloadTransfer.js";
+import { openCommentedArchive, prepareArchiveComment } from "../utils/archiveCommentStream.js";
 import { sendMarketplaceImage } from "../utils/marketplaceImageDelivery.js";
 import {
   marketplaceRankingMetadata,
@@ -1565,7 +1566,7 @@ export async function downloadSessionFile(req, res, next) {
     res.setHeader("referrer-policy", "no-referrer");
     res.setHeader("x-accel-buffering", "no");
 
-    const redirectUrl = await getStorageBrowserDownloadLink(session).catch((error) => {
+    const redirectUrl = session.archiveComment ? "" : await getStorageBrowserDownloadLink(session).catch((error) => {
       if (String(process.env.MARKETPLACE_DOWNLOAD_REDIRECT_FALLBACK_PROXY || "true").toLowerCase() === "true") {
         return "";
       }
@@ -1583,7 +1584,15 @@ export async function downloadSessionFile(req, res, next) {
 
     const upstreamStartedAt = performance.now();
     try {
-      file = await openStorageStream(session, { range, ifRange: req.get("if-range") || "", signal: controller.signal });
+      const options = { range, ifRange: req.get("if-range") || "", signal: controller.signal };
+      if (session.archiveComment) {
+        const source = { ...(session.toObject ? session.toObject() : session), fileSize: Number(session.sourceFileSize) };
+        const plan = await prepareArchiveComment(source, session.archiveComment, options);
+        if (plan.fingerprint !== session.archiveSourceFingerprint) throw Object.assign(new Error("The archive changed. Create a new download session."), {
+          status: 409, code: "ARCHIVE_SOURCE_CHANGED",
+        });
+        file = await openCommentedArchive(source, plan, options);
+      } else file = await openStorageStream(session, options);
     } catch (error) {
       if (!error.status && session.storageProvider === "google_drive") {
         error.status = 502;
