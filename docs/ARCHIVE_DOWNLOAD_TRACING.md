@@ -25,6 +25,8 @@ The service reads at most 65,557 trailing ZIP bytes or 128 KiB of RAR prefix to 
 
 The virtual representation has its own `Content-Length`, strong session-specific ETag, and byte-range mapping. A stale/weak/unknown If-Range causes a complete response. The source size, probe fingerprint, and upstream validator are pinned; a changed source is rejected instead of mixing old and new bytes. Storage must support exact byte-range responses. A transient source/open failure is never silently downgraded to an unmarked download or public Drive redirect.
 
+Google Drive media responses can omit ETag and Last-Modified. In that case the service pins the read-only file metadata (`id`, `version`, `size`, and available MD5), then repeats the archive probe. Each source media stream is held until a fresh metadata check confirms that version. The private version fingerprint is never sent as an HTTP If-Range header. Missing version, changed size/version, or unavailable metadata fails closed before releasing that stream; no revisions are modified or retained on Drive.
+
 RAR main-header locator records are removed and the header CRC is recomputed so quick-open locations are discovered sequentially. Existing CMT data is replaced; file headers/compressed payload and quick-open-relative file distances stay unchanged. RAR recovery-record archives are deliberately refused because modifying prefix bytes would invalidate recovery information.
 
 The web session reports the transformed size and no original SHA-256 for transformed bytes. Current plugins continue to get the original size and SHA-256. Original download counting, billing idempotency, and 24-hour Credit entitlements are unchanged.
@@ -38,7 +40,7 @@ The marker is **not DRM**, cannot be made undeletable, and can be copied to anot
 ## Verification / Rollback
 
 - Run `npm run check`.
-- Run `node --test backend/test/archive-comment.test.js backend/test/archive-comment-http.test.js` for encryption, auth, format, Range, source changes, quota/Credit, idempotency and plugin compatibility.
+- Run `node --test backend/test/archive-comment.test.js backend/test/archive-comment-drive.test.js backend/test/archive-comment-http.test.js` for encryption, auth, format, Range, Drive responses without HTTP validators, source changes, quota/Credit, idempotency and plugin compatibility.
 - On Windows with WinRAR installed, format tests additionally create an isolated real RAR5, modify its comment, verify it with `Rar.exe t`, and compare extracted file bytes. They never run a downloaded executable or use customer archives.
 - Run `node backend/scripts/qa-archive-comments.js frontend/dist <temporary-evidence-directory>` after `npm run build:release` for VI/EN, light/dark and desktop/mobile admin UI.
 - Operational rollback: disable the admin flag first. New sessions receive originals; active marked sessions retain their original comment until expiry. Keep the encryption key and new server for at least the active-session TTL. Do not restart an older server that ignores marks while marked sessions are still being resumed.

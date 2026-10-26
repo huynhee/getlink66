@@ -301,7 +301,7 @@ export async function getGoogleDriveFileMetadata(fileId, options = {}) {
   url.searchParams.set("fields", fields);
   url.searchParams.set("supportsAllDrives", "true");
 
-  const response = await fetchGoogleDrive(url);
+  const response = await fetchGoogleDrive(url, { signal: options.signal });
   const text = await response.text();
   if (!response.ok) {
     const error = new Error(`Google Drive file metadata failed: ${response.status} ${text.slice(0, 160)}`);
@@ -309,6 +309,27 @@ export async function getGoogleDriveFileMetadata(fileId, options = {}) {
     throw error;
   }
   return JSON.parse(text || "{}");
+}
+
+function archiveSourceChanged() {
+  return Object.assign(new Error("The source archive changed. Create a new download session."), {
+    status: 409, code: "ARCHIVE_SOURCE_CHANGED",
+  });
+}
+
+export async function getStorageSourceValidator(session, options = {}) {
+  if (session.storageProvider !== "google_drive") return "";
+  const metadata = await getGoogleDriveFileMetadata(session.driveFileId, {
+    fields: "id,size,version,md5Checksum,trashed,capabilities(canDownload)", signal: options.signal,
+  });
+  const size = Number(metadata.size);
+  if (metadata.id !== session.driveFileId || metadata.trashed || metadata.capabilities?.canDownload === false
+    || !Number.isSafeInteger(size) || size !== Number(session.fileSize)
+    || typeof metadata.version !== "string" || !/^\d+$/.test(metadata.version)) throw archiveSourceChanged();
+  // Drive's monotonic version also covers metadata edits. This is private, not an HTTP If-Range value.
+  return "gdrive-v1:" + crypto.createHash("sha256").update(JSON.stringify([
+    metadata.id, metadata.version, size, metadata.md5Checksum || "",
+  ])).digest("hex");
 }
 
 export async function setGoogleDriveFileTrashed(fileId, trashed) {
@@ -672,8 +693,20 @@ export async function openStorageStream(session, options = {}) {
     const file = await openGoogleDriveFileStream(
       session.driveFileId,
       session.fileName || "model.zip",
-      { range: options.range, ifRange: options.ifRange, signal: options.signal },
+      { range: options.range, ifRange: options.sourceValidator ? "" : options.ifRange, signal: options.signal },
     );
+    if (options.sourceValidator) {
+      file.stream.on("error", () => {});
+      try {
+        // Hold the media stream until a fresh version check confirms the pinned source.
+        const current = await getStorageSourceValidator(session, { signal: options.signal });
+        if (current !== options.sourceValidator) throw archiveSourceChanged();
+        file.sourceValidator = current;
+      } catch (error) {
+        file.stream.destroy();
+        throw error;
+      }
+    }
     return {
       ...file,
       contentLength: file.contentLength || (file.statusCode === 206 ? 0 : Number(session.fileSize || 0)),

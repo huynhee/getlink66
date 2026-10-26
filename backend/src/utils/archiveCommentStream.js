@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
-import { openStorageStream } from "./storageProvider.js";
+import { getStorageSourceValidator, openStorageStream } from "./storageProvider.js";
 import { DOWNLOAD_STREAM_BUFFER_BYTES, normalizeDownloadRange } from "./downloadTransfer.js";
 import { archiveFormatError, rar5CommentPatch, RAR_PREFIX_BYTES, zipCommentPatch, ZIP_TAIL_BYTES } from "./archiveCommentFormat.js";
 
@@ -9,12 +9,14 @@ function changed() {
 }
 
 function validator(file) {
+  if (file.sourceValidator) return file.sourceValidator;
   return file.etag && !file.etag.startsWith("W/") ? file.etag : file.lastModified || "";
 }
 
 async function openRange(session, start, end, options) {
   const file = await (options.open || openStorageStream)(session, {
-    range: `bytes=${start}-${end}`, ifRange: options.validator || "", signal: options.signal,
+    range: `bytes=${start}-${end}`, ifRange: options.sourceValidator ? "" : options.validator || "",
+    sourceValidator: options.sourceValidator || "", signal: options.signal,
   });
   if (file.statusCode !== 206 || file.contentLength !== end - start + 1
     || file.contentRange !== `bytes ${start}-${end}/${session.fileSize}`
@@ -37,7 +39,8 @@ async function inspectBytes(session, start, end, options) {
       chunks.push(chunk);
     }
     if (length !== end - start + 1) throw changed();
-    return { bytes: Buffer.concat(chunks, length), validator: validator(file), lastModified: file.lastModified || "" };
+    return { bytes: Buffer.concat(chunks, length), validator: validator(file),
+      sourceValidator: file.sourceValidator || "", lastModified: file.lastModified || "" };
   } finally { file.stream.destroy(); }
 }
 
@@ -47,21 +50,22 @@ export async function prepareArchiveComment(session, comment, options = {}) {
   const bytes = Buffer.from(comment, "utf8");
   if (bytes.length > 8192) throw archiveFormatError("Archive comment is too long.");
   const format = String(session.archiveFormat || "").toLowerCase();
-  let sample;
-  let patch;
-  if (format === "zip") {
-    sample = await inspectBytes(session, Math.max(0, total - ZIP_TAIL_BYTES), total - 1, options);
-    patch = zipCommentPatch(sample.bytes, total, bytes);
-  } else if (format === "rar") {
-    sample = await inspectBytes(session, 0, Math.min(total, RAR_PREFIX_BYTES) - 1, options);
-    patch = rar5CommentPatch(sample.bytes, total, bytes);
-  } else throw archiveFormatError("Archive comments currently support ZIP and plain single-volume RAR5 on web downloads only.");
+  if (format !== "zip" && format !== "rar") throw archiveFormatError("Archive comments currently support ZIP and plain single-volume RAR5 on web downloads only.");
+  const start = format === "zip" ? Math.max(0, total - ZIP_TAIL_BYTES) : 0;
+  const end = format === "zip" ? total - 1 : Math.min(total, RAR_PREFIX_BYTES) - 1;
+  let sample = await inspectBytes(session, start, end, options);
+  if (!sample.validator && session.storageProvider === "google_drive") {
+    const sourceValidator = await getStorageSourceValidator(session, { signal: options.signal });
+    // Re-read after pinning the version; the first, unvalidated probe must not define the output.
+    sample = await inspectBytes(session, start, end, { ...options, validator: sourceValidator, sourceValidator });
+  }
   if (!sample.validator) throw archiveFormatError("Storage must supply a stable ETag or Last-Modified validator for marked downloads.");
+  const patch = format === "zip" ? zipCommentPatch(sample.bytes, total, bytes) : rar5CommentPatch(sample.bytes, total, bytes);
   const size = total - (patch.end - patch.start) + patch.bytes.length;
   const fingerprint = crypto.createHash("sha256").update(JSON.stringify({
     total, validator: sample.validator, start: patch.start, end: patch.end,
   })).update(sample.bytes).update(patch.bytes).digest("hex");
-  return { ...patch, size, fingerprint, validator: sample.validator, lastModified: sample.lastModified,
+  return { ...patch, size, fingerprint, validator: sample.validator, sourceValidator: sample.sourceValidator, lastModified: sample.lastModified,
     etag: `"ipl-${fingerprint}"` };
 }
 
@@ -90,7 +94,7 @@ export async function openCommentedArchive(session, plan, options = {}) {
   add(0, plan.start, 0);
   add(plan.start, plan.bytes.length, 0, plan.bytes);
   add(plan.start + plan.bytes.length, session.fileSize - plan.end, plan.end);
-  const upstreamOptions = { ...options, validator: plan.validator };
+  const upstreamOptions = { ...options, validator: plan.validator, sourceValidator: plan.sourceValidator };
   let current = null;
   if (blocks[0] && !blocks[0].bytes) current = await openRange(session, blocks[0].start, blocks[0].end, upstreamOptions);
   const stream = Readable.from((async function* () {

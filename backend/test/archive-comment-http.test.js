@@ -35,7 +35,7 @@ const { getSettings } = await import("../src/controllers/settingsController.js")
 const { invalidateMarketplacePricingCache } = await import("../src/utils/marketplacePricingService.js");
 let sequence = 0;
 
-async function fixture(t, { assetType = "model", archiveExt = "zip", paymentMethod = "credit", payload = zipFixture(Buffer.alloc(300000, 82)) } = {}) {
+async function fixture(t, { assetType = "model", archiveExt = "zip", paymentMethod = "credit", httpValidators = true, payload = zipFixture(Buffer.alloc(300000, 82)) } = {}) {
   sequence += 1;
   const user = await User.create({ email: `trace-${sequence}@example.test`, credit: 100 });
   await SiteSetting.findOneAndUpdate({ key: "homepage" }, { $set: { archiveCommentEnabled: true,
@@ -47,20 +47,26 @@ async function fixture(t, { assetType = "model", archiveExt = "zip", paymentMeth
     sha256: crypto.createHash("sha256").update(payload).digest("hex"), source: { provider: "google_drive" } });
   let upstreamError = false;
   let sourceEtag = '"original"';
+  const metadata = { id: asset.driveFileId, size: String(payload.length), version: "10", trashed: false, capabilities: { canDownload: true } };
   const requests = [];
   const realFetch = globalThis.fetch;
   t.mock.method(globalThis, "fetch", async (input, options = {}) => {
     if (String(input).startsWith("http://127.0.0.1:")) return realFetch(input, options);
     assert.equal(new URL(input).hostname, "www.googleapis.com");
-    assert.ok(String(input).includes("alt=media"), "Marked downloads must not request public links or write metadata");
+    const url = new URL(input);
+    assert.equal(options.method || "GET", "GET", "Marked downloads must not write Drive metadata");
     requests.push(options);
     if (upstreamError) return new Response("Fixture Drive failure", { status: 500 });
+    if (url.searchParams.get("alt") !== "media") {
+      assert.ok(url.searchParams.get("fields").includes("version"), "Only private source version metadata is needed");
+      return Response.json(metadata);
+    }
     const range = new Headers(options.headers).get("range");
     const match = /^bytes=(\d+)-(\d+)$/.exec(range || "");
     const start = match ? Number(match[1]) : 0;
     const end = match ? Number(match[2]) : payload.length - 1;
     return new Response(payload.subarray(start, end + 1), { status: match ? 206 : 200, headers: {
-      "content-length": String(end - start + 1), etag: sourceEtag,
+      "content-length": String(end - start + 1), ...(httpValidators ? { etag: sourceEtag } : {}),
       ...(match ? { "content-range": `bytes ${start}-${end}/${payload.length}` } : {}),
     } });
   });
@@ -94,12 +100,12 @@ async function fixture(t, { assetType = "model", archiveExt = "zip", paymentMeth
   const create = (requestId, clientType = "web") => createMarketplaceDownloadSession({ modelId: asset._id, clientType,
     req: { user, body: { paymentMethod, clientRequestId: requestId }, ip: "127.0.0.1",
       get: (name) => name === "idempotency-key" ? requestId : "trace-fixture" } });
-  return { base, headers, create, user, asset, payload, requests, fetch: realFetch,
-    fail: () => { upstreamError = true; }, change: () => { sourceEtag = '"changed"'; } };
+  return { base, headers, create, user, asset, payload, requests, metadata, fetch: realFetch,
+    fail: () => { upstreamError = true; }, change: () => { sourceEtag = '"changed"'; metadata.version = "11"; } };
 }
 
-test("marked web ranges, HEAD, retries and idempotency preserve one representation and one debit", async (t) => {
-  const f = await fixture(t, { assetType: "scene" });
+for (const httpValidators of [true, false]) test(`marked web ranges, HEAD, retries and idempotency preserve one representation and one debit (HTTP validators: ${httpValidators})`, async (t) => {
+  const f = await fixture(t, { assetType: "scene", httpValidators });
   const created = await f.create("trace-first-0001");
   const retryCreate = await f.create("trace-first-0001");
   assert.equal(created.session._id, retryCreate.session._id);
@@ -185,8 +191,8 @@ test("unsafe archive/key/Drive failure rejects session before quota, Credit or d
   assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), 0);
 });
 
-test("changed source fails before credit billing and does not return mixed archive bytes", async (t) => {
-  const f = await fixture(t);
+for (const httpValidators of [true, false]) test(`changed source fails before credit billing without mixing archive bytes (HTTP validators: ${httpValidators})`, async (t) => {
+  const f = await fixture(t, { httpValidators });
   const created = await f.create("trace-source-001");
   f.change();
   const response = await f.fetch(f.base + created.downloadUrl);
@@ -196,8 +202,18 @@ test("changed source fails before credit billing and does not return mixed archi
   assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), 0);
 });
 
+test("Drive version preflight failure does not create a session or consume Free quota", async (t) => {
+  const f = await fixture(t, { httpValidators: false, paymentMethod: "free_quota" });
+  f.metadata.version = "";
+  await assert.rejects(f.create("trace-no-version-01"), { code: "ARCHIVE_SOURCE_CHANGED" });
+  assert.equal(await DownloadSession.countDocuments({ userId: f.user._id }), 0);
+  assert.equal(await ModelDownload.countDocuments({ userId: f.user._id }), 0);
+  assert.equal(await DailyDownloadQuota.countDocuments({ userId: f.user._id }), 0);
+  assert.equal((await User.findById(f.user._id)).credit, 100);
+});
+
 test("legacy plugins retain exact size, SHA-256 and original bytes when web tracing is enabled", async (t) => {
-  const f = await fixture(t);
+  const f = await fixture(t, { httpValidators: false });
   process.env.MARKETPLACE_DOWNLOAD_DELIVERY = "proxy";
   t.after(() => { process.env.MARKETPLACE_DOWNLOAD_DELIVERY = "drive_redirect"; });
   const created = await f.create("trace-plugin-001", "plugin");
