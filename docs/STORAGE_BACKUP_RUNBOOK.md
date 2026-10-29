@@ -42,7 +42,7 @@ has no URI, resolves to Core, or lacks transaction support.
 
 ## Backup Preparation
 
-Install Node 20, MongoDB Database Tools and `age`. Generate the encryption identity
+Install Node 24.22.2 LTS (or a newer 24.x matching the package engines), MongoDB Database Tools and `age`. Generate the encryption identity
 on an offline administration machine:
 
 ```bash

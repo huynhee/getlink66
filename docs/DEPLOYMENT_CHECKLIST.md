@@ -1,6 +1,6 @@
 # Deployment checklist - Get Link 3D66
 
-Cap nhat: 2026-07-10
+Cap nhat: 2026-10-29
 
 Checklist nay danh cho staging truoc, sau do production. Moi o `HUMAN CONFIRMATION` can nguoi co tham quyen xac nhan; agent audit khong tu dong deploy, migrate, thay secret hoac phe duyet giao dich.
 
@@ -36,7 +36,7 @@ Cau hinh bien moi truong: `docs/ENV_CONFIGURATION.md`.
 
 ## C. Secrets va cau hinh
 
-- [ ] `NODE_ENV=production`; Node 20.20.1/npm 10.8.2 hoac runtime tuong thich engines.
+- [ ] `NODE_ENV=production`; Node 24.22.2/npm 11.19.1 hoac runtime tuong thich engines; xem `docs/NODE_24_UPGRADE.md`.
 - [ ] Secret bat buoc duoc nap tu secret manager, khong bake vao image/log:
   - [ ] `JWT_SECRET`, `CSRF_HMAC_SECRET`, `COOKIE_SIGNATURE_SECRET`.
   - [ ] `DOWNLOAD_TOKEN_SECRET`, `COOKIE_ENCRYPTION_KEY`.

@@ -14,7 +14,7 @@
 
 ## Build, Test, and Development Commands
 
-Use npm with the committed lockfiles and Node `>=20.18 <21`.
+Use npm with the committed lockfiles and Node `>=24.22.2 <25` (pinned in `.nvmrc`).
 
 ```bash
 npm run dev              # start backend and Vite together

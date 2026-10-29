@@ -1,6 +1,6 @@
 FROM mongo:8.0 AS mongo-tools
 
-FROM node:20.20.1-bookworm-slim
+FROM node:24.22.2-bookworm-slim
 
 ENV NODE_ENV=production \
     PORT=5000 \
