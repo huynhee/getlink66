@@ -3,6 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright";
+import { verifyBilingualGuides } from "./qa-guide-articles.js";
 
 const backendPort = Number(process.env.QA_BACKEND_PORT || 5511);
 const frontendPort = Number(process.env.QA_FRONTEND_PORT || 5512);
@@ -1217,7 +1218,7 @@ async function main() {
 
   let browser;
   try {
-    const readiness = await waitForBackend();
+    const readiness = await waitForBackend(Number(process.env.QA_BACKEND_STARTUP_TIMEOUT_MS || 60_000));
     if (!readiness.ready) throw new Error("Backend reported not ready");
 
     for (const endpoint of ["/health", "/ready", "/api/marketplace/categories", "/api/marketplace/filters"]) {
@@ -1407,6 +1408,7 @@ async function main() {
       await verifyLiveAccountBalance(page, context);
       await verifySubscriptionCatalog(page, context, viewport.name);
       await verifyPaymentProviderRouting(page, context, viewport.name);
+      await verifyBilingualGuides(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
       await context.close();
     }
 
@@ -1432,6 +1434,7 @@ async function main() {
       subscriptionCatalog: true,
       topupLayout: true,
       adminPaymentProviderRouting: true,
+      bilingualGuides: true,
       homepagePricingRemoved: true,
       completedGetlinkBalanceReplay: false,
       externalFailures: externalFailures.length,

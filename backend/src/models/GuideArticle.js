@@ -1,6 +1,12 @@
 import mongoose from "mongoose";
 import { createMemoryModel, isMemoryDb } from "../config/memoryStore.js";
 
+const translationSchema = new mongoose.Schema({
+  title: { type: String, default: "", trim: true, maxlength: 160 },
+  summary: { type: String, default: "", trim: true, maxlength: 500 },
+  content: { type: String, default: "", maxlength: 20000 }
+}, { _id: false });
+
 const guideArticleSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
@@ -9,6 +15,10 @@ const guideArticleSchema = new mongoose.Schema(
     coverImage: { type: String, default: "", trim: true },
     content: { type: String, required: true },
     language: { type: String, enum: ["vi", "en"], default: "vi", index: true },
+    translations: {
+      vi: { type: translationSchema, default: undefined },
+      en: { type: translationSchema, default: undefined }
+    },
     isPublished: { type: Boolean, default: true, index: true },
     sortOrder: { type: Number, default: 0, index: true }
   },

@@ -12,10 +12,12 @@ export default function Guide({ language = "vi" }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError("");
     api(`/api/guides?language=${language}`)
       .then((data) => {
+        if (cancelled) return;
         const nextArticles = data.articles || [];
         setArticles(nextArticles);
         setActiveSlug((current) => {
@@ -23,8 +25,9 @@ export default function Guide({ language = "vi" }) {
           return nextArticles[0]?.slug || "";
         });
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [language]);
 
   const activeArticle = useMemo(
@@ -63,7 +66,7 @@ export default function Guide({ language = "vi" }) {
           </div>
         </aside>
 
-        <article className="panel guideArticle">
+        <article className="panel guideArticle" lang={activeArticle?.language || language}>
           {activeArticle ? (
             <>
               <h2>{activeArticle.title}</h2>

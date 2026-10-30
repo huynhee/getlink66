@@ -8049,6 +8049,69 @@ label {
   line-height: 1.6;
 }
 
+.articleLanguageTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.articleLanguageTabs button {
+  min-height: 42px;
+  min-width: 120px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+}
+
+.articleLanguageTabs button[aria-selected="true"] {
+  color: var(--neon-green);
+  border-bottom-color: currentColor;
+  background: var(--surface-2);
+}
+
+.articleTranslationFields {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.articleTranslationFields label {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+}
+
+.articleTranslationFields input,
+.articleTranslationFields textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .adminArticles .articleTable .tableRow {
+    min-width: 0;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .adminArticles .articleTable .tableRow > div:first-child,
+  .adminArticles .articleTable .articleRowActions {
+    grid-column: 1 / -1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .adminArticles .articleSortBadge {
+    justify-self: start;
+  }
+}
+
 .articleSortInput {
   flex: 0 0 150px;
   min-width: 150px;

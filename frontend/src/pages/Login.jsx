@@ -690,7 +690,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 </div>
               </aside>
 
-              <article className="panel guideArticle homeGuideArticle">
+              <article className="panel guideArticle homeGuideArticle" lang={activeGuideArticle?.language || language}>
                 {activeGuideArticle ? (
                   <>
                     <h2>{activeGuideArticle.title}</h2>
