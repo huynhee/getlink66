@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "playwright";
 import { fetch3D66Preview, fetchFrom3D66 } from "../src/utils/3d66Service.js";
-import { close3D66Browser, download3D66WithBrowser, inspect3D66DownloadFormatsWithBrowser } from "../src/utils/3d66BrowserService.js";
+import { close3D66Browser, download3D66WithBrowser, inspect3D66DownloadFormatsWithBrowser,
+  open3D66RewrittenFootprintCard } from "../src/utils/3d66BrowserService.js";
 import { build3D66FootprintSeed } from "../src/utils/3d66RewrittenFootprintResolver.js";
 
 const inputId = "GCI139810814629725";
@@ -121,7 +122,7 @@ test("a resolved history URL retains its original eight-digit source identity wi
   assert.equal(state.contexts(), 1);
 });
 
-for (const [label, links] of [["missing history", () => []], ["wrong path", (clean) => [clean.replace(".html", "-wrong.html")]],
+for (const [label, links] of [["missing history", () => []],
   ["wrong ID with shared suffix", (clean) => [clean.replace("ACI89635771", "ACI8963577199")]],
   ["unsigned history", (clean) => [clean.replace("&sign=history-fixture", "")]]]) {
   test(`${label} stops before preview or purchase APIs, without search fallback`, async (t) => {
@@ -134,6 +135,16 @@ for (const [label, links] of [["missing history", () => []], ["wrong path", (cle
     assert.ok(!state.navigations.includes(state.source));
   });
 }
+
+test("an account-specific canonical history URL is cached through preview and download without reopening the old path", async (t) => {
+  const state = await fixture(t, { links: (url) => [url.replace(".html", "-canonical.html")] });
+  const preview = await fetch3D66Preview(state.source, cookie);
+  assert.equal(new URL(preview.resolvedSourceUrl).pathname, new URL(state.base).pathname.replace(".html", "-canonical.html"));
+  const result = await fetchFrom3D66(preview.resolvedSourceUrl, cookie, { sourceUrl: state.source });
+  assert.equal(result.sourceUrl, state.source);
+  assert.equal(new URL(result.resolvedSourceUrl).pathname, new URL(preview.resolvedSourceUrl).pathname);
+  assert.equal(state.contexts(), 1);
+});
 
 test("ID-only and ambiguous source inputs fail before creating a browser context", async (t) => {
   const state = await fixture(t);
@@ -156,3 +167,56 @@ for (const [name, browserRedirect] of [["another path", (url) => url.replace(".h
     assert.deepEqual(state.requests, []);
   });
 }
+
+function openedCardFixture({ navigation = "", downloadRequest = false, changedHref = false } = {}) {
+  const seed = build3D66FootprintSeed("https://3d.3d66.com/reshtmla/model/items/fixture/canonical.html?sof=GCI139810814629725");
+  const unsigned = `${seed.modelPage}?sof=${seed.productId}&st=2`;
+  const signed = unsigned + "&sign=real-history-fixture";
+  const actions = [];
+  let guard;
+  const opened = { url: () => signed, async waitForURL(predicate) { assert.equal(predicate(new URL(signed)), true); } };
+  const context = {
+    async route(_pattern, callback) { guard = callback; },
+    async unroute(_pattern, callback) { assert.equal(callback, guard); actions.push("unroute"); },
+  };
+  const page = {
+    locator() { return { nth(index) {
+      assert.equal(index, 2);
+      return {
+        async evaluate(read) { return read({ href: changedHref ? signed : unsigned }); },
+        async click(options) {
+          actions.push("pointer-click");
+          assert.equal(options.noWaitAfter, true);
+          if (navigation || downloadRequest) {
+            await guard({ request: () => ({ url: () => navigation || "https://user.3d66.com/api/v1/download/handle",
+              isNavigationRequest: () => Boolean(navigation) }), async abort() { actions.push("blocked"); },
+            async fallback() { actions.push("network"); } });
+          }
+        },
+      };
+    } }; },
+    async waitForEvent(event) { assert.equal(event, "popup"); return opened; },
+    waitForURL() { return new Promise(() => {}); },
+  };
+  return { page, context, seed, card: { url: unsigned, index: 2 }, signed, actions };
+}
+
+test("history opening uses a physical pointer click and never calls the purchase API", async () => {
+  const state = openedCardFixture({ downloadRequest: true });
+  assert.equal(await open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context), state.signed);
+  assert.deepEqual(state.actions, ["pointer-click", "blocked", "unroute"]);
+});
+
+test("a history card changed before the click is rejected without navigation", async () => {
+  const state = openedCardFixture({ changedHref: true });
+  await assert.rejects(open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context),
+    (error) => error.details.reason === "history_card_changed");
+  assert.deepEqual(state.actions, []);
+});
+
+test("unexpected model navigation is blocked before reaching the network", async () => {
+  const state = openedCardFixture({ navigation: "https://3d.3d66.com/reshtmla/model/items/fixture/other.html?sof=ACI896357714629725&sign=fixture" });
+  await assert.rejects(open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context),
+    (error) => error.details.reason === "opened_model_mismatch");
+  assert.deepEqual(state.actions, ["pointer-click", "blocked", "unroute"]);
+});

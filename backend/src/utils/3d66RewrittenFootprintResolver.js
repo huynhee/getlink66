@@ -33,10 +33,13 @@ export function build3D66FootprintSeed(value) {
     || source.searchParams.getAll("id").some((id) => id !== ids[0])) {
     throw resolutionError("missing_or_conflicting_model_id", 400);
   }
-  // The source account marker is exactly eight digits; the entire asset suffix stays intact.
-  const parts = ids[0].match(/^([A-Z]{3})(\d{8})(\d{5,20})$/i);
-  if (!parts) throw resolutionError("invalid_eight_digit_source_marker", 400);
-  const productId = `A${parts[1].slice(1).toUpperCase()}${required3D66AccountMarker()}${parts[3]}`;
+  const parts = ids[0].match(/^([A-Z]{3})(\d{5,28})$/i);
+  if (!parts) throw resolutionError("invalid_source_model_id", 400);
+  // Tracked IDs have an eight-digit sender marker; short public IDs contain only the asset suffix.
+  const digits = parts[2];
+  const suffix = digits.length >= 13 ? digits.slice(8) : digits.length <= 8 ? digits : "";
+  if (!suffix) throw resolutionError("ambiguous_source_model_id", 400);
+  const productId = `A${parts[1].slice(1).toUpperCase()}${required3D66AccountMarker()}${suffix}`;
   return {
     sourceProductId: ids[0], productId, modelPage: source.origin + source.pathname,
     url: `${source.origin}${source.pathname}?sof=${productId}&st2`,
@@ -51,24 +54,28 @@ export function assert3D66RewrittenFootprintLink(value, seed) {
   return productId;
 }
 
-export function selectRewrittenFootprintLink(links, seed) {
-  for (const link of links) {
+export function selectRewrittenFootprintCard(links, seed) {
+  for (const [index, link] of links.entries()) {
     let url;
     try { url = new URL(link); } catch { continue; }
-    if (url.origin + url.pathname !== seed.modelPage
-      || !url.searchParams.getAll("sof").some((id) => id.toUpperCase() === seed.productId)) continue;
-    assert3D66RewrittenFootprintLink(link, seed);
+    if (!url.searchParams.getAll("sof").some((id) => id.toUpperCase() === seed.productId)) continue;
+    modelPage(link);
+    if (url.searchParams.getAll("sof").length !== 1 || url.searchParams.getAll("id").some((id) => id.toUpperCase() !== seed.productId)) {
+      throw resolutionError("ambiguous_history_model_id");
+    }
     url.hash = "";
-    return { url: url.href, productId: seed.productId, usedFootprint: true };
+    const canonicalModelPage = url.origin + url.pathname;
+    if (url.searchParams.has("sign")) assert3D66RewrittenFootprintLink(url.href, { ...seed, modelPage: canonicalModelPage });
+    return { url: url.href, productId: seed.productId, canonicalModelPage, index };
   }
   return null;
 }
 
-export async function resolveRewrittenFootprintPage({ page, seed, navigate, timeout = 30000,
+export async function resolveRewrittenFootprintPage({ page, seed, navigate, openHistoryLink, timeout = 30000,
   refreshAttempts = 4, refreshDelayMs = 1500, settleMs = 1200 }) {
   await navigate(page, seed.url);
   const opened = modelPage(page.url());
-  if (opened.origin + opened.pathname !== seed.modelPage || opened.searchParams.getAll("sof").length !== 1
+  if (opened.searchParams.getAll("sof").length !== 1
     || opened.searchParams.get("sof") !== seed.productId) throw resolutionError("seed_redirected");
   // An empty seed page is expected. Only a signed, exact history entry can authorize the next step.
   await page.waitForLoadState("domcontentloaded", { timeout: Math.min(timeout, 8000) }).catch(() => {});
@@ -83,13 +90,19 @@ export async function resolveRewrittenFootprintPage({ page, seed, navigate, time
     }
     await page.locator(MODEL_SELECTOR).first().waitFor({ state: "attached", timeout: Math.min(timeout, 5000) }).catch(() => {});
     const links = await page.locator(MODEL_SELECTOR).evaluateAll((anchors) => anchors.slice(0, 500).map((anchor) => anchor.href));
-    const selected = selectRewrittenFootprintLink(links, seed);
-    if (selected) return selected;
+    const selected = selectRewrittenFootprintCard(links, seed);
+    if (selected) {
+      const boundSeed = { ...seed, modelPage: selected.canonicalModelPage };
+      const url = new URL(selected.url).searchParams.has("sign") ? selected.url
+        : openHistoryLink ? await openHistoryLink(page, selected, boundSeed) : "";
+      assert3D66RewrittenFootprintLink(url, boundSeed);
+      return { url, productId: seed.productId, usedFootprint: true, canonicalModelPage: selected.canonicalModelPage };
+    }
   }
   throw resolutionError("signed_model_not_found_in_history");
 }
 
-export function create3D66RewrittenFootprintResolver({ withBrowserContext, navigate, serializeCookies,
+export function create3D66RewrittenFootprintResolver({ withBrowserContext, navigate, serializeCookies, openHistoryLink,
   timeoutMs = () => 30000, settleMs = () => 1200 }) {
   const pending = new Map();
   return async (url, cookieValue) => {
@@ -99,7 +112,9 @@ export function create3D66RewrittenFootprintResolver({ withBrowserContext, navig
     const task = (async () => {
       try {
         return await withBrowserContext(seed.url, cookieValue, async ({ page, context }) => {
-          const result = await resolveRewrittenFootprintPage({ page, seed, navigate, timeout: timeoutMs(), settleMs: settleMs(),
+          const result = await resolveRewrittenFootprintPage({ page, seed, navigate,
+            openHistoryLink: openHistoryLink ? (page, card, boundSeed) => openHistoryLink(page, card, boundSeed, context) : undefined,
+            timeout: timeoutMs(), settleMs: settleMs(),
             refreshAttempts: process.env.THREED66_FOOTPRINT_REFRESH_ATTEMPTS,
             refreshDelayMs: process.env.THREED66_FOOTPRINT_REFRESH_DELAY_MS });
           return { ...result, cookieValue: serializeCookies(await context.cookies()) || cookieValue };

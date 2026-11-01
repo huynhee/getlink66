@@ -1072,8 +1072,47 @@ export const resolve3D66ModelUrlFromCollection = create3D66CollectionResolver({
   withBrowserContext, navigate: goto3D66Page, serializeCookies, timeoutMs,
 });
 
+export async function open3D66RewrittenFootprintCard(page, card, seed, context) {
+  const anchor = page.locator('a[href*="/reshtmla/"][href*="sof="]').nth(card.index);
+  const href = await anchor.evaluate((element) => element.href);
+  if (href !== card.url) throw browserHttpError("The selected history item changed. Retry the model.", 422,
+    { stage: "rewritten-footprint", reason: "history_card_changed" }, "THREED66_REWRITTEN_FOOTPRINT_FAILED");
+  let blockedError;
+  const guard = async (route) => {
+    const url = new URL(route.request().url());
+    if (/^\/api\/v1\/download\/(?:handle|pop)\/?$/.test(url.pathname)) return route.abort("blockedbyclient");
+    if (route.request().isNavigationRequest() && url.pathname.includes("/model/items/")
+      && (url.origin + url.pathname !== seed.modelPage || url.searchParams.getAll("sof").length !== 1
+        || url.searchParams.get("sof").toUpperCase() !== seed.productId)) {
+      blockedError = browserHttpError("A different model was opened from history.", 422,
+        { stage: "rewritten-footprint", reason: "opened_model_mismatch" }, "THREED66_REWRITTEN_FOOTPRINT_FAILED");
+      return route.abort("blockedbyclient");
+    }
+    return route.fallback();
+  };
+  await context.route("**/*", guard);
+  const signedModel = (url) => url.origin + url.pathname === seed.modelPage
+    && url.searchParams.get("sof")?.toUpperCase() === seed.productId && url.searchParams.has("sign");
+  const opening = Promise.any([
+    page.waitForEvent("popup", { timeout: Math.min(timeoutMs(), 10000) }),
+    page.waitForURL(signedModel, { timeout: Math.min(timeoutMs(), 10000) }).then(() => page),
+  ]).catch(() => null);
+  try {
+    // A real click also triggers the site's pointer handlers that append the signature.
+    await anchor.click({ timeout: Math.min(timeoutMs(), 10000), noWaitAfter: true });
+    const opened = await opening;
+    if (!opened) throw blockedError || new Error("The history item did not open a signed model.");
+    await opened.waitForURL(signedModel, { timeout: Math.min(timeoutMs(), 10000) });
+    if (blockedError) throw blockedError;
+    assert3D66RewrittenFootprintLink(opened.url(), seed);
+    return opened.url();
+  } catch (error) { throw blockedError || error; }
+  finally { await context.unroute("**/*", guard).catch(() => {}); }
+}
+
 export const resolve3D66ModelUrlFromRewrittenFootprint = create3D66RewrittenFootprintResolver({
   withBrowserContext, navigate: goto3D66Page, serializeCookies, timeoutMs, settleMs: postCommitWaitMs,
+  openHistoryLink: open3D66RewrittenFootprintCard,
 });
 
 export async function resolve3D66ModelUrlFromFootprint(

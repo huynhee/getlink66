@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { build3D66FootprintSeed, assert3D66RewrittenFootprintLink, selectRewrittenFootprintLink,
+import { build3D66FootprintSeed, assert3D66RewrittenFootprintLink, selectRewrittenFootprintCard,
   resolveRewrittenFootprintPage, create3D66RewrittenFootprintResolver } from "../src/utils/3d66RewrittenFootprintResolver.js";
 import { assert3D66CleanModelUrl } from "../src/utils/3d66CleanLink.js";
 import { isSwitchable3D66Error, shouldDegrade3D66Cookie } from "../src/utils/3d66CookiePool.js";
@@ -67,6 +67,11 @@ test("rewrite honors the required marker without depending on the legacy search 
   assert.throws(() => build3D66FootprintSeed(source), { code: "THREED66_CLEAN_LINK_REQUIRED", status: 503 });
 });
 
+test("short public model IDs gain the configured marker without losing any asset digits", () => {
+  assert.equal(build3D66FootprintSeed(`${base}?sof=AJI7972535`).productId, "AJI896357717972535");
+  assert.throws(() => build3D66FootprintSeed(`${base}?sof=AJI12345678901`), { status: 400 });
+});
+
 test("rewrite rejects ambiguous IDs, missing suffixes, unsafe URLs and synthetic model pages", () => {
   for (const value of [source.replace("https:", "http:"), source.replace("3d.3d66.com", "evil.test"),
     source.replace("3d.3d66.com", "3d.3d66.com.evil.test"), source.replace("3d.3d66.com", "user:pass@3d.3d66.com"),
@@ -78,30 +83,31 @@ test("rewrite rejects ambiguous IDs, missing suffixes, unsafe URLs and synthetic
   }
 });
 
-test("history selection requires the exact case-sensitive path and complete rewritten ID, not a shared suffix", () => {
+test("history may supply a canonical path but must match the complete rewritten ID, not a shared suffix", () => {
   const otherPath = clean.replace("FixtureCaseSensitive", "fixturecasesensitive");
   const wrongFamily = clean.replace(accountId, "AGI896357714629725");
   const longerSuffix = clean.replace(accountId, "ACI89635771994629725");
   const oldAccount = clean.replace(accountId, sourceId);
-  assert.equal(selectRewrittenFootprintLink([otherPath, wrongFamily, longerSuffix, oldAccount], seed), null);
-  assert.equal(selectRewrittenFootprintLink([otherPath, longerSuffix, clean], seed).url, clean);
+  assert.equal(selectRewrittenFootprintCard([wrongFamily, longerSuffix, oldAccount], seed), null);
+  assert.equal(selectRewrittenFootprintCard([longerSuffix, otherPath, clean], seed).url, otherPath);
   assert.throws(() => assert3D66RewrittenFootprintLink(otherPath, seed));
   assert.throws(() => assert3D66RewrittenFootprintLink(longerSuffix, seed));
 });
 
-test("an exact history entry still requires exactly one real signature and consistent IDs", () => {
-  for (const value of [seed.url, clean.replace("fresh-fixture", ""), `${clean}&sign=duplicate`,
+test("unsigned cards can be opened, but malformed signatures and conflicting IDs are never accepted", () => {
+  assert.equal(selectRewrittenFootprintCard([seed.url], seed).url, seed.url);
+  for (const value of [clean.replace("fresh-fixture", ""), `${clean}&sign=duplicate`,
     `${clean}&sof=${sourceId}`, `${clean}&id=${sourceId}`, clean.replace("fresh-fixture", "%20"),
     clean.replace("https://", "https://user:pass@")]) {
-    assert.throws(() => selectRewrittenFootprintLink([value], seed), undefined, value);
+    assert.throws(() => selectRewrittenFootprintCard([value], seed), undefined, value);
   }
-  assert.equal(selectRewrittenFootprintLink([clean.replace("https:", "http:")], seed), null);
+  assert.throws(() => selectRewrittenFootprintCard([clean.replace("https:", "http:")], seed));
 });
 
 test("an empty seed page can be followed by a signed history URL without opening or purchasing the seed", async () => {
   const state = fixture();
   assert.deepEqual(await resolveRewrittenFootprintPage({ ...state, seed }),
-    { url: clean, productId: accountId, usedFootprint: true });
+    { url: clean, productId: accountId, usedFootprint: true, canonicalModelPage: base });
   assert.deepEqual(state.actions, [seed.url, historyUrl]);
   assert.ok(!state.actions.includes(source));
 });
@@ -110,18 +116,42 @@ test("history refresh is bounded and never revisits the original or seed on a mi
   const delayed = fixture({ links: (read) => read === 2 ? [clean] : [] });
   assert.equal((await resolveRewrittenFootprintPage({ ...delayed, seed, refreshAttempts: 3 })).url, clean);
   assert.deepEqual(delayed.actions, [seed.url, historyUrl, historyUrl]);
-  const missing = fixture({ links: [clean.replace("FixtureCaseSensitive", "other")] });
+  const missing = fixture({ links: [clean.replace(accountId, "ACI89635771994629725")] });
   await assert.rejects(resolveRewrittenFootprintPage({ ...missing, seed, refreshAttempts: 2 }),
     (error) => error.details.reason === "signed_model_not_found_in_history");
   assert.deepEqual(missing.actions, [seed.url, historyUrl, historyUrl]);
 });
 
 test("seed/history redirects fail closed even when the other model shares the same suffix", async () => {
-  for (const [from, to] of [[seed.url, seed.url.replace("FixtureCaseSensitive", "other")],
-    [seed.url, seed.url.replace(accountId, "ACI89635771994629725")],
+  for (const [from, to] of [[seed.url, seed.url.replace(accountId, "ACI89635771994629725")],
     [historyUrl, "https://user.3d66.com/login"], [historyUrl, "https://evil.test/footprint"]]) {
     const state = fixture({ redirects: { [from]: to } });
     await assert.rejects(resolveRewrittenFootprintPage({ ...state, seed }));
+  }
+});
+
+test("the exact unsigned history card is opened to obtain the real signature on its canonical path", async () => {
+  const canonical = clean.replace("FixtureCaseSensitive", "AccountCanonical");
+  const unsigned = canonical.replace("&sign=fresh-fixture", "");
+  const state = fixture({ links: [clean.replace(accountId, "ACI89635771994629725"), unsigned] });
+  let opened = 0;
+  const result = await resolveRewrittenFootprintPage({ ...state, seed, openHistoryLink: async (_page, card, boundSeed) => {
+    opened += 1;
+    assert.equal(card.index, 1);
+    assert.equal(card.url, unsigned);
+    assert.equal(boundSeed.modelPage, base.replace("FixtureCaseSensitive", "AccountCanonical"));
+    return canonical;
+  } });
+  assert.equal(result.url, canonical);
+  assert.equal(result.canonicalModelPage, base.replace("FixtureCaseSensitive", "AccountCanonical"));
+  assert.equal(opened, 1);
+});
+
+test("an opened history item still requires its bound path, full ID and signature", async () => {
+  for (const url of [clean.replace("fresh-fixture", ""), clean.replace("FixtureCaseSensitive", "unselected"),
+    clean.replace(accountId, "ACI89635771994629725")]) {
+    const state = fixture({ links: [clean.replace("&sign=fresh-fixture", "")] });
+    await assert.rejects(resolveRewrittenFootprintPage({ ...state, seed, openHistoryLink: async () => url }));
   }
 });
 

@@ -544,15 +544,17 @@ async function resolveAccountModelUrl(
     const key = `rewritten-footprint:${seed.url}:${footprintCacheKey([], cookieValue)}`;
     const cached = cachedFootprintModelUrl(key);
     const result = cached || await resolve3D66ModelUrlFromRewrittenFootprint(source.toString(), cookieValue);
-    assert3D66RewrittenFootprintLink(result.url, seed);
+    const boundSeed = { ...seed, modelPage: result.canonicalModelPage || seed.modelPage };
+    assert3D66RewrittenFootprintLink(result.url, boundSeed);
     if (!cached) {
-      cacheFootprintModelUrl(key, result);
-      if (result.cookieValue && result.cookieValue !== cookieValue) {
-        cacheFootprintModelUrl(`rewritten-footprint:${seed.url}:${footprintCacheKey([], result.cookieValue)}`, result);
+      for (const page of new Set([seed.modelPage, boundSeed.modelPage])) {
+        for (const value of new Set([cookieValue, result.cookieValue || cookieValue])) {
+          cacheFootprintModelUrl(`rewritten-footprint:${page}?sof=${seed.productId}&st2:${footprintCacheKey([], value)}`, result);
+        }
       }
     }
     return { productId, resolvedProductId: seed.productId, url: markFootprintResolvedUrl(result.url, productId),
-      usedAccountSearch: false, usedFootprint: true, rewrittenFootprintSeed: seed,
+      usedAccountSearch: false, usedFootprint: true, rewrittenFootprintSeed: boundSeed,
       cookieValue: result.cookieValue || cookieValue, cookies };
   }
   if (mode === "collection") {

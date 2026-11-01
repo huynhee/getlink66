@@ -42,15 +42,20 @@ status and the account marker, not the rest of the upstream account profile.
 
 1. Accept a full HTTPS `3d.3d66.com/reshtmla/model/items/.../...html` URL containing
    one `sof`. ID-only inputs and synthetic `/items/id/model.html` pages are rejected.
-2. Split `sof` into three letters, **exactly eight sender ID digits**, and the asset
-   suffix. Change only the first letter to `A` and the sender ID to the required
-   account marker. Keep the remaining letters, suffix, host and case-sensitive path.
+2. For tracked IDs, split `sof` into three letters, **exactly eight sender ID digits**,
+   and the asset suffix. Short public IDs (5-8 digits) have only the asset suffix.
+   Change the first letter to `A` and add the required account marker before the
+   entire asset suffix. Keep the remaining letters and original path for the seed.
 3. Remove all original query parameters and fragment. Visit
    `?sof=<rewritten-id>&st2` using the authenticated browser. The literal `&st2`
    is intentional. An empty seed page does not mean resolution succeeded.
-4. Read account footprint history. Select only the exact model path and rewritten
-   `sof`, with exactly one nonempty `sign` supplied by 3D66. The final history URL
-   is kept as supplied (including `st=2` when present); signatures are never generated.
+4. Read account footprint history and match the **entire rewritten `sof`**. The
+   account's canonical model path may differ from the submitted path. If the card
+   is unsigned, physically click that exact card to trigger the site's signature
+   handler. Require the opened URL to keep the selected canonical path, exact `sof`
+   and one nonempty `sign` supplied by 3D66. Never match only a trailing substring.
+   Purchase/download APIs are blocked while resolving a history card. The final
+   signed URL is retained as supplied; signatures are never generated.
 5. Only the signed URL can enter preview, format selection or download APIs.
    Original and resolved URLs remain available to the existing admin audit history.
 
