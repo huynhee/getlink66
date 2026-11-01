@@ -3,6 +3,7 @@ import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
 import { limitedString, rejectUnknownKeys, sanitizeHtml } from "../utils/validators.js";
 import { invalidateMarketplacePricingCache } from "../utils/marketplacePricingService.js";
 import { REFERRAL_REWARD_FIELDS, validReferralRewardAmount } from "../utils/referralRewardSettings.js";
+import { required3D66AccountMarker } from "../utils/3d66CleanLink.js";
 
 const REFERRAL_MODES = ["both", "referrer_only", "off"];
 const THREED66_MODEL_RESOLVE_MODES = ["search", "footprint", "direct", "collection", "rewritten_footprint"];
@@ -284,6 +285,7 @@ const defaultSettings = {
   )
     ? String(process.env.THREED66_MODEL_RESOLVE_MODE).trim().toLowerCase()
     : "search",
+  threed66RequiredAccountMarker: String(process.env.THREED66_REQUIRED_ACCOUNT_MARKER ?? required3D66AccountMarker({})).trim(),
   threed66CollectionId: String(process.env.THREED66_COLLECTION_ID || "").trim(),
   threed66CollectionUser: String(process.env.THREED66_COLLECTION_USER || "").trim(),
   threed66RequestIntervalMs: Number(process.env.THREED66_REQUEST_INTERVAL_MS || 2500),
@@ -506,6 +508,9 @@ function applyRuntimeSettings(settings = {}) {
   process.env.THREED66_MODEL_RESOLVE_MODE = normalizeModelResolveMode(
     settings.threed66ModelResolveMode,
   );
+  const accountMarker = String(settings.threed66RequiredAccountMarker ?? defaultSettings.threed66RequiredAccountMarker).trim();
+  process.env.THREED66_REQUIRED_ACCOUNT_MARKER = accountMarker;
+  process.env.THREED66_ACCOUNT_MARKER = accountMarker;
   Object.entries(COLLECTION_FIELDS).forEach(([field, config]) => {
     process.env[config.env] = String(settings[field] ?? defaultSettings[field]).trim();
   });
@@ -604,6 +609,9 @@ async function loadSettings() {
   ) {
     runtimePatch.threed66ModelResolveMode = normalizedModelResolveMode;
   }
+  if (rawSettings.threed66RequiredAccountMarker === undefined) {
+    runtimePatch.threed66RequiredAccountMarker = defaultSettings.threed66RequiredAccountMarker;
+  }
   Object.keys(COLLECTION_FIELDS).forEach((field) => {
     if (rawSettings[field] === undefined) runtimePatch[field] = defaultSettings[field];
   });
@@ -683,6 +691,7 @@ export async function updateSettings(req, res, next) {
       "threed66RefreshConcurrency",
       "threed66PaytypeValue",
       "threed66ModelResolveMode",
+      "threed66RequiredAccountMarker",
       ...Object.keys(COLLECTION_FIELDS),
       "threed66RequestIntervalMs",
       "threed66BrowserConcurrency",
@@ -722,6 +731,10 @@ export async function updateSettings(req, res, next) {
     }
 
     const update = {};
+    if (req.body.threed66RequiredAccountMarker !== undefined
+      && (typeof req.body.threed66RequiredAccountMarker !== "string" || !/^\d{6,12}$/.test(req.body.threed66RequiredAccountMarker.trim()))) {
+      return res.status(400).json({ code: "INVALID_THREED66_ACCOUNT_MARKER", message: "The 3D66 account marker must contain 6-12 digits." });
+    }
     if (req.body.threed66ModelResolveMode !== undefined
       && !THREED66_MODEL_RESOLVE_MODES.includes(String(req.body.threed66ModelResolveMode).trim().toLowerCase())) {
       return res.status(400).json({ code: "INVALID_THREED66_RESOLVE_MODE", message: "Invalid 3D66 resolution mode." });
@@ -771,6 +784,10 @@ export async function updateSettings(req, res, next) {
         update[field] = normalizeModelResolveMode(req.body[field]);
         return;
       }
+      if (field === "threed66RequiredAccountMarker") {
+        update[field] = req.body[field].trim();
+        return;
+      }
       if (COLLECTION_FIELDS[field]) {
         update[field] = req.body[field].trim();
         return;
@@ -796,8 +813,9 @@ export async function updateSettings(req, res, next) {
 
     const currentSettings = await loadSettingsWithRetry();
     // Persist the mode and its identifiers together so partial writes cannot split the configuration.
-    if (["threed66ModelResolveMode", ...Object.keys(COLLECTION_FIELDS)].some((field) => update[field] !== undefined)) {
+    if (["threed66ModelResolveMode", "threed66RequiredAccountMarker", ...Object.keys(COLLECTION_FIELDS)].some((field) => update[field] !== undefined)) {
       update.threed66ModelResolveMode ??= currentSettings.threed66ModelResolveMode;
+      update.threed66RequiredAccountMarker ??= currentSettings.threed66RequiredAccountMarker;
       Object.keys(COLLECTION_FIELDS).forEach((field) => {
         update[field] ??= currentSettings[field] ?? defaultSettings[field];
       });

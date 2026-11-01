@@ -757,7 +757,7 @@ async function verifyCollectionResolutionSettings(page, context, viewport) {
   const initialTheme = await page.locator("html").getAttribute("data-theme");
   const initial = await context.request.get(`${frontendOrigin}/api/settings`).then((response) => response.json());
   const csrf = await context.request.get(`${frontendOrigin}/api/auth/csrf`).then((response) => response.json());
-  const restore = Object.fromEntries(["threed66ModelResolveMode", "threed66CollectionId", "threed66CollectionUser"]
+  const restore = Object.fromEntries(["threed66ModelResolveMode", "threed66RequiredAccountMarker", "threed66CollectionId", "threed66CollectionUser"]
     .map((field) => [field, initial.settings[field] ?? ""]));
   let cleanupResponse;
   const setPresentation = async (language, theme) => {
@@ -806,12 +806,16 @@ async function verifyCollectionResolutionSettings(page, context, viewport) {
         await openSettings();
         const rewritten = page.getByRole("button", { name: /Đổi ID rồi lấy từ lịch sử|Rewrite ID, then read history/ });
         await rewritten.click();
+        const accountMarker = page.getByRole("textbox", { name: /ID tài khoản trong link \(sof\)|Account ID in link \(sof\)/ });
+        await accountMarker.fill("00123456");
         const rewrittenForm = page.locator("form").filter({ has: rewritten });
         const saved = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/settings" && response.request().method() === "POST");
         await rewrittenForm.getByRole("button", { name: /Lưu cài đặt Getlink|Save Getlink settings/ }).click();
         if (!(await saved).ok()) throw new Error("Rewritten footprint settings save failed");
         await openSettings();
         if (await rewritten.getAttribute("aria-pressed") !== "true") throw new Error("Rewritten footprint mode was lost after reload");
+        if (await accountMarker.inputValue() !== "00123456") throw new Error("Clean link account marker was lost after reload");
+        if (await page.locator(".cleanLinkAccountSettings").evaluate((element) => element.scrollWidth > element.clientWidth + 2)) throw new Error("Account marker settings overflow");
         if (await page.locator(".collectionModeGrid").evaluate((element) => element.scrollWidth > element.clientWidth + 2)) throw new Error("Rewritten footprint settings overflow");
         await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-rewritten-footprint-settings-${theme}-${language}.png`), fullPage: true });
         for (const route of ["/", "/getlink"]) {

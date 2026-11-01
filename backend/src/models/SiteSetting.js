@@ -124,6 +124,7 @@ const siteSettingSchema = new mongoose.Schema(
       enum: ["search", "footprint", "direct", "collection", "rewritten_footprint"],
       default: "search"
     },
+    threed66RequiredAccountMarker: { type: String, match: /^\d{6,12}$/ },
     threed66CollectionId: { type: String },
     threed66CollectionUser: { type: String },
     threed66RequestIntervalMs: { type: Number, default: 2500 },

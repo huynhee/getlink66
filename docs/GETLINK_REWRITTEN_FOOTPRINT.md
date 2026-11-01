@@ -8,9 +8,18 @@ New installations can use `THREED66_MODEL_RESOLVE_MODE=rewritten_footprint`.
 The existing mode remains unchanged until an admin selects this option.
 
 Use the existing authenticated 3D66 cookie and Playwright installation. The target
-account is `THREED66_REQUIRED_ACCOUNT_MARKER` (default `89635771`); do not replace
-that guard with a client-supplied value. The cookie must belong to the intended
-account. No collection ID or profile AUI is needed.
+account is configured in **Account ID in link (sof)** in Admin > Getlink > Tasks.
+Enter the 6-12 digit marker appearing after the first three letters of `sof`, not
+the full model ID. Leading zeroes are preserved. This private admin setting drives
+both URL rewriting and the required marker guard, including other resolution modes.
+It takes priority over `THREED66_REQUIRED_ACCOUNT_MARKER` after saving and survives
+backend restarts. Existing installations inherit that env value (default `89635771`)
+without changing the current account.
+
+Change the authenticated 3D66 cookie to the corresponding account too; changing the
+marker cannot log in or authorize another account. Save when no 3D66 tasks are
+running: old-account links no longer pass the guard after switching. Resolution
+caches are isolated by the new marker. No collection ID or profile AUI is needed.
 
 ## Flow
 

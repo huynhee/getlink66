@@ -9,6 +9,7 @@ const env = {
   THREED66_COLLECTION_ID: "123456",
   THREED66_COLLECTION_USER: "ACJ00000001",
   THREED66_REQUIRED_ACCOUNT_MARKER: "89635771",
+  THREED66_ACCOUNT_MARKER: "89635771",
 };
 const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
 Object.assign(process.env, env);

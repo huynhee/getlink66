@@ -177,6 +177,7 @@ const defaultSiteSettings = {
   threed66RefreshConcurrency: 1,
   threed66PaytypeValue: "4",
   threed66ModelResolveMode: "search",
+  threed66RequiredAccountMarker: "",
   threed66CollectionId: "",
   threed66CollectionUser: "",
   threed66RequestIntervalMs: 2500,
@@ -1054,6 +1055,7 @@ export default function Admin({ user, language = "vi" }) {
           threed66RefreshConcurrency: Number(siteSettings.threed66RefreshConcurrency || 1),
           threed66PaytypeValue: String(siteSettings.threed66PaytypeValue || "4").trim(),
           threed66ModelResolveMode: String(siteSettings.threed66ModelResolveMode || "search"),
+          threed66RequiredAccountMarker: String(siteSettings.threed66RequiredAccountMarker ?? "").trim(),
           threed66CollectionId: String(siteSettings.threed66CollectionId || "").trim(),
           threed66CollectionUser: String(siteSettings.threed66CollectionUser || "").trim(),
           threed66RequestIntervalMs: Number(siteSettings.threed66RequestIntervalMs || 2500),
@@ -3162,6 +3164,29 @@ export default function Admin({ user, language = "vi" }) {
                         <small>{mode.help}</small>
                       </button>
                     ))}
+                  </div>
+                  <div className="runtimeSettingList cleanLinkAccountSettings">
+                    <label className="runtimeSettingRow">
+                      <span className="runtimeSettingText">
+                        <strong>{l("ID tài khoản trong link (sof)", "Account ID in link (sof)")}</strong>
+                        <small>{l(
+                          "6-12 chữ số trong sof, ví dụ 89635771. Dùng chung cho tạo và xác minh link sạch ở mọi chế độ. Cookie phải thuộc cùng tài khoản; lưu khi không có tác vụ 3D66 đang chạy.",
+                          "6-12 digits from sof, for example 89635771. Shared by link creation and validation in every mode. The cookie must belong to the same account; save when no 3D66 tasks are running.",
+                        )}</small>
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]{6,12}"
+                        maxLength={12}
+                        required
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={siteSettings.threed66RequiredAccountMarker ?? ""}
+                        placeholder="89635771"
+                        onChange={(event) => updateRuntimeSetting("threed66RequiredAccountMarker", event.target.value)}
+                      />
+                    </label>
                   </div>
                   {siteSettings.threed66ModelResolveMode === "collection" && (
                     <div className="runtimeSettingList collectionSettings">
