@@ -62,7 +62,8 @@ async function fixture(t, options = {}) {
               return popup;
             },
             waitForURL() { return options.popupChallenge ? new Promise(() => {}) : Promise.reject(new Error("No signed fixture page")); },
-            async evaluate() {
+            async evaluate(read) {
+              if (read.name === "evaluateFormatOptions") return options.inlineFormats || [];
               const id = new URL(current).searchParams.get("sof");
               return { productId: id, title: "Fixture", creditCost: 28, dynamicFields: { llId: id } };
             },
@@ -112,6 +113,17 @@ test("verification in a history popup hands off that popup, not the history tab"
   assert.equal(entry.initialUrl, state.clean());
   assert.equal(state.closed(), 0);
   assert.deepEqual(state.requests, []);
+});
+
+test("browser inspection returns inline options without clicking download or payment", async (t) => {
+  const inlineFormats = [{ key: "1|2014|4", fileFormat: "1", formatVersion: "2014", rendererType: "4", isDefault: true },
+    { key: "1|max2016|3", fileFormat: "1", formatVersion: "max2016", rendererType: "3", isDefault: false }];
+  const state = await fixture(t, { inlineFormats });
+  const result = await inspect3D66DownloadFormatsWithBrowser(state.clean(), cookie);
+  assert.deepEqual(result.formatOptions, inlineFormats);
+  assert.equal(result.metadata.selectedFormat.key, inlineFormats[0].key);
+  assert.deepEqual(state.requests, []);
+  assert.deepEqual(state.navigations, [state.clean()]);
 });
 
 for (const stage of ["seed", "history"]) {

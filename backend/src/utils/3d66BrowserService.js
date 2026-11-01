@@ -960,7 +960,7 @@ function downloadFormatKey(format = {}) {
   return fileFormat ? [fileFormat, formatVersion, rendererType].join("|") : "";
 }
 
-function evaluateFormatOptions() {
+export function evaluateFormatOptions(inlineOnly = false) {
   function formatNameFromCode(fileFormat = "") {
     return {
       1: "3Dmax（.max）",
@@ -987,23 +987,59 @@ function evaluateFormatOptions() {
     return "";
   }
 
-  return Array.from(document.querySelectorAll(".download-file-format-pop .pop-bd-item, .pop-bd-item[data-file_format]"))
-    .map((item, index) => {
-      const fileFormat = attr(item, "data-file_format");
+  const inlineCards = Array.from(document.querySelectorAll(".tp-multi-format-selector .tp-multi-format-card"));
+  const cards = inlineCards.length || inlineOnly ? inlineCards
+    : Array.from(document.querySelectorAll(".download-file-format-pop .pop-bd-item, .pop-bd-item[data-file_format]"));
+  const seen = new Set();
+  const options = cards.map((item) => {
+      const fileFormat = attr(item, "data-file-format") || attr(item, "data-file_format");
       if (!fileFormat || fileFormat === "0") return null;
-      const title = text(".bd-title", item).replace(/^✓\s*/, "").trim();
+      const title = text(".tp-multi-format-card-title, .bd-title", item).replace(/^✓\s*/, "").trim();
+      const formatVersion = attr(item, "data-format-version") || attr(item, "data-format_version") || spanTitle(item, /版本|version/i);
+      const rendererType = attr(item, "data-renderer-type") || attr(item, "data-renderer_type");
+      const key = [fileFormat, formatVersion, rendererType].join("|");
+      if (seen.has(key)) return null;
+      seen.add(key);
       return {
-        key: [fileFormat, attr(item, "data-format_version") || spanTitle(item, /版本|version/i), attr(item, "data-renderer_type")].join("|"),
+        key,
         fileFormat,
-        formatVersion: attr(item, "data-format_version") || spanTitle(item, /版本|version/i),
-        rendererType: attr(item, "data-renderer_type"),
-        rendererLabel: spanTitle(item, /渲染器|renderer/i),
+        formatVersion,
+        rendererType,
+        rendererLabel: spanTitle(item, /渲染器|renderer/i) || ({ 3: "Corona", 4: "Vray" }[rendererType] || ""),
         label: title || formatNameFromCode(fileFormat) || fileFormat,
-        size: text(".right-file-size", item),
-        isDefault: item.classList.contains("active") || index === 0,
+        size: text(".tp-multi-format-card-size, .right-file-size", item),
+        isDefault: item.classList.contains("active"),
       };
     })
     .filter(Boolean);
+  const defaultKey = (options.find((option) => option.isDefault) || options[0])?.key;
+  return options.map((option) => ({ ...option, isDefault: option.key === defaultKey }));
+}
+
+export async function select3D66InlineFormat(page, requestedFormat = null) {
+  const result = await page.evaluate(evaluateFormatOptions, true);
+  const options = Array.isArray(result) ? result : [];
+  if (!options.length) return null;
+  const key = downloadFormatKey(requestedFormat);
+  const selected = key ? options.find((option) => option.key === key)
+    : options.find((option) => option.isDefault) || options[0];
+  if (!selected) throw browserHttpError("Selected 3D66 file format is no longer available.", 400,
+    { requestedFormat }, "THREED66_FORMAT_UNAVAILABLE");
+  const clicked = await page.evaluate((key) => {
+    const card = Array.from(document.querySelectorAll(".tp-multi-format-selector .tp-multi-format-card"))
+      .find((node) => ["data-file-format", "data-format-version", "data-renderer-type"]
+        .map((attr) => (node.getAttribute(attr) || "").trim()).join("|") === key);
+    if (!card) return false;
+    card.click();
+    return true;
+  }, selected.key);
+  if (!clicked) throw browserHttpError("Cannot select the requested 3D66 file format.", 400,
+    { requestedFormat }, "THREED66_FORMAT_UNAVAILABLE");
+  await page.waitForFunction((key) => Array.from(document.querySelectorAll(".tp-multi-format-selector .tp-multi-format-card.active"))
+    .some((node) => ["data-file-format", "data-format-version", "data-renderer-type"]
+      .map((attr) => (node.getAttribute(attr) || "").trim()).join("|") === key), selected.key,
+  { timeout: Math.min(timeoutMs(), 10000) });
+  return { selectedFormat: selected, formatOptions: options };
 }
 
 async function submitDownloadFormatPopup(page, requestedFormat = null) {
@@ -1303,6 +1339,15 @@ export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue, op
     assert3D66CleanModelUrl(page.url(), { expectedProductId });
     if (options.rewrittenFootprintSeed) assert3D66RewrittenFootprintLink(page.url(), options.rewrittenFootprintSeed);
     assert3D66DownloadFields(metadata.dynamicFields?.llId || metadata.productId, page.url());
+    const inlineOptions = await page.evaluate(evaluateFormatOptions, true);
+    if (Array.isArray(inlineOptions) && inlineOptions.length) {
+      return {
+        metadata: { ...metadata, formatOptions: inlineOptions,
+          selectedFormat: inlineOptions.find((option) => option.isDefault) || inlineOptions[0] },
+        formatOptions: inlineOptions, pageUrl: page.url(),
+        cookieValue: serializeCookies(await context.cookies()) || cookieValue, usedBrowser: true,
+      };
+    }
     const downloadButton = page.locator(".j_download").last();
     await downloadButton.click({
       timeout: Math.min(timeoutMs(), 15000),
@@ -1378,6 +1423,8 @@ export async function download3D66WithBrowser(url, cookieValue, options = {}) {
     assert3D66CleanModelUrl(page.url(), { expectedProductId });
     if (options.rewrittenFootprintSeed) assert3D66RewrittenFootprintLink(page.url(), options.rewrittenFootprintSeed);
     assert3D66DownloadFields(metadata.dynamicFields?.llId || metadata.productId, page.url());
+    const inlineSelection = await select3D66InlineFormat(page, options.downloadFormat);
+    if (inlineSelection) Object.assign(metadata, inlineSelection);
     const downloadButton = page.locator(".j_download").last();
     await downloadButton.click({
       timeout: Math.min(timeoutMs(), 15000),
@@ -1406,8 +1453,8 @@ export async function download3D66WithBrowser(url, cookieValue, options = {}) {
       title: metadata.title,
       imageUrl: metadata.imageUrl,
       creditCost: metadata.creditCost || 1,
-      formatOptions: options.downloadFormat ? [options.downloadFormat] : metadata.formatOptions || [],
-      selectedFormat: options.downloadFormat || metadata.selectedFormat || null,
+      formatOptions: metadata.formatOptions || (options.downloadFormat ? [options.downloadFormat] : []),
+      selectedFormat: metadata.selectedFormat || options.downloadFormat || null,
       cookieValue: serializeCookies(browserCookies) || cookieValue,
       response: json,
       usedBrowser: true,

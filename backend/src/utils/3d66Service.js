@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { ProxyAgent } from "undici";
+import { parse3D66InlineFormats } from "./3d66InlineFormats.js";
 import {
   download3D66WithBrowser,
   fetch3D66PageWithBrowser,
@@ -1262,7 +1263,13 @@ function formatSpanValue(item = "", keywordPattern = null) {
   return "";
 }
 
-function parseFormatOptionsFromHtml(html = "") {
+export function parseFormatOptionsFromHtml(html = "") {
+  const inlineOptions = parse3D66InlineFormats(html);
+  if (inlineOptions.length) {
+    return inlineOptions.map((option) => ({
+      ...normalizeDownloadFormatOption(option), isDefault: option.isDefault,
+    }));
+  }
   const options = [];
   const itemPattern = /<li\b(?=[^>]*class=["'][^"']*pop-bd-item[^"']*["'])[^>]*>[\s\S]*?<\/li>/gi;
   let match;
@@ -1300,7 +1307,7 @@ function parseFormatOptionsFromHtml(html = "") {
 function formatOptionsFromAny(value, depth = 0) {
   if (depth > 5 || value === null || value === undefined) return [];
   if (typeof value === "string") {
-    return /pop-bd-item|data-file_format|download-file-format-pop/i.test(value)
+    return /pop-bd-item|data-file_format|download-file-format-pop|tp-multi-format-card/i.test(value)
       ? parseFormatOptionsFromHtml(value)
       : [];
   }
@@ -1334,7 +1341,7 @@ function formatOptionsFromPage(html = "", detailRes = {}) {
   }
   return options.map((option, index) => ({
     ...option,
-    isDefault: index === 0 || option.isDefault,
+    isDefault: index === 0,
   }));
 }
 
@@ -1346,11 +1353,11 @@ function selectedOrDefaultFormat(formatOptions = [], requestedFormat = null) {
     const exact = options.find((option) => option.key === requested.key);
     if (exact) return exact;
     if (!options.length) return requested;
-    throw httpError("Định dạng file đã chọn không còn khả dụng trên 3D66.", 400, {
+    throw Object.assign(httpError("Định dạng file đã chọn không còn khả dụng trên 3D66.", 400, {
       code: "THREED66_FORMAT_UNAVAILABLE",
       requestedFormat: requested,
       formatOptions: options,
-    });
+    }), { code: "THREED66_FORMAT_UNAVAILABLE" });
   }
   return options.find((option) => option.isDefault) || options[0] || null;
 }
@@ -2331,7 +2338,7 @@ export async function validate3D66Cookie(cookieValue, modelUrl = "") {
   };
 }
 
-export async function fetch3D66Preview(url, cookieValue) {
+export async function fetch3D66Preview(url, cookieValue, { includeFormatOptions = false } = {}) {
   if (process.env.THREED66_MOCK !== "false") {
     const digest = crypto.createHash("sha256").update(url).digest("hex").slice(0, 16);
     return {
@@ -2351,7 +2358,7 @@ export async function fetch3D66Preview(url, cookieValue) {
   const normalized = normalizeModelUrl(accountModel.url);
   const requestedProductId = accountModel.productId || requestedProductIdFromUrl(normalized.toString());
   const popPreview = await previewFromDownloadPopOnly(normalized.toString(), cookieValue, cookies);
-  if (popPreview) return accountModel.rewrittenFootprintSeed
+  if (popPreview && !includeFormatOptions) return accountModel.rewrittenFootprintSeed
     ? { ...popPreview.metadata, productId: requestedProductId, sourceUrl: url, resolvedSourceUrl: accountModel.url }
     : popPreview.metadata;
 
@@ -2387,7 +2394,9 @@ export async function fetch3D66Preview(url, cookieValue) {
     ({ fields, metadata } = await enrichFromDownloadPop(fields, metadata, pageUrl, cookieValue, context));
   }
 
-  if (!browserMetadata && shouldUseBrowserPage(html, metadata, fields)) {
+  if (!browserMetadata && (shouldUseBrowserPage(html, metadata, fields)
+    || (includeFormatOptions && !metadata.formatOptions?.length
+      && process.env.THREED66_DISABLE_BROWSER_PAGE_FALLBACK !== "true"))) {
     const browserPage = await fetch3D66PageWithBrowserFallback(pageUrl || normalized.toString(), cookieValue);
     if (browserPage) {
       html = browserPage.html;
@@ -2397,7 +2406,21 @@ export async function fetch3D66Preview(url, cookieValue) {
     }
   }
 
+  if (popPreview) {
+    // The lightweight API supplies price/token but may omit the inline selector.
+    metadata = { ...popPreview.metadata, ...metadata,
+      formatOptions: uniqueFormatOptions([
+        ...(metadata.formatOptions || []), ...(popPreview.metadata.formatOptions || []),
+      ]),
+      creditCost: popPreview.metadata.creditCost,
+      priceKnown: popPreview.metadata.priceKnown,
+      title: popPreview.metadata.title || metadata.title,
+      imageUrl: popPreview.metadata.imageUrl || metadata.imageUrl,
+    };
+    metadata.selectedFormat = selectedOrDefaultFormat(metadata.formatOptions);
+  }
   ({ fields, metadata } = enforceRequestedProductId(fields, metadata, requestedProductId));
+  if (includeFormatOptions) assertAccountModelUrl(pageUrl, accountModel);
   if (accountModel.rewrittenFootprintSeed) {
     assertAccountModelUrl(pageUrl, accountModel);
     metadata.sourceUrl = url;
@@ -2676,7 +2699,8 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   let seedMetadata = popPreview?.metadata || null;
   let html = "";
   let pageUrl = normalized.toString();
-  if (!seedFields || !seedMetadata) {
+  const inspectSelectedFormat = Boolean(requestedFormat);
+  if (!seedFields || !seedMetadata || inspectSelectedFormat) {
     if (shouldAlwaysUseBrowserPage()) {
       const browserPage = await fetch3D66PageWithBrowserFallback(
         normalized.toString(),
@@ -2708,6 +2732,11 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   }
   let fields = seedFields || parseDynamicFields(html, pageUrl);
   let metadata = seedMetadata || parseModelMetadata(html, pageUrl, fields);
+  if (inspectSelectedFormat) {
+    const pageFormats = formatOptionsFromPage(html);
+    metadata = { ...metadata,
+      formatOptions: pageFormats.length ? pageFormats : metadata.formatOptions || [], selectedFormat: null };
+  }
   if (browserMetadata) {
     fields = mergeBrowserFields(fields, browserMetadata);
     metadata = mergeBrowserMetadata(metadata, browserMetadata, fields);

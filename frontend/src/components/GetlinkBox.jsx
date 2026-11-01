@@ -134,12 +134,15 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
   const pendingFormatOptions = Array.isArray(pendingFormatSelection?.formatOptions)
     ? pendingFormatSelection.formatOptions.filter(isUsableFormatOption)
     : [];
-  const formatOptions = [];
-  const canChooseFormat = false;
+  const formatOptions = Array.isArray(preview?.formatOptions)
+    ? preview.formatOptions.filter(isUsableFormatOption)
+    : [];
+  const canChooseFormat = formatOptions.length > 0;
+  const selectionOptions = pendingFormatSelection ? pendingFormatOptions : formatOptions;
   const selectedFormat =
-    pendingFormatOptions.find((option) => option.key === selectedFormatKey) ||
-    pendingFormatOptions.find((option) => option.isDefault) ||
-    pendingFormatOptions[0] ||
+    selectionOptions.find((option) => option.key === selectedFormatKey) ||
+    selectionOptions.find((option) => option.isDefault) ||
+    selectionOptions[0] ||
     pendingFormatSelection?.selectedFormat ||
     null;
 
@@ -159,6 +162,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
         setIncludePreviewImage(Boolean(stored.includePreviewImage));
         if (stored.preview && typeof stored.preview === "object") setPreview(stored.preview);
         if (stored.previewUrl) setPreviewUrl(String(stored.previewUrl));
+        if (stored.selectedFormatKey) setSelectedFormatKey(String(stored.selectedFormatKey));
       }
     } catch {
       // A malformed draft is ignored and replaced by the next valid state.
@@ -174,11 +178,12 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
         includePreviewImage,
         preview,
         previewUrl,
+        selectedFormatKey,
       }));
     } catch {
       // Draft persistence is best effort only.
     }
-  }, [draftOwner, includePreviewImage, job, preview, previewUrl, url, userId]);
+  }, [draftOwner, includePreviewImage, job, preview, previewUrl, selectedFormatKey, url, userId]);
 
   useEffect(() => {
     if (!job) return;
@@ -343,6 +348,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
       setPreviewImageFailed(false);
       setPreview(data);
       setPreviewUrl(modelInput);
+      setSelectedFormatKey(data.selectedFormat?.key || "");
       finishProgress(language === "vi" ? "Đã lấy thông tin model" : "Model info loaded");
     } catch (err) {
       setError(err.message);
@@ -400,7 +406,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
       await createJob({
         modelId: modelInput,
         includePreviewImage,
-        downloadFormat: downloadFormatPayload(downloadFormatOverride),
+        downloadFormat: downloadFormatPayload(downloadFormatOverride || selectedFormat),
         clientRequestId,
       });
       try {
@@ -590,7 +596,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
                 <span>{t.fileFormat}</span>
                 <span>{language === "vi" ? "Dung lượng nén" : "Package size"}</span>
               </div>
-              <div className="formatOptionList">
+              <div className="formatOptionList" role="group" aria-label={t.fileFormat}>
                 {formatOptions.map((option) => {
                   const active = option.key === selectedFormat?.key;
                   return (
@@ -598,6 +604,8 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
                       key={option.key}
                       type="button"
                       className={`formatOption ${active ? "active" : ""}`}
+                      aria-pressed={active}
+                      disabled={confirming}
                       onClick={() => setSelectedFormatKey(option.key)}
                     >
                       <span className="formatOptionCheck">{active && <Check size={12} />}</span>

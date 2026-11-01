@@ -7,6 +7,7 @@ import { verifyBilingualGuides } from "./qa-guide-articles.js";
 import { verifyGetlinkAuditLinks } from "./qa-getlink-audit.js";
 import { verify3D66CookieCompatibility } from "./qa-3d66-cookies.js";
 import { verify3D66ManualHandoff } from "./qa-3d66-verification.js";
+import { verifyGetlinkFormats } from "./qa-getlink-formats.js";
 
 const backendPort = Number(process.env.QA_BACKEND_PORT || 5511);
 const frontendPort = Number(process.env.QA_FRONTEND_PORT || 5512);
@@ -1168,6 +1169,7 @@ async function verifyPaymentProviderRouting(page, context, viewport) {
 
 async function main() {
   const verificationOnly = process.env.QA_3D66_VERIFICATION_ONLY === "true";
+  const formatsOnly = process.env.QA_GETLINK_FORMATS_ONLY === "true";
   if (!fs.existsSync(path.join(buildRoot, "index.html"))) {
     throw new Error(`Build is missing: ${buildRoot}`);
   }
@@ -1425,6 +1427,11 @@ async function main() {
         await context.close();
         continue;
       }
+      if (formatsOnly) {
+        await verifyGetlinkFormats(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
+        await context.close();
+        continue;
+      }
       await verifyLanguageFlags(page, viewport.name, "admin");
       await verifyAdminRevenueChart(page, context, viewport.name);
       await verifyAdminPackageDeletion(page, context, viewport.name);
@@ -1439,6 +1446,7 @@ async function main() {
       await verifySubscriptionCatalog(page, context, viewport.name);
       await verifyPaymentProviderRouting(page, context, viewport.name);
       await verifyGetlinkAuditLinks(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
+      await verifyGetlinkFormats(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
       await verifyBilingualGuides(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
       await context.close();
     }
@@ -1446,8 +1454,8 @@ async function main() {
     if (errors.length) {
       throw new Error(`Browser smoke errors:\n${errors.slice(0, 20).join("\n")}`);
     }
-    if (verificationOnly) {
-      const summary = { ok: true, focus: "getlink-manual-verification", viewports: 2,
+    if (verificationOnly || formatsOnly) {
+      const summary = { ok: true, focus: formatsOnly ? "getlink-inline-formats" : "getlink-manual-verification", viewports: 2,
         languages: ["vi", "en"], themes: ["light", "dark"], externalFailures: externalFailures.length };
       fs.writeFileSync(resultPath, JSON.stringify(summary, null, 2));
       console.log(JSON.stringify(summary, null, 2));
@@ -1475,6 +1483,7 @@ async function main() {
       bilingualGuides: true,
       getlinkAuditPageLinks: true,
       getlinkManualVerification: true,
+      getlinkInlineFormats: true,
       homepagePricingRemoved: true,
       completedGetlinkBalanceReplay: false,
       externalFailures: externalFailures.length,

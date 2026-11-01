@@ -66,6 +66,7 @@
     "google-auth-library": "^10.9.1",
     "helmet": "^8.2.0",
     "html-to-text": "^10.0.1",
+    "htmlparser2": "10.1.0",
     "jsonwebtoken": "^9.0.3",
     "mailauth": "^4.13.3",
     "mailparser": "^3.9.40",

@@ -41,7 +41,7 @@ const PARTIAL_DOWNLOAD_SESSION_MS = 10 * 60 * 1000;
 const MAX_PREVIEW_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_PREVIEW_IMAGE_REDIRECTS = 5;
 const PREVIEW_IMAGE_TIMEOUT_MS = 15_000;
-const DOWNLOAD_FORMAT_OPTIONS_VERSION = 2;
+const DOWNLOAD_FORMAT_OPTIONS_VERSION = 3;
 
 // Per-user-per-product in-flight set: chong race condition double-charge credit
 // JS event loop la single-threaded → Set.has()/add()/delete() la atomic giua cac await.
@@ -240,6 +240,12 @@ function normalizeDownloadFormatRequest(value) {
   const rendererLabel = String(value.rendererLabel || value.renderer_label || "").trim().slice(0, 80);
   const size = String(value.size || "").trim().slice(0, 60);
   const normalized = { key, fileFormat, formatVersion, rendererType, rendererLabel, label, size };
+  const tupleKey = downloadFormatKey({ fileFormat, formatVersion, rendererType });
+  if (key && tupleKey && key !== tupleKey) {
+    throw Object.assign(new Error("Selected file format does not match its key."), {
+      status: 400, code: "THREED66_FORMAT_UNAVAILABLE",
+    });
+  }
   return downloadFormatKey(normalized) ? normalized : null;
 }
 
@@ -845,7 +851,7 @@ function formatSelectionPayload(req, payload = {}) {
 async function resolveDownloadFormatSelection(url, productId, cache = null, fallbackMetadata = {}, options = {}) {
   const preferLive = Boolean(options.preferLive);
   let metadata = fallbackMetadata || {};
-  let formatOptions = preferLive ? [] : cacheDownloadFormatOptions(cache);
+  let formatOptions = cacheDownloadFormatOptions(cache);
   let targetCache = cache;
   let browserInspection = null;
 
@@ -1193,18 +1199,22 @@ export async function previewGetlink(req, res, next) {
     const hasPreviewMetadata = Boolean(
       cacheMatchesCurrentUrl && hasRealCachedTitle && hasKnownCachedPrice && hasUsablePreviewSource(cache?.imageUrl),
     );
-    if (hasPreviewMetadata) {
+    if (hasPreviewMetadata && Number(cache.formatOptionsVersion) === DOWNLOAD_FORMAT_OPTIONS_VERSION) {
+      const formatOptions = cacheDownloadFormatOptions(cache);
       return res.json({
         productId: previewProductId,
         title: cache.title || cache.productId,
         imageUrl: cache.imageUrl ? publicCachedPreviewImageUrl(req, previewProductId) : "",
         creditCost: normalizeDownloadCreditCost(cache.creditCost, 1),
         cached: isCacheFresh(cache),
+        formatOptions,
+        selectedFormat: selectedDownloadFormat(formatOptions),
+        hasDownloadFormats: formatOptions.length > 0,
       });
     }
 
     const preview = await with3D66Cookie((cookieValue) =>
-      queue3D66Preview(() => fetch3D66Preview(url, cookieValue)),
+      queue3D66Preview(() => fetch3D66Preview(url, cookieValue, { includeFormatOptions: true })),
     );
     const resolvedProductId = lockedProductId(url, productId, preview.productId);
     if (
@@ -1225,6 +1235,9 @@ export async function previewGetlink(req, res, next) {
       imageUrl: preview.imageUrl,
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
       priceKnown: Boolean(preview.priceKnown || Number(preview.creditCost || 0) > 1),
+      resolvedSourceUrl: preview.resolvedSourceUrl || "",
+      formatOptions: sanitizeDownloadFormatOptions(preview.formatOptions),
+      formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
     };
     await upsertProductCache(previewPayload, cache);
     res.json({
@@ -1233,6 +1246,9 @@ export async function previewGetlink(req, res, next) {
       imageUrl: preview.imageUrl ? publicCachedPreviewImageUrl(req, resolvedProductId) : "",
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
       cached: false,
+      formatOptions: previewPayload.formatOptions,
+      selectedFormat: selectedDownloadFormat(previewPayload.formatOptions),
+      hasDownloadFormats: previewPayload.formatOptions.length > 0,
       metadataIncomplete: isFallbackMetadata(
         preview,
         resolvedProductId,
@@ -1288,7 +1304,7 @@ export async function getLink(req, res, next) {
     const url = readUrlRequest(req, res);
     if (!url) return;
     const includePreviewImage = normalizeBooleanFlag(req.body?.includePreviewImage);
-    const downloadFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
+    let downloadFormat = normalizeDownloadFormatRequest(req.body?.downloadFormat);
     await req.getlinkProgress?.("validating", 20);
 
     const productId = extractProductId(url);
@@ -1314,6 +1330,18 @@ export async function getLink(req, res, next) {
     }
     userProductLocks.add(lockKey);
     acquiredLockKey = lockKey;
+
+    const previewCache = await ProductCache.findOne({ productId });
+    if (downloadFormat && cacheMatchesModelUrl(previewCache, url)) {
+      const knownOptions = cacheDownloadFormatOptions(previewCache);
+      if (knownOptions.length) {
+        const selected = knownOptions.find((option) => downloadFormatKey(option) === downloadFormatKey(downloadFormat));
+        if (!selected) throw Object.assign(new Error("Selected file format is no longer available. Preview the model again."), {
+          status: 400, code: "THREED66_FORMAT_UNAVAILABLE",
+        });
+        downloadFormat = selected;
+      }
+    }
 
     let activeRedownload = await findActiveRedownload(
       req.user._id,
@@ -1368,7 +1396,7 @@ export async function getLink(req, res, next) {
       });
     }
 
-    let cachePreview = await ProductCache.findOne({ productId });
+    let cachePreview = previewCache;
     if (cachePreview && !cacheMatchesModelUrl(cachePreview, url)) {
       cachePreview = null;
     }
