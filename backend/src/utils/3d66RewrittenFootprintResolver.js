@@ -3,6 +3,11 @@ import { assert3D66CleanModelUrl, required3D66AccountMarker } from "./3d66CleanL
 
 const FOOTPRINT_URL = "https://user.3d66.com/newUser/index/index/footprint";
 const MODEL_SELECTOR = 'a[href*="/reshtmla/"][href*="sof="]';
+const verificationPages = new WeakMap();
+
+export function get3D66VerificationPage(error) {
+  return verificationPages.get(error);
+}
 
 function resolutionError(reason, status = 422) {
   const message = reason === "upstream_verification_required"
@@ -21,7 +26,9 @@ export function is3D66RewrittenFootprintError(error) {
 export async function assert3D66FootprintPageVerified(page) {
   const title = (await page.title()).trim();
   if (/^(?:滑动验证(?:页面)?|安全验证|访问验证|captcha|security verification|verification required)$/i.test(title)) {
-    throw resolutionError("upstream_verification_required", 403);
+    const error = resolutionError("upstream_verification_required", 403);
+    verificationPages.set(error, page);
+    throw error;
   }
 }
 
@@ -91,6 +98,11 @@ export async function resolveRewrittenFootprintPage({ page, seed, navigate, open
   await page.waitForLoadState("domcontentloaded", { timeout: Math.min(timeout, 8000) }).catch(() => {});
   await page.waitForTimeout(Math.min(5000, Math.max(500, Number(settleMs) || 1200)));
   await assert3D66FootprintPageVerified(page);
+  return resolveRewrittenFootprintHistory({ page, seed, navigate, openHistoryLink, timeout, refreshAttempts, refreshDelayMs });
+}
+
+export async function resolveRewrittenFootprintHistory({ page, seed, navigate, openHistoryLink, timeout = 30000,
+  refreshAttempts = 4, refreshDelayMs = 1500 }) {
   const attempts = Math.min(8, Math.max(1, Math.floor(Number(refreshAttempts) || 4)));
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (attempt) await page.waitForTimeout(Math.min(5000, Math.max(250, Number(refreshDelayMs) || 1500)));
@@ -130,7 +142,7 @@ export function create3D66RewrittenFootprintResolver({ withBrowserContext, navig
             refreshAttempts: process.env.THREED66_FOOTPRINT_REFRESH_ATTEMPTS,
             refreshDelayMs: process.env.THREED66_FOOTPRINT_REFRESH_DELAY_MS });
           return { ...result, cookieValue: serializeCookies(await context.cookies()) || cookieValue };
-        }, { allowProxyFallback: false });
+        }, { allowProxyFallback: false, rewrittenFootprintSeed: seed });
       } catch (error) {
         if (error.code === "THREED66_CLEAN_LINK_REQUIRED" || is3D66RewrittenFootprintError(error)) throw error;
         throw resolutionError("history_operation_interrupted", 502);

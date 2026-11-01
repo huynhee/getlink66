@@ -1,0 +1,23 @@
+.admin3D66Verification { padding-block: 16px; border-block: 1px solid var(--border-warm); }
+.admin3D66Verification h3, .verificationDialog h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 17px; }
+.verificationSessionRow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-block: 12px; }
+.verificationSessionRow code { overflow-wrap: anywhere; }
+.verificationSessionRow time { color: var(--text-secondary); font-size: 12px; }
+.verificationSessionRow button { margin-left: auto; }
+.verificationDialog { width: min(1480px, calc(100vw - 32px), calc(160dvh - 384px)); min-width: min(320px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); padding: 16px; border: 1px solid var(--border-warm); border-radius: 6px; background: var(--bg-card); color: var(--text-primary); overflow: auto; margin: auto; }
+.verificationDialog::backdrop { background: rgb(0 0 0 / 70%); }
+.verificationDialog header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.verificationDialog header button { flex: 0 0 36px; height: 36px; }
+.verificationSessionInfo { display: flex; flex-wrap: wrap; gap: 8px 20px; padding-block: 12px; font-size: 12px; color: var(--text-secondary); }
+.verificationSessionInfo code { overflow-wrap: anywhere; }
+.verificationViewport { aspect-ratio: 1440 / 900; background: #fff; border: 1px solid var(--border-warm); }
+.verificationViewport img { display: block; width: 100%; height: 100%; object-fit: contain; touch-action: none; user-select: none; cursor: default; }
+.verificationViewport > div { height: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; color: #171717; }
+.verificationFeedback { min-height: 38px; padding-block: 8px; overflow-wrap: anywhere; font-size: 12px; }
+.verificationFeedback p { margin: 0; }
+.verificationDialog footer { display: flex; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 640px) {
+  .verificationDialog { padding: 10px; width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  .verificationDialog footer button { flex: 1 1 160px; justify-content: center; }
+  .verificationSessionRow button { margin-left: 0; }
+}

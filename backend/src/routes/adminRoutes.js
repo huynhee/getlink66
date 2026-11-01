@@ -1,4 +1,5 @@
 import { Router, raw } from "express";
+import { verificationController } from "../controllers/3d66VerificationController.js";
 import { adminArchiveCommentSettings, adminUpdateArchiveCommentSettings, adminLookupArchiveTrace } from "../controllers/archiveCommentController.js";
 import { adminActivateSubscriptionCatalog, adminPrepareSubscriptionCatalog, adminSetSubscriptionCheckout } from "../controllers/subscriptionCatalogController.js";
 import {
@@ -147,6 +148,16 @@ router.post(
 );
 
 router.use(requireAuth, requireNotBanned, adminOnly);
+const verificationFrameLimit = createRateLimit({ keyPrefix: "admin-3d66-frame", windowMs: 60_000, max: 180, keyGenerator: req => req.user._id });
+const verificationInputLimit = createRateLimit({ keyPrefix: "admin-3d66-input", windowMs: 1000, max: 25, keyGenerator: req => req.user._id });
+router.get("/getlink/verifications", verificationFrameLimit, verificationController("list"));
+router.post("/getlink/verifications/:id/claim", adminWriteLimit, auditAdmin("CLAIM_3D66_VERIFICATION"), verificationController("claim"));
+router.post("/getlink/verifications/:id/frame", verificationFrameLimit, verificationController("frame"));
+router.post("/getlink/verifications/:id/input", verificationInputLimit, verificationController("input"));
+router.post("/getlink/verifications/:id/reload", adminWriteLimit, auditAdmin("RELOAD_3D66_VERIFICATION"), verificationController("reload"));
+router.post("/getlink/verifications/:id/complete", adminWriteLimit, auditAdmin("COMPLETE_3D66_VERIFICATION"), verificationController("complete"));
+router.post("/getlink/verifications/:id/release", verificationFrameLimit, verificationController("release"));
+router.delete("/getlink/verifications/:id", adminWriteLimit, auditAdmin("CANCEL_3D66_VERIFICATION"), verificationController("cancel"));
 router.get("/archive-comments", adminArchiveCommentSettings);
 router.put("/archive-comments", adminWriteLimit, auditAdmin("UPDATE_ARCHIVE_COMMENTS"), adminUpdateArchiveCommentSettings);
 router.post("/archive-comments/lookup", adminWriteLimit, auditAdmin("LOOKUP_ARCHIVE_TRACE"), adminLookupArchiveTrace);

@@ -425,6 +425,16 @@ function cacheFootprintModelUrl(key, value) {
   footprintModelUrlCache.set(key, { createdAt: Date.now(), value });
 }
 
+export function cacheVerified3D66Footprint(seed, result, cookieValue) {
+  const boundSeed = { ...seed, modelPage: result.canonicalModelPage || seed.modelPage };
+  assert3D66RewrittenFootprintLink(result.url, boundSeed);
+  for (const page of new Set([seed.modelPage, boundSeed.modelPage])) {
+    const seedUrl = `${page}?${new URLSearchParams({ sof: seed.productId, st: "2" })}`;
+    cacheFootprintModelUrl(`rewritten-footprint:${seedUrl}:${footprintCacheKey([], cookieValue)}`,
+      { ...result, cookieValue });
+  }
+}
+
 async function requestAccountSearchUrl(productId, cookieValue, sourceUrl) {
   const keyword = safeSearchKeyword(productId);
   if (!keyword || !accountSearchEnabled()) return "";

@@ -5,6 +5,7 @@ import { fetch3D66Preview, fetchFrom3D66 } from "../src/utils/3d66Service.js";
 import { close3D66Browser, download3D66WithBrowser, inspect3D66DownloadFormatsWithBrowser,
   open3D66RewrittenFootprintCard } from "../src/utils/3d66BrowserService.js";
 import { build3D66FootprintSeed } from "../src/utils/3d66RewrittenFootprintResolver.js";
+import { threed66VerificationStore } from "../src/utils/3d66VerificationStore.js";
 
 const inputId = "GCI139810814629725";
 const cookie = "PHPSESSID=fixture; login_sign=fixture";
@@ -32,6 +33,8 @@ async function fixture(t, options = {}) {
   const clean = () => `${base}?sof=${seed().productId}&st=2&sign=history-fixture`;
   const navigations = [];
   const requests = [];
+  const pages = [];
+  let closedContexts = 0;
   let browserContexts = 0;
   t.mock.method(chromium, "launch", async () => ({
     on() {}, isConnected: () => true, async close() {},
@@ -39,25 +42,38 @@ async function fixture(t, options = {}) {
       browserContexts += 1;
       let current;
       return {
-        async route() {}, async addCookies() {}, async cookies() { return []; }, async close() {},
+        async route() {}, async unroute() {}, async addCookies() {}, async cookies() { return []; },
+        pages: () => pages,
+        async close() { closedContexts += 1; },
         async newPage() {
-          return {
+          const popup = { url: () => clean(), async title() { return "滑动验证页面"; },
+            async waitForLoadState() {}, async waitForURL() {} };
+          const page = {
             async goto(url) {
               current = new URL(url).searchParams.has("sign") && options.browserRedirect ? options.browserRedirect(url) : url;
               navigations.push(url);
             }, url: () => current,
-            async title() { return "Fixture model"; },
+            async title() { return options.challenge?.(current) ? "滑动验证页面" : "Fixture model"; },
             async waitForLoadState() {}, async waitForTimeout() {},
             async waitForSelector() {},
+            async waitForEvent() {
+              if (!options.popupChallenge) throw new Error("No fixture popup");
+              pages.push(popup);
+              return popup;
+            },
+            waitForURL() { return options.popupChallenge ? new Promise(() => {}) : Promise.reject(new Error("No signed fixture page")); },
             async evaluate() {
               const id = new URL(current).searchParams.get("sof");
               return { productId: id, title: "Fixture", creditCost: 28, dynamicFields: { llId: id } };
             },
             locator() { return {
               first: () => ({ async waitFor() {} }),
+              nth: () => ({ async evaluate(read) { return read({ href: clean().replace("&sign=history-fixture", "") }); }, async click() {} }),
               async evaluateAll(read) { return read((options.links?.(clean()) ?? [clean()]).map((href) => ({ href }))); },
             }; },
           };
+          pages.push(page);
+          return page;
         },
       };
     },
@@ -82,7 +98,48 @@ async function fixture(t, options = {}) {
     }
     assert.fail(`Unexpected upstream HTTP request: ${url.origin}${url.pathname}`);
   });
-  return { source, base, seed, clean, navigations, requests, contexts: () => browserContexts };
+  return { source, base, seed, clean, navigations, requests, pages,
+    contexts: () => browserContexts, closed: () => closedContexts };
+}
+
+test("verification in a history popup hands off that popup, not the history tab", async t => {
+  const state = await fixture(t, { popupChallenge: true, links: url => [url.replace("&sign=history-fixture", "")] });
+  await assert.rejects(fetch3D66Preview(state.source, cookie), { status: 403 });
+  const [pending] = await threed66VerificationStore.list();
+  const entry = threed66VerificationStore.get(pending.id);
+  assert.equal(entry.page, state.pages[1]);
+  assert.notEqual(entry.page, state.pages[0]);
+  assert.equal(entry.initialUrl, state.clean());
+  assert.equal(state.closed(), 0);
+  assert.deepEqual(state.requests, []);
+});
+
+for (const stage of ["seed", "history"]) {
+  test(`${stage} verification retains the actual failed page, blocks new tasks and resumes only that context`, async t => {
+    let blocked = true;
+    const state = await fixture(t, { challenge: url => blocked && (stage === "seed"
+      ? url?.includes("/model/items/") : url?.includes("/footprint")) });
+    process.env.THREED66_BROWSER_MAX_TASKS = "1";
+    t.after(() => { delete process.env.THREED66_BROWSER_MAX_TASKS; });
+    await assert.rejects(fetch3D66Preview(state.source, cookie), { status: 403 });
+    assert.equal(state.contexts(), 1);
+    assert.equal(state.closed(), 0);
+    const [pending] = await threed66VerificationStore.list();
+    assert.ok(pending);
+    const entry = threed66VerificationStore.get(pending.id);
+    assert.equal(entry.page, state.pages[0]);
+    await assert.rejects(fetch3D66Preview(state.source, cookie), { status: 423 });
+    assert.equal(state.contexts(), 1);
+    assert.deepEqual(state.requests, []);
+    // This fixture changes state directly; no real verification is ever solved by the test.
+    blocked = false;
+    await threed66VerificationStore.verified(entry, cookie);
+    await fetch3D66Preview(state.source, cookie);
+    assert.equal(state.contexts(), 1);
+    await close3D66Browser();
+    assert.equal(state.closed(), 1);
+    assert.deepEqual(await threed66VerificationStore.list(), []);
+  });
 }
 
 test("preview and download use only the exact signed history URL and retain original logical identity", async (t) => {

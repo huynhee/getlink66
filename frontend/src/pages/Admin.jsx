@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState } from "react";
 import { Activity, AlertTriangle, Archive, ArrowDown, ArrowUp, Ban, BarChart3, Box, Check, CircleDollarSign, Cookie, CreditCard, Database, FileDown, FileText, Flag, Gauge, Gift, Globe2, GripVertical, History as HistoryIcon, KeyRound, Loader2, Megaphone, Package, Pencil, Plus, RotateCcw, Save, Search, ShieldAlert, Timer, Trash2, Type, UserPlus, Users, Wallet, X, Zap } from "lucide-react";
 import AdminArticles from "../components/AdminArticles.jsx";
+import Admin3D66Verification from "../components/Admin3D66Verification.jsx";
 import AdminDownloadHistory from "../components/AdminDownloadHistory.jsx";
 import AdminArchiveComments from "../components/AdminArchiveComments.jsx";
 import AdminMarketplace from "../components/AdminMarketplace.jsx";
@@ -3398,6 +3399,7 @@ export default function Admin({ user, language = "vi" }) {
           {threed66SettingsTab === "cookie" && (
             <>
               <h3 style={{ marginTop: 14 }}><Cookie size={20} /> {l("Quản lý Cookie", "Cookie management")}</h3>
+              <Admin3D66Verification language={language} />
               <div className="stack" style={{ marginTop: 14 }}>
                 <div className="runtimeSettingGroup">
                   <h3>{l("Cookie tài khoản nguồn", "Source account cookies")}</h3>

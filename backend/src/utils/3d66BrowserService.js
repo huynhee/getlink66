@@ -1,10 +1,14 @@
+import crypto from "node:crypto";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
+import { threed66VerificationStore } from "./3d66VerificationStore.js";
+import { install3D66VerificationGuard } from "./3d66VerificationGuard.js";
 import { create3D66CollectionResolver } from "./3d66CollectionResolver.js";
 import { create3D66RewrittenFootprintResolver, assert3D66RewrittenFootprintLink,
-  assert3D66FootprintPageVerified, is3D66RewrittenFootprintError } from "./3d66RewrittenFootprintResolver.js";
+  assert3D66FootprintPageVerified, is3D66RewrittenFootprintError, get3D66VerificationPage,
+  resolveRewrittenFootprintHistory } from "./3d66RewrittenFootprintResolver.js";
 import {
   assert3D66BrowserDownloadRequest, assert3D66CleanModelUrl, assert3D66DownloadFields,
-  is3D66CleanLinkError, modelIdsShareAssetIdentity,
+  is3D66CleanLinkError, modelIdsShareAssetIdentity, required3D66AccountMarker,
 } from "./3d66CleanLink.js";
 export { modelIdsShareAssetIdentity } from "./3d66CleanLink.js";
 
@@ -251,7 +255,7 @@ async function closeActiveBrowser() {
 }
 
 async function recycleBrowserIfIdle() {
-  if (activeBrowserTasks > 0) return;
+  if (activeBrowserTasks > 0 || threed66VerificationStore.hasContexts()) return;
   if (!browserRecyclePending && !shouldRecycleBrowser()) return;
   await closeActiveBrowser();
 }
@@ -269,6 +273,7 @@ async function getSharedBrowser() {
       browserTasksSinceLaunch = 0;
       browserRecyclePending = false;
       browser.on("disconnected", () => {
+        void threed66VerificationStore.closeAll();
         if (activeBrowser === browser) activeBrowser = null;
         browserPromise = null;
         browserLaunchedAt = 0;
@@ -319,12 +324,23 @@ function runBrowserTask(task) {
   });
 }
 
+export function get3D66VerificationConfigurationKey() {
+  return crypto.createHash("sha256").update(JSON.stringify([
+    browserProxyConfig(), required3D66AccountMarker(), DEFAULT_USER_AGENT,
+    process.env.THREED66_BROWSER_HEADLESS !== "false", process.env.THREED66_MODEL_RESOLVE_MODE,
+  ])).digest("hex");
+}
+
 async function withBrowserContext(url, cookieValue, callback, { allowProxyFallback = true, rewrittenFootprintSeed = null } = {}) {
   return runBrowserTask(async () => {
+    const configurationKey = get3D66VerificationConfigurationKey();
+    await threed66VerificationStore.assertAvailable(cookieValue, configurationKey);
     const browser = await getSharedBrowser();
     const proxy = browserProxyConfig();
     const runWithProxy = async (currentProxy) => {
-      const context = await browser.newContext({
+      const ready = await threed66VerificationStore.acquireReady(cookieValue, configurationKey,
+        rewrittenFootprintSeed?.productId || modelIdFromUrl(url));
+      const context = ready?.entry.context || await browser.newContext({
         userAgent: DEFAULT_USER_AGENT,
         locale: "zh-CN",
         viewport: { width: 1440, height: 900 },
@@ -332,25 +348,45 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
         ...(currentProxy ? { proxy: currentProxy } : {}),
       });
 
+      let retained = false;
+      let removeFastRoutes;
       try {
         let validationError = null;
-        await installFastRoutes(context, (error) => { validationError ||= error; }, rewrittenFootprintSeed);
+        removeFastRoutes = await installFastRoutes(context, (error) => { validationError ||= error; }, rewrittenFootprintSeed);
 
         const cookies = buildBrowserCookies(cookieValue, url);
-        if (cookies.length) {
+        if (!ready && cookies.length) {
           await context.addCookies(cookies);
         }
 
-        const page = await context.newPage();
+        const page = ready?.entry.page || await context.newPage();
         try {
           const result = await callback({ context, page });
           if (validationError) throw validationError;
           return result;
         } catch (error) {
+          const blockedPage = get3D66VerificationPage(error);
+          if (!validationError && blockedPage && rewrittenFootprintSeed) {
+            const entry = ready?.entry || await threed66VerificationStore.retain({
+              context, page: blockedPage, cookieValue, seed: rewrittenFootprintSeed, configurationKey,
+              onClose: recycleBrowserIfIdle,
+            });
+            if (entry) {
+              try {
+                if (ready) threed66VerificationStore.pending(entry, blockedPage, rewrittenFootprintSeed);
+                entry.initialUrl = blockedPage.url();
+                await entry.removeGuard?.();
+                entry.removeGuard = await install3D66VerificationGuard(entry);
+                retained = true;
+              } catch { await threed66VerificationStore.discard(entry.id); }
+            }
+          }
           throw validationError || error;
         }
       } finally {
-        await context.close().catch(() => {});
+        await removeFastRoutes?.().catch(() => {});
+        if (ready) await ready.release();
+        else if (!retained) await context.close().catch(() => {});
         browserTasksSinceLaunch += 1;
         if (shouldRecycleBrowser()) {
           browserRecyclePending = true;
@@ -376,11 +412,12 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
 }
 
 export async function close3D66Browser() {
+  await threed66VerificationStore.closeAll();
   await closeActiveBrowser();
 }
 
 async function installFastRoutes(context, onValidationError, rewrittenFootprintSeed) {
-  await context.route("**/*", async (route) => {
+  const handler = async (route) => {
     const request = route.request();
     if (!isAllowed3D66BrowserRequestUrl(request.url())) {
       await route.abort("blockedbyclient");
@@ -408,7 +445,9 @@ async function installFastRoutes(context, onValidationError, rewrittenFootprintS
     }
 
     await route.continue();
-  });
+  };
+  await context.route("**/*", handler);
+  return async () => { await context.unroute?.("**/*", handler); };
 }
 
 async function waitForModelReady(page, includeDownloadButton = false) {
@@ -532,10 +571,13 @@ function buildBrowserCookies(cookieValue, modelUrl) {
   );
 }
 
-function serializeCookies(cookies = []) {
+export function serializeCookies(cookies = []) {
   const merged = new Map();
   cookies
-    .filter((cookie) => /\.?3d66\.com$/i.test(cookie.domain || ""))
+    .filter((cookie) => {
+      const domain = String(cookie.domain || "").replace(/^\./, "").toLowerCase();
+      return domain === "3d66.com" || domain.endsWith(".3d66.com");
+    })
     .forEach((cookie) => {
       if (cookie?.name && typeof cookie.value === "string") {
         merged.set(cookie.name, cookie.value);
@@ -1116,6 +1158,38 @@ export const resolve3D66ModelUrlFromRewrittenFootprint = create3D66RewrittenFoot
   withBrowserContext, navigate: goto3D66Page, serializeCookies, timeoutMs, settleMs: postCommitWaitMs,
   openHistoryLink: open3D66RewrittenFootprintCard,
 });
+
+export async function resume3D66Verification(entry) {
+  try {
+    await assert3D66FootprintPageVerified(entry.page);
+    let result;
+    try {
+      const current = new URL(entry.page.url());
+      const boundSeed = { ...entry.seed, modelPage: current.origin + current.pathname };
+      assert3D66RewrittenFootprintLink(current.href, boundSeed);
+      result = { url: current.href, productId: entry.seed.productId,
+        canonicalModelPage: boundSeed.modelPage, usedFootprint: true };
+    } catch {
+      result = await resolveRewrittenFootprintHistory({
+        page: entry.page, seed: entry.seed, navigate: goto3D66Page, timeout: timeoutMs(), refreshAttempts: 1,
+        openHistoryLink: (page, card, seed) => open3D66RewrittenFootprintCard(page, card, seed, entry.context),
+      });
+      const opened = entry.context.pages().find(page => page.url() === result.url);
+      if (opened) entry.page = opened;
+      else await goto3D66Page(entry.page, result.url);
+    }
+    await entry.page.waitForLoadState("domcontentloaded", { timeout: 10000 });
+    await assert3D66FootprintPageVerified(entry.page);
+    assert3D66RewrittenFootprintLink(entry.page.url(), { ...entry.seed, modelPage: result.canonicalModelPage });
+    // A signature alone is not proof that the model actually loaded after human verification.
+    await entry.page.locator("h1.model-name, #detail_data").first().waitFor({ state: "attached", timeout: 10000 });
+    return { ...result, url: entry.page.url() };
+  } catch (error) {
+    const blocked = get3D66VerificationPage(error);
+    if (blocked) { entry.page = blocked; entry.initialUrl = blocked.url(); }
+    throw error;
+  }
+}
 
 export async function resolve3D66ModelUrlFromFootprint(
   url,
