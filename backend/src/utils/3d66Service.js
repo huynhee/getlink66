@@ -13,7 +13,8 @@ import { collectionModelPage, collectionResolutionConfig } from "./3d66Collectio
 import { build3D66FootprintSeed, assert3D66RewrittenFootprintLink,
   is3D66RewrittenFootprintError } from "./3d66RewrittenFootprintResolver.js";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
-import { normalizeAccountModelId } from "./parse3d66.js";
+import { normalizeAccountModelId, accountMarkerFromUserId } from "./parse3d66.js";
+import { inspect3D66CookieHeader, parse3D66CookieHeader } from "./3d66CookieHeader.js";
 import {
   assert3D66AccountProductId, assert3D66CleanModelUrl, assert3D66DownloadFields, is3D66CleanLinkError,
   required3D66AccountMarker,
@@ -716,26 +717,13 @@ function isPlaywrightMissing(error) {
   return error?.code === "PLAYWRIGHT_NOT_INSTALLED";
 }
 
-function cookieMap(cookieValue = "") {
-  return String(cookieValue)
-    .split(";")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .reduce((map, part) => {
-      const index = part.indexOf("=");
-      if (index <= 0) return map;
-      map.set(part.slice(0, index).trim(), part.slice(index + 1).trim());
-      return map;
-    }, new Map());
-}
-
 function requireCookie(cookieValue) {
   if (!cookieValue) {
     throw httpError("3D66 cookie is required", 400);
   }
 
-  const cookies = cookieMap(cookieValue);
-  const missing = ["PHPSESSID", "login_token", "login_sign"].filter((key) => !cookies.get(key));
+  const cookies = parse3D66CookieHeader(cookieValue);
+  const { missingKeys: missing } = inspect3D66CookieHeader(cookieValue);
   if (missing.length) {
     throw httpError(`3D66 cookie missing required keys: ${missing.join(", ")}`, 400);
   }
@@ -2281,17 +2269,48 @@ function extractCreditCost(value) {
 
 export async function validate3D66Cookie(cookieValue, modelUrl = "") {
   requireCookie(cookieValue);
+  const { controller, done } = withTimeout();
+  let accountMarker;
+  try {
+    // Only the authenticated server response is evidence of login, never userCookieData or cookie names.
+    const response = await fetch3D66("https://user.3d66.com/new-user-api/api/v1/user/info", {
+      method: "GET", redirect: "manual", signal: controller.signal,
+      headers: { accept: "application/json", cookie: cookieValue, "user-agent": DEFAULT_USER_AGENT,
+        referer: "https://user.3d66.com/newUser/index/index/footprint" },
+    }, { stage: "api" });
+    const data = await response.json().catch(() => null);
+    if (response.status === 401 || Number(data?.code) === 401 || (response.status >= 300 && response.status < 400)) {
+      throw Object.assign(httpError("3D66 session is not authenticated. Sign in again and update the cookie.", 401),
+        { code: "THREED66_SESSION_INVALID" });
+    }
+    const userId = String(data?.data?.basic?.user_id ?? "");
+    if (!response.ok || Number(data?.code) !== 200 || !/^[1-9]\d{5,19}$/.test(userId)) {
+      throw Object.assign(httpError("Cannot verify the 3D66 session right now.", 503), { code: "THREED66_AUTH_UNAVAILABLE" });
+    }
+    accountMarker = accountMarkerFromUserId(userId);
+    if (accountMarker !== required3D66AccountMarker()) {
+      throw Object.assign(httpError("The signed-in 3D66 account does not match the configured clean-link account ID.", 422),
+        { code: "THREED66_COOKIE_ACCOUNT_MISMATCH" });
+    }
+  } catch (error) {
+    if (error.status) throw error;
+    throw Object.assign(httpError("Cannot verify the 3D66 session right now.", 503), { code: "THREED66_AUTH_UNAVAILABLE" });
+  } finally { done(); }
 
   if (!modelUrl) {
-    return { ok: true, mode: "cookie-keys" };
+    return { ok: true, mode: "account-session", authenticated: true, accountMarker };
   }
 
-  const normalized = normalizeModelUrl(modelUrl);
-  const { html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue);
+  const accountModel = await resolveAccountModelUrl(modelUrl, cookieValue, null, { stage: "preview" });
+  const normalized = normalizeModelUrl(accountModel.url);
+  const { html, pageUrl } = await fetchModelPage(normalized.toString(), accountModel.cookieValue || cookieValue);
+  assertAccountModelUrl(pageUrl, accountModel);
   const fields = parseDynamicFields(html, pageUrl);
   return {
     ok: true,
     mode: "model-page",
+    authenticated: true,
+    accountMarker,
     pageUrl,
     hasLlId: Boolean(fields.llId),
     hasToken: Boolean(fields.token),

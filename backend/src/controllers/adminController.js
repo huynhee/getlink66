@@ -15,6 +15,7 @@ import { isMemoryDb } from "../config/memoryStore.js";
 import { grantManualCredit, setManualCredit } from "../utils/manualCreditService.js";
 import { validate3D66Cookie } from "../utils/3d66Service.js";
 import { get3D66CookiePoolStatus } from "../utils/3d66CookiePool.js";
+import { inspect3D66CookieHeader } from "../utils/3d66CookieHeader.js";
 import { decryptSecret, encryptSecret } from "../utils/secretBox.js";
 import {
   integerInRange,
@@ -305,22 +306,9 @@ function sortPackages(packages = []) {
   });
 }
 
-function cookieKeys(value = "") {
-  return new Set(
-    String(value)
-      .split(";")
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map((part) => part.slice(0, part.indexOf("=")).trim())
-      .filter(Boolean),
-  );
-}
-
 function summarizeCookie(cookie) {
   const decryptedValue = decryptSecret(cookie?.value || "");
-  const keys = cookieKeys(decryptedValue);
-  const requiredKeys = ["PHPSESSID", "login_token", "login_sign"];
-  const missingKeys = requiredKeys.filter((key) => !keys.has(key));
+  const { keyCount, missingKeys } = inspect3D66CookieHeader(decryptedValue);
   return {
     _id: cookie._id,
     label: cookie.label || "",
@@ -333,7 +321,7 @@ function summarizeCookie(cookie) {
     lastErrorAt: cookie.lastErrorAt,
     lastErrorMessage: cookie.lastErrorMessage,
     preview: decryptedValue ? "[stored]" : "",
-    keyCount: keys.size,
+    keyCount,
     hasRequiredKeys: missingKeys.length === 0,
     missingKeys,
     lastTestAt: cookie.lastTestAt,

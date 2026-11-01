@@ -8,14 +8,18 @@ function numericAccountSetting(value = "") {
   return /^\d+$/.test(numeric) ? numeric : "";
 }
 
+export function accountMarkerFromUserId(value) {
+  const accountId = numericAccountSetting(value);
+  if (!accountId) return "";
+  const markerSource = accountId.length > 1 ? accountId.slice(0, -1) : accountId;
+  const marker = markerSource.split("").reverse().join("").replace(/^0+/, "");
+  return marker;
+}
+
 function accountMarker() {
   const explicitMarker = numericAccountSetting(process.env.THREED66_ACCOUNT_MARKER);
   if (explicitMarker) return explicitMarker;
-
-  const accountId = numericAccountSetting(process.env.THREED66_ACCOUNT_ID) || DEFAULT_ACCOUNT_ID;
-  const markerSource = accountId.length > 1 ? accountId.slice(0, -1) : accountId;
-  const marker = markerSource.split("").reverse().join("").replace(/^0+/, "");
-  return marker || "89635771";
+  return accountMarkerFromUserId(numericAccountSetting(process.env.THREED66_ACCOUNT_ID) || DEFAULT_ACCOUNT_ID) || "89635771";
 }
 
 function splitModelId(value = "") {

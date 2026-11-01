@@ -6,7 +6,7 @@ import { close3D66Browser, download3D66WithBrowser, inspect3D66DownloadFormatsWi
 import { build3D66FootprintSeed } from "../src/utils/3d66RewrittenFootprintResolver.js";
 
 const inputId = "GCI139810814629725";
-const cookie = "PHPSESSID=fixture; login_token=fixture; login_sign=fixture";
+const cookie = "PHPSESSID=fixture; login_sign=fixture";
 let sequence = 0;
 
 async function fixture(t, options = {}) {

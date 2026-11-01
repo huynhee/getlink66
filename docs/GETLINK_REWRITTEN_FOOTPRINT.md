@@ -21,6 +21,23 @@ marker cannot log in or authorize another account. Save when no 3D66 tasks are
 running: old-account links no longer pass the guard after switching. Resolution
 caches are isolated by the new marker. No collection ID or profile AUI is needed.
 
+## Cookie Verification
+
+`PHPSESSID` and `login_sign` are required for structural checks. `login_token` is
+optional and is forwarded unchanged when present. Structural validity is not
+proof of login; client-controlled `userCookieData` and analytics cookies are not
+trusted as authentication, and embedded cookie timestamps are not used as expiry
+proof.
+
+Admin cookie checks call the fixed, read-only 3D66 endpoint
+`https://user.3d66.com/new-user-api/api/v1/user/info`, without following redirects.
+Success requires HTTP success, response code 200, a valid server `data.basic.user_id`
+and its derived account marker matching the configured clean-link account ID.
+Anonymous code 401, login redirects, challenges, malformed responses, network
+failures and mismatched accounts never mark the cookie verified. No purchase or
+download request is made by this check. The response exposes only verification
+status and the account marker, not the rest of the upstream account profile.
+
 ## Flow
 
 1. Accept a full HTTPS `3d.3d66.com/reshtmla/model/items/.../...html` URL containing

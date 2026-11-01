@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 import { verifyBilingualGuides } from "./qa-guide-articles.js";
 import { verifyGetlinkAuditLinks } from "./qa-getlink-audit.js";
+import { verify3D66CookieCompatibility } from "./qa-3d66-cookies.js";
 
 const backendPort = Number(process.env.QA_BACKEND_PORT || 5511);
 const frontendPort = Number(process.env.QA_FRONTEND_PORT || 5512);
@@ -1424,6 +1425,7 @@ async function main() {
       await verifyNotificationPageScopes(page, context, viewport.name);
       await verifyReferralRewardSettings(page, context, viewport.name);
       await verifyCollectionResolutionSettings(page, context, viewport.name);
+      await verify3D66CookieCompatibility(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
       await verifyConfiguredCreditCopy(page, context, viewport.name);
       await verifyLiveAccountBalance(page, context);
       await verifySubscriptionCatalog(page, context, viewport.name);

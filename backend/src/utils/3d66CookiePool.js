@@ -6,8 +6,8 @@ import { writeSystemLog } from "./systemLog.js";
 import { is3D66CleanLinkError } from "./3d66CleanLink.js";
 import { is3D66CollectionError } from "./3d66CollectionResolver.js";
 import { is3D66RewrittenFootprintError } from "./3d66RewrittenFootprintResolver.js";
+import { inspect3D66CookieHeader } from "./3d66CookieHeader.js";
 
-const REQUIRED_COOKIE_KEYS = ["PHPSESSID", "login_token", "login_sign"];
 const DEFAULT_REQUEST_INTERVAL_MS = 2500;
 const DEFAULT_COOKIE_COOLDOWN_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_FAILURES = 2;
@@ -24,23 +24,8 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function cookieKeys(value = "") {
-  return new Set(
-    String(value)
-      .split(";")
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map((part) => {
-        const index = part.indexOf("=");
-        return index > -1 ? part.slice(0, index).trim() : "";
-      })
-      .filter(Boolean)
-  );
-}
-
 function hasRequiredKeys(cookie) {
-  const keys = cookieKeys(cookie?.value || "");
-  return REQUIRED_COOKIE_KEYS.every((key) => keys.has(key));
+  return inspect3D66CookieHeader(cookie?.value).hasRequiredKeys;
 }
 
 function isCoolingDown(cookie, now = Date.now()) {
@@ -116,8 +101,7 @@ export async function get3D66CookiePoolStatus() {
     stats: cookieStats(plainCookies),
     queue: get3D66GetlinkQueueStatus(),
     cookies: plainCookies.map((cookie) => {
-      const keys = cookieKeys(cookie.value || "");
-      const missingKeys = REQUIRED_COOKIE_KEYS.filter((key) => !keys.has(key));
+      const { keyCount, missingKeys } = inspect3D66CookieHeader(cookie.value);
       const cooldownUntil = cookie.cooldownUntil ? new Date(cookie.cooldownUntil) : null;
       return {
         _id: cookie._id,
@@ -141,7 +125,7 @@ export async function get3D66CookiePoolStatus() {
         lastTestAt: cookie.lastTestAt,
         lastTestOk: cookie.lastTestOk,
         lastTestMessage: cookie.lastTestMessage || "",
-        keyCount: keys.size,
+        keyCount,
         hasRequiredKeys: missingKeys.length === 0,
         missingKeys,
         updatedAt: cookie.updatedAt,

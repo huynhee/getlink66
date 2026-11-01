@@ -1125,7 +1125,9 @@ export default function Admin({ user, language = "vi" }) {
         method: "POST",
         body: JSON.stringify({ value: cookie || undefined })
       });
-      const details = data.mode === "model-page"
+      const details = data.mode === "account-session"
+        ? l(` Đã xác minh đăng nhập · ID: ${data.accountMarker}`, ` Login verified · ID: ${data.accountMarker}`)
+        : data.mode === "model-page"
         ? ` ll_id:${data.hasLlId ? "ok" : "missing"} token:${data.hasToken ? "ok" : "missing"} up_time:${data.hasUpTime ? "ok" : "missing"}`
         : "";
       setMessage(l(`Cookie 3D66 hợp lệ.${details}`, `3D66 cookie is valid.${details}`));
@@ -1140,7 +1142,9 @@ export default function Admin({ user, language = "vi" }) {
     setLoading(true);
     try {
       const data = await api(`/api/admin/cookies/${id}/test`, { method: "POST" });
-      const details = data.mode === "model-page"
+      const details = data.mode === "account-session"
+        ? l(` Đã xác minh đăng nhập · ID: ${data.accountMarker}`, ` Login verified · ID: ${data.accountMarker}`)
+        : data.mode === "model-page"
         ? ` ll_id:${data.hasLlId ? "ok" : "missing"} token:${data.hasToken ? "ok" : "missing"} up_time:${data.hasUpTime ? "ok" : "missing"}`
         : "";
       setMessage(l(`Cookie 3D66 hợp lệ.${details}`, `3D66 cookie is valid.${details}`));
