@@ -30,9 +30,25 @@ export async function verify3D66CookieCompatibility(page, context, { origin, scr
           && globalThis.document.documentElement.dataset.theme === theme, { language, theme });
         await page.getByRole("navigation", { name: "Admin sections", exact: true })
           .getByRole("button", { name: language === "vi" ? "Chung" : "General", exact: true }).click();
-        await page.getByRole("navigation", { name: "Admin subsections", exact: true })
-          .getByRole("button", { name: /^Cookie(?:\s|$)/ }).click();
+        assert.equal(await page.getByRole("navigation", { name: "Admin subsections", exact: true })
+          .getByRole("button", { name: /^Cookie(?:\s|$)/ }).count(), 0);
+        await page.getByRole("navigation", { name: "Admin sections", exact: true })
+          .getByRole("button", { name: "Getlink", exact: true }).click();
+        const tabs = page.locator(".threed66SettingsTabs");
+        await tabs.getByRole("button", { name: "Cookie", exact: true }).click();
         const panel = page.locator("section.panel").filter({ has: page.getByRole("heading", { name: /Quản lý Cookie|Cookie management/ }) });
+        const label = page.getByPlaceholder(language === "vi" ? "Tên nick 3D66" : "3D66 account label", { exact: true });
+        const input = page.getByPlaceholder(language === "vi" ? "Dán cookie 3D66 VIP vào đây..." : "Paste 3D66 VIP cookie here...", { exact: true });
+        await label.fill("Navigation fixture");
+        await input.fill("PHPSESSID=fixture; login_sign=fixture");
+        const labelBounds = await label.boundingBox();
+        assert.ok(labelBounds && labelBounds.height <= 60, "Cookie account label is stretched vertically");
+        await tabs.getByRole("button", { name: language === "vi" ? "Tác vụ" : "Tasks", exact: true }).click();
+        assert.equal(await page.getByRole("heading", { name: /Quản lý Cookie|Cookie management/ }).count(), 0);
+        await tabs.getByRole("button", { name: "Cookie", exact: true }).click();
+        assert.equal(await label.inputValue(), "Navigation fixture");
+        assert.equal(await input.inputValue(), "PHPSESSID=fixture; login_sign=fixture");
+        assert.equal(await panel.getByRole("button", { name: /Lưu cài đặt Getlink|Save Getlink settings/ }).count(), 0);
         const row = panel.locator(".tableRow").filter({ hasText: "Session without login_token" });
         await row.getByText(language === "vi" ? "Đủ key" : "Keys OK", { exact: true }).waitFor();
         assert.ok(!(await row.innerText()).includes(language === "vi" ? "Thiếu:" : "Missing:"));
