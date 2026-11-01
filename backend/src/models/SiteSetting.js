@@ -121,7 +121,7 @@ const siteSettingSchema = new mongoose.Schema(
     threed66PaytypeValue: { type: String, default: "4" },
     threed66ModelResolveMode: {
       type: String,
-      enum: ["search", "footprint", "direct", "collection"],
+      enum: ["search", "footprint", "direct", "collection", "rewritten_footprint"],
       default: "search"
     },
     threed66CollectionId: { type: String },

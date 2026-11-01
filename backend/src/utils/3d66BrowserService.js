@@ -1,5 +1,7 @@
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 import { create3D66CollectionResolver } from "./3d66CollectionResolver.js";
+import { create3D66RewrittenFootprintResolver, assert3D66RewrittenFootprintLink,
+  is3D66RewrittenFootprintError } from "./3d66RewrittenFootprintResolver.js";
 import {
   assert3D66BrowserDownloadRequest, assert3D66CleanModelUrl, assert3D66DownloadFields,
   is3D66CleanLinkError, modelIdsShareAssetIdentity,
@@ -317,7 +319,7 @@ function runBrowserTask(task) {
   });
 }
 
-async function withBrowserContext(url, cookieValue, callback, { allowProxyFallback = true } = {}) {
+async function withBrowserContext(url, cookieValue, callback, { allowProxyFallback = true, rewrittenFootprintSeed = null } = {}) {
   return runBrowserTask(async () => {
     const browser = await getSharedBrowser();
     const proxy = browserProxyConfig();
@@ -332,7 +334,7 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
 
       try {
         let validationError = null;
-        await installFastRoutes(context, (error) => { validationError ||= error; });
+        await installFastRoutes(context, (error) => { validationError ||= error; }, rewrittenFootprintSeed);
 
         const cookies = buildBrowserCookies(cookieValue, url);
         if (cookies.length) {
@@ -361,7 +363,7 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
     try {
       return await runWithProxy(proxy);
     } catch (error) {
-      if (!allowProxyFallback || is3D66CleanLinkError(error)) throw error;
+      if (!allowProxyFallback || is3D66CleanLinkError(error) || is3D66RewrittenFootprintError(error)) throw error;
       if (proxyFailClosed()) throw error;
       notify3D66ProxyFallback({
         stage: "browser",
@@ -377,7 +379,7 @@ export async function close3D66Browser() {
   await closeActiveBrowser();
 }
 
-async function installFastRoutes(context, onValidationError) {
+async function installFastRoutes(context, onValidationError, rewrittenFootprintSeed) {
   await context.route("**/*", async (route) => {
     const request = route.request();
     if (!isAllowed3D66BrowserRequestUrl(request.url())) {
@@ -392,6 +394,9 @@ async function installFastRoutes(context, onValidationError) {
     let sourceUrl = "";
     try { sourceUrl = request.frame().url(); } catch { /* Worker requests have no frame. */ }
     try {
+      if (rewrittenFootprintSeed && /^\/api\/v1\/download\/(?:handle|pop)\/?$/.test(new URL(request.url()).pathname)) {
+        assert3D66RewrittenFootprintLink(sourceUrl, rewrittenFootprintSeed);
+      }
       assert3D66BrowserDownloadRequest({
         url: request.url(), method: request.method(), body: request.postData(),
         contentType: request.headers()["content-type"], sourceUrl,
@@ -1013,7 +1018,7 @@ async function selectGiftPointWallet(page) {
   );
 }
 
-async function confirmPaymentPopup(page) {
+async function confirmPaymentPopup(page, options = {}) {
   await selectGiftPointWallet(page);
 
   const payButton = page.locator(".right-pay-btn").last();
@@ -1038,6 +1043,7 @@ async function confirmPaymentPopup(page) {
   }
 
   assert3D66CleanModelUrl(page.url());
+  if (options.rewrittenFootprintSeed) assert3D66RewrittenFootprintLink(page.url(), options.rewrittenFootprintSeed);
   const responsePromise = waitForDownloadHandleResponse(page);
   await payButton.click({ timeout: Math.min(timeoutMs(), 10000), force: true });
   return responsePromise;
@@ -1064,6 +1070,10 @@ export async function fetch3D66PageWithBrowser(url, cookieValue) {
 
 export const resolve3D66ModelUrlFromCollection = create3D66CollectionResolver({
   withBrowserContext, navigate: goto3D66Page, serializeCookies, timeoutMs,
+});
+
+export const resolve3D66ModelUrlFromRewrittenFootprint = create3D66RewrittenFootprintResolver({
+  withBrowserContext, navigate: goto3D66Page, serializeCookies, timeoutMs, settleMs: postCommitWaitMs,
 });
 
 export async function resolve3D66ModelUrlFromFootprint(
@@ -1168,7 +1178,7 @@ export async function resolve3D66ModelUrlFromFootprint(
   });
 }
 
-export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue) {
+export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue, options = {}) {
   assertSafe3D66Url(url);
   const expectedProductId = assert3D66CleanModelUrl(url);
   return withBrowserContext(url, cookieValue, async ({ context, page }) => {
@@ -1176,6 +1186,7 @@ export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue) {
 
     const metadata = await evaluateMetadataWithRetry(page, true);
     assert3D66CleanModelUrl(page.url(), { expectedProductId });
+    if (options.rewrittenFootprintSeed) assert3D66RewrittenFootprintLink(page.url(), options.rewrittenFootprintSeed);
     assert3D66DownloadFields(metadata.dynamicFields?.llId || metadata.productId, page.url());
     const downloadButton = page.locator(".j_download").last();
     await downloadButton.click({
@@ -1239,7 +1250,7 @@ export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue) {
       usedBrowser: true,
       terminalType: result?.type || "none",
     };
-  });
+  }, { rewrittenFootprintSeed: options.rewrittenFootprintSeed, allowProxyFallback: !options.rewrittenFootprintSeed });
 }
 
 export async function download3D66WithBrowser(url, cookieValue, options = {}) {
@@ -1250,6 +1261,7 @@ export async function download3D66WithBrowser(url, cookieValue, options = {}) {
 
     const metadata = await evaluateMetadataWithRetry(page, true);
     assert3D66CleanModelUrl(page.url(), { expectedProductId });
+    if (options.rewrittenFootprintSeed) assert3D66RewrittenFootprintLink(page.url(), options.rewrittenFootprintSeed);
     assert3D66DownloadFields(metadata.dynamicFields?.llId || metadata.productId, page.url());
     const downloadButton = page.locator(".j_download").last();
     await downloadButton.click({
@@ -1265,9 +1277,9 @@ export async function download3D66WithBrowser(url, cookieValue, options = {}) {
       response =
         afterFormat?.type === "response"
           ? afterFormat.response
-          : await confirmPaymentPopup(page);
+          : await confirmPaymentPopup(page, options);
     } else {
-      response = await confirmPaymentPopup(page);
+      response = await confirmPaymentPopup(page, options);
     }
     const { json, fileUrl } = await parseDownloadHandleResponse(response);
 
@@ -1285,5 +1297,5 @@ export async function download3D66WithBrowser(url, cookieValue, options = {}) {
       response: json,
       usedBrowser: true,
     };
-  });
+  }, { rewrittenFootprintSeed: options.rewrittenFootprintSeed, allowProxyFallback: !options.rewrittenFootprintSeed });
 }

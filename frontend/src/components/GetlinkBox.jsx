@@ -53,7 +53,7 @@ function inputValueWhileTyping(value = "", resolveMode = "search") {
 
 function inputModeText(resolveMode = "search", language = "vi") {
   const isVi = language === "vi";
-  if (resolveMode === "collection") {
+  if (["collection", "rewritten_footprint"].includes(resolveMode)) {
     return {
       placeholder: isVi ? "Dán link model 3D66" : "Paste the full 3D model 3D66 link",
       invalid: isVi ? "Vui lòng dán link model 3D66 có mã hợp lệ." : "Paste a 3D model 3D66 link containing a valid model ID.",

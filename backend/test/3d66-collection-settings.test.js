@@ -150,3 +150,16 @@ test("a typo in the selected mode is rejected instead of silently switching to s
   assert.equal(result.code, "INVALID_THREED66_RESOLVE_MODE");
   assert.equal((await SiteSetting.findOne({ key: "homepage" })).threed66ModelResolveMode, "collection");
 });
+
+test("rewritten footprint mode saves and survives reload without requiring collection settings", async () => {
+  await reset();
+  const result = await request(updateSettings, { threed66ModelResolveMode: "rewritten_footprint" });
+  assert.equal(result.status, 200);
+  assert.equal(result.settings.threed66ModelResolveMode, "rewritten_footprint");
+  assert.equal(process.env.THREED66_MODEL_RESOLVE_MODE, "rewritten_footprint");
+  process.env.THREED66_MODEL_RESOLVE_MODE = "search";
+  await initializeSettings();
+  assert.equal(process.env.THREED66_MODEL_RESOLVE_MODE, "rewritten_footprint");
+  const publicResult = await request(getSettings, undefined, { user: null });
+  assert.equal(publicResult.settings.threed66ModelResolveMode, "rewritten_footprint");
+});

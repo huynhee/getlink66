@@ -30,7 +30,7 @@ function publicRequest(user) {
   };
 }
 
-for (const code of ["THREED66_CLEAN_LINK_REQUIRED", "THREED66_COLLECTION_RESOLUTION_FAILED"]) {
+for (const code of ["THREED66_CLEAN_LINK_REQUIRED", "THREED66_COLLECTION_RESOLUTION_FAILED", "THREED66_REWRITTEN_FOOTPRINT_FAILED"]) {
   test(`${code} failures are terminal even when their status is 503`, async () => {
     const user = await User.create({ email: `job-${code.toLowerCase()}@example.test`, credit: 100 });
     const { job } = await createGetlinkJob({

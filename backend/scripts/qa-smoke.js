@@ -786,7 +786,7 @@ async function verifyCollectionResolutionSettings(page, context, viewport) {
         const form = page.locator("form").filter({ has: page.locator(".collectionSettings") });
         await form.getByLabel(/ID bộ sưu tập|Collection ID/).fill("123456");
         await form.getByLabel(/AUI hồ sơ công khai|Public profile AUI/).fill("ACJ00000001");
-        if (theme === "light") {
+        {
           const saved = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/settings" && response.request().method() === "POST");
           await form.getByRole("button", { name: /Lưu cài đặt Getlink|Save Getlink settings/ }).click();
           const response = await saved;
@@ -799,6 +799,21 @@ async function verifyCollectionResolutionSettings(page, context, viewport) {
           || await page.getByLabel(/AUI hồ sơ công khai|Public profile AUI/).inputValue() !== "ACJ00000001") throw new Error("Collection configuration was not restored");
         if (await page.locator(".collectionSettings").evaluate((element) => element.scrollWidth > element.clientWidth + 2)) throw new Error("Collection settings overflow");
         await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-collection-settings-${theme}-${language}.png`), fullPage: true });
+        for (const route of ["/", "/getlink"]) {
+          await page.goto(`${frontendOrigin}${route}`, { waitUntil: "domcontentloaded" });
+          await page.getByPlaceholder(language === "vi" ? "Dán link model 3D66" : "Paste the full 3D model 3D66 link", { exact: true }).waitFor();
+        }
+        await openSettings();
+        const rewritten = page.getByRole("button", { name: /Đổi ID rồi lấy từ lịch sử|Rewrite ID, then read history/ });
+        await rewritten.click();
+        const rewrittenForm = page.locator("form").filter({ has: rewritten });
+        const saved = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/settings" && response.request().method() === "POST");
+        await rewrittenForm.getByRole("button", { name: /Lưu cài đặt Getlink|Save Getlink settings/ }).click();
+        if (!(await saved).ok()) throw new Error("Rewritten footprint settings save failed");
+        await openSettings();
+        if (await rewritten.getAttribute("aria-pressed") !== "true") throw new Error("Rewritten footprint mode was lost after reload");
+        if (await page.locator(".collectionModeGrid").evaluate((element) => element.scrollWidth > element.clientWidth + 2)) throw new Error("Rewritten footprint settings overflow");
+        await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-rewritten-footprint-settings-${theme}-${language}.png`), fullPage: true });
         for (const route of ["/", "/getlink"]) {
           await page.goto(`${frontendOrigin}${route}`, { waitUntil: "domcontentloaded" });
           await page.getByPlaceholder(language === "vi" ? "Dán link model 3D66" : "Paste the full 3D model 3D66 link", { exact: true }).waitFor();

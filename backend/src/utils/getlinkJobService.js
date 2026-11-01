@@ -9,6 +9,7 @@ import {
 } from "../controllers/getlinkController.js";
 import logger from "./logger.js";
 import { is3D66CollectionError } from "./3d66CollectionResolver.js";
+import { is3D66RewrittenFootprintError } from "./3d66RewrittenFootprintResolver.js";
 
 const ACTIVE_STATUSES = ["queued", "processing", "awaiting_format"];
 const TERMINAL_STATUSES = ["completed", "failed", "canceled"];
@@ -77,7 +78,8 @@ function publicError(error = {}) {
     message: raw || "Getlink failed.",
     code: String(error.code || "").slice(0, 80),
     status,
-    retryable: !is3D66CollectionError(error) && !["GETLINK_PRICE_CHANGED", "THREED66_CLEAN_LINK_REQUIRED"].includes(error.code)
+    retryable: !is3D66CollectionError(error) && !is3D66RewrittenFootprintError(error)
+      && !["GETLINK_PRICE_CHANGED", "THREED66_CLEAN_LINK_REQUIRED"].includes(error.code)
       && (status === 409 || status === 429 || status >= 500),
   };
 }
