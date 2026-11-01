@@ -46,6 +46,7 @@ async function fixture(t, options = {}) {
               current = new URL(url).searchParams.has("sign") && options.browserRedirect ? options.browserRedirect(url) : url;
               navigations.push(url);
             }, url: () => current,
+            async title() { return "Fixture model"; },
             async waitForLoadState() {}, async waitForTimeout() {},
             async waitForSelector() {},
             async evaluate() {
@@ -168,13 +169,15 @@ for (const [name, browserRedirect] of [["another path", (url) => url.replace(".h
   });
 }
 
-function openedCardFixture({ navigation = "", downloadRequest = false, changedHref = false } = {}) {
+function openedCardFixture({ navigation = "", downloadRequest = false, changedHref = false, challenge = false } = {}) {
   const seed = build3D66FootprintSeed("https://3d.3d66.com/reshtmla/model/items/fixture/canonical.html?sof=GCI139810814629725");
   const unsigned = `${seed.modelPage}?sof=${seed.productId}&st=2`;
   const signed = unsigned + "&sign=real-history-fixture";
   const actions = [];
   let guard;
-  const opened = { url: () => signed, async waitForURL(predicate) { assert.equal(predicate(new URL(signed)), true); } };
+  const opened = { url: () => signed, async waitForLoadState() {},
+    async title() { return challenge ? "滑动验证页面" : "Fixture model"; },
+    async waitForURL(predicate) { assert.equal(predicate(new URL(signed)), true); } };
   const context = {
     async route(_pattern, callback) { guard = callback; },
     async unroute(_pattern, callback) { assert.equal(callback, guard); actions.push("unroute"); },
@@ -212,6 +215,13 @@ test("a history card changed before the click is rejected without navigation", a
   await assert.rejects(open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context),
     (error) => error.details.reason === "history_card_changed");
   assert.deepEqual(state.actions, []);
+});
+
+test("a verification page opened from history returns an actionable terminal error without accepting its URL", async () => {
+  const state = openedCardFixture({ challenge: true });
+  await assert.rejects(open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context),
+    (error) => error.status === 403 && error.details.reason === "upstream_verification_required");
+  assert.deepEqual(state.actions, ["pointer-click", "unroute"]);
 });
 
 test("unexpected model navigation is blocked before reaching the network", async () => {

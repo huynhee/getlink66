@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { build3D66FootprintSeed, assert3D66RewrittenFootprintLink, selectRewrittenFootprintCard,
-  resolveRewrittenFootprintPage, create3D66RewrittenFootprintResolver } from "../src/utils/3d66RewrittenFootprintResolver.js";
+  resolveRewrittenFootprintPage, create3D66RewrittenFootprintResolver,
+  assert3D66FootprintPageVerified } from "../src/utils/3d66RewrittenFootprintResolver.js";
 import { assert3D66CleanModelUrl } from "../src/utils/3d66CleanLink.js";
 import { isSwitchable3D66Error, shouldDegrade3D66Cookie } from "../src/utils/3d66CookiePool.js";
 
@@ -28,6 +29,7 @@ function fixture(options = {}) {
   const actions = [];
   const page = {
     url: () => current,
+    async title() { return options.challengeAt === current ? "滑动验证页面" : "Fixture model"; },
     async waitForLoadState() {},
     async waitForTimeout() {},
     locator() {
@@ -110,6 +112,22 @@ test("an empty seed page can be followed by a signed history URL without opening
     { url: clean, productId: accountId, usedFootprint: true, canonicalModelPage: base });
   assert.deepEqual(state.actions, [seed.url, historyUrl]);
   assert.ok(!state.actions.includes(source));
+});
+
+for (const challengeAt of [seed.url, historyUrl]) {
+  test(`verification at ${challengeAt === seed.url ? "the rewritten seed" : "history"} stops before looking up or opening another model`, async () => {
+    const state = fixture({ challengeAt });
+    let opens = 0;
+    await assert.rejects(resolveRewrittenFootprintPage({ ...state, seed, openHistoryLink: async () => { opens += 1; } }),
+      (error) => error.status === 403 && error.details.reason === "upstream_verification_required"
+        && !isSwitchable3D66Error(error) && !shouldDegrade3D66Cookie(error));
+    assert.equal(opens, 0);
+    assert.equal(state.actions.length, challengeAt === seed.url ? 1 : 2);
+  });
+}
+
+test("ordinary model titles mentioning verification are not treated as a challenge page", async () => {
+  await assert.doesNotReject(assert3D66FootprintPageVerified({ async title() { return "Captcha decoration - 3D model"; } }));
 });
 
 test("history refresh is bounded and never revisits the original or seed on a miss", async () => {

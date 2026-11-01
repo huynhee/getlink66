@@ -1,7 +1,7 @@
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 import { create3D66CollectionResolver } from "./3d66CollectionResolver.js";
 import { create3D66RewrittenFootprintResolver, assert3D66RewrittenFootprintLink,
-  is3D66RewrittenFootprintError } from "./3d66RewrittenFootprintResolver.js";
+  assert3D66FootprintPageVerified, is3D66RewrittenFootprintError } from "./3d66RewrittenFootprintResolver.js";
 import {
   assert3D66BrowserDownloadRequest, assert3D66CleanModelUrl, assert3D66DownloadFields,
   is3D66CleanLinkError, modelIdsShareAssetIdentity,
@@ -1102,7 +1102,9 @@ export async function open3D66RewrittenFootprintCard(page, card, seed, context) 
     await anchor.click({ timeout: Math.min(timeoutMs(), 10000), noWaitAfter: true });
     const opened = await opening;
     if (!opened) throw blockedError || new Error("The history item did not open a signed model.");
-    await opened.waitForURL(signedModel, { timeout: Math.min(timeoutMs(), 10000) });
+    await opened.waitForLoadState("domcontentloaded", { timeout: Math.min(timeoutMs(), 10000) });
+    await assert3D66FootprintPageVerified(opened);
+    await opened.waitForURL(signedModel, { timeout: Math.min(timeoutMs(), 10000), waitUntil: "domcontentloaded" });
     if (blockedError) throw blockedError;
     assert3D66RewrittenFootprintLink(opened.url(), seed);
     return opened.url();

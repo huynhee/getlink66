@@ -5,7 +5,10 @@ const FOOTPRINT_URL = "https://user.3d66.com/newUser/index/index/footprint";
 const MODEL_SELECTOR = 'a[href*="/reshtmla/"][href*="sof="]';
 
 function resolutionError(reason, status = 422) {
-  return Object.assign(new Error("Cannot obtain a verified model link from rewritten 3D66 history."), {
+  const message = reason === "upstream_verification_required"
+    ? "3D66 requires browser verification before a signed model link can be obtained. No purchase or download was attempted."
+    : "Cannot obtain a verified model link from rewritten 3D66 history.";
+  return Object.assign(new Error(message), {
     status, code: "THREED66_REWRITTEN_FOOTPRINT_FAILED",
     details: { stage: "rewritten-footprint", reason },
   });
@@ -13,6 +16,13 @@ function resolutionError(reason, status = 422) {
 
 export function is3D66RewrittenFootprintError(error) {
   return error?.code === "THREED66_REWRITTEN_FOOTPRINT_FAILED";
+}
+
+export async function assert3D66FootprintPageVerified(page) {
+  const title = (await page.title()).trim();
+  if (/^(?:滑动验证(?:页面)?|安全验证|访问验证|captcha|security verification|verification required)$/i.test(title)) {
+    throw resolutionError("upstream_verification_required", 403);
+  }
 }
 
 function modelPage(value) {
@@ -80,6 +90,7 @@ export async function resolveRewrittenFootprintPage({ page, seed, navigate, open
   // An empty seed page is expected. Only a signed, exact history entry can authorize the next step.
   await page.waitForLoadState("domcontentloaded", { timeout: Math.min(timeout, 8000) }).catch(() => {});
   await page.waitForTimeout(Math.min(5000, Math.max(500, Number(settleMs) || 1200)));
+  await assert3D66FootprintPageVerified(page);
   const attempts = Math.min(8, Math.max(1, Math.floor(Number(refreshAttempts) || 4)));
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (attempt) await page.waitForTimeout(Math.min(5000, Math.max(250, Number(refreshDelayMs) || 1500)));
@@ -89,6 +100,7 @@ export async function resolveRewrittenFootprintPage({ page, seed, navigate, open
       throw resolutionError("history_redirected");
     }
     await page.locator(MODEL_SELECTOR).first().waitFor({ state: "attached", timeout: Math.min(timeout, 5000) }).catch(() => {});
+    await assert3D66FootprintPageVerified(page);
     const links = await page.locator(MODEL_SELECTOR).evaluateAll((anchors) => anchors.slice(0, 500).map((anchor) => anchor.href));
     const selected = selectRewrittenFootprintCard(links, seed);
     if (selected) {

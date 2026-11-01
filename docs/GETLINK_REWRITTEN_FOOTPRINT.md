@@ -71,6 +71,12 @@ history misses stop the operation before a purchase. There is no fallback to the
 submitted link, account search or another cookie, and no automatic job retry for
 this resolver's failures. Existing credit charging/idempotency rules are unchanged.
 
+An authenticated account API does not prove that the model pages are accessible.
+3D66 can separately return a slider-verification page. Detection at the rewritten
+seed, history or opened model stops with HTTP 403 and reason
+`upstream_verification_required`, without degrading the cookie or attempting to
+bypass verification. The operator must resolve upstream access before retrying.
+
 Select the previous mode in Admin and save to roll back. No migration, account
 history deletion, collection mutation or file rewrite is involved. In-flight work
 should finish before switching modes.
