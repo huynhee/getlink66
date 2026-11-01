@@ -130,10 +130,20 @@ finalize before verification.
 
 ## Retention And Incidents
 
-- Getlink sensitive URLs: purge one day after redownload expiry.
+- Getlink download and image URLs: purge one day after redownload expiry.
+- Submitted and resolved model page URLs stay with the Getlink history for
+  admin auditing, including in its verified archive. They remain excluded from
+  user-facing history responses.
 - Getlink, downloads, closed reports and AuditLog: archive after 365 days.
 - SystemLog: TTL 30 days. DownloadSession: expiry plus 7 days. Daily quota: 45 days.
 - Mongo records are deleted only after Drive checksum verification.
+
+Older detail cleanup removed the submitted and resolved page URLs as well.
+Changing the policy does not recover those fields. An archive created after
+that cleanup may already be missing them. Investigate a verified backup from
+before cleanup in an isolated restore database; only restore exact fields for
+reviewed record IDs. Never roll back the entire live database or substitute
+another user's shared ProductCache URLs for historical evidence.
 
 Apply the approved one-year defaults once:
 

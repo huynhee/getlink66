@@ -7852,6 +7852,11 @@ label {
   color: var(--accent-cyan);
 }
 
+.getlinkAuditLinks .getlinkAuditMissing {
+  white-space: normal;
+  font-size: 12px;
+}
+
 .topupAuditPackage span,
 .topupAuditAmount span,
 .topupAuditPayment span {

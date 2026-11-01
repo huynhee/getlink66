@@ -230,7 +230,8 @@ async function purgeGetlinkDetails({ now, settings, batchSize }) {
     .limit(batchSize)
     .select("_id");
   await Promise.all(records.map((record) => Getlink.findByIdAndUpdate(record._id, {
-    $unset: { fileUrl: "", sourceUrl: "", resolvedSourceUrl: "", imageUrl: "" },
+    // Page URLs belong to the audit history, not the expiring download payload.
+    $unset: { fileUrl: "", imageUrl: "" },
     $set: { detailsPurgedAt: now },
   })));
   return records.length;

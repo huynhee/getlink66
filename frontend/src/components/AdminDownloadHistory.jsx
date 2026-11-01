@@ -132,6 +132,13 @@ export default function AdminDownloadHistory({
                   <div className="getlinkAuditLinks">
                     {item.sourceUrl && <a href={visibleSourceUrl(item.sourceUrl)} target="_blank" rel="noreferrer">{l("Link user gửi", "User link")}</a>}
                     {item.resolvedSourceUrl && <a href={visibleSourceUrl(item.resolvedSourceUrl)} target="_blank" rel="noreferrer">{l("Link xử lý", "Resolved link")}</a>}
+                    {!item.sourceUrl && !item.resolvedSourceUrl && (
+                      <span className="getlinkAuditMissing muted">
+                        {item.detailsPurgedAt
+                          ? l("Không còn link trong bản ghi đã dọn chi tiết.", "Links are unavailable in this cleaned-up record.")
+                          : l("Bản ghi không có link nguồn được lưu.", "No source links were saved for this record.")}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <span className={`badge ${Number(item.modelPrice || 0) !== Number(item.creditDeducted || 0) ? "error" : ""}`}>

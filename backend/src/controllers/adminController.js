@@ -1035,6 +1035,7 @@ export async function listGetlinkRecords(req, res, next) {
         imageUrl: doc.imageUrl || "",
         sourceUrl: doc.sourceUrl || "",
         resolvedSourceUrl: doc.resolvedSourceUrl || "",
+        detailsPurgedAt: doc.detailsPurgedAt || null,
         modelPrice,
         priceKnown: Boolean(cache?.priceKnown || modelPrice > 1),
         creditDeducted: creditUsed,

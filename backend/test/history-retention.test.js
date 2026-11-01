@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { gunzipSync } from "node:zlib";
 import { useMemoryDb } from "../src/config/memoryStore.js";
 
 useMemoryDb();
@@ -154,6 +155,7 @@ test("retention zero keeps history while detail cleanup and configured boundarie
     productId: "retention-product-compact",
     fileUrl: "https://files.example/compact",
     sourceUrl: "https://source.example/compact",
+    resolvedSourceUrl: "https://source.example/compact?sof=fixture&sign=fixture",
     imageUrl: "https://images.example/compact.jpg",
   });
   await Getlink.findByIdAndUpdate(compactGetlink._id, { $set: { createdAt: dateBefore(now, 5) } });
@@ -177,7 +179,8 @@ test("retention zero keeps history while detail cleanup and configured boundarie
 
   assert.ok(cycle.detailsPurged >= 1);
   assert.equal(compacted.fileUrl, undefined);
-  assert.equal(compacted.sourceUrl, undefined);
+  assert.equal(compacted.sourceUrl, compactGetlink.sourceUrl);
+  assert.equal(compacted.resolvedSourceUrl, compactGetlink.resolvedSourceUrl);
   assert.equal(compacted.imageUrl, undefined);
   assert.ok(compacted.detailsPurgedAt);
   assert.equal(await Getlink.findById(boundaryGetlink._id), null);
@@ -261,4 +264,48 @@ test("Drive failure keeps closed reports and audit logs online", async () => {
     /Drive offline/,
   );
   assert.ok(await MarketplaceReport.findById(report._id));
+});
+
+test("detail cleanup preserves exact submitted and cleared links across retries until verified archive", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => { assert.fail("Retention must not regenerate historical links"); });
+  await Getlink.deleteMany({});
+  await HistoryArchiveManifest.deleteMany({});
+  const now = new Date("2026-11-01T03:00:00.000Z");
+  await SiteSetting.findOneAndUpdate({ key: "homepage" }, { $set: {
+    key: "homepage", getlinkRedownloadDays: 3, getlinkDetailRetentionDaysAfterExpiry: 1,
+    getlinkHistoryRetentionDaysAfterExpiry: 0, marketplaceDownloadHistoryRetentionDays: 0,
+    marketplaceReportHistoryRetentionDays: 0, auditLogHistoryRetentionDays: 0
+  } }, { upsert: true });
+  const links = {
+    sourceUrl: "https://3d.3d66.com/reshtmla/model/items/fixture/model.html?sof=original&sign=fixture",
+    resolvedSourceUrl: "https://3d.3d66.com/reshtmla/model/items/fixture/model.html?sof=resolved&sign=fixture"
+  };
+  const record = await Getlink.create({ userId: "audit-retention-user", productId: "audit-retention-model",
+    ...links, fileUrl: "https://download.3d66.com/fixture.zip", imageUrl: "https://respic.3d66.com/fixture.jpg",
+    creditUsed: 28, redownloadCount: 2 });
+  await Getlink.findByIdAndUpdate(record._id, { $set: { createdAt: dateBefore(now, 5) } });
+  const noArchive = async () => { assert.fail("Zero history retention keeps the audit record online"); };
+  assert.equal((await runHistoryRetentionCycle({ now, archiveWriter: noArchive })).detailsPurged, 1);
+  assert.equal((await runHistoryRetentionCycle({ now, archiveWriter: noArchive })).detailsPurged, 0);
+  const retained = await Getlink.findById(record._id);
+  assert.equal(retained.sourceUrl, links.sourceUrl);
+  assert.equal(retained.resolvedSourceUrl, links.resolvedSourceUrl);
+  assert.equal(retained.fileUrl, undefined);
+  assert.equal(retained.imageUrl, undefined);
+  assert.equal(retained.creditUsed, 28);
+  assert.equal(retained.redownloadCount, 2);
+
+  await SiteSetting.findOneAndUpdate({ key: "homepage" }, { $set: { getlinkHistoryRetentionDaysAfterExpiry: 30 } });
+  const later = new Date(now.getTime() + 30 * DAY_MS);
+  await assert.rejects(runHistoryRetentionCycle({ now: later, archiveWriter: async () => { throw new Error("fixture archive unavailable"); } }), /fixture archive unavailable/);
+  assert.equal((await Getlink.findById(record._id)).resolvedSourceUrl, links.resolvedSourceUrl);
+  let archived;
+  await runHistoryRetentionCycle({ now: later, archiveWriter: async ({ gzip, checksum }) => {
+    archived = JSON.parse(gunzipSync(gzip).toString("utf8").trim());
+    return { archiveDriveFileId: `audit-${checksum}`, driveManifestFileId: "audit-manifest", archiveFileName: "audit.jsonl.gz" };
+  } });
+  assert.equal(archived._id, record._id);
+  assert.equal(archived.sourceUrl, links.sourceUrl);
+  assert.equal(archived.resolvedSourceUrl, links.resolvedSourceUrl);
+  assert.equal(await Getlink.findById(record._id), null);
 });

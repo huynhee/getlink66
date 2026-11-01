@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 import { verifyBilingualGuides } from "./qa-guide-articles.js";
+import { verifyGetlinkAuditLinks } from "./qa-getlink-audit.js";
 
 const backendPort = Number(process.env.QA_BACKEND_PORT || 5511);
 const frontendPort = Number(process.env.QA_FRONTEND_PORT || 5512);
@@ -1408,6 +1409,7 @@ async function main() {
       await verifyLiveAccountBalance(page, context);
       await verifySubscriptionCatalog(page, context, viewport.name);
       await verifyPaymentProviderRouting(page, context, viewport.name);
+      await verifyGetlinkAuditLinks(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
       await verifyBilingualGuides(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
       await context.close();
     }
@@ -1435,6 +1437,7 @@ async function main() {
       topupLayout: true,
       adminPaymentProviderRouting: true,
       bilingualGuides: true,
+      getlinkAuditPageLinks: true,
       homepagePricingRemoved: true,
       completedGetlinkBalanceReplay: false,
       externalFailures: externalFailures.length,

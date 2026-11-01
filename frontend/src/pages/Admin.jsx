@@ -1688,8 +1688,8 @@ export default function Admin({ user, language = "vi" }) {
     },
     {
       field: "getlinkDetailRetentionDaysAfterExpiry",
-      label: l("Xóa link chi tiết sau khi hết hạn (ngày)", "Purge sensitive links after expiry (days)"),
-      help: l("Xóa URL file, URL nguồn và ảnh sau khi hết hạn tải lại. Nhập 0 để giữ vĩnh viễn.", "Removes file, source and image URLs after redownload expiry. Use 0 to keep forever."),
+      label: l("Xóa link tải và ảnh sau khi hết hạn (ngày)", "Purge download and image URLs after expiry (days)"),
+      help: l("Chỉ dọn URL file tải và ảnh. Link user gửi và link xử lý giữ cùng lịch sử để admin đối soát. Nhập 0 để không dọn chi tiết.", "Only removes download and image URLs. Submitted and resolved page links stay with the audit history. Use 0 to disable detail cleanup."),
       type: "number",
       min: 0,
       max: 3650,
