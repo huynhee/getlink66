@@ -548,8 +548,9 @@ async function resolveAccountModelUrl(
     assert3D66RewrittenFootprintLink(result.url, boundSeed);
     if (!cached) {
       for (const page of new Set([seed.modelPage, boundSeed.modelPage])) {
+        const seedUrl = `${page}?${new URLSearchParams({ sof: seed.productId, st: "2" })}`;
         for (const value of new Set([cookieValue, result.cookieValue || cookieValue])) {
-          cacheFootprintModelUrl(`rewritten-footprint:${page}?sof=${seed.productId}&st2:${footprintCacheKey([], value)}`, result);
+          cacheFootprintModelUrl(`rewritten-footprint:${seedUrl}:${footprintCacheKey([], value)}`, result);
         }
       }
     }

@@ -27,7 +27,7 @@ async function fixture(t, options = {}) {
     }
   });
   const base = `https://3d.3d66.com/reshtmla/model/items/fixture/rewritten-${++sequence}.html`;
-  const source = `${base}?sof=${inputId}&sign=old-sign&r_id=old-owner`;
+  const source = `${base}?sof=${options.inputId || inputId}&sign=old-sign&r_id=old-owner`;
   const seed = () => build3D66FootprintSeed(source);
   const clean = () => `${base}?sof=${seed().productId}&st=2&sign=history-fixture`;
   const navigations = [];
@@ -99,6 +99,18 @@ test("preview and download use only the exact signed history URL and retain orig
   assert.equal(state.contexts(), 1);
   assert.deepEqual(state.navigations, [state.seed().url, "https://user.3d66.com/newUser/index/index/footprint"]);
   assert.equal(state.requests.filter((value) => value === "/api/v1/download/handle").length, 1);
+});
+
+test("a short public ID is expanded before navigation and preview/download share the st=2 cache", async (t) => {
+  const state = await fixture(t, { inputId: "AJI7972535" });
+  const preview = await fetch3D66Preview(state.source, cookie);
+  const download = await fetchFrom3D66(preview.resolvedSourceUrl, cookie, { sourceUrl: state.source });
+  assert.equal(preview.productId, "AJI7972535");
+  assert.equal(download.productId, "AJI7972535");
+  assert.equal(state.navigations[0], `${state.base}?sof=AJI896357717972535&st=2`);
+  assert.equal(new URL(download.resolvedSourceUrl).searchParams.get("sof"), "AJI896357717972535");
+  assert.ok(!state.navigations.includes(state.source));
+  assert.equal(state.contexts(), 1);
 });
 
 test("cache cannot be reused across cookies or configured required markers", async (t) => {

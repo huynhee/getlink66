@@ -52,7 +52,7 @@ export function build3D66FootprintSeed(value) {
   const productId = `A${parts[1].slice(1).toUpperCase()}${required3D66AccountMarker()}${suffix}`;
   return {
     sourceProductId: ids[0], productId, modelPage: source.origin + source.pathname,
-    url: `${source.origin}${source.pathname}?sof=${productId}&st2`,
+    url: `${source.origin}${source.pathname}?${new URLSearchParams({ sof: productId, st: "2" })}`,
   };
 }
 

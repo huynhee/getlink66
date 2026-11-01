@@ -47,8 +47,8 @@ status and the account marker, not the rest of the upstream account profile.
    Change the first letter to `A` and add the required account marker before the
    entire asset suffix. Keep the remaining letters and original path for the seed.
 3. Remove all original query parameters and fragment. Visit
-   `?sof=<rewritten-id>&st2` using the authenticated browser. The literal `&st2`
-   is intentional. An empty seed page does not mean resolution succeeded.
+   `?sof=<rewritten-id>&st=2` using the authenticated browser. `st` must have the
+   value `2`; a bare `st2` flag is invalid. An empty seed page does not mean resolution succeeded.
 4. Read account footprint history and match the **entire rewritten `sof`**. The
    account's canonical model path may differ from the submitted path. If the card
    is unsigned, physically click that exact card to trigger the site's signature

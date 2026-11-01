@@ -1798,8 +1798,8 @@ export default function Admin({ user, language = "vi" }) {
       value: "rewritten_footprint",
       label: l("Đổi ID rồi lấy từ lịch sử", "Rewrite ID, then read history"),
       help: l(
-        "Đổi ký tự đầu thành A và ID người gửi (8 số) thành ID hệ thống, giữ nguyên mã model. Mở link &st2, rồi chỉ dùng link đúng model, đúng ID và có sign từ lịch sử.",
-        "Replace the first letter with A and the sender's 8-digit ID with the system ID, preserving the asset suffix. Visit &st2, then require an exact, signed model link from history.",
+        "Đổi ký tự đầu thành A và ID người gửi (8 số) thành ID hệ thống, giữ nguyên mã model. Mở link &st=2, rồi chỉ dùng link đúng model, đúng ID và có sign từ lịch sử.",
+        "Replace the first letter with A and the sender's 8-digit ID with the system ID, preserving the asset suffix. Visit &st=2, then require an exact, signed model link from history.",
       ),
     },
     {

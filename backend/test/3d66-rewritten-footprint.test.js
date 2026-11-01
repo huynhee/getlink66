@@ -53,9 +53,10 @@ function fixture(options = {}) {
 
 test("rewrite changes only the first letter and eight sender digits, preserving the entire suffix and path", () => {
   assert.deepEqual(seed, { sourceProductId: sourceId, productId: accountId, modelPage: base,
-    url: `${base}?sof=${accountId}&st2` });
+    url: `${base}?sof=${accountId}&st=2` });
   assert.equal(new URL(seed.url).hash, "");
-  assert.deepEqual([...new URL(seed.url).searchParams.keys()], ["sof", "st2"]);
+  assert.deepEqual([...new URL(seed.url).searchParams.keys()], ["sof", "st"]);
+  assert.equal(new URL(seed.url).searchParams.get("st"), "2");
   assert.equal(build3D66FootprintSeed(`${base}?sof=ZGI000012340001234`).productId, "AGI896357710001234");
   assert.equal(build3D66FootprintSeed(`${base}?sof=${accountId}`).productId, accountId);
   assert.throws(() => assert3D66CleanModelUrl(seed.url), { code: "THREED66_CLEAN_LINK_REQUIRED" });
@@ -72,6 +73,14 @@ test("rewrite honors the required marker without depending on the legacy search 
 test("short public model IDs gain the configured marker without losing any asset digits", () => {
   assert.equal(build3D66FootprintSeed(`${base}?sof=AJI7972535`).productId, "AJI896357717972535");
   assert.throws(() => build3D66FootprintSeed(`${base}?sof=AJI12345678901`), { status: 400 });
+});
+
+test("seed serializes st=2 and never preserves a malformed st2 flag or caller-supplied navigation parameters", () => {
+  for (const query of ["st2", "st=1", "st=2&st=9&st2", "st%3D2&sign=old-fixture"]) {
+    const result = build3D66FootprintSeed(`${base}?sof=AJI7972535&${query}`);
+    assert.equal(result.url, `${base}?sof=AJI896357717972535&st=2`);
+    assert.equal(new URL(result.url).searchParams.has("st2"), false);
+  }
 });
 
 test("rewrite rejects ambiguous IDs, missing suffixes, unsafe URLs and synthetic model pages", () => {
