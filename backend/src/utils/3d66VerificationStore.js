@@ -113,17 +113,19 @@ export function create3D66VerificationStore({ now = Date.now, ttlMs = 15 * 60_00
         }
       }
     },
-    async acquireReady(cookieValue, configurationKey, productId) {
+    async acquireReady(cookieValue, configurationKey, productId, modelPage = "") {
       await sweep();
       const entry = [...entries.values()].find(item => item.cookieHash === verificationCookieHash(cookieValue)
-        && item.configurationKey === configurationKey && item.status === "verified" && item.seed.productId === productId);
+        && item.configurationKey === configurationKey && item.status === "verified" && item.seed.productId === productId
+        && (!modelPage || item.seed.modelPage === modelPage));
       if (!entry) return null;
       const previous = entry.work;
       let unlock;
       entry.work = new Promise(resolve => { unlock = resolve; });
       await previous;
       if (entry.closed || entry.status !== "verified" || entry.cookieHash !== verificationCookieHash(cookieValue)
-        || entry.configurationKey !== configurationKey) { unlock(); return null; }
+        || entry.configurationKey !== configurationKey || entry.seed.productId !== productId
+        || (modelPage && entry.seed.modelPage !== modelPage)) { unlock(); return null; }
       entry.busy = true;
       let released = false;
       return { entry, async release() {

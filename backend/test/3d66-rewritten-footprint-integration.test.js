@@ -3,7 +3,7 @@ import test from "node:test";
 import { chromium } from "playwright";
 import { fetch3D66Preview, fetchFrom3D66 } from "../src/utils/3d66Service.js";
 import { close3D66Browser, download3D66WithBrowser, inspect3D66DownloadFormatsWithBrowser,
-  open3D66RewrittenFootprintCard } from "../src/utils/3d66BrowserService.js";
+  open3D66RewrittenFootprintCard, resume3D66Verification, get3D66VerificationConfigurationKey } from "../src/utils/3d66BrowserService.js";
 import { build3D66FootprintSeed } from "../src/utils/3d66RewrittenFootprintResolver.js";
 import { threed66VerificationStore } from "../src/utils/3d66VerificationStore.js";
 
@@ -147,6 +147,63 @@ test("direct preview rejects a verification page instead of accepting an empty l
   process.env.THREED66_BROWSER_ALWAYS = "true";
   await assert.rejects(fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true }), { status: 403 });
   assert.deepEqual(state.requests, ["/api/v1/download/pop"]);
+  assert.equal(state.closed(), 0);
+  const [pending] = await threed66VerificationStore.list();
+  const entry = threed66VerificationStore.get(pending.id);
+  assert.equal(entry.page, state.pages[0]);
+  assert.equal(entry.seed.mode, "direct");
+  assert.equal(entry.seed.modelPage, state.base);
+  assert.equal(entry.initialUrl, state.clean());
+  await assert.rejects(fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true }), { status: 423 });
+  assert.deepEqual(state.requests, ["/api/v1/download/pop"]);
+});
+
+test("Direct resumes the exact retained model page without visiting history or reloading it", async t => {
+  let blocked = true;
+  const inlineFormats = [{ key: "1|2014|4", fileFormat: "1", formatVersion: "2014", rendererType: "4", isDefault: true },
+    { key: "1|max2016|3", fileFormat: "1", formatVersion: "max2016", rendererType: "3", isDefault: false }];
+  const state = await fixture(t, { challenge: () => blocked, inlineFormats });
+  process.env.THREED66_MODEL_RESOLVE_MODE = "direct";
+  process.env.THREED66_BROWSER_ALWAYS = "true";
+  await assert.rejects(fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true }), { status: 403 });
+  const [pending] = await threed66VerificationStore.list();
+  const entry = threed66VerificationStore.get(pending.id);
+  // Simulate the human's completed fixture; this never solves a real challenge.
+  blocked = false;
+  const result = await resume3D66Verification(entry);
+  assert.equal(result.usedFootprint, false);
+  assert.equal(result.url, state.clean());
+  await threed66VerificationStore.verified(entry, cookie);
+  const preview = await fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true });
+  assert.deepEqual(preview.formatOptions, inlineFormats);
+  assert.equal(state.contexts(), 1);
+  assert.equal(entry.page, state.pages[0]);
+  assert.deepEqual(state.navigations, [state.clean()]);
+  assert.equal(state.requests.some(path => path.endsWith("/handle")), false);
+  blocked = true;
+  await assert.rejects(fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true }), { status: 403 });
+  assert.equal((await threed66VerificationStore.list())[0].id, pending.id);
+  assert.equal(entry.page, state.pages[0]);
+  assert.equal(state.contexts(), 1);
+  assert.equal(state.closed(), 0);
+});
+
+test("Direct does not retain another model or another path and mode changes invalidate the pending session", async t => {
+  for (const redirect of [url => url.replace("?sof=", "-different?sof="), url => url.replace("&st=2", "99&st=2")]) {
+    const state = await fixture(t, { challenge: () => true, browserRedirect: redirect });
+    process.env.THREED66_MODEL_RESOLVE_MODE = "direct";
+    process.env.THREED66_BROWSER_ALWAYS = "true";
+    await assert.rejects(fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true }), { status: 403 });
+    assert.deepEqual(await threed66VerificationStore.list(), []);
+    assert.equal(state.closed(), 1);
+  }
+  const state = await fixture(t, { challenge: () => true });
+  process.env.THREED66_MODEL_RESOLVE_MODE = "direct";
+  process.env.THREED66_BROWSER_ALWAYS = "true";
+  await assert.rejects(fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true }), { status: 403 });
+  process.env.THREED66_MODEL_RESOLVE_MODE = "rewritten_footprint";
+  await threed66VerificationStore.assertAvailable(cookie, get3D66VerificationConfigurationKey());
+  assert.deepEqual(await threed66VerificationStore.list(), []);
   assert.equal(state.closed(), 1);
 });
 

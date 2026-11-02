@@ -89,7 +89,7 @@ export function create3D66VerificationService({ store = threed66VerificationStor
         const source = await sourceCookie(entry);
         const result = await resume(entry);
         assert3D66RewrittenFootprintLink(result.url, { ...entry.seed,
-          modelPage: result.canonicalModelPage || entry.seed.modelPage });
+          modelPage: entry.seed.mode === "direct" ? entry.seed.modelPage : result.canonicalModelPage || entry.seed.modelPage });
         const cookieValue = serializeCookies(await entry.context.cookies());
         if (!inspect3D66CookieHeader(cookieValue).hasRequiredKeys) throw failure("The verified browser has no complete source session cookie.", 422);
         await verifyAccount(entry, cookieValue);
@@ -105,7 +105,7 @@ export function create3D66VerificationService({ store = threed66VerificationStor
         } }, { new: true });
         if (!saved) throw failure("The source cookie changed. Nothing was overwritten.");
         entry.cookieHash = verificationCookieHash(cookieValue);
-        prime(entry.seed, result, cookieValue);
+        if (entry.seed.mode !== "direct") prime(entry.seed, result, cookieValue);
         await store.verified(entry, cookieValue);
         return { ok: true };
       });

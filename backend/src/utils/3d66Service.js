@@ -4,6 +4,7 @@ import { parse3D66InlineFormats } from "./3d66InlineFormats.js";
 import {
   download3D66WithBrowser,
   fetch3D66PageWithBrowser,
+  get3D66VerificationConfigurationKey,
   inspect3D66DownloadFormatsWithBrowser,
   modelIdsShareAssetIdentity,
   resolve3D66ModelUrlFromFootprint,
@@ -14,6 +15,7 @@ import { collectionModelPage, collectionResolutionConfig } from "./3d66Collectio
 import { build3D66FootprintSeed, assert3D66RewrittenFootprintLink,
   is3D66RewrittenFootprintError } from "./3d66RewrittenFootprintResolver.js";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
+import { threed66VerificationStore } from "./3d66VerificationStore.js";
 import { normalizeAccountModelId, accountMarkerFromUserId } from "./parse3d66.js";
 import { inspect3D66CookieHeader, parse3D66CookieHeader } from "./3d66CookieHeader.js";
 import {
@@ -597,6 +599,7 @@ async function resolveAccountModelUrl(
   }
   if (mode === "direct") {
     assert3D66CleanModelUrl(normalized.toString(), { expectedProductId: productId });
+    await threed66VerificationStore.assertAvailable(cookieValue, get3D66VerificationConfigurationKey());
     return {
       productId,
       url: normalized.toString(),

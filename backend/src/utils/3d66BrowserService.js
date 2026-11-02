@@ -331,15 +331,37 @@ export function get3D66VerificationConfigurationKey() {
   ])).digest("hex");
 }
 
+function directVerificationSeed(url) {
+  if (String(process.env.THREED66_MODEL_RESOLVE_MODE || "").trim().toLowerCase() !== "direct") return null;
+  try {
+    const parsed = assertSafe3D66Url(url);
+    const productId = assert3D66CleanModelUrl(url);
+    if (parsed.origin !== "https://3d.3d66.com"
+      || !/^\/reshtmla\/model\/items\/[^/]+\/[^/]+\.html$/.test(parsed.pathname)) return null;
+    return { mode: "direct", productId, modelPage: parsed.origin + parsed.pathname, url: stripInternalUrlHash(url) };
+  } catch { return null; }
+}
+
+function matchesDirectVerificationPage(url, seed) {
+  try {
+    const parsed = new URL(url);
+    return parsed.origin + parsed.pathname === seed.modelPage
+      && parsed.searchParams.getAll("sof").length === 1 && parsed.searchParams.get("sof") === seed.productId
+      && parsed.searchParams.getAll("id").every(id => id === seed.productId);
+  } catch { return false; }
+}
+
 async function withBrowserContext(url, cookieValue, callback, { allowProxyFallback = true, rewrittenFootprintSeed = null } = {}) {
   return runBrowserTask(async () => {
+    const directSeed = rewrittenFootprintSeed ? null : directVerificationSeed(url);
+    const verificationSeed = rewrittenFootprintSeed || directSeed;
     const configurationKey = get3D66VerificationConfigurationKey();
     await threed66VerificationStore.assertAvailable(cookieValue, configurationKey);
     const browser = await getSharedBrowser();
     const proxy = browserProxyConfig();
     const runWithProxy = async (currentProxy) => {
       const ready = await threed66VerificationStore.acquireReady(cookieValue, configurationKey,
-        rewrittenFootprintSeed?.productId || modelIdFromUrl(url));
+        verificationSeed?.productId || modelIdFromUrl(url), directSeed?.modelPage);
       const context = ready?.entry.context || await browser.newContext({
         userAgent: DEFAULT_USER_AGENT,
         locale: "zh-CN",
@@ -360,25 +382,35 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
         }
 
         const page = ready?.entry.page || await context.newPage();
+        let reuseVerifiedPage = false;
+        if (ready && directSeed) {
+          try { assert3D66RewrittenFootprintLink(page.url(), directSeed); reuseVerifiedPage = true; }
+          catch { /* Reload only the requested model if the idle page drifted. */ }
+        }
         try {
-          const result = await callback({ context, page });
+          const result = await callback({ context, page, reuseVerifiedPage });
           if (validationError) throw validationError;
           return result;
         } catch (error) {
           const blockedPage = get3D66VerificationPage(error);
-          if (!validationError && blockedPage && rewrittenFootprintSeed) {
+          if (!validationError && blockedPage && verificationSeed
+            && (!directSeed || matchesDirectVerificationPage(blockedPage.url(), directSeed))) {
             const entry = ready?.entry || await threed66VerificationStore.retain({
-              context, page: blockedPage, cookieValue, seed: rewrittenFootprintSeed, configurationKey,
+              context, page: blockedPage, cookieValue, seed: verificationSeed, configurationKey,
               onClose: recycleBrowserIfIdle,
             });
             if (entry) {
               try {
-                if (ready) threed66VerificationStore.pending(entry, blockedPage, rewrittenFootprintSeed);
+                if (ready) threed66VerificationStore.pending(entry, blockedPage, verificationSeed);
                 entry.initialUrl = blockedPage.url();
                 await entry.removeGuard?.();
                 entry.removeGuard = await install3D66VerificationGuard(entry);
                 retained = true;
               } catch { await threed66VerificationStore.discard(entry.id); }
+            }
+            if (directSeed) {
+              error.message = "3D66 requires administrator verification for this model. Verify the browser session before retrying.";
+              error.details = { stage: "direct-model", reason: "upstream_verification_required" };
             }
           }
           throw validationError || error;
@@ -1145,8 +1177,8 @@ async function confirmPaymentPopup(page, options = {}) {
 
 export async function fetch3D66PageWithBrowser(url, cookieValue, options = {}) {
   assertSafe3D66Url(url);
-  return withBrowserContext(url, cookieValue, async ({ context, page }) => {
-    await goto3D66Page(page, url);
+  return withBrowserContext(url, cookieValue, async ({ context, page, reuseVerifiedPage }) => {
+    if (!reuseVerifiedPage) await goto3D66Page(page, url);
 
     let metadata = await evaluateMetadataWithRetry(page);
     if (options.includeFormatOptions) {
@@ -1225,26 +1257,34 @@ export async function resume3D66Verification(entry) {
   try {
     await assert3D66FootprintPageVerified(entry.page);
     let result;
-    try {
-      const current = new URL(entry.page.url());
-      const boundSeed = { ...entry.seed, modelPage: current.origin + current.pathname };
-      assert3D66RewrittenFootprintLink(current.href, boundSeed);
-      result = { url: current.href, productId: entry.seed.productId,
-        canonicalModelPage: boundSeed.modelPage, usedFootprint: true };
-    } catch {
-      result = await resolveRewrittenFootprintHistory({
-        page: entry.page, seed: entry.seed, navigate: goto3D66Page, timeout: timeoutMs(), refreshAttempts: 1,
-        openHistoryLink: (page, card, seed) => open3D66RewrittenFootprintCard(page, card, seed, entry.context),
-      });
-      const opened = entry.context.pages().find(page => page.url() === result.url);
-      if (opened) entry.page = opened;
-      else await goto3D66Page(entry.page, result.url);
+    if (entry.seed.mode === "direct") {
+      assert3D66RewrittenFootprintLink(entry.page.url(), entry.seed);
+      result = { url: entry.page.url(), productId: entry.seed.productId,
+        canonicalModelPage: entry.seed.modelPage, usedFootprint: false };
+    } else {
+      try {
+        const current = new URL(entry.page.url());
+        const boundSeed = { ...entry.seed, modelPage: current.origin + current.pathname };
+        assert3D66RewrittenFootprintLink(current.href, boundSeed);
+        result = { url: current.href, productId: entry.seed.productId,
+          canonicalModelPage: boundSeed.modelPage, usedFootprint: true };
+      } catch {
+        result = await resolveRewrittenFootprintHistory({
+          page: entry.page, seed: entry.seed, navigate: goto3D66Page, timeout: timeoutMs(), refreshAttempts: 1,
+          openHistoryLink: (page, card, seed) => open3D66RewrittenFootprintCard(page, card, seed, entry.context),
+        });
+        const opened = entry.context.pages().find(page => page.url() === result.url);
+        if (opened) entry.page = opened;
+        else await goto3D66Page(entry.page, result.url);
+      }
     }
     await entry.page.waitForLoadState("domcontentloaded", { timeout: 10000 });
     await assert3D66FootprintPageVerified(entry.page);
     assert3D66RewrittenFootprintLink(entry.page.url(), { ...entry.seed, modelPage: result.canonicalModelPage });
     // A signature alone is not proof that the model actually loaded after human verification.
     await entry.page.locator("h1.model-name, #detail_data").first().waitFor({ state: "attached", timeout: 10000 });
+    await assert3D66FootprintPageVerified(entry.page);
+    assert3D66RewrittenFootprintLink(entry.page.url(), { ...entry.seed, modelPage: result.canonicalModelPage });
     return { ...result, url: entry.page.url() };
   } catch (error) {
     const blocked = get3D66VerificationPage(error);
@@ -1358,8 +1398,8 @@ export async function resolve3D66ModelUrlFromFootprint(
 export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue, options = {}) {
   assertSafe3D66Url(url);
   const expectedProductId = assert3D66CleanModelUrl(url);
-  return withBrowserContext(url, cookieValue, async ({ context, page }) => {
-    await goto3D66Page(page, url);
+  return withBrowserContext(url, cookieValue, async ({ context, page, reuseVerifiedPage }) => {
+    if (!reuseVerifiedPage) await goto3D66Page(page, url);
 
     const metadata = await evaluateMetadataWithRetry(page, true);
     assert3D66CleanModelUrl(page.url(), { expectedProductId });
@@ -1442,8 +1482,8 @@ export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue, op
 export async function download3D66WithBrowser(url, cookieValue, options = {}) {
   assertSafe3D66Url(url);
   const expectedProductId = assert3D66CleanModelUrl(url);
-  return withBrowserContext(url, cookieValue, async ({ context, page }) => {
-    await goto3D66Page(page, url);
+  return withBrowserContext(url, cookieValue, async ({ context, page, reuseVerifiedPage }) => {
+    if (!reuseVerifiedPage) await goto3D66Page(page, url);
 
     const metadata = await evaluateMetadataWithRetry(page, true);
     assert3D66CleanModelUrl(page.url(), { expectedProductId });

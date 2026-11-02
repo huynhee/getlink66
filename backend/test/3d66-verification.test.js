@@ -7,6 +7,7 @@ import { useMemoryDb } from "../src/config/memoryStore.js";
 
 useMemoryDb();
 const { create3D66VerificationService, verify3D66ContextAccount } = await import("../src/utils/3d66VerificationService.js");
+const { resume3D66Verification } = await import("../src/utils/3d66BrowserService.js");
 const { default: Cookie } = await import("../src/models/Cookie.js");
 const productId = "ACI896357714629725";
 const base = "https://3d.3d66.com/reshtmla/model/items/fixture/verification.html";
@@ -111,6 +112,16 @@ test("verified contexts reuse only the same account/config/model and never expir
   assert.deepEqual(events, ["close"]);
 });
 
+test("Direct verified contexts are also scoped to the exact model path", async t => {
+  const { store, entry } = await fixture(t);
+  entry.seed = { ...seed, mode: "direct" };
+  await store.verified(entry, "verified-cookie");
+  assert.equal(await store.acquireReady("verified-cookie", "fixture-config", productId, base + "-other"), null);
+  const ready = await store.acquireReady("verified-cookie", "fixture-config", productId, base);
+  assert.equal(ready.entry.page, entry.page);
+  await ready.release();
+});
+
 test("cancel waits for an active operation instead of racing it", async t => {
   const { store, entry, events } = await fixture(t);
   const { token } = await store.claim(entry.id, "a");
@@ -170,6 +181,41 @@ test("the manual request gate admits widget assets but blocks purchases, mutatio
   for (const value of blocked) assert.equal(manual3D66RequestAllowed(value, options), false, value.url());
 });
 
+test("Direct manual verification allows only its model path and never visits history", () => {
+  const scope = { productId, initialUrl: clean, mode: "direct", modelPage: base };
+  assert.equal(manual3D66RequestAllowed(request(clean, { navigation: true }), scope), true);
+  assert.equal(manual3D66RequestAllowed(request("https://captcha.aliyuncs.com/verify", { method: "POST" }), scope), true);
+  for (const navigation of [false, true]) {
+    for (const url of [clean.replace("verification.html", "other.html"), clean.replace(productId, productId + "99"),
+      "https://user.3d66.com/newUser/index/index/footprint"]) {
+      assert.equal(manual3D66RequestAllowed(request(url, { navigation }), scope), false);
+    }
+  }
+  assert.equal(manual3D66RequestAllowed(request("https://user.3d66.com/api/v1/download/handle", { method: "POST" }), scope), false);
+});
+
+test("Direct completion validates the loaded page without resolving history or accepting another path", async () => {
+  let current = clean;
+  let afterModelReady = () => {};
+  const page = {
+    url: () => current, async title() { return "Loaded model"; }, async waitForLoadState() {},
+    async goto() { assert.fail("Direct verification must not navigate to history"); },
+    locator() { return { first: () => ({ async waitFor() { afterModelReady(); } }) }; },
+  };
+  const entry = { page, seed: { ...seed, mode: "direct" } };
+  const result = await resume3D66Verification(entry);
+  assert.equal(result.url, clean);
+  assert.equal(result.usedFootprint, false);
+  assert.equal(result.canonicalModelPage, base);
+  for (const bad of [seed.url, clean.replace("verification.html", "other.html"), clean.replace(productId, productId + "99")]) {
+    current = bad;
+    await assert.rejects(resume3D66Verification(entry));
+  }
+  current = clean;
+  afterModelReady = () => { current = clean.replace("verification.html", "other.html"); };
+  await assert.rejects(resume3D66Verification(entry));
+});
+
 async function serviceFixture(t, options = {}, storeOptions = {}) {
   const state = await fixture(t, storeOptions);
   const cookie = await Cookie.create({ value: "fixture-cookie", isActive: true, status: "active" });
@@ -193,6 +239,34 @@ test("completion verifies the same context, saves the cookie once, primes only t
   await assert.rejects(service.complete(entry.id, "admin", token), { status: 410 });
   assert.deepEqual(await store.list(), []);
   assert.equal((await store.acquireReady("PHPSESSID=verified-fixture; login_sign=signed-fixture", "fixture-config", productId)).entry, entry);
+});
+
+test("Direct saves only after explicit completion and does not prime rewritten history", async t => {
+  const { service, entry, cookie, token, primes, store } = await serviceFixture(t);
+  entry.seed = { ...seed, mode: "direct" };
+  assert.equal((await Cookie.findById(cookie._id)).value, "fixture-cookie");
+  const saved = t.mock.method(Cookie, "findOneAndUpdate");
+  await service.complete(entry.id, "admin", token);
+  assert.equal(saved.mock.callCount(), 1);
+  assert.equal(primes(), 0);
+  assert.equal(entry.status, "verified");
+  const ready = await store.acquireReady("PHPSESSID=verified-fixture; login_sign=signed-fixture", "fixture-config", productId, base);
+  assert.equal(ready.entry.page, entry.page);
+  await ready.release();
+});
+
+test("Direct cannot rebind a verified result to another path before saving cookies", async t => {
+  const other = base.replace("verification.html", "other.html");
+  const { service, entry, cookie, token, primes } = await serviceFixture(t, {
+    resume: async () => ({ url: clean.replace(base, other), canonicalModelPage: other }),
+  });
+  entry.seed = { ...seed, mode: "direct" };
+  const saved = t.mock.method(Cookie, "findOneAndUpdate");
+  await assert.rejects(service.complete(entry.id, "admin", token));
+  assert.equal(saved.mock.callCount(), 0);
+  assert.equal((await Cookie.findById(cookie._id)).value, "fixture-cookie");
+  assert.equal(entry.status, "pending");
+  assert.equal(primes(), 0);
 });
 
 test("wrong account or model never saves cookies and leaves verification available", async t => {
