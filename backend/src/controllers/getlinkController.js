@@ -41,7 +41,7 @@ const PARTIAL_DOWNLOAD_SESSION_MS = 10 * 60 * 1000;
 const MAX_PREVIEW_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_PREVIEW_IMAGE_REDIRECTS = 5;
 const PREVIEW_IMAGE_TIMEOUT_MS = 15_000;
-const DOWNLOAD_FORMAT_OPTIONS_VERSION = 3;
+const DOWNLOAD_FORMAT_OPTIONS_VERSION = 4;
 
 // Per-user-per-product in-flight set: chong race condition double-charge credit
 // JS event loop la single-threaded → Set.has()/add()/delete() la atomic giua cac await.
@@ -223,6 +223,14 @@ function sanitizeDownloadFormatOptions(options = []) {
 function cacheDownloadFormatOptions(cache = {}) {
   if (Number(cache?.formatOptionsVersion || 0) !== DOWNLOAD_FORMAT_OPTIONS_VERSION) return [];
   return sanitizeDownloadFormatOptions(cache?.formatOptions);
+}
+
+function hasFreshPreviewFormats(cache = {}) {
+  if (Number(cache?.formatOptionsVersion) !== DOWNLOAD_FORMAT_OPTIONS_VERSION) return false;
+  const checkedAt = new Date(cache.formatOptionsCheckedAt || 0).getTime();
+  const age = Date.now() - checkedAt;
+  const ttl = cacheDownloadFormatOptions(cache).length ? 24 * 60 * 60 * 1000 : 30 * 1000;
+  return checkedAt > 0 && age >= 0 && age < ttl;
 }
 
 function freshDownloadFormatOptions(options = [], fallbackCache = null) {
@@ -1199,7 +1207,7 @@ export async function previewGetlink(req, res, next) {
     const hasPreviewMetadata = Boolean(
       cacheMatchesCurrentUrl && hasRealCachedTitle && hasKnownCachedPrice && hasUsablePreviewSource(cache?.imageUrl),
     );
-    if (hasPreviewMetadata && Number(cache.formatOptionsVersion) === DOWNLOAD_FORMAT_OPTIONS_VERSION) {
+    if (hasPreviewMetadata && hasFreshPreviewFormats(cache)) {
       const formatOptions = cacheDownloadFormatOptions(cache);
       return res.json({
         productId: previewProductId,
@@ -1238,6 +1246,7 @@ export async function previewGetlink(req, res, next) {
       resolvedSourceUrl: preview.resolvedSourceUrl || "",
       formatOptions: sanitizeDownloadFormatOptions(preview.formatOptions),
       formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
+      formatOptionsCheckedAt: new Date(),
     };
     await upsertProductCache(previewPayload, cache);
     res.json({

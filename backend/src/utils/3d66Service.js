@@ -1924,9 +1924,9 @@ function isWeakMetadata(metadata = {}) {
   return Boolean(!title || title === "3D model" || creditCost <= 0 || (!priceKnown && creditCost <= 1));
 }
 
-async function fetch3D66PageWithBrowserFallback(url, cookieValue, originalError = null) {
+async function fetch3D66PageWithBrowserFallback(url, cookieValue, originalError = null, options = {}) {
   try {
-    return await fetch3D66PageWithBrowser(url, cookieValue);
+    return await fetch3D66PageWithBrowser(url, cookieValue, options);
   } catch (error) {
     if (isPlaywrightMissing(error) && originalError) throw originalError;
     if (isPlaywrightMissing(error)) {
@@ -1999,7 +1999,9 @@ function mergeBrowserMetadata(metadata = {}, browserMetadata = {}, fields = {}) 
     imageUrl: browserMetadata.imageUrl || metadata.imageUrl || "",
     creditCost: browserCost > 0 ? browserCost : metadata.creditCost || 1,
     priceKnown: Boolean(browserMetadata.priceKnown || metadata.priceKnown || browserCost > 1),
-    formatOptions: metadata.formatOptions || browserMetadata.formatOptions || fields.formatOptions || [],
+    formatOptions: uniqueFormatOptions([
+      ...(metadata.formatOptions || []), ...(browserMetadata.formatOptions || []), ...(fields.formatOptions || []),
+    ]),
     selectedFormat: metadata.selectedFormat || browserMetadata.selectedFormat || fields.selectedFormat || null,
     sourceUrl: browserMetadata.sourceUrl || metadata.sourceUrl || ""
   };
@@ -2366,7 +2368,7 @@ export async function fetch3D66Preview(url, cookieValue, { includeFormatOptions 
   let html = "";
   let pageUrl = normalized.toString();
   if (shouldAlwaysUseBrowserPage()) {
-    const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue);
+    const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, null, { includeFormatOptions });
     if (browserPage) {
       browserMetadata = browserPage.metadata;
       html = browserPage.html;
@@ -2376,7 +2378,7 @@ export async function fetch3D66Preview(url, cookieValue, { includeFormatOptions 
   if (!browserMetadata) {
     ({ html, pageUrl } = await fetchModelPage(normalized.toString(), cookieValue).catch(async (error) => {
       if (!shouldFallbackToBrowserPage(error)) throw error;
-      const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error);
+      const browserPage = await fetch3D66PageWithBrowserFallback(normalized.toString(), cookieValue, error, { includeFormatOptions });
       browserMetadata = browserPage.metadata;
       return { html: browserPage.html, pageUrl: browserPage.pageUrl || normalized.toString() };
     }));
@@ -2397,7 +2399,7 @@ export async function fetch3D66Preview(url, cookieValue, { includeFormatOptions 
   if (!browserMetadata && (shouldUseBrowserPage(html, metadata, fields)
     || (includeFormatOptions && !metadata.formatOptions?.length
       && process.env.THREED66_DISABLE_BROWSER_PAGE_FALLBACK !== "true"))) {
-    const browserPage = await fetch3D66PageWithBrowserFallback(pageUrl || normalized.toString(), cookieValue);
+    const browserPage = await fetch3D66PageWithBrowserFallback(pageUrl || normalized.toString(), cookieValue, null, { includeFormatOptions });
     if (browserPage) {
       html = browserPage.html;
       pageUrl = browserPage.pageUrl;

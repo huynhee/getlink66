@@ -1016,9 +1016,25 @@ export function evaluateFormatOptions(inlineOnly = false) {
   return options.map((option) => ({ ...option, isDefault: option.key === defaultKey }));
 }
 
+export async function read3D66InlineFormats(page) {
+  await assert3D66FootprintPageVerified(page);
+  try {
+    // The model heading can render before the asynchronous format selector.
+    await page.waitForFunction(() => Array.from(document.querySelectorAll(".tp-multi-format-selector .tp-multi-format-card"))
+      .some((card) => {
+        const format = (card.getAttribute("data-file-format") || "").trim();
+        return format && format !== "0";
+      }), null, { timeout: Math.min(timeoutMs(), 6000) });
+  } catch (error) {
+    if (error.name !== "TimeoutError") throw error;
+  }
+  await assert3D66FootprintPageVerified(page);
+  const options = await page.evaluate(evaluateFormatOptions, true);
+  return Array.isArray(options) ? options : [];
+}
+
 export async function select3D66InlineFormat(page, requestedFormat = null) {
-  const result = await page.evaluate(evaluateFormatOptions, true);
-  const options = Array.isArray(result) ? result : [];
+  const options = await read3D66InlineFormats(page);
   if (!options.length) return null;
   const key = downloadFormatKey(requestedFormat);
   const selected = key ? options.find((option) => option.key === key)
@@ -1127,12 +1143,22 @@ async function confirmPaymentPopup(page, options = {}) {
   return responsePromise;
 }
 
-export async function fetch3D66PageWithBrowser(url, cookieValue) {
+export async function fetch3D66PageWithBrowser(url, cookieValue, options = {}) {
   assertSafe3D66Url(url);
   return withBrowserContext(url, cookieValue, async ({ context, page }) => {
     await goto3D66Page(page, url);
 
-    const metadata = await evaluateMetadataWithRetry(page);
+    let metadata = await evaluateMetadataWithRetry(page);
+    if (options.includeFormatOptions) {
+      const formatOptions = await read3D66InlineFormats(page);
+      metadata = await page.evaluate(evaluateMetadata);
+      if (!formatOptions.length && metadata.found && !Object.values(metadata.found).some(Boolean)) {
+        throw browserHttpError("The model page has not finished loading. Please retry the preview.", 503,
+          { stage: "preview-formats" }, "THREED66_PREVIEW_NOT_READY");
+      }
+      metadata.formatOptions = formatOptions;
+      metadata.selectedFormat = formatOptions.find((option) => option.isDefault) || formatOptions[0] || null;
+    }
     const html = await page.content();
     const browserCookies = await context.cookies();
 
@@ -1339,8 +1365,8 @@ export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue, op
     assert3D66CleanModelUrl(page.url(), { expectedProductId });
     if (options.rewrittenFootprintSeed) assert3D66RewrittenFootprintLink(page.url(), options.rewrittenFootprintSeed);
     assert3D66DownloadFields(metadata.dynamicFields?.llId || metadata.productId, page.url());
-    const inlineOptions = await page.evaluate(evaluateFormatOptions, true);
-    if (Array.isArray(inlineOptions) && inlineOptions.length) {
+    const inlineOptions = await read3D66InlineFormats(page);
+    if (inlineOptions.length) {
       return {
         metadata: { ...metadata, formatOptions: inlineOptions,
           selectedFormat: inlineOptions.find((option) => option.isDefault) || inlineOptions[0] },

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { evaluateFormatOptions, select3D66InlineFormat } from "../src/utils/3d66BrowserService.js";
+import { evaluateFormatOptions, read3D66InlineFormats, select3D66InlineFormat } from "../src/utils/3d66BrowserService.js";
 import { parseFormatOptionsFromHtml } from "../src/utils/3d66Service.js";
 
 const html = fs.readFileSync(new URL("../test/fixtures/3d66-inline-formats.html", import.meta.url), "utf8");
@@ -10,8 +10,12 @@ const formatOptions = parseFormatOptionsFromHtml(html);
 export async function verifyGetlinkFormats(page, context, { origin, screenshotRoot, viewport }) {
   const fixturePage = await context.newPage();
   try {
-    await fixturePage.setContent(html);
-    const parsed = await fixturePage.evaluate(evaluateFormatOptions, true);
+    await fixturePage.setContent("<title>Delayed model fixture</title><h1>Model ready before formats</h1>");
+    await fixturePage.evaluate((markup) => {
+      globalThis.setTimeout(() => { globalThis.document.body.insertAdjacentHTML("beforeend", markup); }, 1750);
+    }, html);
+    assert.equal(await fixturePage.locator(".tp-multi-format-card").count(), 0);
+    const parsed = await read3D66InlineFormats(fixturePage);
     assert.deepEqual(parsed.map((option) => option.key), formatOptions.map((option) => option.key));
     await fixturePage.evaluate(() => {
       const cards = [...globalThis.document.querySelectorAll(".tp-multi-format-card")];

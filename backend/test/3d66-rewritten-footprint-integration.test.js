@@ -36,6 +36,7 @@ async function fixture(t, options = {}) {
   const pages = [];
   let closedContexts = 0;
   let browserContexts = 0;
+  let formatReady = !options.delayedFormats;
   t.mock.method(chromium, "launch", async () => ({
     on() {}, isConnected: () => true, async close() {},
     async newContext() {
@@ -55,7 +56,8 @@ async function fixture(t, options = {}) {
             }, url: () => current,
             async title() { return options.challenge?.(current) ? "滑动验证页面" : "Fixture model"; },
             async waitForLoadState() {}, async waitForTimeout() {},
-            async waitForSelector() {},
+            async waitForSelector() {}, async waitForFunction() { formatReady = true; },
+            async content() { return options.html || "<title>Fixture</title>"; },
             async waitForEvent() {
               if (!options.popupChallenge) throw new Error("No fixture popup");
               pages.push(popup);
@@ -63,7 +65,7 @@ async function fixture(t, options = {}) {
             },
             waitForURL() { return options.popupChallenge ? new Promise(() => {}) : Promise.reject(new Error("No signed fixture page")); },
             async evaluate(read) {
-              if (read.name === "evaluateFormatOptions") return options.inlineFormats || [];
+              if (read.name === "evaluateFormatOptions") return formatReady ? options.inlineFormats || [] : [];
               const id = new URL(current).searchParams.get("sof");
               return { productId: id, title: "Fixture", creditCost: 28, dynamicFields: { llId: id } };
             },
@@ -124,6 +126,28 @@ test("browser inspection returns inline options without clicking download or pay
   assert.equal(result.metadata.selectedFormat.key, inlineFormats[0].key);
   assert.deepEqual(state.requests, []);
   assert.deepEqual(state.navigations, [state.clean()]);
+});
+
+test("direct preview waits for delayed DOM choices and merges them even when HTML metadata has an empty list", async (t) => {
+  const inlineFormats = [{ key: "1|2014|4", fileFormat: "1", formatVersion: "2014", rendererType: "4", isDefault: true },
+    { key: "1|max2016|3", fileFormat: "1", formatVersion: "max2016", rendererType: "3", isDefault: false }];
+  const state = await fixture(t, { inlineFormats, delayedFormats: true });
+  process.env.THREED66_MODEL_RESOLVE_MODE = "direct";
+  process.env.THREED66_BROWSER_ALWAYS = "true";
+  const result = await fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true });
+  assert.deepEqual(result.formatOptions, inlineFormats);
+  assert.equal(result.selectedFormat.key, inlineFormats[0].key);
+  assert.deepEqual(state.navigations, [state.clean()]);
+  assert.equal(state.requests.some((path) => path.endsWith("/handle")), false);
+});
+
+test("direct preview rejects a verification page instead of accepting an empty list backed by pop metadata", async (t) => {
+  const state = await fixture(t, { challenge: () => true });
+  process.env.THREED66_MODEL_RESOLVE_MODE = "direct";
+  process.env.THREED66_BROWSER_ALWAYS = "true";
+  await assert.rejects(fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true }), { status: 403 });
+  assert.deepEqual(state.requests, ["/api/v1/download/pop"]);
+  assert.equal(state.closed(), 1);
 });
 
 for (const stage of ["seed", "history"]) {
