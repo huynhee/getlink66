@@ -1,4 +1,5 @@
 import { create3D66VerificationDiagnostics } from "./3d66VerificationDiagnostics.js";
+import { is3D66FootprintHome } from "./3d66RewrittenFootprintResolver.js";
 
 const VENDOR_DOMAINS = ["alicdn.com", "aliyuncs.com", "aliyun.com"];
 const FOOTPRINT = "https://user.3d66.com/newUser/index/index/footprint";
@@ -22,8 +23,13 @@ export function manual3D66RequestAllowed(request, { productId, initialUrl, mode 
   if (request.isNavigationRequest()) {
     if (url.pathname.includes("/model/items/") && !targetModel) return false;
     let mainFrame;
-    try { const frame = request.frame(); mainFrame = frame === frame.page().mainFrame(); } catch { return false; }
-    if (mainFrame && !(url.href === initialUrl || (mode !== "direct" && url.origin + url.pathname === FOOTPRINT)
+    try { const frame = request.frame(); mainFrame = frame === frame.page().mainFrame(); }
+    catch {
+      // Chromium can emit the first popup request before its Frame exists. Keep it bound to this model.
+      return targetModel && request.method() === "GET";
+    }
+    if (mainFrame && !(url.href === initialUrl || (mode !== "direct" && (url.origin + url.pathname === FOOTPRINT
+      || is3D66FootprintHome(url.href)))
       || targetModel)) return false;
   }
   return true;

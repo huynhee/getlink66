@@ -61,6 +61,10 @@ async function fixture(t, options = {}) {
             async goto(url) {
               current = new URL(url).searchParams.has("sign") && options.browserRedirect ? options.browserRedirect(url) : url;
               navigations.push(url);
+              if (url === seed().url && options.seedHome) {
+                current = options.seedHome;
+                if (options.seedInterrupted) throw new Error("page.goto: net::ERR_ABORTED");
+              }
             }, url: () => current,
             async title() { return options.challenge?.(current) ? "滑动验证页面" : "Fixture model"; },
             async waitForLoadState() {}, async waitForTimeout() {},
@@ -284,6 +288,20 @@ test("preview and download use only the exact signed history URL and retain orig
   assert.equal(state.requests.filter((value) => value === "/api/v1/download/handle").length, 1);
 });
 
+for (const seedInterrupted of [false, true]) {
+  test(`preview follows a source-home seed redirect to signed history without repeating the seed (interrupted: ${seedInterrupted})`, async t => {
+    const state = await fixture(t, { seedHome: "https://www.3d66.com/", seedInterrupted });
+    const preview = await fetch3D66Preview(state.source, cookie);
+    const resolved = new URL(preview.resolvedSourceUrl);
+    resolved.hash = "";
+    assert.equal(resolved.href, state.clean());
+    assert.deepEqual(state.navigations, [state.seed().url, "https://user.3d66.com/newUser/index/index/footprint"]);
+    assert.deepEqual(state.requests, ["/api/v1/download/pop"]);
+    assert.equal(state.contexts(), 1);
+    assert.ok(!state.navigations.includes(state.source));
+  });
+}
+
 test("a short public ID is expanded before navigation and preview/download share the st=2 cache", async (t) => {
   const state = await fixture(t, { inputId: "AJI7972535" });
   const preview = await fetch3D66Preview(state.source, cookie);
@@ -364,18 +382,23 @@ for (const [name, browserRedirect] of [["another path", (url) => url.replace(".h
   });
 }
 
-function openedCardFixture({ navigation = "", downloadRequest = false, changedHref = false, challenge = false } = {}) {
+function openedCardFixture({ navigation = "", downloadRequest = false, changedHref = false, challenge = false,
+  redirect = "", unknownParent = false, redirectBypassesRoute = false } = {}) {
   const seed = build3D66FootprintSeed("https://3d.3d66.com/reshtmla/model/items/fixture/canonical.html?sof=GCI139810814629725");
   const unsigned = `${seed.modelPage}?sof=${seed.productId}&st=2`;
   const signed = unsigned + "&sign=real-history-fixture";
+  const finalUrl = redirect || signed;
   const actions = [];
   let guard;
-  const opened = { url: () => signed, async waitForLoadState() {},
+  let redirectListener;
+  const opened = { url: () => finalUrl, async waitForLoadState() {},
     async title() { return challenge ? "滑动验证页面" : "Fixture model"; },
-    async waitForURL(predicate) { assert.equal(predicate(new URL(signed)), true); } };
+    async waitForURL(predicate) { assert.equal(predicate(new URL(finalUrl)), true); } };
   const context = {
     async route(_pattern, callback) { guard = callback; },
     async unroute(_pattern, callback) { assert.equal(callback, guard); actions.push("unroute"); },
+    on(event, callback) { assert.equal(event, "request"); redirectListener = callback; },
+    off(event, callback) { assert.equal(event, "request"); assert.equal(callback, redirectListener); redirectListener = null; },
   };
   const page = {
     locator() { return { nth(index) {
@@ -385,6 +408,15 @@ function openedCardFixture({ navigation = "", downloadRequest = false, changedHr
         async click(options) {
           actions.push("pointer-click");
           assert.equal(options.noWaitAfter, true);
+          if (redirect) {
+            const parent = { url: () => unsigned, isNavigationRequest: () => true, redirectedFrom: () => null };
+            const next = { url: () => redirect, isNavigationRequest: () => true, redirectedFrom: () => unknownParent ? { ...parent } : parent };
+            for (const request of [parent, next]) {
+              if (request === next && redirectBypassesRoute) { redirectListener(request); actions.push("redirect-network"); continue; }
+              await guard({ request: () => request, async abort() { actions.push("blocked"); },
+                async fallback() { actions.push("network"); } });
+            }
+          }
           if (navigation || downloadRequest) {
             await guard({ request: () => ({ url: () => navigation || "https://user.3d66.com/api/v1/download/handle",
               isNavigationRequest: () => Boolean(navigation) }), async abort() { actions.push("blocked"); },
@@ -401,8 +433,43 @@ function openedCardFixture({ navigation = "", downloadRequest = false, changedHr
 
 test("history opening uses a physical pointer click and never calls the purchase API", async () => {
   const state = openedCardFixture({ downloadRequest: true });
-  assert.equal(await open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context), state.signed);
+  assert.deepEqual(await open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context),
+    { url: state.signed, canonicalModelPage: state.seed.modelPage });
   assert.deepEqual(state.actions, ["pointer-click", "blocked", "unroute"]);
+});
+
+test("the exact history request may redirect to a server-signed canonical path for the same full model ID", async () => {
+  const url = "https://3d.3d66.com/reshtmla/model/items/fixture/server-canonical.html?sof=ACI896357714629725&st=2&sign=server-fixture";
+  for (const redirectBypassesRoute of [false, true]) {
+    const state = openedCardFixture({ redirect: url, redirectBypassesRoute });
+    assert.deepEqual(await open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context),
+      { url, canonicalModelPage: "https://3d.3d66.com/reshtmla/model/items/fixture/server-canonical.html" });
+    assert.deepEqual(state.actions, ["pointer-click", "network", redirectBypassesRoute ? "redirect-network" : "network", "unroute"]);
+  }
+});
+
+test("canonical redirects reject missing signatures, other IDs, unsafe origins and an unobserved parent request", async () => {
+  const canonical = "https://3d.3d66.com/reshtmla/model/items/fixture/server-canonical.html?sof=ACI896357714629725&st=2&sign=server-fixture";
+  for (const options of [{ redirect: canonical, unknownParent: true },
+    ...[canonical.replace("&sign=server-fixture", ""), canonical.replace("server-fixture", ""),
+      canonical.replace("ACI896357714629725", "ACI89635771994629725"), canonical + "&sof=ACI896357714629725",
+      canonical.replace("https:", "http:"), canonical.replace("3d.3d66.com", "evil.test")].map(redirect => ({ redirect }))]) {
+    const state = openedCardFixture(options);
+    await assert.rejects(open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context),
+      error => error.details?.reason === "opened_model_mismatch");
+    assert.deepEqual(state.actions, ["pointer-click", "network", "blocked", "unroute"]);
+  }
+});
+
+test("unrouted redirect events cannot authorize an unsigned, wrong-ID or unrelated canonical page", async () => {
+  const canonical = "https://3d.3d66.com/reshtmla/model/items/fixture/server-canonical.html?sof=ACI896357714629725&sign=server-fixture";
+  for (const options of [{ redirect: canonical, unknownParent: true },
+    { redirect: canonical.replace("&sign=server-fixture", "") },
+    { redirect: canonical.replace("ACI896357714629725", "ACI89635771994629725") }]) {
+    const state = openedCardFixture({ ...options, redirectBypassesRoute: true });
+    await assert.rejects(open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context));
+    assert.deepEqual(state.actions, ["pointer-click", "network", "redirect-network", "unroute"]);
+  }
 });
 
 test("a history card changed before the click is rejected without navigation", async () => {

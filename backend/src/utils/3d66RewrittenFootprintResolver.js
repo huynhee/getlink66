@@ -4,19 +4,49 @@ import { assert3D66CleanModelUrl, required3D66AccountMarker } from "./3d66CleanL
 const FOOTPRINT_URL = "https://user.3d66.com/newUser/index/index/footprint";
 const MODEL_SELECTOR = 'a[href*="/reshtmla/"][href*="sof="]';
 const verificationPages = new WeakMap();
+const NETWORK_CODES = new Set(["ERR_ABORTED", "ERR_FAILED", "ERR_BLOCKED_BY_CLIENT", "ERR_CONNECTION_CLOSED",
+  "ERR_CONNECTION_RESET", "ERR_CONNECTION_REFUSED", "ERR_CONNECTION_TIMED_OUT", "ERR_TIMED_OUT",
+  "ERR_NETWORK_CHANGED", "ERR_NAME_NOT_RESOLVED", "ERR_INTERNET_DISCONNECTED", "ERR_PROXY_CONNECTION_FAILED"]);
 
 export function get3D66VerificationPage(error) {
   return verificationPages.get(error);
 }
 
-function resolutionError(reason, status = 422) {
+function resolutionError(reason, status = 422, diagnostics = {}) {
   const message = reason === "upstream_verification_required"
     ? "3D66 requires browser verification before a signed model link can be obtained. No purchase or download was attempted."
     : "Cannot obtain a verified model link from rewritten 3D66 history.";
   return Object.assign(new Error(message), {
     status, code: "THREED66_REWRITTEN_FOOTPRINT_FAILED",
-    details: { stage: "rewritten-footprint", reason },
+    details: { stage: "rewritten-footprint", reason, ...diagnostics },
   });
+}
+
+function interruptedNavigation(error) {
+  return /net::ERR_ABORTED\b|interrupted by another navigation/i.test(String(error?.message || ""));
+}
+
+async function historyOperation(operation, run) {
+  try { return await run(); }
+  catch (error) {
+    if (error?.code === "THREED66_CLEAN_LINK_REQUIRED" || is3D66RewrittenFootprintError(error)
+      || /^THREED66_(?:PROFILE_|VERIFICATION_SESSION$)/.test(error?.code || "")) throw error;
+    const message = String(error?.cause?.message || error?.message || "");
+    const matchedCode = message.match(/\bnet::(ERR_[A-Z_]+)\b/)?.[1];
+    const networkCode = NETWORK_CODES.has(matchedCode) ? matchedCode : undefined;
+    const failure = networkCode ? "network" : error?.name === "TimeoutError" || /\btimeout|timed out\b/i.test(message)
+      ? "timeout" : /target.*closed|browser.*closed|context.*closed/i.test(message) ? "browser_closed" : "unexpected_error";
+    // Playwright messages can contain signed URLs. Expose only fixed stages and bounded error categories.
+    throw resolutionError("history_operation_interrupted", 502, { operation, failure, ...(networkCode ? { networkCode } : {}) });
+  }
+}
+
+export function is3D66FootprintHome(value) {
+  try {
+    const url = new URL(value);
+    return ["https://3d66.com", "https://www.3d66.com", "https://3d.3d66.com"].includes(url.origin)
+      && !url.username && !url.password && url.pathname === "/" && !url.search;
+  } catch { return false; }
 }
 
 export function is3D66RewrittenFootprintError(error) {
@@ -88,16 +118,26 @@ export function selectRewrittenFootprintCard(links, seed) {
   return null;
 }
 
-export async function resolveRewrittenFootprintPage({ page, seed, navigate, openHistoryLink, timeout = 30000,
+export async function resolveRewrittenFootprintPage({ page, seed, navigate, navigateSeed = navigate, openHistoryLink, timeout = 30000,
   refreshAttempts = 4, refreshDelayMs = 1500, settleMs = 1200 }) {
-  await navigate(page, seed.url);
-  const opened = modelPage(page.url());
-  if (opened.searchParams.getAll("sof").length !== 1
-    || opened.searchParams.get("sof") !== seed.productId) throw resolutionError("seed_redirected");
-  // An empty seed page is expected. Only a signed, exact history entry can authorize the next step.
-  await page.waitForLoadState("domcontentloaded", { timeout: Math.min(timeout, 8000) }).catch(() => {});
-  await page.waitForTimeout(Math.min(5000, Math.max(500, Number(settleMs) || 1200)));
-  await assert3D66FootprintPageVerified(page);
+  await historyOperation("seed_navigation", async () => {
+    let navigationError;
+    try { await navigateSeed(page, seed.url); }
+    catch (error) {
+      if (!interruptedNavigation(error)) throw error;
+      navigationError = error;
+    }
+    await page.waitForLoadState("domcontentloaded", { timeout: Math.min(timeout, 8000) }).catch(() => {});
+    await page.waitForTimeout(Math.min(5000, Math.max(500, Number(settleMs) || 1200)));
+    // The seed can register a view and redirect home. That landing never authorizes a download.
+    if (!is3D66FootprintHome(page.url())) {
+      if (navigationError) throw navigationError;
+      const opened = modelPage(page.url());
+      if (opened.searchParams.getAll("sof").length !== 1 || opened.searchParams.get("sof") !== seed.productId
+        || opened.searchParams.getAll("id").some(id => id !== seed.productId)) throw resolutionError("seed_redirected");
+    }
+    await assert3D66FootprintPageVerified(page);
+  });
   return resolveRewrittenFootprintHistory({ page, seed, navigate, openHistoryLink, timeout, refreshAttempts, refreshDelayMs });
 }
 
@@ -106,27 +146,32 @@ export async function resolveRewrittenFootprintHistory({ page, seed, navigate, o
   const attempts = Math.min(8, Math.max(1, Math.floor(Number(refreshAttempts) || 4)));
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (attempt) await page.waitForTimeout(Math.min(5000, Math.max(250, Number(refreshDelayMs) || 1500)));
-    await navigate(page, FOOTPRINT_URL);
-    const history = new URL(page.url());
-    if (history.origin + history.pathname !== FOOTPRINT_URL || history.username || history.password) {
-      throw resolutionError("history_redirected");
-    }
-    await page.locator(MODEL_SELECTOR).first().waitFor({ state: "attached", timeout: Math.min(timeout, 5000) }).catch(() => {});
-    await assert3D66FootprintPageVerified(page);
-    const links = await page.locator(MODEL_SELECTOR).evaluateAll((anchors) => anchors.slice(0, 500).map((anchor) => anchor.href));
+    const links = await historyOperation("history_read", async () => {
+      await navigate(page, FOOTPRINT_URL);
+      const history = new URL(page.url());
+      if (history.origin + history.pathname !== FOOTPRINT_URL || history.username || history.password) {
+        throw resolutionError("history_redirected");
+      }
+      await page.waitForLoadState("domcontentloaded", { timeout: Math.min(timeout, 8000) }).catch(() => {});
+      await page.locator(MODEL_SELECTOR).first().waitFor({ state: "attached", timeout: Math.min(timeout, 5000) }).catch(() => {});
+      await assert3D66FootprintPageVerified(page);
+      return page.locator(MODEL_SELECTOR).evaluateAll((anchors) => anchors.slice(0, 500).map((anchor) => anchor.href));
+    });
     const selected = selectRewrittenFootprintCard(links, seed);
     if (selected) {
       const boundSeed = { ...seed, modelPage: selected.canonicalModelPage };
-      const url = new URL(selected.url).searchParams.has("sign") ? selected.url
-        : openHistoryLink ? await openHistoryLink(page, selected, boundSeed) : "";
-      assert3D66RewrittenFootprintLink(url, boundSeed);
-      return { url, productId: seed.productId, usedFootprint: true, canonicalModelPage: selected.canonicalModelPage };
+      const opened = new URL(selected.url).searchParams.has("sign") ? selected.url
+        : openHistoryLink ? await historyOperation("history_card_open", () => openHistoryLink(page, selected, boundSeed)) : "";
+      const url = typeof opened === "string" ? opened : opened.url;
+      const canonicalModelPage = typeof opened === "string" ? boundSeed.modelPage : opened.canonicalModelPage;
+      assert3D66RewrittenFootprintLink(url, { ...boundSeed, modelPage: canonicalModelPage });
+      return { url, productId: seed.productId, usedFootprint: true, canonicalModelPage };
     }
   }
   throw resolutionError("signed_model_not_found_in_history");
 }
 
-export function create3D66RewrittenFootprintResolver({ withBrowserContext, navigate, serializeCookies, openHistoryLink,
+export function create3D66RewrittenFootprintResolver({ withBrowserContext, navigate, navigateSeed = navigate, serializeCookies, openHistoryLink,
   timeoutMs = () => 30000, settleMs = () => 1200 }) {
   const pending = new Map();
   return async (url, cookieValue) => {
@@ -134,19 +179,16 @@ export function create3D66RewrittenFootprintResolver({ withBrowserContext, navig
     const key = crypto.createHash("sha256").update(JSON.stringify([cookieValue, seed.url])).digest("hex");
     if (pending.has(key)) return pending.get(key);
     const task = (async () => {
-      try {
+      return historyOperation("browser_context", async () => {
         return await withBrowserContext(seed.url, cookieValue, async ({ page, context }) => {
-          const result = await resolveRewrittenFootprintPage({ page, seed, navigate,
+          const result = await resolveRewrittenFootprintPage({ page, seed, navigate, navigateSeed,
             openHistoryLink: openHistoryLink ? (page, card, boundSeed) => openHistoryLink(page, card, boundSeed, context) : undefined,
             timeout: timeoutMs(), settleMs: settleMs(),
             refreshAttempts: process.env.THREED66_FOOTPRINT_REFRESH_ATTEMPTS,
             refreshDelayMs: process.env.THREED66_FOOTPRINT_REFRESH_DELAY_MS });
-          return { ...result, cookieValue: serializeCookies(await context.cookies()) || cookieValue };
+          return historyOperation("session_save", async () => ({ ...result, cookieValue: serializeCookies(await context.cookies()) || cookieValue }));
         }, { allowProxyFallback: false, rewrittenFootprintSeed: seed });
-      } catch (error) {
-        if (error.code === "THREED66_CLEAN_LINK_REQUIRED" || is3D66RewrittenFootprintError(error)) throw error;
-        throw resolutionError("history_operation_interrupted", 502);
-      }
+      });
     })();
     pending.set(key, task);
     try { return await task; }

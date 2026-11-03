@@ -1252,20 +1252,46 @@ export async function open3D66RewrittenFootprintCard(page, card, seed, context) 
   if (href !== card.url) throw browserHttpError("The selected history item changed. Retry the model.", 422,
     { stage: "rewritten-footprint", reason: "history_card_changed" }, "THREED66_REWRITTEN_FOOTPRINT_FAILED");
   let blockedError;
-  const guard = async (route) => {
-    const url = new URL(route.request().url());
-    if (/^\/api\/v1\/download\/(?:handle|pop)\/?$/.test(url.pathname)) return route.abort("blockedbyclient");
-    if (route.request().isNavigationRequest() && url.pathname.includes("/model/items/")
-      && (url.origin + url.pathname !== seed.modelPage || url.searchParams.getAll("sof").length !== 1
-        || url.searchParams.get("sof").toUpperCase() !== seed.productId)) {
-      blockedError = browserHttpError("A different model was opened from history.", 422,
-        { stage: "rewritten-footprint", reason: "opened_model_mismatch" }, "THREED66_REWRITTEN_FOOTPRINT_FAILED");
-      return route.abort("blockedbyclient");
+  let canonicalModelPage = seed.modelPage;
+  const allowedNavigations = new WeakSet();
+  const checkNavigation = (request) => {
+    const url = new URL(request.url());
+    if (request.isNavigationRequest() && url.pathname.includes("/model/items/")) {
+      let allowed = url.origin + url.pathname === canonicalModelPage
+        && url.searchParams.getAll("sof").length === 1 && url.searchParams.get("sof").toUpperCase() === seed.productId
+        && url.searchParams.getAll("id").every(id => id.toUpperCase() === seed.productId);
+      const parent = request.redirectedFrom?.();
+      if (!allowed && parent && allowedNavigations.has(parent)) {
+        try {
+          // Trust a new path only when the source redirects this exact request to a signed, exact-ID model.
+          assert3D66RewrittenFootprintLink(url.href, { ...seed, modelPage: url.origin + url.pathname });
+          canonicalModelPage = url.origin + url.pathname;
+          allowed = true;
+        } catch { /* Unrelated or unsigned redirects stay blocked. */ }
+      }
+      if (!allowed) {
+        blockedError = browserHttpError("A different model was opened from history.", 422,
+          { stage: "rewritten-footprint", reason: "opened_model_mismatch" }, "THREED66_REWRITTEN_FOOTPRINT_FAILED");
+        return false;
+      }
+      allowedNavigations.add(request);
     }
+    return true;
+  };
+  const guard = async (route) => {
+    const request = route.request();
+    if (/^\/api\/v1\/download\/(?:handle|pop)\/?$/.test(new URL(request.url()).pathname)) return route.abort("blockedbyclient");
+    if (!checkNavigation(request)) return route.abort("blockedbyclient");
     return route.fallback();
   };
+  const trackRedirect = request => {
+    const parent = request.redirectedFrom?.();
+    // Playwright may route only the first request of an HTTP redirect chain.
+    if (parent && allowedNavigations.has(parent)) checkNavigation(request);
+  };
   await context.route("**/*", guard);
-  const signedModel = (url) => url.origin + url.pathname === seed.modelPage
+  context.on?.("request", trackRedirect);
+  const signedModel = (url) => url.origin + url.pathname === canonicalModelPage
     && url.searchParams.get("sof")?.toUpperCase() === seed.productId && url.searchParams.has("sign");
   const opening = Promise.any([
     page.waitForEvent("popup", { timeout: Math.min(timeoutMs(), 10000) }),
@@ -1280,14 +1306,19 @@ export async function open3D66RewrittenFootprintCard(page, card, seed, context) 
     await assert3D66FootprintPageVerified(opened);
     await opened.waitForURL(signedModel, { timeout: Math.min(timeoutMs(), 10000), waitUntil: "domcontentloaded" });
     if (blockedError) throw blockedError;
-    assert3D66RewrittenFootprintLink(opened.url(), seed);
-    return opened.url();
+    assert3D66RewrittenFootprintLink(opened.url(), { ...seed, modelPage: canonicalModelPage });
+    return { url: opened.url(), canonicalModelPage };
   } catch (error) { throw blockedError || error; }
-  finally { await context.unroute("**/*", guard).catch(() => {}); }
+  finally {
+    context.off?.("request", trackRedirect);
+    await context.unroute("**/*", guard).catch(() => {});
+  }
 }
 
 export const resolve3D66ModelUrlFromRewrittenFootprint = create3D66RewrittenFootprintResolver({
   withBrowserContext, navigate: goto3D66Page, serializeCookies, timeoutMs, settleMs: postCommitWaitMs,
+  // A seed is visited once; a source-home redirect records the view even if it interrupts navigation.
+  navigateSeed: (page, url) => page.goto(stripInternalUrlHash(url), { waitUntil: navigationWaitUntil(), timeout: timeoutMs() }),
   openHistoryLink: open3D66RewrittenFootprintCard,
 });
 

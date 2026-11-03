@@ -251,9 +251,40 @@ test("the manual request gate admits widget assets but blocks purchases, mutatio
     request("https://user.3d66.com/api/v1/download/handle", { method: "POST" }),
     request("https://user.3d66.com/api/v1/order/create"), request("https://user.3d66.com/api/favorites", { method: "POST" }),
     request(clean.replace(productId, "ACI89635771994629725"), { navigation: true }),
-    request(clean + "&sof=" + productId, { navigation: true }), request("https://www.3d66.com/", { navigation: true }),
+    request(clean + "&sof=" + productId, { navigation: true }), request("https://www.3d66.com/login", { navigation: true }),
     request("https://o.alicdn.com/arbitrary.html", { navigation: true })];
   for (const value of blocked) assert.equal(manual3D66RequestAllowed(value, options), false, value.url());
+});
+
+test("only rewritten verification can return to the known source home after the seed", () => {
+  for (const home of ["https://3d66.com/", "https://www.3d66.com/", "https://3d.3d66.com/"]) {
+    assert.equal(manual3D66RequestAllowed(request(home, { navigation: true }), { productId, initialUrl: seed.url }), true);
+    assert.equal(manual3D66RequestAllowed(request(home, { navigation: true }),
+      { productId, initialUrl: clean, mode: "direct", modelPage: base }), false);
+    assert.equal(manual3D66RequestAllowed(request(home, { method: "POST", navigation: true }),
+      { productId, initialUrl: seed.url }), false);
+  }
+  for (const home of ["https://www.3d66.com/?sof=wrong", "https://login.3d66.com/", "https://www.3d66.com:8443/",
+    "http://www.3d66.com/", "https://user:pass@www.3d66.com/", "https://www.3d66.com.evil.test/"]) {
+    assert.equal(manual3D66RequestAllowed(request(home, { navigation: true }), { productId, initialUrl: seed.url }), false);
+  }
+});
+
+test("a popup without a Frame can open only the exact scoped model with GET", () => {
+  const frameless = (url, method = "GET") => ({ ...request(url, { navigation: true, method }),
+    frame() { throw new Error("Frame has not been created for this popup request"); } });
+  const scope = { productId, initialUrl: seed.url };
+  assert.equal(manual3D66RequestAllowed(frameless(clean), scope), true);
+  assert.equal(manual3D66RequestAllowed(frameless(clean.replace("verification.html", "canonical.html")), scope), true);
+  for (const url of [clean.replace(productId, productId + "99"), clean + "&sof=" + productId,
+    "https://www.3d66.com/", "https://user.3d66.com/newUser/index/index/footprint", "https://evil.test/",
+    "https://captcha.aliyuncs.com/verify", clean.replace("https:", "http:")]) {
+    assert.equal(manual3D66RequestAllowed(frameless(url), scope), false);
+  }
+  assert.equal(manual3D66RequestAllowed(frameless(clean, "POST"), scope), false);
+  const direct = { ...scope, mode: "direct", modelPage: base };
+  assert.equal(manual3D66RequestAllowed(frameless(clean), direct), true);
+  assert.equal(manual3D66RequestAllowed(frameless(clean.replace("verification.html", "canonical.html")), direct), false);
 });
 
 test("Direct manual verification allows only its model path and never visits history", () => {

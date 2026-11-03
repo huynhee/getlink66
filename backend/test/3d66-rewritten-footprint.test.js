@@ -31,7 +31,7 @@ function fixture(options = {}) {
     url: () => current,
     async title() { return options.challengeAt === current ? "滑动验证页面" : "Fixture model"; },
     async waitForLoadState() {},
-    async waitForTimeout() {},
+    async waitForTimeout() { if (current === seed.url && options.settledLanding) current = options.settledLanding; },
     locator() {
       return {
         first() { return { async waitFor() {} }; },
@@ -47,6 +47,7 @@ function fixture(options = {}) {
     actions.push(href);
     if (options.networkError) throw new Error("Fixture network failure");
     current = options.redirects?.[href] || href;
+    if (options.navigationError && href === seed.url) throw options.navigationError;
   }
   return { page, navigate, actions };
 }
@@ -123,6 +124,58 @@ test("an empty seed page can be followed by a signed history URL without opening
   assert.ok(!state.actions.includes(source));
 });
 
+for (const home of ["https://3d66.com/", "https://www.3d66.com/", "https://3d.3d66.com/"]) {
+  test(`a seed landing on ${home} continues only through its exact signed history item`, async () => {
+    const canonical = clean.replace("FixtureCaseSensitive", "AccountCanonical");
+    const unsigned = canonical.replace("&sign=fresh-fixture", "");
+    const state = fixture({ redirects: { [seed.url]: home }, links: [unsigned] });
+    let opens = 0;
+    const result = await resolveRewrittenFootprintPage({ ...state, seed, openHistoryLink: async (_page, card, boundSeed) => {
+      opens++;
+      assert.equal(card.url, unsigned);
+      assert.equal(boundSeed.productId, accountId);
+      return canonical;
+    } });
+    assert.equal(result.url, canonical);
+    assert.equal(opens, 1);
+    assert.deepEqual(state.actions, [seed.url, historyUrl]);
+    assert.ok(!state.actions.includes(source));
+  });
+}
+
+test("seed redirects settle before validation and an interrupted source-home redirect is not visited twice", async () => {
+  for (const navigationError of [undefined, new Error("page.goto: net::ERR_ABORTED at signed-secret-url"),
+    new Error("Navigation to signed-secret-url is interrupted by another navigation to source-home")]) {
+    const state = fixture({ settledLanding: "https://www.3d66.com/", navigationError });
+    assert.equal((await resolveRewrittenFootprintPage({ ...state, seed })).url, clean);
+    assert.deepEqual(state.actions, [seed.url, historyUrl]);
+  }
+});
+
+test("home is only an intermediate landing, never evidence of a model or a completed verification", async () => {
+  const home = "https://www.3d66.com/";
+  const missing = fixture({ redirects: { [seed.url]: home }, links: [] });
+  await assert.rejects(resolveRewrittenFootprintPage({ ...missing, seed, refreshAttempts: 1 }),
+    error => error.details.reason === "signed_model_not_found_in_history");
+  assert.deepEqual(missing.actions, [seed.url, historyUrl]);
+  const blocked = fixture({ redirects: { [seed.url]: home }, challengeAt: home });
+  await assert.rejects(resolveRewrittenFootprintPage({ ...blocked, seed }),
+    error => error.status === 403 && error.details.reason === "upstream_verification_required");
+  assert.deepEqual(blocked.actions, [seed.url]);
+});
+
+test("seed interruptions on the model page, timeouts and unsafe home redirects do not authorize history", async () => {
+  for (const options of [{ navigationError: new Error("net::ERR_ABORTED") },
+    { redirects: { [seed.url]: "https://www.3d66.com/" }, navigationError: Object.assign(new Error("timeout"), { name: "TimeoutError" }) },
+    ...["https://evil.test/", "https://www.3d66.com.evil.test/", "http://www.3d66.com/",
+      "https://user:pass@www.3d66.com/", "https://www.3d66.com:8443/", "https://www.3d66.com/login",
+      "https://www.3d66.com/?sof=wrong"].map(home => ({ redirects: { [seed.url]: home } }))]) {
+    const state = fixture(options);
+    await assert.rejects(resolveRewrittenFootprintPage({ ...state, seed }));
+    assert.deepEqual(state.actions, [seed.url]);
+  }
+});
+
 for (const challengeAt of [seed.url, historyUrl]) {
   test(`verification at ${challengeAt === seed.url ? "the rewritten seed" : "history"} stops before looking up or opening another model`, async () => {
     const state = fixture({ challengeAt });
@@ -182,6 +235,21 @@ test("an opened history item still requires its bound path, full ID and signatur
   }
 });
 
+test("the browser can return a canonical path obtained from a verified HTTP redirect, still requiring the full ID and sign", async () => {
+  const canonical = clean.replace("FixtureCaseSensitive", "ServerCanonical");
+  const state = fixture({ links: [seed.url] });
+  const result = await resolveRewrittenFootprintPage({ ...state, seed, openHistoryLink: async () => ({
+    url: canonical, canonicalModelPage: base.replace("FixtureCaseSensitive", "ServerCanonical"),
+  }) });
+  assert.equal(result.url, canonical);
+  assert.equal(result.canonicalModelPage, base.replace("FixtureCaseSensitive", "ServerCanonical"));
+  for (const url of [canonical.replace(accountId, accountId + "99"), canonical.replace("&sign=fresh-fixture", ""),
+    canonical.replace("https:", "http:"), canonical.replace("3d.3d66.com", "evil.test")]) {
+    await assert.rejects(resolveRewrittenFootprintPage({ ...fixture({ links: [seed.url] }), seed,
+      openHistoryLink: async () => ({ url, canonicalModelPage: base.replace("FixtureCaseSensitive", "ServerCanonical") }) }));
+  }
+});
+
 test("failures never retry with another proxy/account or degrade a healthy cookie", async () => {
   const state = fixture({ networkError: true });
   let calls = 0;
@@ -195,11 +263,42 @@ test("failures never retry with another proxy/account or degrade a healthy cooki
   await assert.rejects(resolver(source, "fixture-cookie"), (error) => {
     assert.equal(error.code, "THREED66_REWRITTEN_FOOTPRINT_FAILED");
     assert.equal(error.details.reason, "history_operation_interrupted");
+    assert.equal(error.details.operation, "seed_navigation");
     assert.equal(isSwitchable3D66Error(error), false);
     assert.equal(shouldDegrade3D66Cookie(error), false);
     return true;
   });
   assert.equal(calls, 1);
+});
+
+test("history diagnostics identify the failing step without leaking URLs, cookies or raw errors", async () => {
+  for (const operation of ["browser_context", "history_read", "history_card_open", "session_save"]) {
+    const state = fixture({ links: operation === "history_card_open" ? [seed.url] : [clean] });
+    const privateError = Object.assign(new Error("page.goto: net::ERR_CONNECTION_RESET https://private.test/?sign=private-sign cookie=private-cookie"),
+      { details: { requestedUrl: "private-url" } });
+    const resolver = create3D66RewrittenFootprintResolver({ ...state,
+      navigate: async (page, url) => {
+        if (operation === "history_read" && url === historyUrl) throw privateError;
+        return state.navigate(page, url);
+      },
+      openHistoryLink: async () => { throw privateError; },
+      serializeCookies: () => "fixture",
+      withBrowserContext: async (_url, _cookie, callback) => {
+        if (operation === "browser_context") throw privateError;
+        return callback({ page: state.page, context: { cookies: async () => {
+          if (operation === "session_save") throw privateError;
+          return [];
+        } } });
+      },
+    });
+    await assert.rejects(resolver(source, "private-cookie"), error => {
+      assert.deepEqual(error.details, { stage: "rewritten-footprint", reason: "history_operation_interrupted",
+        operation, failure: "network", networkCode: "ERR_CONNECTION_RESET" });
+      assert.equal(error.cause, undefined);
+      assert.doesNotMatch(JSON.stringify({ message: error.message, ...error }), /private-/);
+      return true;
+    });
+  }
 });
 
 test("simultaneous identical requests share a task; cookies and required markers isolate tasks", async (t) => {
