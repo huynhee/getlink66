@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 import { threed66VerificationStore } from "./3d66VerificationStore.js";
 import { install3D66VerificationGuard } from "./3d66VerificationGuard.js";
+import { create3D66BrowserSessionPool } from "./3d66BrowserSessionPool.js";
 import { create3D66CollectionResolver } from "./3d66CollectionResolver.js";
 import { create3D66RewrittenFootprintResolver, assert3D66RewrittenFootprintLink,
   assert3D66FootprintPageVerified, is3D66RewrittenFootprintError, get3D66VerificationPage,
@@ -18,8 +19,8 @@ const DEFAULT_BROWSER_QUEUE_MAX = 50;
 const DEFAULT_BROWSER_MAX_TASKS = 100;
 const DEFAULT_BROWSER_MAX_AGE_MS = 30 * 60 * 1000;
 const FOOTPRINT_URL = "https://user.3d66.com/newUser/index/index/footprint";
-const DEFAULT_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
+const BROWSER_PROFILE_VERSION = "native-full-chromium-v1";
+const RESOURCE_VENDORS = ["alicdn.com", "aliyuncs.com", "aliyun.com"];
 
 function configuredBrowserAllowedHosts() {
   return new Set(
@@ -46,7 +47,9 @@ export function isAllowed3D66BrowserRequestUrl(rawUrl) {
   }
   if (["about:", "blob:", "data:"].includes(parsed.protocol)) return true;
   if (!["http:", "https:"].includes(parsed.protocol)) return false;
-  return !parsed.username && !parsed.password && isAllowed3D66Host(parsed.hostname);
+  const vendor = parsed.protocol === "https:" && (!parsed.port || parsed.port === "443")
+    && RESOURCE_VENDORS.some(domain => parsed.hostname === domain || parsed.hostname.endsWith("." + domain));
+  return !parsed.username && !parsed.password && (isAllowed3D66Host(parsed.hostname) || vendor);
 }
 
 // Defense-in-depth SSRF guard for browser navigations and every subrequest.
@@ -93,6 +96,7 @@ let browserTasksSinceLaunch = 0;
 let browserRecyclePending = false;
 let activeBrowserTasks = 0;
 const browserTaskQueue = [];
+const browserSessions = create3D66BrowserSessionPool({ maxSessions: () => browserConcurrency() });
 
 function numberEnv(name, fallback) {
   const value = Number(process.env[name] || fallback);
@@ -136,7 +140,16 @@ function retryDelayMs(attempt) {
 }
 
 function shouldBlockAssets() {
-  return process.env.THREED66_BROWSER_BLOCK_ASSETS !== "false";
+  return process.env.THREED66_BROWSER_BLOCK_ASSETS === "true";
+}
+
+export function get3D66BrowserContextOptions(proxy) {
+  return { locale: "zh-CN", viewport: { width: 1400, height: 800 }, serviceWorkers: "block",
+    ...(proxy ? { proxy } : {}) };
+}
+
+export function get3D66BrowserLaunchOptions() {
+  return { channel: "chromium", headless: process.env.THREED66_BROWSER_HEADLESS !== "false" };
 }
 
 function booleanEnv(name, fallback = false) {
@@ -242,6 +255,7 @@ async function importChromium() {
 }
 
 async function closeActiveBrowser() {
+  await browserSessions.closeAll({ preserveState: true });
   const browser = activeBrowser;
   activeBrowser = null;
   browserPromise = null;
@@ -265,16 +279,16 @@ async function getSharedBrowser() {
   if (!browserPromise) {
     browserPromise = (async () => {
       const chromium = await importChromium();
-      const browser = await chromium.launch({
-        headless: process.env.THREED66_BROWSER_HEADLESS !== "false",
-      });
+      const browser = await chromium.launch(get3D66BrowserLaunchOptions());
       activeBrowser = browser;
       browserLaunchedAt = Date.now();
       browserTasksSinceLaunch = 0;
       browserRecyclePending = false;
       browser.on("disconnected", () => {
+        if (activeBrowser !== browser) return;
+        void browserSessions.closeAll({ preserveState: true });
         void threed66VerificationStore.closeAll();
-        if (activeBrowser === browser) activeBrowser = null;
+        activeBrowser = null;
         browserPromise = null;
         browserLaunchedAt = 0;
         browserTasksSinceLaunch = 0;
@@ -326,7 +340,8 @@ function runBrowserTask(task) {
 
 export function get3D66VerificationConfigurationKey() {
   return crypto.createHash("sha256").update(JSON.stringify([
-    browserProxyConfig(), required3D66AccountMarker(), DEFAULT_USER_AGENT,
+    browserProxyConfig(), required3D66AccountMarker(), BROWSER_PROFILE_VERSION, shouldBlockAssets(),
+    [...configuredBrowserAllowedHosts()].sort(),
     process.env.THREED66_BROWSER_HEADLESS !== "false", process.env.THREED66_MODEL_RESOLVE_MODE,
   ])).digest("hex");
 }
@@ -362,26 +377,28 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
     const runWithProxy = async (currentProxy) => {
       const ready = await threed66VerificationStore.acquireReady(cookieValue, configurationKey,
         verificationSeed?.productId || modelIdFromUrl(url), directSeed?.modelPage);
-      const context = ready?.entry.context || await browser.newContext({
-        userAgent: DEFAULT_USER_AGENT,
-        locale: "zh-CN",
-        viewport: { width: 1440, height: 900 },
-        serviceWorkers: "block",
-        ...(currentProxy ? { proxy: currentProxy } : {}),
+      const sessionKey = crypto.createHash("sha256").update(JSON.stringify([cookieValue, configurationKey, currentProxy])).digest("hex");
+      const lease = ready ? null : await browserSessions.acquire(sessionKey, async storageState => {
+        await threed66VerificationStore.assertAvailable(cookieValue, configurationKey);
+        return browser.newContext({ ...get3D66BrowserContextOptions(currentProxy), ...(storageState ? { storageState } : {}) });
       });
+      const context = ready?.entry.context || lease.context;
 
       let retained = false;
+      let succeeded = false;
       let removeFastRoutes;
       try {
         let validationError = null;
         removeFastRoutes = await installFastRoutes(context, (error) => { validationError ||= error; }, rewrittenFootprintSeed);
+        await lease?.activate();
+        await threed66VerificationStore.assertAvailable(cookieValue, configurationKey);
 
         const cookies = buildBrowserCookies(cookieValue, url);
-        if (!ready && cookies.length) {
+        if (!ready && !lease.restored && cookies.length) {
           await context.addCookies(cookies);
         }
 
-        const page = ready?.entry.page || await context.newPage();
+        const page = ready?.entry.page || context.pages()[0] || await context.newPage();
         let reuseVerifiedPage = false;
         if (ready && directSeed) {
           try { assert3D66RewrittenFootprintLink(page.url(), directSeed); reuseVerifiedPage = true; }
@@ -390,6 +407,7 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
         try {
           const result = await callback({ context, page, reuseVerifiedPage });
           if (validationError) throw validationError;
+          succeeded = true;
           return result;
         } catch (error) {
           const blockedPage = get3D66VerificationPage(error);
@@ -416,9 +434,14 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
           throw validationError || error;
         }
       } finally {
-        await removeFastRoutes?.().catch(() => {});
-        if (ready) await ready.release();
-        else if (!retained) await context.close().catch(() => {});
+        if (ready) {
+          await removeFastRoutes?.().catch(() => {});
+          if (succeeded && ready.entry.status === "verified") await browserSessions.remember(sessionKey, context);
+          await ready.release();
+        } else {
+          await lease.release({ detached: retained, discard: !succeeded && !retained });
+          await removeFastRoutes?.().catch(() => {});
+        }
         browserTasksSinceLaunch += 1;
         if (shouldRecycleBrowser()) {
           browserRecyclePending = true;
@@ -446,6 +469,7 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
 export async function close3D66Browser() {
   await threed66VerificationStore.closeAll();
   await closeActiveBrowser();
+  await browserSessions.closeAll();
 }
 
 async function installFastRoutes(context, onValidationError, rewrittenFootprintSeed) {
@@ -454,6 +478,12 @@ async function installFastRoutes(context, onValidationError, rewrittenFootprintS
     if (!isAllowed3D66BrowserRequestUrl(request.url())) {
       await route.abort("blockedbyclient");
       return;
+    }
+    if (request.isNavigationRequest() && !isAllowed3D66Host(new URL(request.url()).hostname)) {
+      // Vendor scripts/images are resources, never a new top-level destination.
+      let mainFrame = true;
+      try { const frame = request.frame(); mainFrame = frame === frame.page().mainFrame(); } catch { /* Fail closed. */ }
+      if (mainFrame) { await route.abort("blockedbyclient"); return; }
     }
     if (shouldBlockAssets() && ["image", "font", "media"].includes(request.resourceType())) {
       await route.abort("blockedbyclient");

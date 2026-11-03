@@ -36,20 +36,24 @@ async function fixture(t, options = {}) {
   const pages = [];
   let closedContexts = 0;
   let browserContexts = 0;
+  let cookieSeeds = 0;
+  const contextOptions = [];
   let formatReady = !options.delayedFormats;
   t.mock.method(chromium, "launch", async () => ({
     on() {}, isConnected: () => true, async close() {},
-    async newContext() {
+    async newContext(config) {
       browserContexts += 1;
+      contextOptions.push(config);
       let current;
       return {
-        async route() {}, async unroute() {}, async addCookies() {}, async cookies() { return []; },
+        async route() {}, async unroute() {}, async addCookies() { cookieSeeds++; }, async cookies() { return []; },
         pages: () => pages,
         async close() { closedContexts += 1; },
         async newPage() {
           const popup = { url: () => clean(), async title() { return "滑动验证页面"; },
             async waitForLoadState() {}, async waitForURL() {} };
           const page = {
+            frames: () => [{ url: () => current, async evaluate() { return []; } }],
             async goto(url) {
               current = new URL(url).searchParams.has("sign") && options.browserRedirect ? options.browserRedirect(url) : url;
               navigations.push(url);
@@ -102,8 +106,21 @@ async function fixture(t, options = {}) {
     assert.fail(`Unexpected upstream HTTP request: ${url.origin}${url.pathname}`);
   });
   return { source, base, seed, clean, navigations, requests, pages,
-    contexts: () => browserContexts, closed: () => closedContexts };
+    contexts: () => browserContexts, closed: () => closedContexts, cookieSeeds: () => cookieSeeds, contextOptions };
 }
+
+test("ordinary Direct previews keep one native browser session without re-seeding old cookies", async t => {
+  const state = await fixture(t);
+  process.env.THREED66_MODEL_RESOLVE_MODE = "direct";
+  process.env.THREED66_BROWSER_ALWAYS = "true";
+  for (let attempt = 0; attempt < 3; attempt++) await fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true });
+  assert.equal(state.contexts(), 1);
+  assert.equal(state.closed(), 0);
+  assert.equal(state.pages.length, 1);
+  assert.equal(state.cookieSeeds(), 1);
+  assert.equal("userAgent" in state.contextOptions[0], false);
+  assert.equal(state.requests.some(path => path.endsWith("/handle")), false);
+});
 
 test("verification in a history popup hands off that popup, not the history tab", async t => {
   const state = await fixture(t, { popupChallenge: true, links: url => [url.replace("&sign=history-fixture", "")] });

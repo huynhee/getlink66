@@ -8,6 +8,7 @@ import { verifyGetlinkAuditLinks } from "./qa-getlink-audit.js";
 import { verify3D66CookieCompatibility } from "./qa-3d66-cookies.js";
 import { verify3D66ManualHandoff } from "./qa-3d66-verification.js";
 import { verifyGetlinkFormats } from "./qa-getlink-formats.js";
+import { verify3D66BrowserSessions } from "./qa-3d66-browser-sessions.js";
 
 const backendPort = Number(process.env.QA_BACKEND_PORT || 5511);
 const frontendPort = Number(process.env.QA_FRONTEND_PORT || 5512);
@@ -1325,6 +1326,7 @@ async function main() {
     }
 
     browser = await chromium.launch(browserLaunchOptions());
+    await verify3D66BrowserSessions(browser);
     const errors = [];
     const externalFailures = [];
     const slowest = [];
@@ -1499,6 +1501,7 @@ async function main() {
       getlinkInlineFormats: true,
       homepagePricingRemoved: true,
       completedGetlinkBalanceReplay: false,
+      nativeBrowserSessions: true,
       externalFailures: externalFailures.length,
       externalFailureSamples: externalFailures.slice(0, 10),
       load,
