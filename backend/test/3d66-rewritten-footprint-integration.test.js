@@ -101,6 +101,7 @@ async function fixture(t, options = {}) {
     if (url.pathname === "/api/v1/download/pop") {
       assert.equal(request.body.get("sof"), seed().productId);
       return Response.json({ status: 200, data: { token: "fixture-token", is_direct_download: 1,
+        format_list: options.popFormats,
         resInfo: { sof: seed().productId, res_name: "Fixture", res_price: 28, res_type: "1",
           img: "https://respic.3d66.com/fixture.jpg" } } });
     }
@@ -165,10 +166,12 @@ test("browser inspection returns inline options without clicking download or pay
   assert.deepEqual(state.navigations, [state.clean()]);
 });
 
-test("direct preview waits for delayed DOM choices and merges them even when HTML metadata has an empty list", async (t) => {
+test("direct preview waits for delayed DOM choices and prefers them to structured HTML and pop metadata", async (t) => {
   const inlineFormats = [{ key: "1|2014|4", fileFormat: "1", formatVersion: "2014", rendererType: "4", isDefault: true },
     { key: "1|max2016|3", fileFormat: "1", formatVersion: "max2016", rendererType: "3", isDefault: false }];
-  const state = await fixture(t, { inlineFormats, delayedFormats: true });
+  const generic = [{ file_format: "1", format_version: "2014" }, { file_format: "1", format_version: "max2016" }];
+  const html = `<input id="detail_data" value='${JSON.stringify({ res: { down_file_format: generic } })}'>`;
+  const state = await fixture(t, { inlineFormats, delayedFormats: true, html, popFormats: generic });
   process.env.THREED66_MODEL_RESOLVE_MODE = "direct";
   process.env.THREED66_BROWSER_ALWAYS = "true";
   const result = await fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true });

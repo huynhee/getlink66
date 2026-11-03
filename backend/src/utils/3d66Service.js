@@ -1180,6 +1180,19 @@ function uniqueFormatOptions(options = []) {
   });
 }
 
+function mergeFormatSelections(...sources) {
+  // A rendered selector defines the actual choices; descriptive metadata is only a fallback.
+  const selector = sources.find(source => source.formatOptionsSource === "selector" && source.formatOptions?.length);
+  const formatOptions = uniqueFormatOptions(selector ? selector.formatOptions : sources.flatMap(source => source.formatOptions || []));
+  const selected = (selector ? [selector] : sources)
+    .map(source => formatOptions.find(option => option.key === source.selectedFormat?.key)).find(Boolean);
+  return {
+    formatOptions,
+    formatOptionsSource: selector ? "selector" : "metadata",
+    selectedFormat: selected || formatOptions.find(option => option.isDefault) || formatOptions[0] || null,
+  };
+}
+
 function hasFormatOptionFields(value = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const hasStructuredKey = ownProp(value, "key") && String(value.key || "").includes("|");
@@ -1333,19 +1346,17 @@ function formatOptionsFromAny(value, depth = 0) {
 }
 
 function formatOptionsFromPage(html = "", detailRes = {}) {
-  const options = uniqueFormatOptions([
-    ...parseFormatOptionsFromHtml(html),
-    ...parseFormatOptionsFromDetail(detailRes),
-  ]);
+  const selectorOptions = uniqueFormatOptions(parseFormatOptionsFromHtml(html));
+  const options = selectorOptions.length ? selectorOptions : parseFormatOptionsFromDetail(detailRes);
   const defaultIndex = options.findIndex((option) => option.isDefault);
   if (defaultIndex > 0) {
     const [defaultOption] = options.splice(defaultIndex, 1);
     options.unshift(defaultOption);
   }
-  return options.map((option, index) => ({
-    ...option,
-    isDefault: index === 0,
-  }));
+  return {
+    formatOptions: options.map((option, index) => ({ ...option, isDefault: index === 0 })),
+    formatOptionsSource: selectorOptions.length ? "selector" : "metadata",
+  };
 }
 
 function selectedOrDefaultFormat(formatOptions = [], requestedFormat = null) {
@@ -1563,7 +1574,7 @@ function parseModelMetadata(html, pageUrl, fields = {}) {
   const detailLlId = String(detailRes.ll_id || "").trim();
   const detailMatchesRequested = !requestedLlId || !detailLlId || detailLlId === requestedLlId;
   const detailForMetadata = detailMatchesRequested ? detailRes : {};
-  const formatOptions = formatOptionsFromPage(html, detailForMetadata);
+  const formats = formatOptionsFromPage(html, detailForMetadata);
   const detailImages = Array.isArray(detailForMetadata.res_img) ? detailForMetadata.res_img : [];
   const coverItem =
     detailImages.find((item) => Number(item?.img_type) === 1 && item?.is_cover) ||
@@ -1644,7 +1655,7 @@ function parseModelMetadata(html, pageUrl, fields = {}) {
     imageUrl: absoluteUrl(rawImage, pageUrl),
     creditCost: extractCreditCostFromHtml(html, { useDetailData: detailMatchesRequested }),
     priceKnown: hasKnownCreditCostInHtml(html, { useDetailData: detailMatchesRequested }),
-    formatOptions,
+    ...formats,
     sourceUrl: pageUrl
   };
 }
@@ -1667,8 +1678,8 @@ function parseDynamicFields(html, pageUrl) {
   const firstFileFormat = Array.isArray(detailForFields.down_file_format)
     ? detailForFields.down_file_format[0] || {}
     : {};
-  const formatOptions = formatOptionsFromPage(html, detailForFields);
-  const defaultFormat = formatOptions.find((option) => option.isDefault) || formatOptions[0] || {};
+  const formats = formatOptionsFromPage(html, detailForFields);
+  const defaultFormat = formats.formatOptions.find((option) => option.isDefault) || formats.formatOptions[0] || {};
 
   return {
     llId:
@@ -1728,7 +1739,7 @@ function parseDynamicFields(html, pageUrl) {
         /["']format_version["']\s*:\s*["']([^"']+)["']/i,
         /format_version\s*=\s*["']([^"']+)["']/i
       ]),
-    formatOptions
+    ...formats
   };
 }
 
@@ -1971,6 +1982,7 @@ function mergeBrowserFields(fields = {}, browserMetadata = {}) {
   const browserFields = browserMetadata.dynamicFields || {};
   return {
     ...fields,
+    ...mergeFormatSelections(browserMetadata, fields),
     llId: browserFields.llId || browserMetadata.productId || fields.llId,
     sign: browserFields.sign || fields.sign,
     token: browserFields.token || fields.token,
@@ -2002,10 +2014,7 @@ function mergeBrowserMetadata(metadata = {}, browserMetadata = {}, fields = {}) 
     imageUrl: browserMetadata.imageUrl || metadata.imageUrl || "",
     creditCost: browserCost > 0 ? browserCost : metadata.creditCost || 1,
     priceKnown: Boolean(browserMetadata.priceKnown || metadata.priceKnown || browserCost > 1),
-    formatOptions: uniqueFormatOptions([
-      ...(metadata.formatOptions || []), ...(browserMetadata.formatOptions || []), ...(fields.formatOptions || []),
-    ]),
-    selectedFormat: metadata.selectedFormat || browserMetadata.selectedFormat || fields.selectedFormat || null,
+    ...mergeFormatSelections(browserMetadata, metadata, fields),
     sourceUrl: browserMetadata.sourceUrl || metadata.sourceUrl || ""
   };
 }
@@ -2072,10 +2081,7 @@ function mergeDownloadPopFields(fields = {}, popData = {}) {
   const resInfo = popData.resInfo || {};
   const priceInfo = popData.user?.priceInfo || {};
   const discount = priceInfo.discount_arr || {};
-  const formatOptions = uniqueFormatOptions([
-    ...(fields.formatOptions || []),
-    ...formatOptionsFromAny(popData),
-  ]);
+  const formats = mergeFormatSelections(fields, { formatOptions: formatOptionsFromAny(popData) });
   const isDirectDownload =
     Number(popData.is_direct_download || 0) === 1 ||
     [3, 4].includes(Number(popData.download_status || 0));
@@ -2089,32 +2095,21 @@ function mergeDownloadPopFields(fields = {}, popData = {}) {
     couponId: fields.couponId || discount.coupon_id || "",
     voucherId: fields.voucherId || discount.voucher_id || "",
     packageId: fields.packageId || (discount.package_id ? String(discount.package_id) : ""),
-    formatOptions,
-    selectedFormat: fields.selectedFormat || formatOptions.find((option) => option.isDefault) || formatOptions[0] || null,
+    ...formats,
   };
 }
 
 function mergeDownloadPopMetadata(metadata = {}, popData = {}, pageUrl = "", fields = {}) {
   const resInfo = popData.resInfo || {};
   const popCost = Number(resInfo.res_price || extractCreditCost(popData) || 0);
-  const formatOptions = uniqueFormatOptions([
-    ...(metadata.formatOptions || []),
-    ...(fields.formatOptions || []),
-    ...formatOptionsFromAny(popData),
-  ]);
+  const formats = mergeFormatSelections(metadata, fields, { formatOptions: formatOptionsFromAny(popData) });
   return {
     productId: metadata.productId || resInfo.sof || fields.llId || "",
     title: resInfo.res_name || metadata.title || fields.llId || "3D model",
     imageUrl: absoluteUrl(resInfo.img, pageUrl) || metadata.imageUrl || "",
     creditCost: popCost > 0 ? popCost : metadata.creditCost || 1,
     priceKnown: Boolean(popCost > 0 || metadata.priceKnown),
-    formatOptions,
-    selectedFormat:
-      metadata.selectedFormat ||
-      fields.selectedFormat ||
-      formatOptions.find((option) => option.isDefault) ||
-      formatOptions[0] ||
-      null,
+    ...formats,
     sourceUrl: metadata.sourceUrl || pageUrl
   };
 }
@@ -2414,9 +2409,7 @@ export async function fetch3D66Preview(url, cookieValue, { includeFormatOptions 
   if (popPreview) {
     // The lightweight API supplies price/token but may omit the inline selector.
     metadata = { ...popPreview.metadata, ...metadata,
-      formatOptions: uniqueFormatOptions([
-        ...(metadata.formatOptions || []), ...(popPreview.metadata.formatOptions || []),
-      ]),
+      ...mergeFormatSelections(metadata, popPreview.metadata),
       creditCost: popPreview.metadata.creditCost,
       priceKnown: popPreview.metadata.priceKnown,
       title: popPreview.metadata.title || metadata.title,
@@ -2740,7 +2733,7 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   if (inspectSelectedFormat) {
     const pageFormats = formatOptionsFromPage(html);
     metadata = { ...metadata,
-      formatOptions: pageFormats.length ? pageFormats : metadata.formatOptions || [], selectedFormat: null };
+      ...(pageFormats.formatOptions.length ? pageFormats : {}), selectedFormat: null };
   }
   if (browserMetadata) {
     fields = mergeBrowserFields(fields, browserMetadata);

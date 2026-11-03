@@ -1227,6 +1227,7 @@ export async function fetch3D66PageWithBrowser(url, cookieValue, options = {}) {
           { stage: "preview-formats" }, "THREED66_PREVIEW_NOT_READY");
       }
       metadata.formatOptions = formatOptions;
+      metadata.formatOptionsSource = formatOptions.length ? "selector" : "metadata";
       metadata.selectedFormat = formatOptions.find((option) => option.isDefault) || formatOptions[0] || null;
     }
     const html = await page.content();
@@ -1478,6 +1479,7 @@ export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue, op
     if (inlineOptions.length) {
       return {
         metadata: { ...metadata, formatOptions: inlineOptions,
+          formatOptionsSource: "selector",
           selectedFormat: inlineOptions.find((option) => option.isDefault) || inlineOptions[0] },
         formatOptions: inlineOptions, pageUrl: page.url(),
         cookieValue: serializeCookies(await context.cookies()) || cookieValue, usedBrowser: true,
@@ -1497,6 +1499,7 @@ export async function inspect3D66DownloadFormatsWithBrowser(url, cookieValue, op
         metadata: {
           ...metadata,
           formatOptions,
+          formatOptionsSource: "selector",
           selectedFormat: formatOptions.find((option) => option.isDefault) || formatOptions[0] || null,
         },
         formatOptions,

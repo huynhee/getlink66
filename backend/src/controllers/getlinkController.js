@@ -41,7 +41,7 @@ const PARTIAL_DOWNLOAD_SESSION_MS = 10 * 60 * 1000;
 const MAX_PREVIEW_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_PREVIEW_IMAGE_REDIRECTS = 5;
 const PREVIEW_IMAGE_TIMEOUT_MS = 15_000;
-const DOWNLOAD_FORMAT_OPTIONS_VERSION = 4;
+const DOWNLOAD_FORMAT_OPTIONS_VERSION = 5;
 
 // Per-user-per-product in-flight set: chong race condition double-charge credit
 // JS event loop la single-threaded → Set.has()/add()/delete() la atomic giua cac await.
@@ -985,6 +985,7 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
           ),
           formatOptions,
           formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
+          formatOptionsCheckedAt: null,
           isPurchased: true,
         },
         cache,
@@ -1010,6 +1011,7 @@ async function resolveDownloadFormatSelection(url, productId, cache = null, fall
           ),
           formatOptions,
           formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
+          formatOptionsCheckedAt: null,
         },
         cache,
       );
@@ -1145,6 +1147,8 @@ export async function resolveProductCache(productId, url, downloadFormat = null)
           priceKnown,
           formatOptions: freshDownloadFormatOptions(metadata.formatOptions, metadataCache),
           formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
+          // A checkout result may only carry pop metadata, not a fresh preview selector.
+          formatOptionsCheckedAt: null,
           ...cacheFormatPatch(metadata.selectedFormat),
           isPurchased: true,
         };

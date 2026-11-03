@@ -15,10 +15,17 @@ const { previewGetlink, getLink } = await import("../src/controllers/getlinkCont
 const { default: GetlinkJob } = await import("../src/models/GetlinkJob.js");
 const { createGetlinkJob, processGetlinkJobQueue } = await import("../src/utils/getlinkJobService.js");
 const html = fs.readFileSync(new URL("./fixtures/3d66-inline-formats.html", import.meta.url), "utf8");
+const mixedHtml = fs.readFileSync(new URL("./fixtures/3d66-mixed-inline-formats.html", import.meta.url), "utf8");
 const options = parseFormatOptionsFromHtml(html);
 const cookie = "PHPSESSID=fixture; login_sign=fixture";
 const productId = "ACI896357714629725";
 const source = `https://3d.3d66.com/reshtmla/model/items/fixture/formats.html?sof=${productId}&sign=fixture`;
+const genericFormats = [{ file_format: "1", format_version: "2014" },
+  { file_format: "1", format_version: "max2016" }];
+
+function detailFormats(formats = genericFormats) {
+  return `<input id="detail_data" value='${JSON.stringify({ data: { res: { ll_id: productId, down_file_format: formats } } })}'>`;
+}
 
 function configure(t) {
   const env = { THREED66_MOCK: "false", THREED66_MODEL_RESOLVE_MODE: "direct",
@@ -36,7 +43,7 @@ function configure(t) {
   });
 }
 
-function upstream(t, pageHtml = html) {
+function upstream(t, pageHtml = html, popExtras = {}) {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (input, request = {}) => {
     const url = new URL(input);
@@ -45,6 +52,7 @@ function upstream(t, pageHtml = html) {
       token: "fixture-token", is_direct_download: 1,
       resInfo: { sof: productId, res_name: "Fixture format model", res_price: 28, res_type: "1",
         img: "https://respic.3d66.com/fixture.jpg" },
+      ...popExtras,
     } });
     if (url.pathname === "/api/v1/download/handle") return Response.json({ status: 200,
       data: { fileUrl: "https://download.3d66.com/fixture.zip" } });
@@ -86,6 +94,51 @@ test("preview reads inline choices even when the lightweight API omits them, wit
   assert.equal(calls.filter((call) => call.path.endsWith("/handle")).length, 0);
 });
 
+for (const origin of ["detail metadata", "pop API", "both sources"]) {
+  test(`inline preview does not add renderer-less duplicates from ${origin}`, async t => {
+    configure(t);
+    const calls = upstream(t, html + (origin !== "pop API" ? detailFormats() : ""),
+      origin !== "detail metadata" ? { format_list: genericFormats } : {});
+    const result = await fetch3D66Preview(source, cookie, { includeFormatOptions: true });
+    assert.deepEqual(result.formatOptions, options);
+    assert.equal(result.selectedFormat.key, options[0].key);
+    assert.equal(calls.filter(call => call.path.endsWith("/handle")).length, 0);
+  });
+}
+
+test("without a page selector, structured metadata remains a valid legacy fallback", async t => {
+  configure(t);
+  upstream(t, detailFormats(), { format_list: genericFormats });
+  const result = await fetch3D66Preview(source, cookie, { includeFormatOptions: true });
+  assert.deepEqual(result.formatOptions.map(option => option.key), ["1|2014|", "1|max2016|"]);
+});
+
+test("an inline selector retains distinct renderers of the same version and other real file types", async t => {
+  configure(t);
+  const page = html.replaceAll("max2016", "2014").replace("</ul>",
+    '<li class="tp-multi-format-card" data-file-format="3"><div class="tp-multi-format-card-title">OBJ</div></li></ul>');
+  upstream(t, page + detailFormats(), { format_list: genericFormats });
+  const result = await fetch3D66Preview(source, cookie, { includeFormatOptions: true });
+  assert.deepEqual(result.formatOptions.map(option => option.key), ["1|2014|4", "1|2014|3", "3||"]);
+});
+
+test("a single inline choice does not resurrect options from stale model metadata", async t => {
+  configure(t);
+  const page = html.replace(/<li class="tp-multi-format-card"[\s\S]*?<\/li>/, "");
+  upstream(t, page + detailFormats(), { format_list: genericFormats });
+  const result = await fetch3D66Preview(source, cookie, { includeFormatOptions: true });
+  assert.deepEqual(result.formatOptions, [options[0]]);
+});
+
+test("a synthetic renderer-less choice is rejected before calling the purchase API", async t => {
+  configure(t);
+  const calls = upstream(t, html + detailFormats(), { format_list: genericFormats });
+  await assert.rejects(fetchFrom3D66(source, cookie, {
+    downloadFormat: { fileFormat: "1", formatVersion: "2014", rendererType: "" },
+  }), { code: "THREED66_FORMAT_UNAVAILABLE" });
+  assert.equal(calls.filter(call => call.path.endsWith("/handle")).length, 0);
+});
+
 test("chosen inline format is validated and sent unchanged to the download API", async (t) => {
   configure(t);
   const calls = upstream(t);
@@ -122,6 +175,41 @@ function request(user, body = {}) {
     get: () => "fixture.example.test", ip: "127.0.0.1", path: "/fixture" };
 }
 
+test("a fresh legacy cache with five rows refreshes to exactly VR max, FBX and OBJ without touching the file or history", async t => {
+  configure(t);
+  const generic = [{ file_format: "14" }, { file_format: "3" }, { file_format: "1", format_version: "max2012" }];
+  const calls = upstream(t, mixedHtml + detailFormats(generic), { format_list: generic });
+  const user = await User.create({ email: "formats-mixed@example.test", credit: 100 });
+  const savedCookie = await Cookie.create({ value: cookie, isActive: true });
+  const fileUrl = "https://download.3d66.com/already-purchased.zip";
+  const cache = await ProductCache.create({ productId, sourceUrl: source, resolvedSourceUrl: source,
+    title: "Fixture format model", imageUrl: "https://respic.3d66.com/fixture.jpg", creditCost: 28, priceKnown: true,
+    fileUrl, downloadFormatKey: "1|max2012|4", formatOptionsVersion: 4, formatOptionsCheckedAt: new Date(),
+    formatOptions: [...parseFormatOptionsFromHtml(mixedHtml),
+      { fileFormat: "14", key: "14||" }, { fileFormat: "1", formatVersion: "max2012", key: "1|max2012|" }] });
+  const history = await Getlink.create({ userId: user._id, productId, sourceUrl: source, resolvedSourceUrl: source, fileUrl, creditUsed: 28 });
+  t.after(() => Cookie.deleteMany({ _id: savedCookie._id }));
+  t.after(() => ProductCache.deleteMany({ _id: cache._id }));
+  t.after(() => Getlink.deleteMany({ _id: history._id }));
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = response();
+    await previewGetlink(request(user), res, error => { throw error; });
+    assert.deepEqual(res.body.formatOptions.map(option => [option.key, option.label, option.size]), [
+      ["1|max2012|4", "VR max 2012", "29.45MB"], ["14|2016/2017|", "fbx 2017", "9.38MB"], ["3||", "obj", "8.03MB"],
+    ]);
+    assert.equal(res.body.selectedFormat.key, "1|max2012|4");
+  }
+  const updated = await ProductCache.findById(cache._id);
+  assert.equal(updated.fileUrl, fileUrl);
+  assert.equal(updated.downloadFormatKey, "1|max2012|4");
+  assert.equal(updated.formatOptionsVersion, 5);
+  assert.equal((await Getlink.findById(history._id)).fileUrl, fileUrl);
+  assert.equal((await User.findById(user._id)).credit, 100);
+  assert.equal(calls.filter(call => call.path.includes("/model/items/")).length, 1);
+  assert.equal(calls.filter(call => call.path.endsWith("/handle")).length, 0);
+});
+
 test("preview API refreshes old format cache, exposes options, then reuses them without billing", async (t) => {
   configure(t);
   const calls = upstream(t);
@@ -138,7 +226,7 @@ test("preview API refreshes old format cache, exposes options, then reuses them 
     assert.equal(res.body.hasDownloadFormats, true);
     assert.equal(res.body.selectedFormat.key, options[0].key);
   }
-  assert.equal((await ProductCache.findById(cache._id)).formatOptionsVersion, 4);
+  assert.equal((await ProductCache.findById(cache._id)).formatOptionsVersion, 5);
   assert.ok((await ProductCache.findById(cache._id)).formatOptionsCheckedAt);
   assert.equal(calls.filter((call) => call.path.includes("/model/items/")).length, 1);
   assert.equal(calls.filter((call) => call.path.endsWith("/handle")).length, 0);
@@ -150,7 +238,7 @@ test("forged option or inconsistent key cannot bypass a preview choice or debit 
   configure(t);
   const user = await User.create({ email: "formats-forged@example.test", credit: 100 });
   const cache = await ProductCache.create({ productId, sourceUrl: source, title: "Fixture", creditCost: 28,
-    priceKnown: true, formatOptionsVersion: 4, formatOptions: options });
+    priceKnown: true, formatOptionsVersion: 5, formatOptions: options });
   t.after(() => ProductCache.deleteMany({ _id: cache._id }));
   t.mock.method(globalThis, "fetch", () => assert.fail("No upstream request for a forged option"));
   for (const format of [{ ...options[1], key: "1|9999|3", formatVersion: "9999" }, { ...options[1], rendererType: "4" }]) {
@@ -187,7 +275,7 @@ test("a preview selection runs through the real job executor, bills once and rec
   const cache = await ProductCache.create({ productId, sourceUrl: source, resolvedSourceUrl: source,
     title: "Fixture format model", imageUrl: "https://respic.3d66.com/fixture.jpg", creditCost: 28, priceKnown: true,
     fileUrl: "https://download.3d66.com/fixture.zip", isPurchased: true,
-    formatOptionsVersion: 4, formatOptions: options, downloadFormatKey: selected.key,
+    formatOptionsVersion: 5, formatOptions: options, downloadFormatKey: selected.key,
     fileFormat: selected.fileFormat, formatVersion: selected.formatVersion, rendererType: selected.rendererType,
     rendererLabel: selected.rendererLabel, formatLabel: selected.label, formatSize: selected.size });
   t.after(() => ProductCache.deleteMany({ _id: cache._id }));
@@ -213,7 +301,7 @@ test("an expired empty format result is re-read without clearing purchased files
   const fileUrl = "https://download.3d66.com/already-purchased.zip";
   const cache = await ProductCache.create({ productId, sourceUrl: source, resolvedSourceUrl: source,
     title: "Fixture format model", imageUrl: "https://respic.3d66.com/fixture.jpg", creditCost: 28, priceKnown: true,
-    fileUrl, formatOptions: [], formatOptionsVersion: 4, formatOptionsCheckedAt: new Date(Date.now() - 31000) });
+    fileUrl, formatOptions: [], formatOptionsVersion: 5, formatOptionsCheckedAt: new Date(Date.now() - 31000) });
   t.after(() => Cookie.deleteMany({ _id: savedCookie._id }));
   t.after(() => ProductCache.deleteMany({ _id: cache._id }));
   const res = response();
