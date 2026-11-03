@@ -6,6 +6,16 @@ function sessionError(message, status = 409) {
   return Object.assign(new Error(message), { status, code: "THREED66_VERIFICATION_SESSION" });
 }
 
+export async function capture3D66VerificationScreenshot(page) {
+  const capture = () => page.screenshot({ type: "jpeg", quality: 65, timeout: 5000 });
+  try { return await capture(); }
+  catch (error) {
+    if (!String(error.message).includes("Unable to capture screenshot")) throw error;
+    await new Promise(resolve => setTimeout(resolve, 150));
+    return capture();
+  }
+}
+
 export function create3D66VerificationStore({ now = Date.now, ttlMs = 15 * 60_000,
   readyTtlMs = 5 * 60_000, leaseMs = 90_000, maxSessions = 2 } = {}) {
   const entries = new Map();
@@ -148,6 +158,7 @@ export function create3D66VerificationStore({ now = Date.now, ttlMs = 15 * 60_00
         if (entry.status !== "pending") throw sessionError("This session is already verified.", 410);
         if (entry.owner && entry.leaseUntil > now()) throw sessionError("Another operator already controls this session.");
         if (entry.pointerDown) await entry.page.mouse.up().catch(() => {});
+        await entry.page.bringToFront?.();
         entry.pointerDown = false;
         entry.owner = String(owner);
         entry.token = crypto.randomBytes(24).toString("hex");
@@ -161,10 +172,11 @@ export function create3D66VerificationStore({ now = Date.now, ttlMs = 15 * 60_00
       return exclusive(entry, current => { owned(id, owner, token); return callback(current); });
     },
     async frame(id, owner, token) {
-      return this.operate(id, owner, token, async entry => ({
-        image: `data:image/jpeg;base64,${(await entry.page.screenshot({ type: "jpeg", quality: 65, timeout: 5000 })).toString("base64")}`,
-        viewport: entry.page.viewportSize(), title: String(await entry.page.title()).slice(0, 160), session: metadata(entry),
-      }));
+      return this.operate(id, owner, token, async entry => {
+        const screenshot = await capture3D66VerificationScreenshot(entry.page);
+        return { image: `data:image/jpeg;base64,${screenshot.toString("base64")}`,
+          viewport: entry.page.viewportSize(), title: String(await entry.page.title()).slice(0, 160), session: metadata(entry) };
+      });
     },
     async input(id, owner, token, input) {
       if (!input || !["down", "move", "up"].includes(input.type)

@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import { chromium } from "playwright";
 import { create3D66BrowserProfileStore } from "../src/utils/3d66BrowserProfileStore.js";
 import { create3D66BrowserSessionPool } from "../src/utils/3d66BrowserSessionPool.js";
 import { get3D66BrowserContextOptions, get3D66BrowserLaunchOptions } from "../src/utils/3d66BrowserService.js";
+import { capture3D66VerificationScreenshot } from "../src/utils/3d66VerificationStore.js";
 
 const mode = process.argv[2];
 const root = process.argv[3];
@@ -26,13 +28,21 @@ try {
   });
   const page = await lease.context.newPage();
   await page.goto("https://www.3d66.com/fixture/durable-session");
+  await page.bringToFront();
+  await page.evaluate(() => new Promise(resolve => globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve))));
   if (mode === "write") {
     await lease.context.addCookies([{ name: "fixture-persistent-login", value: "fixture-session-cookie", url: "https://www.3d66.com" }]);
     await page.evaluate(() => globalThis.localStorage.setItem("fixture-preference", "remembered-across-processes"));
   } else {
     assert.equal((await lease.context.cookies()).find(item => item.name === "fixture-persistent-login")?.value, "fixture-session-cookie");
     assert.equal(await page.evaluate(() => globalThis.localStorage.getItem("fixture-preference")), "remembered-across-processes");
-    await page.screenshot({ path: path.join(root, "headed-fixture.png") });
+    const screenshot = await capture3D66VerificationScreenshot(page);
+    await fs.writeFile(path.join(root, "headed-fixture.jpg"), screenshot);
+    const metadata = await sharp(screenshot).metadata();
+    const statistics = await sharp(screenshot).stats();
+    assert.equal(metadata.width, 1400);
+    assert.equal(metadata.height, 800);
+    assert.ok(statistics.channels.some(channel => channel.stdev > 5), "The headed screenshot must not be blank");
   }
   await lease.release();
   assert.equal(opened, 1, "Saving state must not open auxiliary tabs");

@@ -75,6 +75,31 @@ test("manual pointer relay accepts only bounded, sequenced physical events and r
   assert.equal((await store.list())[0].claimed, false);
 });
 
+test("opening a manual session activates only its retained page and retries one transient capture failure", async t => {
+  const { store, entry, page } = await fixture(t);
+  const activate = t.mock.fn(async () => {});
+  page.bringToFront = activate;
+  let captures = 0;
+  t.mock.method(page, "screenshot", async () => {
+    captures++;
+    if (captures === 1) throw new Error("Page.captureScreenshot: Unable to capture screenshot");
+    return Buffer.from("headed-fixture");
+  });
+  const { token } = await store.claim(entry.id, "admin");
+  const result = await store.frame(entry.id, "admin", token);
+  assert.equal(activate.mock.callCount(), 1);
+  assert.equal(captures, 2);
+  assert.equal(result.image, `data:image/jpeg;base64,${Buffer.from("headed-fixture").toString("base64")}`);
+});
+
+test("closed page or other screenshot errors are not blindly retried", async t => {
+  const { store, entry, page } = await fixture(t);
+  const capture = t.mock.method(page, "screenshot", async () => { throw new Error("Target page closed fixture"); });
+  const { token } = await store.claim(entry.id, "admin");
+  await assert.rejects(store.frame(entry.id, "admin", token), /Target page closed fixture/);
+  assert.equal(capture.mock.callCount(), 1);
+});
+
 test("pending direct verification reports the direct stage, not rewritten history", async t => {
   const { store, entry } = await fixture(t);
   entry.seed = { ...entry.seed, mode: "direct" };
