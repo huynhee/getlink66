@@ -1,3 +1,5 @@
+import { create3D66VerificationDiagnostics } from "./3d66VerificationDiagnostics.js";
+
 const VENDOR_DOMAINS = ["alicdn.com", "aliyuncs.com", "aliyun.com"];
 const FOOTPRINT = "https://user.3d66.com/newUser/index/index/footprint";
 
@@ -27,10 +29,20 @@ export function manual3D66RequestAllowed(request, { productId, initialUrl, mode 
   return true;
 }
 
-export async function install3D66VerificationGuard(entry) {
-  const guard = route => manual3D66RequestAllowed(route.request(), {
-    productId: entry.seed.productId, initialUrl: entry.initialUrl, mode: entry.seed.mode, modelPage: entry.seed.modelPage,
-  }) ? route.continue() : route.abort("blockedbyclient");
-  await entry.context.route("**/*", guard);
-  return () => entry.context.unroute("**/*", guard);
+export async function install3D66VerificationGuard(entry, diagnosticsOptions) {
+  const diagnostics = create3D66VerificationDiagnostics(entry, diagnosticsOptions);
+  const guard = route => {
+    const request = route.request();
+    if (manual3D66RequestAllowed(request, {
+      productId: entry.seed.productId, initialUrl: entry.initialUrl, mode: entry.seed.mode, modelPage: entry.seed.modelPage,
+    })) return route.continue();
+    diagnostics.blocked(request);
+    return route.abort("blockedbyclient");
+  };
+  try { await entry.context.route("**/*", guard); }
+  catch (error) { diagnostics.close(); throw error; }
+  return async () => {
+    try { await entry.context.unroute("**/*", guard); }
+    finally { diagnostics.close(); }
+  };
 }

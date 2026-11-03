@@ -41,6 +41,19 @@ this patch.
 
 ## Verification and limits
 
+Pending Admin verification sessions emit `THREED66_VERIFICATION_NETWORK` logs
+for application-policy blocks, failed requests, HTTP errors and API response
+status codes. Logs contain only the internal verification session ID, trusted
+host (or `external`), HTTP method, resource type, event kind and safe error/status
+code. They never contain paths, queries, headers, cookies, tokens or bodies.
+Duplicate events are suppressed, with at most twenty distinct records per
+context per minute. Observers detach when the guard is removed or the context
+closes. No request allowlist or purchase/download rule is relaxed.
+
+An accepted pointer request or an upstream HTTP 200 does not prove that the
+source accepted manual verification. A person must still operate the challenge;
+these logs diagnose the transport without inspecting or solving the challenge.
+
 Run `npm run check`. Regression tests cover same-profile serialization,
 cross-profile isolation, native context options, source-only snapshots, memory
 expiry/capacity, browser recycling, shutdown races and exact manual verification
