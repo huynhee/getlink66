@@ -335,8 +335,22 @@ export async function createGetlinkJob({ userId, body = {} }) {
     throw error;
   }
 
+  const requestedFormat = normalizeRequestedFormat(body.downloadFormat);
+  const requestFingerprint = crypto.createHash("sha256").update(JSON.stringify([
+    input, Boolean(body.includePreviewImage), body.confirmedCreditCost == null ? null : Number(body.confirmedCreditCost),
+    requestedFormat ? [requestedFormat.key, requestedFormat.fileFormat, requestedFormat.formatVersion, requestedFormat.rendererType] : null,
+  ])).digest("hex");
+  const replay = (existing) => {
+    if (existing.input !== input || Boolean(existing.includePreviewImage) !== Boolean(body.includePreviewImage)
+      || (existing.requestFingerprint && existing.requestFingerprint !== requestFingerprint)) {
+      throw Object.assign(new Error("This request ID belongs to a different model or file selection. Preview the model again."), {
+        status: 409, code: "GETLINK_IDEMPOTENCY_CONFLICT",
+      });
+    }
+    return { job: existing, created: false };
+  };
   const idempotent = await GetlinkJob.findOne({ userId, clientRequestId });
-  if (idempotent) return { job: idempotent, created: false };
+  if (idempotent) return replay(idempotent);
   const active = await GetlinkJob.findOne(activeQuery(userId));
   if (active) {
     const error = new Error("Another getlink request is already processing.");
@@ -352,10 +366,11 @@ export async function createGetlinkJob({ userId, body = {} }) {
       userId,
       activeUserId: userId,
       clientRequestId,
+      requestFingerprint,
       input,
       includePreviewImage: Boolean(body.includePreviewImage),
       confirmedCreditCost: body.confirmedCreditCost ?? null,
-      requestedFormat: normalizeRequestedFormat(body.downloadFormat),
+      requestedFormat,
       status: "queued",
       stage: "queued",
       progress: 10,
@@ -367,7 +382,7 @@ export async function createGetlinkJob({ userId, body = {} }) {
   } catch (error) {
     if (error?.code !== 11000) throw error;
     const existing = await GetlinkJob.findOne({ $or: [{ userId, clientRequestId }, activeQuery(userId)] });
-    if (existing && String(existing.clientRequestId) === clientRequestId) return { job: existing, created: false };
+    if (existing && String(existing.clientRequestId) === clientRequestId) return replay(existing);
     const conflict = new Error("Another getlink request is already processing.");
     conflict.status = 409;
     conflict.code = "GETLINK_JOB_ACTIVE";

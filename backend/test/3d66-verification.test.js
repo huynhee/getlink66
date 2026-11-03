@@ -75,6 +75,17 @@ test("manual pointer relay accepts only bounded, sequenced physical events and r
   assert.equal((await store.list())[0].claimed, false);
 });
 
+test("pending direct verification reports the direct stage, not rewritten history", async t => {
+  const { store, entry } = await fixture(t);
+  entry.seed = { ...entry.seed, mode: "direct" };
+  await assert.rejects(store.assertAvailable("fixture-cookie", "fixture-config"), error => {
+    assert.equal(error.status, 423);
+    assert.equal(error.details.stage, "direct-model");
+    assert.equal(error.details.reason, "upstream_verification_pending");
+    return true;
+  });
+});
+
 test("leases expire independently of the browser session; expired sessions close and can be retried", async t => {
   const { store, entry, advance, events } = await fixture(t, { ttlMs: 10000, leaseMs: 1000 });
   const { token } = await store.claim(entry.id, "a");

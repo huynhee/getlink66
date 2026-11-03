@@ -30,6 +30,25 @@ function publicRequest(user) {
   };
 }
 
+test("a request ID cannot return a job for changed input, price or format", async () => {
+  const user = await User.create({ email: "job-fingerprint@example.test", credit: 100 });
+  const body = { modelId: "MODEL123456", clientRequestId: "fingerprint_request_1", confirmedCreditCost: 28,
+    downloadFormat: { key: "1|2014|4", fileFormat: "1", formatVersion: "2014", rendererType: "4" } };
+  const { job } = await createGetlinkJob({ userId: user._id, body });
+  for (const patch of [{ modelId: "MODEL654321" }, { includePreviewImage: true }, { confirmedCreditCost: 30 },
+    { downloadFormat: { key: "1|max2016|3", fileFormat: "1", formatVersion: "max2016", rendererType: "3" } }]) {
+    await assert.rejects(createGetlinkJob({ userId: user._id, body: { ...body, ...patch } }),
+      { status: 409, code: "GETLINK_IDEMPOTENCY_CONFLICT" });
+  }
+  // Selecting a format later must not change the identity of the initial request.
+  await GetlinkJob.findByIdAndUpdate(job._id, { requestedFormat: { key: "1|max2016|3" } });
+  assert.equal((await createGetlinkJob({ userId: user._id, body })).created, false);
+  assert.equal(await GetlinkJob.countDocuments({ userId: user._id }), 1);
+  assert.equal((await User.findById(user._id)).credit, 100);
+  await cancelGetlinkJob(user._id, job._id);
+  await acknowledgeGetlinkJob(user._id, job._id);
+});
+
 for (const code of ["THREED66_CLEAN_LINK_REQUIRED", "THREED66_COLLECTION_RESOLUTION_FAILED", "THREED66_REWRITTEN_FOOTPRINT_FAILED"]) {
   test(`${code} failures are terminal even when their status is 503`, async () => {
     const user = await User.create({ email: `job-${code.toLowerCase()}@example.test`, credit: 100 });

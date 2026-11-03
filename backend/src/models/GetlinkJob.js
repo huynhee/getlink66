@@ -6,6 +6,7 @@ const getlinkJobSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     activeUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     clientRequestId: { type: String, required: true, trim: true },
+    requestFingerprint: { type: String, default: "" },
     input: { type: String, required: true, trim: true },
     includePreviewImage: { type: Boolean, default: false },
     confirmedCreditCost: { type: Number, min: 0, default: null },

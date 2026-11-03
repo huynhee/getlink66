@@ -11,6 +11,7 @@ import {
   setFaviconProgress,
 } from "../utils/faviconProgress.js";
 import { useGetlinkJob } from "../contexts/GetlinkJobContext.jsx";
+import { restoreGetlinkDraft, getlinkRequestId } from "../utils/getlinkDraft.js";
 
 function isUsableFormatOption(option = {}) {
   const fileFormat = String(option.fileFormat || option.file_format || String(option.key || "").split("|")[0] || "").trim();
@@ -99,6 +100,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
   const [previewImageDownloadUrl, setPreviewImageDownloadUrl] = useState("");
   const [preview, setPreview] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [previewCheckedAt, setPreviewCheckedAt] = useState(0);
   const [includePreviewImage, setIncludePreviewImage] = useState(false);
   const [selectedFormatKey, setSelectedFormatKey] = useState("");
   const [pendingFormatSelection, setPendingFormatSelection] = useState(null);
@@ -107,12 +109,15 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
-  const [modelResolveMode, setModelResolveMode] = useState("search");
+  const [modelResolveMode, setModelResolveMode] = useState("");
+  const previewRequestRef = useRef(null);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
   const progressTimerRef = useRef(null);
   const resetTimerRef = useRef(null);
   const formatDialogDismissedRef = useRef("");
+  const formatSelectionJobRef = useRef("");
+  const dismissedJobRef = useRef("");
   const acknowledgeInFlightRef = useRef(false);
   const [draftOwner, setDraftOwner] = useState("");
   const {
@@ -147,28 +152,38 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
     null;
 
   useEffect(() => {
-    if (initialUrl) setUrl(initialUrl);
-  }, [initialUrl]);
-
-  useEffect(() => {
+    previewRequestRef.current?.abort();
+    previewRequestRef.current = null;
+    setLoading(false);
+    setPreview(null);
+    setPreviewUrl("");
+    setPreviewCheckedAt(0);
+    setSelectedFormatKey("");
+    setResult("");
+    setPreviewImageDownloadUrl("");
+    setError("");
+    setPendingFormatSelection(null);
+    setDraftOwner("");
     if (!userId) {
-      setDraftOwner("");
+      setUrl(initialUrl);
       return;
     }
+    if (!modelResolveMode) return;
+    let stored = null;
     try {
-      const stored = JSON.parse(window.localStorage.getItem(draftStorageKey(userId)) || "null");
-      if (stored && typeof stored === "object") {
-        if (!initialUrl && stored.url) setUrl(String(stored.url));
-        setIncludePreviewImage(Boolean(stored.includePreviewImage));
-        if (stored.preview && typeof stored.preview === "object") setPreview(stored.preview);
-        if (stored.previewUrl) setPreviewUrl(String(stored.previewUrl));
-        if (stored.selectedFormatKey) setSelectedFormatKey(String(stored.selectedFormatKey));
-      }
+      stored = JSON.parse(window.localStorage.getItem(draftStorageKey(userId)) || "null");
     } catch {
       // A malformed draft is ignored and replaced by the next valid state.
     }
+    const draft = restoreGetlinkDraft(stored, { initialUrl, resolveMode: modelResolveMode });
+    setUrl(draft.url);
+    setIncludePreviewImage(draft.includePreviewImage);
+    setPreview(draft.preview);
+    setPreviewUrl(draft.previewUrl);
+    setPreviewCheckedAt(draft.previewCheckedAt);
+    setSelectedFormatKey(draft.selectedFormatKey);
     setDraftOwner(String(userId));
-  }, [initialUrl, userId]);
+  }, [initialUrl, userId, modelResolveMode]);
 
   useEffect(() => {
     if (!userId || draftOwner !== String(userId) || job) return;
@@ -178,22 +193,28 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
         includePreviewImage,
         preview,
         previewUrl,
+        previewCheckedAt,
+        resolveMode: modelResolveMode,
         selectedFormatKey,
       }));
     } catch {
       // Draft persistence is best effort only.
     }
-  }, [draftOwner, includePreviewImage, job, preview, previewUrl, selectedFormatKey, url, userId]);
+  }, [draftOwner, includePreviewImage, job, modelResolveMode, preview, previewCheckedAt, previewUrl, selectedFormatKey, url, userId]);
 
   useEffect(() => {
-    if (!job) return;
+    if (!job || !modelResolveMode) return;
+    if (["completed", "failed", "canceled"].includes(job.status) && dismissedJobRef.current === job.id) return;
     if (job.status === "awaiting_format") {
       if (formatDialogDismissedRef.current !== job.id) {
         setPendingFormatSelection(job);
-        const defaultFormat = (job.formatOptions || []).find((option) => option.isDefault)
-          || job.formatOptions?.[0]
-          || job.selectedFormat;
-        setSelectedFormatKey(defaultFormat?.key || "");
+        if (formatSelectionJobRef.current !== job.id) {
+          const defaultFormat = (job.formatOptions || []).find((option) => option.isDefault)
+            || job.formatOptions?.[0]
+            || job.selectedFormat;
+          setSelectedFormatKey(defaultFormat?.key || "");
+          formatSelectionJobRef.current = job.id;
+        }
       }
       setPreviewImageFailed(false);
       setPreview((current) => ({
@@ -205,6 +226,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
       }));
       return;
     }
+    formatSelectionJobRef.current = "";
     if (job.status === "completed") {
       setPendingFormatSelection(null);
       setResult(job.result?.downloadUrl || "");
@@ -231,7 +253,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
       setPendingFormatSelection(null);
       setError("");
     }
-  }, [job, language]);
+  }, [job, language, modelResolveMode]);
 
   useEffect(() => {
     api("/api/system/3d66-status")
@@ -242,10 +264,11 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
   useEffect(() => {
     api("/api/settings")
       .then((data) => setModelResolveMode(data?.settings?.threed66ModelResolveMode || "search"))
-      .catch(() => setModelResolveMode("search"));
+      .catch((err) => setError(err.message));
   }, []);
 
   useEffect(() => () => {
+    previewRequestRef.current?.abort();
     if (progressTimerRef.current) clearInterval(progressTimerRef.current);
     if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
     resetFaviconProgress();
@@ -301,6 +324,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
 
   function dismissTerminalJob() {
     if (!job || !["completed", "failed", "canceled"].includes(job.status) || acknowledgeInFlightRef.current) return;
+    dismissedJobRef.current = job.id;
     acknowledgeInFlightRef.current = true;
     acknowledgeJob(job.id)
       .catch(() => { })
@@ -337,24 +361,34 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
       errorProgress(language === "vi" ? "Mã model không hợp lệ" : "Invalid model ID");
       return;
     }
+    previewRequestRef.current?.abort();
+    const controller = new AbortController();
+    previewRequestRef.current = controller;
     setLoading(true);
     setCopied(false);
     beginProgress(language === "vi" ? "Đang kiểm tra model..." : "Checking model...", 8, 78);
     try {
       const data = await api("/api/getlink/preview", {
         method: "POST",
+        signal: controller.signal,
         body: JSON.stringify({ modelId: modelInput })
       });
+      if (previewRequestRef.current !== controller || controller.signal.aborted) return;
       setPreviewImageFailed(false);
       setPreview(data);
       setPreviewUrl(modelInput);
+      setPreviewCheckedAt(Date.now());
       setSelectedFormatKey(data.selectedFormat?.key || "");
       finishProgress(language === "vi" ? "Đã lấy thông tin model" : "Model info loaded");
     } catch (err) {
+      if (previewRequestRef.current !== controller || controller.signal.aborted) return;
       setError(err.message);
       errorProgress(language === "vi" ? "Kiểm tra thất bại" : "Check failed");
     } finally {
-      setLoading(false);
+      if (previewRequestRef.current === controller) {
+        previewRequestRef.current = null;
+        setLoading(false);
+      }
     }
   }
 
@@ -396,17 +430,16 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
         await acknowledgeJob(job.id);
       }
       const requestStorageKey = `${draftStorageKey(userId)}:request-id`;
+      const payload = { modelId: modelInput, includePreviewImage,
+        downloadFormat: downloadFormatPayload(downloadFormatOverride || selectedFormat) };
       let clientRequestId = "";
       try {
-        clientRequestId = window.localStorage.getItem(requestStorageKey) || crypto.randomUUID();
-        window.localStorage.setItem(requestStorageKey, clientRequestId);
+        clientRequestId = getlinkRequestId(window.localStorage, requestStorageKey, payload, () => crypto.randomUUID());
       } catch {
         clientRequestId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
       }
       await createJob({
-        modelId: modelInput,
-        includePreviewImage,
-        downloadFormat: downloadFormatPayload(downloadFormatOverride || selectedFormat),
+        ...payload,
         clientRequestId,
       });
       try {
@@ -471,6 +504,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
       }
 
       setUrl(modelInput);
+      invalidatePreviewRequest();
       setPreview(null);
       setSelectedFormatKey("");
       setPendingFormatSelection(null);
@@ -482,6 +516,16 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
     } catch {
       setError(t.clipboardDenied);
     }
+  }
+
+  function invalidatePreviewRequest() {
+    previewRequestRef.current?.abort();
+    previewRequestRef.current = null;
+    setLoading(false);
+    setPreviewUrl("");
+    setPreviewCheckedAt(0);
+    stopProgressTimer();
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
   }
 
   return (
@@ -500,6 +544,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
               value={url}
               aria-label={t.getlinkInputAria}
               onChange={(event) => {
+                invalidatePreviewRequest();
                 dismissTerminalJob();
                 setError("");
                 setUrl(inputValueWhileTyping(event.target.value, modelResolveMode));
@@ -520,7 +565,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
               {t.paste}
             </button>
           </div>
-          <button type="submit" disabled={loading || jobActive || !url || Boolean(disabledReason)}>
+          <button type="submit" disabled={!modelResolveMode || loading || jobActive || !url || Boolean(disabledReason)}>
             {loading ? <Loader2 size={18} className="spin" /> : <Search size={18} />}
             {loading ? t.processing : t.checkLink}
           </button>
@@ -697,6 +742,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
                     key={option.key}
                     type="button"
                     className={`formatOption ${active ? "active" : ""}`}
+                    aria-pressed={active}
                     onClick={() => setSelectedFormatKey(option.key)}
                   >
                     <span className="formatOptionCheck">{active && <Check size={12} />}</span>

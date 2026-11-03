@@ -339,6 +339,8 @@ export default function Admin({ user, language = "vi" }) {
   const [notifications, setNotifications] = useState([]);
   const [referrals, setReferrals] = useState([]);
   const [siteSettings, setSiteSettings] = useState(defaultSiteSettings);
+  const [siteSettingsReady, setSiteSettingsReady] = useState(false);
+  const [siteSettingsError, setSiteSettingsError] = useState("");
   const [homeTextMsg, setHomeTextMsg] = useState("");
   const [homeTextLanguage, setHomeTextLanguage] = useState("vi");
   const [referralMsg, setReferralMsg] = useState("");
@@ -446,6 +448,8 @@ export default function Admin({ user, language = "vi" }) {
     setNotifications(nRes.notifications || []);
     setReferrals(rRes.referrals || []);
     setSiteSettings({ ...defaultSiteSettings, ...(settingRes.settings || {}) });
+    setSiteSettingsReady(true);
+    setSiteSettingsError("");
   }, [revenuePeriod]);
 
   const loadUsers = React.useCallback(async (signal) => {
@@ -562,7 +566,10 @@ export default function Admin({ user, language = "vi" }) {
   useEffect(() => {
     const controller = new AbortController();
     loadData(controller.signal).catch((error) => {
-      if (!controller.signal.aborted) console.error(error);
+      if (!controller.signal.aborted) {
+        setSiteSettingsError(error.message);
+        console.error(error);
+      }
     });
     return () => controller.abort();
   }, [loadData]);
@@ -3151,7 +3158,12 @@ export default function Admin({ user, language = "vi" }) {
               );
             })}
           </div>
-          {!["status", "cookie"].includes(threed66SettingsTab) && (
+          {!["status", "cookie"].includes(threed66SettingsTab) && !siteSettingsReady && (
+            <p role="status" className={siteSettingsError ? "error" : "muted"}>
+              {siteSettingsError || l("Đang tải cài đặt Getlink...", "Loading Getlink settings...")}
+            </p>
+          )}
+          {!["status", "cookie"].includes(threed66SettingsTab) && siteSettingsReady && (
             <form className="stack" onSubmit={saveRuntimeSettings} style={{ marginTop: 14 }}>
               {threed66SettingsTab === "tasks" && (
                 <div className="runtimeSettingGroup">

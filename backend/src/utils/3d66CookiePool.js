@@ -215,10 +215,11 @@ export async function getUsable3D66Cookies() {
   return cookies
     .map((cookie) => {
       const plain = typeof cookie.toObject === "function" ? cookie.toObject() : cookie;
-      return { ...plain, value: decryptSecret(plain.value || "") };
+      return { ...plain, storedValue: plain.value, value: decryptSecret(plain.value || "") };
     })
     .filter((cookie) => cookie?.value)
     .filter((cookie) => cookie.isActive !== false)
+    .filter((cookie) => cookie.status !== "disabled")
     .filter((cookie) => hasRequiredKeys(cookie))
     .filter((cookie) => !isCoolingDown(cookie, now))
     .sort(sortCookies);
@@ -235,7 +236,8 @@ export async function getPrimary3D66CookieValue() {
 
 export async function mark3D66CookieSuccess(cookie) {
   if (!cookie?._id) return;
-  await Cookie.findByIdAndUpdate(cookie._id, {
+  await Cookie.findOneAndUpdate({ _id: cookie._id, value: cookie.storedValue ?? cookie.value,
+    isActive: { $ne: false }, status: { $ne: "disabled" } }, {
     $set: {
       status: "active",
       lastUsedAt: new Date(),
@@ -257,7 +259,8 @@ export async function mark3D66CookieFailure(cookie, error) {
   const cooldownMs = numberEnv("THREED66_COOKIE_COOLDOWN_MS", DEFAULT_COOKIE_COOLDOWN_MS);
   const shouldCooldown = nextFailureCount >= maxFailures;
 
-  await Cookie.findByIdAndUpdate(cookie._id, {
+  const updated = await Cookie.findOneAndUpdate({ _id: cookie._id, value: cookie.storedValue ?? cookie.value,
+    isActive: { $ne: false }, status: { $ne: "disabled" } }, {
     $set: {
       status: shouldCooldown ? "cooldown" : "warning",
       lastErrorAt: new Date(),
@@ -268,6 +271,7 @@ export async function mark3D66CookieFailure(cookie, error) {
     },
     $inc: { failureCount: 1 }
   }).catch(() => {});
+  if (!updated) return;
   await writeSystemLog({
     type: "cookie",
     level: shouldCooldown ? "error" : "warn",

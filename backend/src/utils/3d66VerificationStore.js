@@ -108,7 +108,7 @@ export function create3D66VerificationStore({ now = Date.now, ttlMs = 15 * 60_00
         if (entry.status === "pending") {
           throw Object.assign(new Error("3D66 access is waiting for administrator verification."), {
             status: 423, code: "THREED66_REWRITTEN_FOOTPRINT_FAILED",
-            details: { stage: "rewritten-footprint", reason: "upstream_verification_pending" },
+            details: { stage: entry.seed.mode === "direct" ? "direct-model" : "rewritten-footprint", reason: "upstream_verification_pending" },
           });
         }
       }

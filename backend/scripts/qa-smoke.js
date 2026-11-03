@@ -776,6 +776,19 @@ async function verifyCollectionResolutionSettings(page, context, viewport) {
     await page.locator(".threed66SettingsTabs").getByRole("button", { name: /^(Tác vụ|Tasks)$/ }).click();
   };
   try {
+    let releaseLoad;
+    const loadGate = new Promise((resolve) => { releaseLoad = resolve; });
+    const delayDashboard = async (route) => { await loadGate; await route.continue(); };
+    await context.route("**/api/admin/dashboard?*", delayDashboard);
+    try {
+      await openSettings();
+      await page.getByRole("status").filter({ hasText: /Đang tải cài đặt Getlink|Loading Getlink settings/ }).waitFor();
+      if (await page.locator(".collectionModeGrid").count()) throw new Error("Default Getlink settings are editable before loading");
+    } finally {
+      releaseLoad();
+      await context.unroute("**/api/admin/dashboard?*", delayDashboard);
+    }
+    await page.locator(".collectionModeGrid").waitFor();
     const invalid = await context.request.post(`${frontendOrigin}/api/settings`, {
       headers: { "x-csrf-token": csrf.csrfToken, origin: frontendOrigin },
       data: { threed66ModelResolveMode: "collection", threed66CollectionId: "", threed66CollectionUser: "" },

@@ -1068,7 +1068,8 @@ function looksLikeDownloadFile(upstream) {
   );
 }
 
-async function resolveProductCache(productId, url, downloadFormat = null) {
+export async function resolveProductCache(productId, url, downloadFormat = null) {
+  const lockKey = JSON.stringify([productId, modelPageKey(url), downloadFormatKey(downloadFormat)]);
   const existing = await ProductCache.findOne({ productId });
   if (existing?.fileUrl && cacheMatchesModelUrl(existing, url)) assert3D66StoredDownload(existing);
   if (
@@ -1079,14 +1080,14 @@ async function resolveProductCache(productId, url, downloadFormat = null) {
     return existing;
   }
 
-  if (!productLocks.has(productId)) {
+  if (!productLocks.has(lockKey)) {
     if (productLocks.size >= MAX_PRODUCT_LOCKS) {
     const error = new Error("Too many model tasks are running. Please try again shortly.");
       error.status = 429;
       throw error;
     }
     productLocks.set(
-      productId,
+      lockKey,
       (async () => {
         const cached = await ProductCache.findOne({ productId });
         if (cached?.fileUrl && cacheMatchesModelUrl(cached, url)) assert3D66StoredDownload(cached);
@@ -1169,12 +1170,12 @@ async function resolveProductCache(productId, url, downloadFormat = null) {
           );
         }
       })().finally(() => {
-        productLocks.delete(productId);
+        productLocks.delete(lockKey);
       }),
     );
   }
 
-  return productLocks.get(productId);
+  return productLocks.get(lockKey);
 }
 
 export function hasUsablePreviewSource(value) {
