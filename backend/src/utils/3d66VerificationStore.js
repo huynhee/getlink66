@@ -21,6 +21,7 @@ export function create3D66VerificationStore({ now = Date.now, ttlMs = 15 * 60_00
     entry.closed = true;
     entries.delete(entry.id);
     clearTimeout(entry.timer);
+    await entry.onClosing?.().catch(() => {});
     await entry.context.close().catch(() => {});
     await entry.onClose?.();
   }
@@ -80,7 +81,7 @@ export function create3D66VerificationStore({ now = Date.now, ttlMs = 15 * 60_00
   }
 
   return {
-    async retain({ context, page, cookieValue, seed, configurationKey, removeGuard, onClose }) {
+    async retain({ context, page, cookieValue, seed, configurationKey, removeGuard, onClose, onVerified, onClosing }) {
       await sweep();
       const cookieHash = verificationCookieHash(cookieValue);
       const existing = [...entries.values()].find(entry => entry.cookieHash === cookieHash && entry.status === "pending");
@@ -91,7 +92,7 @@ export function create3D66VerificationStore({ now = Date.now, ttlMs = 15 * 60_00
       }
       if (entries.size >= maxSessions) return null;
       const entry = { id: crypto.randomUUID(), context, page, cookieHash, seed, configurationKey,
-        removeGuard, onClose, status: "pending", createdAt: now(), owner: "", token: "", leaseUntil: 0,
+        removeGuard, onClose, onVerified, onClosing, status: "pending", createdAt: now(), owner: "", token: "", leaseUntil: 0,
         work: Promise.resolve(), queued: 0, busy: false, closed: false, pointerDown: false, sequence: -1 };
       entries.set(entry.id, entry);
       arm(entry, ttlMs);
@@ -192,6 +193,8 @@ export function create3D66VerificationStore({ now = Date.now, ttlMs = 15 * 60_00
     },
     async verified(entry, cookieValue) {
       if (entry.closed) return;
+      await entry.onVerified?.(cookieValue);
+      if (entry.closed) throw sessionError("Verification session expired while saving its browser profile.", 410);
       // Keep the restrictive guard while idle; a normal task installs its own scoped routes above it.
       entry.status = "verified";
       entry.cookieHash = verificationCookieHash(cookieValue);

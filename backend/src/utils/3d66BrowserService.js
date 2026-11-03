@@ -3,6 +3,7 @@ import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 import { threed66VerificationStore } from "./3d66VerificationStore.js";
 import { install3D66VerificationGuard } from "./3d66VerificationGuard.js";
 import { create3D66BrowserSessionPool } from "./3d66BrowserSessionPool.js";
+import { create3D66BrowserProfileStore } from "./3d66BrowserProfileStore.js";
 import { create3D66CollectionResolver } from "./3d66CollectionResolver.js";
 import { create3D66RewrittenFootprintResolver, assert3D66RewrittenFootprintLink,
   assert3D66FootprintPageVerified, is3D66RewrittenFootprintError, get3D66VerificationPage,
@@ -96,7 +97,8 @@ let browserTasksSinceLaunch = 0;
 let browserRecyclePending = false;
 let activeBrowserTasks = 0;
 const browserTaskQueue = [];
-const browserSessions = create3D66BrowserSessionPool({ maxSessions: () => browserConcurrency() });
+const browserProfiles = create3D66BrowserProfileStore();
+const browserSessions = create3D66BrowserSessionPool({ maxSessions: () => browserConcurrency(), stateStore: browserProfiles });
 
 function numberEnv(name, fallback) {
   const value = Number(process.env[name] || fallback);
@@ -416,6 +418,10 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
             const entry = ready?.entry || await threed66VerificationStore.retain({
               context, page: blockedPage, cookieValue, seed: verificationSeed, configurationKey,
               onClose: recycleBrowserIfIdle,
+              onClosing: () => browserSessions.remember(sessionKey, context),
+              onVerified: value => browserSessions.remember(crypto.createHash("sha256")
+                .update(JSON.stringify([value, configurationKey, currentProxy])).digest("hex"), context,
+              { required: browserProfiles.enabled() }),
             });
             if (entry) {
               try {
@@ -424,6 +430,7 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
                 await entry.removeGuard?.();
                 entry.removeGuard = await install3D66VerificationGuard(entry);
                 retained = true;
+                await browserSessions.remember(sessionKey, context);
               } catch { await threed66VerificationStore.discard(entry.id); }
             }
             if (directSeed) {
@@ -454,6 +461,7 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
     try {
       return await runWithProxy(proxy);
     } catch (error) {
+      if (String(error.code || "").startsWith("THREED66_PROFILE_")) throw error;
       if (!allowProxyFallback || is3D66CleanLinkError(error) || is3D66RewrittenFootprintError(error)) throw error;
       if (proxyFailClosed()) throw error;
       notify3D66ProxyFallback({

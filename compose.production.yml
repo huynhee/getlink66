@@ -49,6 +49,7 @@ services:
     mem_limit: 4g
 
   backend:
+    init: true
     build:
       context: ./backend
     image: 3dipl-backend:${APP_VERSION:-local}
@@ -63,6 +64,7 @@ services:
       - /var/lib/3dipl/media/covers:/var/lib/3dipl/media/covers
       - /var/lib/3dipl/backup-work:/var/lib/3dipl/backup-work
       - /var/lib/3dipl/plugin-releases:/var/lib/3dipl/plugin-releases
+      - /var/lib/3dipl/getlink-profiles:/var/lib/3dipl/getlink-profiles
     networks:
       - private
     depends_on:

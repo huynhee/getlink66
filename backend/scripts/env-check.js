@@ -218,6 +218,18 @@ if (process.env.MARKETPLACE_COVER_CACHE_ENABLED === "true") {
   }
 }
 
+if (has("THREED66_BROWSER_PROFILE_DIR")) {
+  try {
+    const directory = String(process.env.THREED66_BROWSER_PROFILE_DIR).trim();
+    const stat = fs.lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()
+      || (process.getuid && stat.uid !== process.getuid())
+      || (process.platform !== "win32" && (stat.mode & 0o077))) throw new Error("Unsafe profile directory");
+    fs.accessSync(directory, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
+    pass("Private encrypted Getlink browser profiles directory");
+  } catch { errors.push("THREED66_BROWSER_PROFILE_DIR must exist, belong to the backend user and have private 0700 permissions"); }
+}
+
 const productionIssues = productionReadinessIssues(process.env);
 productionIssues.warnings.forEach((message) => {
   if (!warnings.includes(message)) warnings.push(message);

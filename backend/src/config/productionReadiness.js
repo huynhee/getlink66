@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import { paypalConfigurationIssues } from "./paypalConfig.js";
 import { timoConfigurationIssues } from "./timoConfig.js";
 import { required3D66AccountMarker } from "../utils/3d66CleanLink.js";
@@ -38,6 +39,15 @@ export function productionReadinessIssues(env = process.env) {
   }
 
   const errors = [];
+  const profileDirectory = text(env, "THREED66_BROWSER_PROFILE_DIR");
+  if (profileDirectory) {
+    const resolved = path.resolve(profileDirectory);
+    if (!path.isAbsolute(profileDirectory) || resolved === path.parse(resolved).root
+      || profileDirectory.split(/[\\/]/).includes("..") || /^\/app(?:\/|$)/.test(profileDirectory)) {
+      errors.push("THREED66_BROWSER_PROFILE_DIR must be an absolute, dedicated directory outside the application");
+    }
+    if (text(env, "COOKIE_ENCRYPTION_KEY").length < 32) errors.push("Encrypted browser profiles require COOKIE_ENCRYPTION_KEY with at least 32 characters");
+  }
   try { required3D66AccountMarker(env); }
   catch { errors.push("THREED66_REQUIRED_ACCOUNT_MARKER must be 6-12 digits; the required clean-link check cannot be disabled"); }
   if (text(env, "THREED66_MODEL_RESOLVE_MODE").toLowerCase() === "collection") {

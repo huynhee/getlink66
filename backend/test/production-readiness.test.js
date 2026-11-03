@@ -45,6 +45,17 @@ test("production readiness accepts the secure baseline", () => {
   assert.doesNotThrow(() => assertProductionReadiness(readyEnvironment()));
 });
 
+test("durable browser profiles require a dedicated absolute directory and encryption key", () => {
+  for (const directory of ["profiles", "/", "/app/profiles", "/var/lib/../profiles"]) {
+    const issues = productionReadinessIssues(readyEnvironment({ THREED66_BROWSER_PROFILE_DIR: directory, COOKIE_ENCRYPTION_KEY: "x".repeat(48) }));
+    assert.ok(issues.errors.some(item => item.includes("THREED66_BROWSER_PROFILE_DIR")));
+  }
+  const missingKey = productionReadinessIssues(readyEnvironment({ THREED66_BROWSER_PROFILE_DIR: "/var/lib/3dipl/getlink-profiles" }));
+  assert.ok(missingKey.errors.some(item => item.includes("COOKIE_ENCRYPTION_KEY")));
+  const ready = productionReadinessIssues(readyEnvironment({ THREED66_BROWSER_PROFILE_DIR: "/var/lib/3dipl/getlink-profiles", COOKIE_ENCRYPTION_KEY: "x".repeat(48) }));
+  assert.equal(ready.errors.length, 0);
+});
+
 test("production readiness rejects an empty or malformed required Getlink marker", () => {
   for (const marker of ["", "false", "# THREED66", "89635771 # comment"]) {
     const issues = productionReadinessIssues(readyEnvironment({ THREED66_REQUIRED_ACCOUNT_MARKER: marker }));

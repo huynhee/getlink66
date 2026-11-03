@@ -86,6 +86,45 @@ test("pending direct verification reports the direct stage, not rewritten histor
   });
 });
 
+test("verified sessions are persisted before approval, and a failed save stays pending for retry", async t => {
+  const { store, entry, events } = await fixture(t);
+  let fail = true;
+  entry.onVerified = async value => {
+    assert.equal(value, "verified-header-fixture");
+    if (fail) throw new Error("fixture profile save failed");
+    events.push("saved-verified-profile");
+  };
+  await assert.rejects(store.verified(entry, "verified-header-fixture"), /profile save failed/);
+  assert.equal(entry.status, "pending");
+  fail = false;
+  await store.verified(entry, "verified-header-fixture");
+  assert.equal(entry.status, "verified");
+  assert.deepEqual(events, ["saved-verified-profile"]);
+});
+
+test("closing a verification session saves its state before closing the context without approving it", async t => {
+  const { store, entry, events } = await fixture(t);
+  entry.onClosing = async () => {
+    assert.equal(entry.status, "pending");
+    events.push("saved-before-close");
+  };
+  await store.discard(entry.id);
+  assert.deepEqual(events, ["saved-before-close", "close"]);
+  assert.equal(entry.status, "pending");
+});
+
+test("a verification session closed during profile persistence cannot be approved afterward", async t => {
+  const { store, entry } = await fixture(t);
+  const saving = Promise.withResolvers();
+  entry.onVerified = () => saving.promise;
+  const completion = assert.rejects(store.verified(entry, "verified-header-fixture"), { status: 410 });
+  await store.discard(entry.id);
+  saving.resolve();
+  await completion;
+  assert.equal(entry.status, "pending");
+  assert.equal(entry.closed, true);
+});
+
 test("leases expire independently of the browser session; expired sessions close and can be retried", async t => {
   const { store, entry, advance, events } = await fixture(t, { ttlMs: 10000, leaseMs: 1000 });
   const { token } = await store.claim(entry.id, "a");

@@ -1211,6 +1211,7 @@ async function main() {
       DEV_LOGIN_ROLE: "user",
       DEV_LOGIN_PRO: "false",
       THREED66_MOCK: "true",
+      THREED66_BROWSER_PROFILE_DIR: "",
       SEPAY_ENABLED: "false",
       PAYPAL_ENABLED: "false",
       VND_PAYMENT_PROVIDER: "sepay",

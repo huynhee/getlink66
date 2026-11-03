@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { chromium } from "playwright";
 import { fetch3D66Preview, fetchFrom3D66 } from "../src/utils/3d66Service.js";
 import { close3D66Browser, download3D66WithBrowser, inspect3D66DownloadFormatsWithBrowser,
@@ -14,7 +17,8 @@ let sequence = 0;
 async function fixture(t, options = {}) {
   const env = { THREED66_MOCK: "false", THREED66_MODEL_RESOLVE_MODE: "rewritten_footprint",
     THREED66_REQUIRED_ACCOUNT_MARKER: "89635771", THREED66_PROXY_ENABLED: "false",
-    THREED66_BROWSER_ALWAYS: "false", THREED66_FOOTPRINT_REFRESH_ATTEMPTS: "1",
+    THREED66_BROWSER_ALWAYS: "false", THREED66_BROWSER_PROFILE_DIR: "", THREED66_FOOTPRINT_REFRESH_ATTEMPTS: "1",
+    THREED66_PROXY_FOR_BROWSER: "false", THREED66_PROXY_URL: "",
     THREED66_DISABLE_BROWSER_PAGE_FALLBACK: "true", THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK: "true",
     THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK: "false" };
   const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
@@ -120,6 +124,18 @@ test("ordinary Direct previews keep one native browser session without re-seedin
   assert.equal(state.cookieSeeds(), 1);
   assert.equal("userAgent" in state.contextOptions[0], false);
   assert.equal(state.requests.some(path => path.endsWith("/handle")), false);
+});
+
+test("an unreadable durable profile never triggers a proxy switch or a fresh cookie-only context", async t => {
+  const state = await fixture(t);
+  Object.assign(process.env, { THREED66_MODEL_RESOLVE_MODE: "direct", THREED66_BROWSER_ALWAYS: "true",
+    THREED66_BROWSER_PROFILE_DIR: path.join(os.tmpdir(), "profile-fixture-no-io"),
+    THREED66_PROXY_ENABLED: "true", THREED66_PROXY_FOR_BROWSER: "true", THREED66_PROXY_URL: "http://127.0.0.1:3128" });
+  const directories = t.mock.method(fs, "mkdir", async () => { throw Object.assign(new Error("fixture access denied"), { code: "EACCES" }); });
+  await assert.rejects(fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true }), { code: "THREED66_PROFILE_LOAD_FAILED" });
+  assert.equal(directories.mock.callCount(), 1);
+  assert.equal(state.contexts(), 0);
+  assert.equal(state.navigations.length, 0);
 });
 
 test("verification in a history popup hands off that popup, not the history tab", async t => {

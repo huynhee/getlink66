@@ -17,6 +17,7 @@ services:
       start_period: 20s
 
   backend-staging:
+    init: true
     build:
       context: ./backend
     image: 3dipl-backend-staging:${APP_VERSION:-local}
@@ -28,6 +29,7 @@ services:
       - /var/lib/3dipl-staging/media/covers:/var/lib/3dipl/media/covers
       - /var/lib/3dipl-staging/backup-work:/var/lib/3dipl/backup-work
       - /var/lib/3dipl-staging/plugin-releases:/var/lib/3dipl/plugin-releases
+      - /var/lib/3dipl-staging/getlink-profiles:/var/lib/3dipl/getlink-profiles
     networks: [staging-private]
     depends_on:
       mongo-staging:

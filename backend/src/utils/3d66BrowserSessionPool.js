@@ -23,9 +23,10 @@ export async function capture3D66BrowserState(context, previousOrigins = []) {
 }
 
 export function create3D66BrowserSessionPool({ now = Date.now, idleMs = 10 * 60_000,
-  stateTtlMs = 30 * 60_000, maxSessions = 2, maxStates = 20, snapshotTimeoutMs = 1500 } = {}) {
+  stateTtlMs = 30 * 60_000, maxSessions = 2, maxStates = 20, snapshotTimeoutMs = 1500, stateStore } = {}) {
   const entries = new Map();
   const states = new Map();
+  const snapshots = new Map();
   let generation = 0;
 
   function saved(key) {
@@ -34,20 +35,33 @@ export function create3D66BrowserSessionPool({ now = Date.now, idleMs = 10 * 60_
     return cached.state;
   }
 
-  async function remember(key, context) {
+  async function remember(key, context, { required = false } = {}) {
     const ticket = generation;
+    const snapshot = {};
+    snapshots.set(key, snapshot);
     let timer;
     try {
-      const state = await Promise.race([
-        capture3D66BrowserState(context, saved(key)?.origins),
+      await Promise.race([
+        (async () => {
+          const state = await capture3D66BrowserState(context, saved(key)?.origins);
+          if (ticket !== generation || snapshots.get(key) !== snapshot) return;
+          states.delete(key);
+          states.set(key, { state, at: now() });
+          while (states.size > maxStates) states.delete(states.keys().next().value);
+          await stateStore?.save(key, state);
+        })(),
         new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Snapshot timed out")), snapshotTimeoutMs); }),
       ]);
-      if (ticket !== generation) return;
-      states.delete(key);
-      states.set(key, { state, at: now() });
-      while (states.size > maxStates) states.delete(states.keys().next().value);
-    } catch { /* Snapshot failure must not turn a successful file operation into a retry. */ }
-    finally { clearTimeout(timer); }
+    } catch {
+      if (required) throw Object.assign(new Error("The browser authentication profile could not be saved. Keep the verification session open and retry."), {
+        status: 503, code: "THREED66_VERIFICATION_SESSION",
+      });
+      // Snapshot failure must not turn a successful file operation into a retry.
+    }
+    finally {
+      clearTimeout(timer);
+      if (snapshots.get(key) === snapshot) snapshots.delete(key);
+    }
   }
 
   async function dispose(entry, keepState = false) {
@@ -94,7 +108,8 @@ export function create3D66BrowserSessionPool({ now = Date.now, idleMs = 10 * 60_
       entry.done = new Promise(resolve => { unlock = resolve; });
       try {
         if (!entry.context) {
-          const state = saved(key);
+          const state = saved(key) || (stateStore ? await stateStore.load(key) : null);
+          if (ticket !== generation || entry.closed) throw new Error("Browser session pool was closed");
           const context = await createContext(state);
           if (ticket !== generation || entry.closed) {
             await context.close().catch(() => {});
@@ -142,6 +157,7 @@ export function create3D66BrowserSessionPool({ now = Date.now, idleMs = 10 * 60_
     },
     async closeAll({ preserveState = false } = {}) {
       generation += 1;
+      snapshots.clear();
       await Promise.all([...entries.values()].map(entry => dispose(entry, preserveState)));
       if (!preserveState) states.clear();
     },

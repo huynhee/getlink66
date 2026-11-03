@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { create3D66BrowserSessionPool } from "../src/utils/3d66BrowserSessionPool.js";
+import { create3D66BrowserProfileStore } from "../src/utils/3d66BrowserProfileStore.js";
 import { get3D66BrowserContextOptions } from "../src/utils/3d66BrowserService.js";
 
 export async function verify3D66BrowserSessions(browser) {
-  const pool = create3D66BrowserSessionPool();
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "3dipl-profile-qa-"));
+  const profileOptions = { directory: path.join(root, "profiles") };
+  let pool = create3D66BrowserSessionPool({ stateStore: create3D66BrowserProfileStore(profileOptions) });
+  const key = "a".repeat(64);
   const contexts = [];
   let opened = 0;
   const create = async storageState => {
@@ -16,7 +23,7 @@ export async function verify3D66BrowserSessions(browser) {
     return context;
   };
   try {
-    const first = await pool.acquire("fixture-cookie-and-config", create);
+    const first = await pool.acquire(key, create);
     const page = await first.context.newPage();
     await page.goto("https://www.3d66.com/fixture/first");
     await page.evaluate(() => globalThis.localStorage.setItem("fixture-renderer", "corona"));
@@ -29,14 +36,16 @@ export async function verify3D66BrowserSessions(browser) {
     assert.equal(await page.evaluate(() => fetch("/fixture/idle-network-probe").then(() => true, () => false)), false,
       "Idle contexts must not make background network requests");
 
-    const second = await pool.acquire("fixture-cookie-and-config", () => assert.fail("Reuse the same context"));
+    const second = await pool.acquire(key, () => assert.fail("Reuse the same context"));
     await second.activate();
     assert.equal(await page.evaluate(() => globalThis.localStorage.getItem("fixture-renderer")), "corona");
     await second.release();
     assert.equal(opened, 1);
-    await pool.closeAll({ preserveState: true });
+    await pool.closeAll();
+    pool = create3D66BrowserSessionPool({ stateStore: create3D66BrowserProfileStore(profileOptions) });
 
-    const restored = await pool.acquire("fixture-cookie-and-config", create);
+    const restored = await pool.acquire(key, create);
+    assert.equal(restored.restored, true, "A fresh manager must restore encrypted state from disk");
     await restored.activate();
     const nextPage = await restored.context.newPage();
     await nextPage.goto("https://www.3d66.com/fixture/second");
@@ -48,5 +57,8 @@ export async function verify3D66BrowserSessions(browser) {
   } finally {
     await pool.closeAll();
     for (const context of contexts) await context.close().catch(() => {});
+    assert.equal(path.dirname(root), os.tmpdir());
+    assert.ok(path.basename(root).startsWith("3dipl-profile-qa-"));
+    await fs.rm(root, { recursive: true, force: true });
   }
 }
