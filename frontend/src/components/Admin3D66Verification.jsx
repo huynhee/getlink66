@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Loader2, Monitor, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
 import { api } from "../api.js";
+import { mapVerificationPointer } from "../utils/verificationPointer.js";
 import "./admin-3d66-verification.css";
 
 const endpoint = "/api/admin/getlink/verifications";
@@ -133,13 +134,13 @@ export default function Admin3D66Verification({ language }) {
     const state = pointer.current;
     if (type === "down" && (event.button !== 0 || state.down)) return;
     if (type !== "down" && !state.down) return;
-    event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = Math.max(0, Math.min(frame.viewport.width - 1, (event.clientX - rect.left) * frame.viewport.width / rect.width));
-    const y = Math.max(0, Math.min(frame.viewport.height - 1, (event.clientY - rect.top) * frame.viewport.height / rect.height));
+    const position = mapVerificationPointer(event, rect, frame.viewport, state.down);
+    if (!position) return;
+    event.preventDefault();
     if (type === "down") { event.currentTarget.setPointerCapture(event.pointerId); state.down = true; setDragging(true); }
     if (type === "up") { state.down = false; setDragging(false); }
-    const input = { type, x, y };
+    const input = { type, ...position };
     if (type === "move" && state.queue.at(-1)?.type === "move") state.queue[state.queue.length - 1] = input;
     else state.queue.push(input);
     void sendPointer(live.current, state);
@@ -162,7 +163,7 @@ export default function Admin3D66Verification({ language }) {
       <header><h3 id="verificationTitle"><ShieldCheck size={18} />{vi ? "Xác minh thủ công" : "Manual verification"}</h3>
         <button type="button" className="iconButton" aria-label={vi ? "Đóng" : "Close"} title={vi ? "Đóng" : "Close"} disabled={busy} onClick={() => close()}><X size={18} /></button></header>
       <div className="verificationSessionInfo"><code>{selected.productId}</code><span>{vi ? "Mua và tải file đang bị chặn" : "Purchases and downloads blocked"}</span></div>
-      <div className="verificationViewport">
+      <div className="verificationViewport" style={frame?.viewport ? { aspectRatio: `${frame.viewport.width} / ${frame.viewport.height}` } : undefined}>
         {frame?.image && frame.viewport ? <img src={frame.image} width={frame.viewport.width} height={frame.viewport.height}
           alt={vi ? "Trang xác minh Getlink hiện tại" : "Current Getlink verification page"} draggable={false}
           onPointerDown={event => relay(event, "down")} onPointerMove={event => relay(event, "move")}

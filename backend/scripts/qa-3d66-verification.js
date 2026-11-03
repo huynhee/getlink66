@@ -5,9 +5,9 @@ export async function verify3D66ManualHandoff(page, context, { origin, screensho
   // All pointer input targets this harmless local fixture, never an upstream challenge.
   const image = await page.evaluate(() => {
     const canvas = globalThis.document.createElement("canvas");
-    canvas.width = 1440; canvas.height = 900;
+    canvas.width = 1400; canvas.height = 800;
     const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#f5f7fa"; ctx.fillRect(0, 0, 1440, 900);
+    ctx.fillStyle = "#f5f7fa"; ctx.fillRect(0, 0, 1400, 800);
     ctx.fillStyle = "#132b40"; ctx.font = "32px sans-serif";
     ctx.fillText("Local QA fixture - no CAPTCHA", 50, 65);
     ctx.fillStyle = "#3a768b"; ctx.fillRect(200, 220, 280, 80);
@@ -30,7 +30,7 @@ export async function verify3D66ManualHandoff(page, context, { origin, screensho
     if (action === "verifications") return route.fulfill({ json: { sessions: present ? [fixture] : [] } });
     if (action === "claim") return route.fulfill({ json: { session: fixture, token: "a".repeat(48) } });
     assert.equal(request.postDataJSON().token, "a".repeat(48));
-    if (action === "frame") return route.fulfill({ json: { image, viewport: { width: 1440, height: 900 }, title: "Local QA fixture", session: fixture } });
+    if (action === "frame") return route.fulfill({ json: { image, viewport: { width: 1400, height: 800 }, title: "Local QA fixture", session: fixture } });
     if (action === "input") inputs.push(request.postDataJSON());
     if (action === "complete" && failComplete) {
       failComplete = false;
@@ -59,7 +59,7 @@ export async function verify3D66ManualHandoff(page, context, { origin, screensho
         await frame.evaluate(element => element.decode());
         const bounds = await frame.boundingBox();
         assert.ok(bounds.width > 200 && bounds.height > 100);
-        assert.ok(Math.abs(bounds.width / bounds.height - 1.6) < 0.02, "Verification viewport is distorted");
+        assert.ok(Math.abs(bounds.width / bounds.height - 1.75) < 0.02, "Verification viewport is distorted");
         const response = page.waitForResponse(response => response.url().endsWith("/input") && response.request().postDataJSON().type === "up");
         await page.mouse.move(bounds.x + bounds.width * 0.2, bounds.y + bounds.height * 0.3);
         await page.mouse.down();
@@ -68,7 +68,7 @@ export async function verify3D66ManualHandoff(page, context, { origin, screensho
         await response;
         assert.equal(inputs[0].type, "down");
         assert.equal(inputs.at(-1).type, "up");
-        assert.ok(Math.abs(inputs[0].x - 288) < 3 && Math.abs(inputs[0].y - 270) < 3);
+        assert.ok(Math.abs(inputs[0].x - 280) < 3 && Math.abs(inputs[0].y - 240) < 3);
         for (let index = 0; index < inputs.length; index++) assert.equal(inputs[index].sequence, index);
         await dialog.getByRole("button", { name: language === "vi" ? "Tải lại trang" : "Reload page", exact: true }).click();
         const save = dialog.getByRole("button", { name: language === "vi" ? "Kiểm tra và lưu phiên" : "Verify and save session", exact: true });
