@@ -36,6 +36,20 @@ export function modelIdsShareAssetIdentity(left = "", right = "") {
   return commonDigits >= 5;
 }
 
+export function modelIdsShareExactAssetIdentity(left = "", right = "") {
+  const marker = required3D66AccountMarker();
+  function identity(value) {
+    const match = String(value || "").trim().toUpperCase().match(/^([A-Z]{3})(\d{5,28})$/);
+    if (!match) return "";
+    const digits = match[2];
+    const suffix = digits.startsWith(marker) && digits.length - marker.length >= 5
+      ? digits.slice(marker.length) : digits.length >= 13 ? digits.slice(8) : digits.length <= 8 ? digits : "";
+    return suffix ? `${match[1].slice(1)}:${suffix}` : "";
+  }
+  const expected = identity(left);
+  return Boolean(expected && expected === identity(right));
+}
+
 export function assert3D66CleanModelUrl(value, { expectedProductId = "" } = {}) {
   let url;
   try { url = new URL(value); }
@@ -104,7 +118,11 @@ export function assert3D66BrowserDownloadRequest({ url, method, body, contentTyp
 
 export function assert3D66StoredDownload(record = {}) {
   if (process.env.THREED66_MOCK !== "false") return;
-  assert3D66CleanModelUrl(record.resolvedSourceUrl, { expectedProductId: record.productId });
+  const resolvedId = assert3D66CleanModelUrl(record.resolvedSourceUrl, { expectedProductId: record.productId });
+  if (String(process.env.THREED66_MODEL_RESOLVE_MODE || "").trim().toLowerCase() === "hybrid"
+    && !modelIdsShareExactAssetIdentity(resolvedId, record.productId)) {
+    throw validationError("asset_identity_mismatch");
+  }
 }
 
 export function is3D66CleanLinkError(error) {

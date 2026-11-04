@@ -148,7 +148,7 @@ deploy or enable hybrid mode.
 
 ## Rollout And Rollback
 
-Local verification on 2026-11-04: `npm run check` passed (939 backend tests, ESLint
+Local verification on 2026-11-04: `npm run check` passed (941 backend tests, ESLint
 and release build verification). The full `qa:smoke` suite passed with 7 routes,
 desktop/mobile, VI/EN, light/dark and zero external request failures. Hybrid UI
 fixtures cover early choices, preparation failures, price/format review,

@@ -25,6 +25,7 @@ import { inspect3D66CookieHeader, parse3D66CookieHeader } from "./3d66CookieHead
 import {
   assert3D66AccountProductId, assert3D66CleanModelUrl, assert3D66DownloadFields, is3D66CleanLinkError,
   required3D66AccountMarker,
+  modelIdsShareExactAssetIdentity,
 } from "./3d66CleanLink.js";
 
 const DEFAULT_DOWNLOAD_ENDPOINT = "https://user.3d66.com/api/v1/download/handle";
@@ -2382,9 +2383,8 @@ function verifiedHybridApiModelUrl(value, expectedProductId, depth = 0) {
     for (const candidate of candidateUrlsFromText(value)) {
       try {
         assert3D66CleanModelUrl(candidate, { expectedProductId });
-        const source = validate3D66HybridInput(`https://3d.3d66.com/reshtmla/model/items/fixture/model.html?sof=${encodeURIComponent(expectedProductId)}`);
-        const target = validate3D66HybridInput(candidate);
-        if (source.productId.slice(1).toUpperCase() !== target.productId.slice(1).toUpperCase()) continue;
+        validate3D66HybridInput(candidate);
+        if (!modelIdsShareExactAssetIdentity(expectedProductId, new URL(candidate).searchParams.get("sof"))) continue;
         return candidate;
       } catch { /* Keep unverified/foreign URLs out of the authorization cache. */ }
     }
