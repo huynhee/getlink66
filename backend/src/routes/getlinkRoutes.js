@@ -43,7 +43,10 @@ const getlinkIpLimit = createRateLimit({
 
 router.post("/getlink/preview", requireAuth, requireNotBanned, previewLimit, previewIpLimit, previewGetlink);
 router.post("/getlink/preview/prepare", requireAuth, requireNotBanned, previewLimit, previewIpLimit, prepareGetlinkPreview);
-router.post("/getlink/inspect", requireAuth, adminOnly, previewLimit, inspectGetlink);
+router.post("/getlink/inspect", requireAuth, adminOnly, (_req, res, next) => {
+  res.locals.getlinkDiagnostics = true;
+  next();
+}, previewLimit, inspectGetlink);
 router.post("/getlink/jobs", requireAuth, requireNotBanned, getlinkLimit, getlinkIpLimit, createJob);
 router.get("/getlink/jobs/latest", requireAuth, latestJob);
 router.get("/getlink/jobs/:id", requireAuth, getJob);

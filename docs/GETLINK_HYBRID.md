@@ -202,3 +202,32 @@ made that Chromium will never encounter CAPTCHA.
 
 Rollback image tags retained on VPS: `3dipl-backend:pre-hybrid-20261104` and
 `3dipl-frontend:pre-hybrid-20261104`. No database migration was needed.
+
+## Public Errors And History Identity
+
+The 2026-11-05 follow-up uses complete normalized asset identity for both history
+modes (`footprint`, `rewritten_footprint`) as well as `hybrid`. Each final download
+URL must belong to the configured account, contain one `sof` and one nonempty
+`sign`, and match the expected model. Matching a few trailing digits is not
+sufficient. Stored history, cache reuse and the pre-charge check use the same
+gate; a rejected model cannot debit credit or fall back to the pasted user URL.
+
+Public web/plugin Getlink errors use neutral bilingual messages. Source-account,
+browser, CAPTCHA, profile, proxy and resolution details stay in operational logs
+and private Admin diagnostics. The response boundary handles both direct JSON
+errors and errors passed through the global handler. Jobs are sanitized on read,
+including older stored failures, without rewriting their diagnostic record.
+User routes remain sanitized even when an administrator uses Getlink normally.
+The private inspect exception is enabled only after the existing Admin/2FA gate;
+client headers cannot opt into diagnostic messages.
+
+Insufficient-credit amounts, price changes, format selection and user download
+limits remain actionable. The frontend also masks legacy technical failures and
+preserves model preview data when an operation fails. This is display filtering,
+not a change to source verification, CAPTCHA handling or payment rules.
+
+Follow-up verification: `npm run check` passed with 971 tests, ESLint and release
+build verification. Focused Getlink smoke passed on desktop/mobile in VI/EN and
+light/dark with zero external failures. Fixtures cover source errors, old failed
+jobs after reload, price/credit feedback, preserved preview/format selection and
+local clipboard permissions. Source/network operations and payments were mocked.

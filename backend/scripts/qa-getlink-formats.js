@@ -219,6 +219,13 @@ export async function verifyHybridGetlinkPreview(page, context, { origin, screen
   let delivered = deferred();
   let latestJob = null;
   let resumedKey = "";
+  const neutral = {
+    vi: "Tạm thời chưa thể xử lý model này. Vui lòng thử lại sau hoặc liên hệ hỗ trợ.",
+    en: "This model is temporarily unavailable. Please try again later or contact support.",
+  };
+  const privateError = { code: "THREED66_MANUAL_VERIFICATION_REQUIRED",
+    message: "CAPTCHA in Playwright browser; ask admin to replace cookie/profile and retry &st=2" };
+  const requestLocales = [];
   let account = { _id: "hybrid-qa-user", name: "Hybrid QA", email: "hybrid@local.test", credit: 100, role: "user" };
   const previewRequests = [];
   const prepareRequests = [];
@@ -231,6 +238,7 @@ export async function verifyHybridGetlinkPreview(page, context, { origin, screen
   const handler = async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
+    if (pathname.startsWith("/api/getlink/")) requestLocales.push(request.headers()["accept-language"]);
     if (pathname === "/api/auth/user") return route.fulfill({ json: { user: account } });
     if (pathname === "/api/settings") return route.fulfill({ json: { settings: { threed66ModelResolveMode: resolverMode } } });
     if (pathname === "/api/system/3d66-status") return route.fulfill({ json: { online: true } });
@@ -253,7 +261,7 @@ export async function verifyHybridGetlinkPreview(page, context, { origin, screen
       arrived.resolve();
       await gate.promise;
       if (currentScenario === "failure") {
-        await route.fulfill({ status: 403, json: { code: "THREED66_MANUAL_VERIFICATION_REQUIRED", message: "Preparation fixture failed" } });
+        await route.fulfill({ status: 403, json: privateError });
       } else {
         await route.fulfill({ json: { ...metadata,
           title: currentScenario === "stale" ? "Stale hybrid preparation" : "Hybrid prepared model",
@@ -268,6 +276,12 @@ export async function verifyHybridGetlinkPreview(page, context, { origin, screen
     }
     if (pathname === "/api/getlink/jobs" && request.method() === "POST") {
       submissions.push(request.postDataJSON());
+      if (scenario === "public-error") return route.fulfill({ status: 400,
+        json: { code: "GETLINK_UNAVAILABLE", message: neutral.en } });
+      if (scenario === "legacy-job-error") {
+        latestJob = { id: "legacy-private-error", status: "failed", error: privateError };
+        return route.fulfill({ json: { job: latestJob } });
+      }
       if (scenario === "awaiting-format") {
         latestJob = { id: "hybrid-awaiting-format", status: "awaiting_format", ...metadata, formatOptions,
           selectedFormat: formatOptions[0] };
@@ -277,6 +291,10 @@ export async function verifyHybridGetlinkPreview(page, context, { origin, screen
     }
     if (pathname.endsWith("/format")) {
       resumedKey = request.postDataJSON().formatKey;
+      latestJob = null;
+      return route.fulfill({ json: { job: null } });
+    }
+    if (pathname.endsWith("/acknowledge")) {
       latestJob = null;
       return route.fulfill({ json: { job: null } });
     }
@@ -305,6 +323,26 @@ export async function verifyHybridGetlinkPreview(page, context, { origin, screen
       }, language);
       await page.goto(`${origin}/getlink`, { waitUntil: "domcontentloaded" });
       await page.waitForFunction(() => globalThis.document.querySelector("#modelUrl")?.placeholder.includes("3D66"));
+      for (const clipboardMode of ["unsupported", "denied"]) {
+        await page.evaluate((mode) => {
+          globalThis.__qaClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+          Object.defineProperty(navigator, "clipboard", { configurable: true, value: mode === "unsupported" ? undefined
+            : { readText: async () => { throw new Error("Clipboard permission denied"); } } });
+        }, clipboardMode);
+        try {
+          await page.getByRole("button", { name: /^(Dán|Paste)$/ }).click();
+          const expected = clipboardMode === "unsupported"
+            ? (language === "vi" ? "Trình duyệt chưa hỗ trợ đọc clipboard." : "This browser does not support clipboard reading.")
+            : (language === "vi" ? "Không đọc được clipboard. Hãy cho phép trình duyệt truy cập clipboard." : "Cannot read clipboard. Please allow clipboard access.");
+          await page.locator(".error").getByText(expected, { exact: true }).waitFor();
+        } finally {
+          await page.evaluate(() => {
+            if (globalThis.__qaClipboardDescriptor) Object.defineProperty(navigator, "clipboard", globalThis.__qaClipboardDescriptor);
+            else delete navigator.clipboard;
+            delete globalThis.__qaClipboardDescriptor;
+          });
+        }
+      }
       const beforeInvalid = previewRequests.length;
       await check("ACI896357714629725");
       await page.locator(".error").waitFor();
@@ -317,6 +355,7 @@ export async function verifyHybridGetlinkPreview(page, context, { origin, screen
       assert.equal(await confirm().isDisabled(), true, "Early metadata must never authorize payment");
       assert.deepEqual(previewRequests.at(-1), { modelId: source, progressive: true });
       assert.deepEqual(prepareRequests.at(-1), { modelId: source });
+      assert.equal(requestLocales.at(-1), language, "Getlink API requests must follow the selected UI language");
       await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).click();
       await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-hybrid-early-${language}.png`), fullPage: true });
       gate.resolve();
@@ -331,9 +370,21 @@ export async function verifyHybridGetlinkPreview(page, context, { origin, screen
       assert.equal(submissions.at(-1).downloadFormat.key, formatOptions[1].key);
       await page.getByText("Hybrid prepared model", { exact: true }).waitFor();
       assert.equal(await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).getAttribute("aria-pressed"), "true");
+      for (const errorScenario of ["public-error", "legacy-job-error"]) {
+        scenario = errorScenario;
+        await confirm().click();
+        await page.locator(".error").getByText(neutral[language], { exact: true }).waitFor();
+        assert.doesNotMatch(await page.locator(".error").innerText(), /CAPTCHA|browser|admin|cookie|profile|Playwright|st=2|THREED66_/i);
+        await page.getByText("Hybrid prepared model", { exact: true }).waitFor();
+        assert.equal(await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).getAttribute("aria-pressed"), "true",
+          "Public and legacy job errors must preserve the preview and selected format");
+      }
       await page.reload({ waitUntil: "domcontentloaded" });
       await status("stale");
-      assert.equal(await confirm().isDisabled(), true, "Even a fresh ready hybrid draft cannot authorize payment");
+      await page.locator(".error").getByText(neutral[language], { exact: true }).waitFor();
+      assert.equal(await confirm().count(), 0, "A failed job must not expose a new checkout action");
+      assert.equal(await page.getByRole("button", { name: /^(Thử lại|Retry)$/ }).isDisabled(), true,
+        "Even a fresh ready hybrid draft cannot authorize a retry payment");
       assert.equal(await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).getAttribute("aria-pressed"), "true");
 
       resetGate("failure");
@@ -341,6 +392,8 @@ export async function verifyHybridGetlinkPreview(page, context, { origin, screen
       await arrived.promise;
       gate.resolve();
       await status("error");
+      await page.locator(".error").getByText(neutral[language], { exact: true }).waitFor();
+      assert.doesNotMatch(await page.locator(".error").innerText(), /CAPTCHA|browser|admin|cookie|profile|Playwright|st=2|THREED66_/i);
       await page.getByText("Hybrid early model", { exact: true }).waitFor();
       assert.equal(await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).getAttribute("aria-pressed"), "true");
       assert.equal(await confirm().isDisabled(), true);

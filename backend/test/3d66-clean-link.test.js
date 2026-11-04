@@ -84,28 +84,33 @@ test("stored downloads require resolved context and cannot use the original past
   rejectsLink(() => assert3D66StoredDownload({ productId: foreignId, resolvedSourceUrl: `${base}?sof=${foreignId}&sign=fixture` }));
 });
 
-test("hybrid cached downloads and history require the complete model identity, not a short shared suffix", t => {
-  configure(t, { THREED66_MODEL_RESOLVE_MODE: "hybrid" });
-  assert3D66StoredDownload({ productId: foreignId, resolvedSourceUrl: clean });
-  assert3D66StoredDownload({ productId: "ACH442400", resolvedSourceUrl: clean });
-  for (const productId of ["BCH01077971942400", "ACH89635771942400", ""]) {
-    rejectsLink(() => assert3D66StoredDownload({ productId, resolvedSourceUrl: clean }), "asset_identity_mismatch");
-  }
-});
+for (const mode of ["footprint", "rewritten_footprint", "hybrid"]) {
+  test(`${mode} cached downloads and history require the complete model identity, not a short shared suffix`, t => {
+    configure(t, { THREED66_MODEL_RESOLVE_MODE: mode });
+    assert3D66StoredDownload({ productId: foreignId, resolvedSourceUrl: clean });
+    assert3D66StoredDownload({ productId: "ACH442400", resolvedSourceUrl: clean });
+    for (const productId of ["BCH01077971942400", "ACH89635771942400", ""]) {
+      rejectsLink(() => assert3D66StoredDownload({ productId, resolvedSourceUrl: clean }), "asset_identity_mismatch");
+    }
+    for (const url of [clean.replace(modelId, foreignId), clean + `&sof=${modelId}`, clean + "&sign=second"]) {
+      rejectsLink(() => assert3D66StoredDownload({ productId: foreignId, resolvedSourceUrl: url }));
+    }
+  });
 
-test("hybrid cannot debit credit for a cached model sharing only five trailing digits", async t => {
-  configure(t, { THREED66_MODEL_RESOLVE_MODE: "hybrid" });
-  const calls = [];
-  await assert.rejects(chargeAndCreateGetlink({
-    userId: "fixture-user", creditCost: 28,
-    historyPayload: { productId: "BCH01077971942400", resolvedSourceUrl: clean },
-  }, {
-    forceNonTransactional: true,
-    deduct: async () => { calls.push("debit"); },
-    getlinkModel: { create: async () => { calls.push("history"); } },
-  }), { code: "THREED66_CLEAN_LINK_REQUIRED" });
-  assert.deepEqual(calls, []);
-});
+  test(`${mode} cannot debit credit for a cached model sharing only five trailing digits`, async t => {
+    configure(t, { THREED66_MODEL_RESOLVE_MODE: mode });
+    const calls = [];
+    await assert.rejects(chargeAndCreateGetlink({
+      userId: "fixture-user", creditCost: 28,
+      historyPayload: { productId: "BCH01077971942400", resolvedSourceUrl: clean },
+    }, {
+      forceNonTransactional: true,
+      deduct: async () => { calls.push("debit"); },
+      getlinkModel: { create: async () => { calls.push("history"); } },
+    }), { code: "THREED66_CLEAN_LINK_REQUIRED" });
+    assert.deepEqual(calls, []);
+  });
+}
 
 test("browser API requests validate their frame, body IDs, and embedded source before network delivery", (t) => {
   configure(t);

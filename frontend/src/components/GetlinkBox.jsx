@@ -12,6 +12,7 @@ import {
 } from "../utils/faviconProgress.js";
 import { useGetlinkJob } from "../contexts/GetlinkJobContext.jsx";
 import { GETLINK_PREVIEW_DRAFT_TTL_MS, restoreGetlinkDraft, getlinkRequestId } from "../utils/getlinkDraft.js";
+import { publicGetlinkError } from "../utils/getlinkErrors.js";
 
 function isUsableFormatOption(option = {}) {
   const fileFormat = String(option.fileFormat || option.file_format || String(option.key || "").split("|")[0] || "").trim();
@@ -294,7 +295,8 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
     }
     if (job.status === "failed") {
       setPendingFormatSelection(null);
-      setError(job.error?.message || (language === "vi" ? "Lấy link thất bại." : "Getlink failed."));
+      setError(typeof job.error === "string" ? { message: job.error }
+        : job.error || (language === "vi" ? "Lấy link thất bại." : "Getlink failed."));
       return;
     }
     if (job.status === "canceled") {
@@ -312,7 +314,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
   useEffect(() => {
     api("/api/settings")
       .then((data) => setModelResolveMode(data?.settings?.threed66ModelResolveMode || "search"))
-      .catch((err) => setError(err.message));
+      .catch(setError);
   }, []);
 
   useEffect(() => () => {
@@ -495,7 +497,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
     } catch (err) {
       if (!isCurrent()) return;
       setPreparationStatus("error");
-      setError(hybrid ? `${t.getlinkPrepareFailed} ${err.message || ""}` : err.message);
+      setError(err);
       errorProgress(language === "vi" ? "Kiểm tra thất bại" : "Check failed");
     } finally {
       if (previewRequestRef.current === controller) {
@@ -580,7 +582,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
         // The server-side idempotency key still protects the request.
       }
     } catch (err) {
-      if (previewScopeRef.current === scope) setError(err.message);
+      if (previewScopeRef.current === scope) setError(err);
     } finally {
       checkoutInFlightRef.current = false;
     }
@@ -601,7 +603,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
       setError("");
       await retryJob(job.id);
     } catch (retryError) {
-      setError(retryError.message);
+      setError(retryError);
     }
   }
 
@@ -612,7 +614,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
       setPendingFormatSelection(null);
       formatDialogDismissedRef.current = "";
     } catch (cancelError) {
-      setError(cancelError.message);
+      setError(cancelError);
     }
   }
 
@@ -737,8 +739,8 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
           </button>
         </div>
       )}
-      {disabledReason && <p className="error">{disabledReason}</p>}
-      {error && !disabledReason && <p className="error">{error}</p>}
+      {disabledReason && <p className="error">{publicGetlinkError(disabledReason, language).message}</p>}
+      {error && !disabledReason && <p className="error">{typeof error === "string" ? error : publicGetlinkError(error, language).message}</p>}
       {job?.status === "failed" && (
         <div className="getlinkJobActions">
           <button type="button" onClick={hybrid ? () => confirmDownload() : retryCurrentJob}

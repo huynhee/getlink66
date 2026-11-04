@@ -1,4 +1,9 @@
 const DEFAULT_REQUIRED_MARKER = "89635771";
+const EXACT_ASSET_MODES = new Set(["footprint", "rewritten_footprint", "hybrid"]);
+
+function exactAssetMode() {
+  return EXACT_ASSET_MODES.has(String(process.env.THREED66_MODEL_RESOLVE_MODE || "").trim().toLowerCase());
+}
 
 function validationError(reason, status = 422) {
   return Object.assign(new Error("3D66 clean link validation failed. Download stopped."), {
@@ -70,7 +75,8 @@ export function assert3D66CleanModelUrl(value, { expectedProductId = "" } = {}) 
   if (signatures.length !== 1 || !signatures[0] || signatures[0].length > 256 || /\s/.test(signatures[0])) {
     throw validationError("missing_or_duplicate_signature");
   }
-  if (expectedProductId && !modelIdsShareAssetIdentity(productId, expectedProductId)) {
+  const matchesAsset = exactAssetMode() ? modelIdsShareExactAssetIdentity : modelIdsShareAssetIdentity;
+  if (expectedProductId && !matchesAsset(productId, expectedProductId)) {
     throw validationError("asset_identity_mismatch");
   }
   return productId;
@@ -119,8 +125,7 @@ export function assert3D66BrowserDownloadRequest({ url, method, body, contentTyp
 export function assert3D66StoredDownload(record = {}) {
   if (process.env.THREED66_MOCK !== "false") return;
   const resolvedId = assert3D66CleanModelUrl(record.resolvedSourceUrl, { expectedProductId: record.productId });
-  if (String(process.env.THREED66_MODEL_RESOLVE_MODE || "").trim().toLowerCase() === "hybrid"
-    && !modelIdsShareExactAssetIdentity(resolvedId, record.productId)) {
+  if (exactAssetMode() && !modelIdsShareExactAssetIdentity(resolvedId, record.productId)) {
     throw validationError("asset_identity_mismatch");
   }
 }

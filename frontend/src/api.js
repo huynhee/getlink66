@@ -1,3 +1,5 @@
+import { getlinkLanguage, isPublicGetlinkPath, publicGetlinkError, publicGetlinkJobData } from "./utils/getlinkErrors.js";
+
 const configuredApiUrl = String(import.meta.env?.VITE_API_URL || "").replace(/\/+$/, "");
 export const API_URL = configuredApiUrl || (import.meta.env?.PROD ? "" : "http://localhost:5000");
 let csrfToken = "";
@@ -81,18 +83,47 @@ function responseErrorMessage(response, data = {}) {
   return `HTTP ${response.status}${statusText ? `: ${statusText}` : ""}`;
 }
 
+function getlinkHeaders(path, headers) {
+  if (!isPublicGetlinkPath(path)) return headers;
+  return {
+    ...Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "accept-language")),
+    "Accept-Language": getlinkLanguage(),
+  };
+}
+
+async function sendRequest(path, signal, send) {
+  try {
+    return await send();
+  } catch (error) {
+    if (!isPublicGetlinkPath(path) || signal?.aborted || error?.name === "AbortError") throw error;
+    const safe = publicGetlinkError({ code: "GETLINK_UNAVAILABLE" });
+    throw Object.assign(new Error(safe.message), { code: safe.code });
+  }
+}
+
+function responseError(path, response, data) {
+  const safe = isPublicGetlinkPath(path) ? publicGetlinkError(data) : {
+    code: data.code || "", message: responseErrorMessage(response, data),
+  };
+  return Object.assign(new Error(safe.message), {
+    status: response.status,
+    code: safe.code,
+    data: isPublicGetlinkPath(path) ? { ...publicGetlinkJobData(data), ...safe } : data,
+  });
+}
+
 export async function api(path, options = {}) {
   const method = options.method || "GET";
   const mutating = isMutatingMethod(method);
 
   async function send() {
-    const headers = {
+    const headers = getlinkHeaders(path, {
       "Content-Type": "application/json",
       ...(String(path || "").startsWith("/api/marketplace")
         ? { "x-marketplace-session-id": marketplaceSessionId() }
         : {}),
       ...(options.headers || {})
-    };
+    });
 
     if (mutating) {
       headers["x-csrf-token"] = await getCsrfToken(options.signal);
@@ -109,29 +140,25 @@ export async function api(path, options = {}) {
     return { response, data };
   }
 
-  let { response, data } = await send();
+  let { response, data } = await sendRequest(path, options.signal, send);
   if (response.status === 403 && data.message === "Invalid CSRF token") {
     csrfToken = "";
     if (mutating) {
-      ({ response, data } = await send());
+      ({ response, data } = await sendRequest(path, options.signal, send));
     }
   }
   if (!response.ok) {
-    const error = new Error(responseErrorMessage(response, data));
-    error.status = response.status;
-    error.code = data.code || "";
-    error.data = data;
-    throw error;
+    throw responseError(path, response, data);
   }
 
-  return data;
+  return isPublicGetlinkPath(path) ? publicGetlinkJobData(data) : data;
 }
 
 export async function apiBinary(path, body, options = {}) {
   const method = options.method || "POST";
 
   async function send() {
-    const headers = { ...(options.headers || {}) };
+    const headers = getlinkHeaders(path, { ...(options.headers || {}) });
     headers["x-csrf-token"] = await getCsrfToken(options.signal);
     options.signal?.throwIfAborted();
     const response = await fetch(`${API_URL}${path}`, {
@@ -146,19 +173,15 @@ export async function apiBinary(path, body, options = {}) {
     return { response, data };
   }
 
-  let { response, data } = await send();
+  let { response, data } = await sendRequest(path, options.signal, send);
   if (response.status === 403 && data.message === "Invalid CSRF token") {
     csrfToken = "";
-    ({ response, data } = await send());
+    ({ response, data } = await sendRequest(path, options.signal, send));
   }
   if (!response.ok) {
-    const error = new Error(responseErrorMessage(response, data));
-    error.status = response.status;
-    error.code = data.code || "";
-    error.data = data;
-    throw error;
+    throw responseError(path, response, data);
   }
-  return data;
+  return isPublicGetlinkPath(path) ? publicGetlinkJobData(data) : data;
 }
 
 function trimPublicGetCache() {

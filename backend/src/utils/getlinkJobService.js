@@ -10,6 +10,7 @@ import {
 import logger from "./logger.js";
 import { is3D66CollectionError } from "./3d66CollectionResolver.js";
 import { is3D66RewrittenFootprintError } from "./3d66RewrittenFootprintResolver.js";
+import { publicGetlinkJobError } from "./getlinkPublicError.js";
 
 const ACTIVE_STATUSES = ["queued", "processing", "awaiting_format"];
 const TERMINAL_STATUSES = ["completed", "failed", "canceled"];
@@ -211,6 +212,8 @@ async function processClaimedJob(job, { executor = executeGetlinkForJob, userMod
     });
     await completeJob(job, operation.payload || {});
   } catch (error) {
+    logger.warn({ event: "GETLINK_JOB_FAILED", jobId: String(job._id), code: error.code,
+      status: error.status || 500, stage: error.details?.stage, reason: error.details?.reason }, "Getlink job failed");
     await failOrRetryJob(job, error);
   } finally {
     clearInterval(heartbeat);
@@ -546,7 +549,7 @@ export async function publicGetlinkJob(req, job) {
     formatOptions: Array.isArray(doc.formatOptions) ? doc.formatOptions : [],
     selectedFormat: doc.selectedFormat || null,
     attempts: Number(doc.attempts || 0),
-    error: doc.error?.message ? doc.error : null,
+    error: publicGetlinkJobError(doc.error, req),
     result: doc.status === "completed"
       ? {
           credit: Number(doc.result?.credit || 0),

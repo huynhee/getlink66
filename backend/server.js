@@ -17,8 +17,10 @@ import { requestGuard } from "./src/middleware/requestGuard.js";
 import logger from "./src/utils/logger.js";
 import { notifyServerError } from "./src/utils/telegramNotifier.js";
 import { isExpectedServiceUnavailable } from "./src/utils/operationalErrors.js";
+import { getlinkPublicErrors } from "./src/middleware/getlinkPublicErrors.js";
 
 const app = express();
+app.use(getlinkPublicErrors);
 const port = process.env.PORT || 5000;
 const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
 let shuttingDown = false;

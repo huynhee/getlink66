@@ -468,7 +468,7 @@ for (const [name, browserRedirect] of [["another path", (url) => url.replace(".h
     const state = await fixture(t, { browserRedirect });
     for (const execute of [download3D66WithBrowser, inspect3D66DownloadFormatsWithBrowser]) {
       await assert.rejects(execute(state.clean(), cookie, { rewrittenFootprintSeed: state.seed() }),
-        { code: "THREED66_REWRITTEN_FOOTPRINT_FAILED" });
+        { code: name === "another ID sharing the suffix" ? "THREED66_CLEAN_LINK_REQUIRED" : "THREED66_REWRITTEN_FOOTPRINT_FAILED" });
     }
     assert.deepEqual(state.requests, []);
   });
