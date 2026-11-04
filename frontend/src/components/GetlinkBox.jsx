@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, ArrowDownToLine, Copy, Check, ClipboardPaste, Search, ImageDown, X } from "lucide-react";
 import CoinAmount from "./CoinAmount.jsx";
@@ -11,7 +11,7 @@ import {
   setFaviconProgress,
 } from "../utils/faviconProgress.js";
 import { useGetlinkJob } from "../contexts/GetlinkJobContext.jsx";
-import { restoreGetlinkDraft, getlinkRequestId } from "../utils/getlinkDraft.js";
+import { GETLINK_PREVIEW_DRAFT_TTL_MS, restoreGetlinkDraft, getlinkRequestId } from "../utils/getlinkDraft.js";
 
 function isUsableFormatOption(option = {}) {
   const fileFormat = String(option.fileFormat || option.file_format || String(option.key || "").split("|")[0] || "").trim();
@@ -26,6 +26,18 @@ function formatDisplayName(option = {}, fallback = "Định dạng file") {
     14: "FBX（.fbx）"
   }[fileFormat];
   return option.label || option.name || mapped || fileFormat || fallback;
+}
+
+function formatOptionsIdentity(options) {
+  return JSON.stringify(options.map((option) => ({
+    key: String(option.key || ""),
+    fileFormat: String(option.fileFormat || option.file_format || ""),
+    formatVersion: String(option.formatVersion || ""),
+    rendererType: String(option.rendererType || ""),
+    rendererLabel: String(option.rendererLabel || ""),
+    label: formatDisplayName(option),
+    size: String(option.size || ""),
+  })).sort((first, second) => first.key.localeCompare(second.key)));
 }
 
 function normalize3D66Input(value = "", resolveMode = "search") {
@@ -54,7 +66,7 @@ function inputValueWhileTyping(value = "", resolveMode = "search") {
 
 function inputModeText(resolveMode = "search", language = "vi") {
   const isVi = language === "vi";
-  if (["collection", "rewritten_footprint"].includes(resolveMode)) {
+  if (["collection", "rewritten_footprint", "hybrid"].includes(resolveMode)) {
     return {
       placeholder: isVi ? "Dán link model 3D66" : "Paste the full 3D model 3D66 link",
       invalid: isVi ? "Vui lòng dán link model 3D66 có mã hợp lệ." : "Paste a 3D model 3D66 link containing a valid model ID.",
@@ -110,7 +122,13 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
   const [copied, setCopied] = useState(false);
   const [systemStatus, setSystemStatus] = useState({ online: true, message: "" });
   const [modelResolveMode, setModelResolveMode] = useState("");
+  const [preparationStatus, setPreparationStatus] = useState("");
+  const [reviewRequired, setReviewRequired] = useState(false);
+  const [changesAccepted, setChangesAccepted] = useState(false);
   const previewRequestRef = useRef(null);
+  const previewScopeRef = useRef("");
+  const selectedFormatKeyRef = useRef("");
+  const checkoutInFlightRef = useRef(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
   const progressTimerRef = useRef(null);
@@ -136,25 +154,53 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
     ? getlinkJobStageLabel(job.stage, language)
     : progressLabel;
   const modeText = inputModeText(modelResolveMode, language);
+  const hybrid = modelResolveMode === "hybrid";
+  const canRecheckAwaitingFormat = hybrid && job?.status === "awaiting_format";
   const pendingFormatOptions = Array.isArray(pendingFormatSelection?.formatOptions)
     ? pendingFormatSelection.formatOptions.filter(isUsableFormatOption)
     : [];
   const formatOptions = Array.isArray(preview?.formatOptions)
-    ? preview.formatOptions.filter(isUsableFormatOption)
+    ? preview.formatOptions.filter((option) => isUsableFormatOption(option) && (!hybrid || Boolean(option.key)))
     : [];
   const canChooseFormat = formatOptions.length > 0;
   const selectionOptions = pendingFormatSelection ? pendingFormatOptions : formatOptions;
   const selectedFormat =
     selectionOptions.find((option) => option.key === selectedFormatKey) ||
-    selectionOptions.find((option) => option.isDefault) ||
-    selectionOptions[0] ||
-    pendingFormatSelection?.selectedFormat ||
+    (!hybrid && (selectionOptions.find((option) => option.isDefault) || selectionOptions[0] || pendingFormatSelection?.selectedFormat)) ||
     null;
+  const priceAvailable = preview?.creditCost !== null && preview?.creditCost !== undefined
+    && preview.creditCost !== "" && Number.isFinite(Number(preview.creditCost)) && Number(preview.creditCost) >= 0;
+  const noFormatChoice = preview?.formatsChecked === true && Array.isArray(preview.formatOptions) && preview.formatOptions.length === 0;
+  const hybridCanConfirm = preparationStatus === "ready" && preview?.metadataIncomplete !== true && priceAvailable
+    && (Boolean(selectedFormat) || (noFormatChoice && job?.status !== "awaiting_format"))
+    && previewUrl === normalize3D66Input(url, modelResolveMode)
+    && draftOwner === String(userId) && (!reviewRequired || changesAccepted);
+
+  useLayoutEffect(() => {
+    previewScopeRef.current = JSON.stringify([String(userId), modelResolveMode, url.trim()]);
+    return () => {
+      previewRequestRef.current?.abort();
+      previewRequestRef.current = null;
+      previewScopeRef.current = "";
+    };
+  }, [modelResolveMode, url, userId]);
+
+  useLayoutEffect(() => {
+    selectedFormatKeyRef.current = selectedFormatKey;
+  }, [selectedFormatKey]);
 
   useEffect(() => {
     previewRequestRef.current?.abort();
     previewRequestRef.current = null;
     setLoading(false);
+    setPreparationStatus("");
+    setReviewRequired(false);
+    setChangesAccepted(false);
+    stopProgressTimer();
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    setProgress(0);
+    setProgressLabel("");
+    resetFaviconProgress();
     setPreview(null);
     setPreviewUrl("");
     setPreviewCheckedAt(0);
@@ -182,6 +228,8 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
     setPreviewUrl(draft.previewUrl);
     setPreviewCheckedAt(draft.previewCheckedAt);
     setSelectedFormatKey(draft.selectedFormatKey);
+    setPreparationStatus(draft.requiresPreparation ? "stale" : "");
+    setReviewRequired(draft.requiresPreparation);
     setDraftOwner(String(userId));
   }, [initialUrl, userId, modelResolveMode]);
 
@@ -209,9 +257,9 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
       if (formatDialogDismissedRef.current !== job.id) {
         setPendingFormatSelection(job);
         if (formatSelectionJobRef.current !== job.id) {
-          const defaultFormat = (job.formatOptions || []).find((option) => option.isDefault)
-            || job.formatOptions?.[0]
-            || job.selectedFormat;
+          const retainedFormat = (job.formatOptions || []).find((option) => option.key === selectedFormatKeyRef.current);
+          const defaultFormat = retainedFormat || (modelResolveMode !== "hybrid" && ((job.formatOptions || []).find((option) => option.isDefault)
+            || job.formatOptions?.[0] || job.selectedFormat));
           setSelectedFormatKey(defaultFormat?.key || "");
           formatSelectionJobRef.current = job.id;
         }
@@ -222,7 +270,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
         title: job.title || current?.title,
         imageUrl: job.imageUrl || current?.imageUrl,
         productId: job.productId || current?.productId,
-        creditCost: Number(job.creditCost || current?.creditCost || 0),
+        creditCost: modelResolveMode === "hybrid" ? job.creditCost ?? current?.creditCost : Number(job.creditCost || current?.creditCost || 0),
       }));
       return;
     }
@@ -335,7 +383,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
 
   async function submit(event) {
     event.preventDefault();
-    if (jobActive) {
+    if (jobActive && !canRecheckAwaitingFormat) {
       setError(language === "vi" ? "Một yêu cầu getlink đang được xử lý." : "A getlink request is already processing.");
       return;
     }
@@ -343,9 +391,15 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
     setError("");
     setResult("");
     setPreviewImageDownloadUrl("");
-    setPreview(null);
-    setPreviewUrl("");
-    setSelectedFormatKey("");
+    const retainedPreview = previewUrl === normalize3D66Input(url, modelResolveMode) ? preview : null;
+    if (!retainedPreview) {
+      setPreview(null);
+      setPreviewUrl("");
+      setSelectedFormatKey("");
+      selectedFormatKeyRef.current = "";
+      setPreviewCheckedAt(0);
+    }
+    setPreparationStatus("");
     setPendingFormatSelection(null);
     if (disabledReason) {
       setError(disabledReason);
@@ -364,25 +418,84 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
     previewRequestRef.current?.abort();
     const controller = new AbortController();
     previewRequestRef.current = controller;
+    const scope = previewScopeRef.current;
+    const isCurrent = () => previewRequestRef.current === controller && !controller.signal.aborted
+      && previewScopeRef.current === scope;
     setLoading(true);
+    setPreparationStatus("checking");
     setCopied(false);
-    beginProgress(language === "vi" ? "Đang kiểm tra model..." : "Checking model...", 8, 78);
+    beginProgress(t.getlinkChecking, 8, 78);
     try {
-      const data = await api("/api/getlink/preview", {
+      let data = await api("/api/getlink/preview", {
         method: "POST",
         signal: controller.signal,
-        body: JSON.stringify({ modelId: modelInput })
+        body: JSON.stringify({ modelId: modelInput, ...(hybrid ? { progressive: true } : {}) })
       });
-      if (previewRequestRef.current !== controller || controller.signal.aborted) return;
+      if (!isCurrent()) return;
       setPreviewImageFailed(false);
-      setPreview(data);
       setPreviewUrl(modelInput);
       setPreviewCheckedAt(Date.now());
-      setSelectedFormatKey(data.selectedFormat?.key || "");
+      let previous = retainedPreview;
+      let earlyFormats = Array.isArray(retainedPreview?.formatOptions) ? retainedPreview.formatOptions.filter(isUsableFormatOption) : [];
+      if (hybrid && data.preparationStatus === "pending") {
+        const early = { ...previous, ...data, title: data.title || previous?.title, imageUrl: data.imageUrl || previous?.imageUrl,
+          formatOptions: data.formatOptions?.length ? data.formatOptions : previous?.formatOptions || [],
+          creditCost: data.creditCost };
+        setPreview(early);
+        const earlyOptions = (data.formatOptions || []).filter(isUsableFormatOption);
+        earlyFormats = earlyOptions;
+        const earlyKey = selectedFormatKeyRef.current;
+        // Keep an explicit selection while preparing, even if early metadata has no formats.
+        if (!earlyKey) {
+          const initial = earlyOptions.find((option) => option.key === data.selectedFormat?.key)
+            || earlyOptions.find((option) => option.isDefault) || earlyOptions[0];
+          selectedFormatKeyRef.current = initial?.key || "";
+          setSelectedFormatKey(selectedFormatKeyRef.current);
+        }
+        previous = { ...previous, ...early };
+        setPreparationStatus("pending");
+        beginProgress(t.getlinkPreparing, 35, 92);
+        data = await api("/api/getlink/preview/prepare", {
+          method: "POST",
+          signal: controller.signal,
+          body: JSON.stringify({ modelId: modelInput }),
+        });
+        if (!isCurrent()) return;
+        setPreviewImageFailed(false);
+      }
+      if (hybrid) {
+        const options = Array.isArray(data.formatOptions)
+          ? data.formatOptions.filter((option) => isUsableFormatOption(option) && option.key) : [];
+        const checkedWithoutChoices = data.formatsChecked === true && Array.isArray(data.formatOptions) && data.formatOptions.length === 0;
+        if (data.preparationStatus !== "ready" || data.metadataIncomplete === true || (!options.length && !checkedWithoutChoices) || data.creditCost == null
+          || data.creditCost === "" || !Number.isFinite(Number(data.creditCost)) || Number(data.creditCost) < 0) {
+          setPreview({ ...previous, ...data, title: data.title || previous?.title, imageUrl: data.imageUrl || previous?.imageUrl,
+            formatOptions: previous?.formatOptions || options });
+          throw new Error(t.getlinkFormatsUnavailable);
+        }
+        const currentKey = selectedFormatKeyRef.current;
+        const retained = options.find((option) => option.key === currentKey);
+        const previousCost = previous?.creditCost ?? retainedPreview?.creditCost;
+        const changed = Boolean(currentKey && !retained)
+          || (previousCost != null && Number(previousCost) !== Number(data.creditCost))
+          || (earlyFormats.length > 0 && formatOptionsIdentity(earlyFormats) !== formatOptionsIdentity(options));
+        const nextFormat = retained || (!currentKey && (options.find((option) => option.key === data.selectedFormat?.key)
+          || options.find((option) => option.isDefault) || options[0]));
+        setPreview({ ...data, title: data.title || previous?.title, imageUrl: data.imageUrl || previous?.imageUrl });
+        setSelectedFormatKey(nextFormat?.key || "");
+        setReviewRequired((current) => current || changed);
+        setChangesAccepted(false);
+        setPreparationStatus("ready");
+      } else {
+        setPreview(data);
+        setSelectedFormatKey(data.selectedFormat?.key || "");
+      }
+      setPreviewCheckedAt(Date.now());
       finishProgress(language === "vi" ? "Đã lấy thông tin model" : "Model info loaded");
     } catch (err) {
-      if (previewRequestRef.current !== controller || controller.signal.aborted) return;
-      setError(err.message);
+      if (!isCurrent()) return;
+      setPreparationStatus("error");
+      setError(hybrid ? `${t.getlinkPrepareFailed} ${err.message || ""}` : err.message);
       errorProgress(language === "vi" ? "Kiểm tra thất bại" : "Check failed");
     } finally {
       if (previewRequestRef.current === controller) {
@@ -406,6 +519,13 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
   }
 
   async function confirmDownload(downloadFormatOverride = null) {
+    if (checkoutInFlightRef.current || confirming || (hybrid && !hybridCanConfirm)) return;
+    const scope = previewScopeRef.current;
+    if (hybrid && (Date.now() - previewCheckedAt >= GETLINK_PREVIEW_DRAFT_TTL_MS || Date.now() < previewCheckedAt)) {
+      setPreparationStatus("stale");
+      setError(t.getlinkRecheck);
+      return;
+    }
     setError("");
     setResult("");
     setPreviewImageDownloadUrl("");
@@ -414,20 +534,32 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
       return;
     }
     setCopied(false);
+    checkoutInFlightRef.current = true;
     try {
       const modelInput = normalize3D66Input(previewUrl || url, modelResolveMode);
       if (!modelInput) {
         setError(modeText.invalid);
         return;
       }
-      if (job?.status === "awaiting_format" && downloadFormatOverride?.key) {
-        await chooseFormat(job.id, downloadFormatOverride.key);
+      const formatChoice = downloadFormatOverride || selectedFormat;
+      if (job?.status === "awaiting_format") {
+        if (!formatChoice?.key || (hybrid && !(job.formatOptions || []).some((option) => option.key === formatChoice.key))) {
+          setError(t.getlinkChooseFormat);
+          return;
+        }
+        await chooseFormat(job.id, formatChoice.key);
         setPendingFormatSelection(null);
         formatDialogDismissedRef.current = "";
         return;
       }
       if (job && ["completed", "failed", "canceled"].includes(job.status)) {
         await acknowledgeJob(job.id);
+      }
+      if (previewScopeRef.current !== scope) return;
+      if (hybrid && Date.now() - previewCheckedAt >= GETLINK_PREVIEW_DRAFT_TTL_MS) {
+        setPreparationStatus("stale");
+        setError(t.getlinkRecheck);
+        return;
       }
       const requestStorageKey = `${draftStorageKey(userId)}:request-id`;
       const payload = { modelId: modelInput, includePreviewImage,
@@ -443,13 +575,14 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
         clientRequestId,
       });
       try {
-        window.localStorage.removeItem(draftStorageKey(userId));
         window.localStorage.removeItem(requestStorageKey);
       } catch {
         // The server-side idempotency key still protects the request.
       }
     } catch (err) {
-      setError(err.message);
+      if (previewScopeRef.current === scope) setError(err.message);
+    } finally {
+      checkoutInFlightRef.current = false;
     }
   }
 
@@ -524,14 +657,17 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
     setLoading(false);
     setPreviewUrl("");
     setPreviewCheckedAt(0);
+    setPreparationStatus("");
+    setReviewRequired(false);
+    setChangesAccepted(false);
     stopProgressTimer();
     if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
   }
 
   return (
-    <section className="panel">
+    <section className="panel" data-preparation-status={hybrid ? preparationStatus : undefined}>
       <form className="getlinkForm" onSubmit={submit}>
-        <h2>{t.getlinkTitle}</h2>
+        <h2>{hybrid ? (language === "vi" ? "Nhập link model" : "Enter a model link") : t.getlinkTitle}</h2>
         <p className="muted getlinkCreditNote">
           {language === "vi"
             ? "Credit tỉ lệ 1:1 với 3d66, giá model là giá của 3d66, trung bình 28 credit/model."
@@ -565,7 +701,7 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
               {t.paste}
             </button>
           </div>
-          <button type="submit" disabled={!modelResolveMode || loading || jobActive || !url || Boolean(disabledReason)}>
+          <button type="submit" disabled={!modelResolveMode || loading || (jobActive && !canRecheckAwaitingFormat) || !url || Boolean(disabledReason)}>
             {loading ? <Loader2 size={18} className="spin" /> : <Search size={18} />}
             {loading ? t.processing : t.checkLink}
           </button>
@@ -605,9 +741,17 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
       {error && !disabledReason && <p className="error">{error}</p>}
       {job?.status === "failed" && (
         <div className="getlinkJobActions">
-          <button type="button" onClick={retryCurrentJob} disabled={jobActionLoading}>
+          <button type="button" onClick={hybrid ? () => confirmDownload() : retryCurrentJob}
+            disabled={jobActionLoading || (hybrid && !hybridCanConfirm)}>
             {jobActionLoading ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
             {language === "vi" ? "Thử lại" : "Retry"}
+          </button>
+        </div>
+      )}
+      {hybrid && job?.status === "awaiting_format" && !pendingFormatSelection && (
+        <div className="getlinkJobActions">
+          <button type="button" onClick={() => setPendingFormatSelection(job)}>
+            <Check size={16} />{language === "vi" ? "Chọn định dạng" : "Choose format"}
           </button>
         </div>
       )}
@@ -632,7 +776,8 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
             <div style={{ minWidth: 0 }}>
               <strong style={{ display: "block", overflowWrap: "anywhere" }}>{preview.title || preview.productId}</strong>
               <p className="muted" style={{ margin: "6px 0" }}>{t.productCode}: {preview.productId}</p>
-              <p className="muted" style={{ margin: 0 }}>{t.price}: <CoinAmount value={preview.creditCost || 1} /></p>
+              <p className="muted" style={{ margin: 0 }}>{t.price}: {hybrid && !priceAvailable
+                ? t.getlinkPreparing : <CoinAmount value={hybrid ? preview.creditCost : preview.creditCost || 1} />}</p>
             </div>
           </div>
           {canChooseFormat && (
@@ -668,12 +813,36 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
               </div>
             </div>
           )}
+          {hybrid && (
+            <div className="getlinkPreparation" aria-live="polite" role="status">
+              <p className="muted">{preparationStatus === "pending" || preparationStatus === "checking" ? t.getlinkPreparing
+                : preparationStatus === "ready" ? t.getlinkPrepared
+                  : preparationStatus === "error" ? t.getlinkPrepareFailed : t.getlinkRecheck}</p>
+              {preparationStatus === "ready" && canChooseFormat && !selectedFormat && <p>{t.getlinkChooseFormat}</p>}
+              {preparationStatus === "ready" && reviewRequired && (
+                <>
+                  <p>{t.getlinkReviewChanged}</p>
+                  <label className="previewImageOption">
+                    <input type="checkbox" checked={changesAccepted} disabled={confirming}
+                      onChange={(event) => setChangesAccepted(event.target.checked)} />
+                    <span>{t.getlinkAcceptChanges}</span>
+                  </label>
+                </>
+              )}
+              {["error", "stale"].includes(preparationStatus) && (
+                <button type="button" className="smallButton" onClick={submit} disabled={loading || (jobActive && !canRecheckAwaitingFormat)}>
+                  <Search size={16} />{t.getlinkRetryPreparation}
+                </button>
+              )}
+            </div>
+          )}
           {!result && job?.status !== "failed" && job?.status !== "canceled" && (
-            <button type="button" onClick={() => confirmDownload()} disabled={confirming || Boolean(disabledReason)} style={{ marginTop: 14 }}>
+            <button type="button" onClick={() => confirmDownload()}
+              disabled={confirming || loading || Boolean(disabledReason) || (hybrid && !hybridCanConfirm)} style={{ marginTop: 14 }}>
               {confirming ? <Loader2 size={18} className="spin" /> : <ArrowDownToLine size={18} />}
               {confirming
                 ? t.processing
-                : <>{t.confirmDownload} - <CoinAmount value={preview.creditCost || 1} /></>}
+                : <>{t.confirmDownload}{(!hybrid || priceAvailable) && <> - <CoinAmount value={hybrid ? preview.creditCost : preview.creditCost || 1} /></>}</>}
             </button>
           )}
         </div>
@@ -709,13 +878,14 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
           )}
         </div>
       )}
-      {pendingFormatSelection && pendingFormatOptions.length > 1 && typeof document !== "undefined" && createPortal((
+      {pendingFormatSelection && pendingFormatOptions.length > (hybrid ? 0 : 1) && typeof document !== "undefined" && createPortal((
         <div className="redownloadFormatOverlay" role="dialog" aria-modal="true">
           <div className="redownloadFormatCard">
             <div className="redownloadFormatHeader">
               <div>
                 <span>{language === "vi" ? "Chọn định dạng file" : "Choose file format"}</span>
                 <strong>{pendingFormatSelection.title || pendingFormatSelection.productId}</strong>
+                {hybrid && <p>{t.price}: {priceAvailable ? <CoinAmount value={preview.creditCost} /> : t.getlinkPreparing}</p>}
               </div>
               <button
                 type="button"
@@ -760,6 +930,11 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
             </div>
 
             <div className="redownloadFormatActions">
+              {hybrid && !hybridCanConfirm && (
+                <button type="button" onClick={submit} disabled={loading}>
+                  <Search size={16} />{t.getlinkRetryPreparation}
+                </button>
+              )}
               <button
                 type="button"
                 className="ghostButton"
@@ -768,7 +943,8 @@ export default function GetlinkBox({ userId = "", initialUrl = "", language = "v
               >
                 {language === "vi" ? "Hủy yêu cầu" : "Cancel request"}
               </button>
-              <button type="button" onClick={() => confirmDownload(selectedFormat)} disabled={confirming || !selectedFormat}>
+              <button type="button" onClick={() => confirmDownload(selectedFormat)}
+                disabled={confirming || !selectedFormat || (hybrid && !hybridCanConfirm)}>
                 {confirming ? <Loader2 size={16} className="spin" /> : <ArrowDownToLine size={16} />}
                 {language === "vi" ? "Xác nhận tải" : "Confirm download"}
               </button>

@@ -7,7 +7,8 @@ import { create3D66BrowserProfileStore } from "./3d66BrowserProfileStore.js";
 import { create3D66CollectionResolver } from "./3d66CollectionResolver.js";
 import { create3D66RewrittenFootprintResolver, assert3D66RewrittenFootprintLink,
   assert3D66FootprintPageVerified, is3D66RewrittenFootprintError, get3D66VerificationPage,
-  resolveRewrittenFootprintHistory } from "./3d66RewrittenFootprintResolver.js";
+  resolveRewrittenFootprintHistory, resolveRewrittenFootprintPage } from "./3d66RewrittenFootprintResolver.js";
+import { validate3D66HybridInput } from "./3d66HybridResolver.js";
 import {
   assert3D66BrowserDownloadRequest, assert3D66CleanModelUrl, assert3D66DownloadFields,
   is3D66CleanLinkError, modelIdsShareAssetIdentity, required3D66AccountMarker,
@@ -368,7 +369,7 @@ function matchesDirectVerificationPage(url, seed) {
   } catch { return false; }
 }
 
-async function withBrowserContext(url, cookieValue, callback, { allowProxyFallback = true, rewrittenFootprintSeed = null } = {}) {
+async function withBrowserContext(url, cookieValue, callback, { allowProxyFallback = true, rewrittenFootprintSeed = null, readOnly = false } = {}) {
   return runBrowserTask(async () => {
     const directSeed = rewrittenFootprintSeed ? null : directVerificationSeed(url);
     const verificationSeed = rewrittenFootprintSeed || directSeed;
@@ -391,7 +392,7 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
       let removeFastRoutes;
       try {
         let validationError = null;
-        removeFastRoutes = await installFastRoutes(context, (error) => { validationError ||= error; }, rewrittenFootprintSeed);
+        removeFastRoutes = await installFastRoutes(context, (error) => { validationError ||= error; }, rewrittenFootprintSeed, readOnly);
         await lease?.activate();
         await threed66VerificationStore.assertAvailable(cookieValue, configurationKey);
 
@@ -402,8 +403,8 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
 
         const page = ready?.entry.page || context.pages()[0] || await context.newPage();
         let reuseVerifiedPage = false;
-        if (ready && directSeed) {
-          try { assert3D66RewrittenFootprintLink(page.url(), directSeed); reuseVerifiedPage = true; }
+        if (ready && verificationSeed) {
+          try { assert3D66RewrittenFootprintLink(page.url(), verificationSeed); reuseVerifiedPage = true; }
           catch { /* Reload only the requested model if the idle page drifted. */ }
         }
         try {
@@ -480,7 +481,7 @@ export async function close3D66Browser() {
   await browserSessions.closeAll();
 }
 
-async function installFastRoutes(context, onValidationError, rewrittenFootprintSeed) {
+async function installFastRoutes(context, onValidationError, rewrittenFootprintSeed, readOnly = false) {
   const handler = async (route) => {
     const request = route.request();
     if (!isAllowed3D66BrowserRequestUrl(request.url())) {
@@ -501,6 +502,11 @@ async function installFastRoutes(context, onValidationError, rewrittenFootprintS
     let sourceUrl = "";
     try { sourceUrl = request.frame().url(); } catch { /* Worker requests have no frame. */ }
     try {
+      if (readOnly && (isAllowed3D66DownloadUrl(request.url())
+        || /\/(?:download\/handle|pay|payment|purchase|orders?)(?:[/.]|$)/i.test(new URL(request.url()).pathname))) {
+        throw browserHttpError("A preview cannot initiate a purchase or file download.", 422,
+          { stage: "hybrid-preview", reason: "write_request_blocked" }, "THREED66_READ_ONLY_PREVIEW");
+      }
       if (rewrittenFootprintSeed && /^\/api\/v1\/download\/(?:handle|pop)\/?$/.test(new URL(request.url()).pathname)) {
         assert3D66RewrittenFootprintLink(sourceUrl, rewrittenFootprintSeed);
       }
@@ -1322,6 +1328,60 @@ export const resolve3D66ModelUrlFromRewrittenFootprint = create3D66RewrittenFoot
   navigateSeed: (page, url) => page.goto(stripInternalUrlHash(url), { waitUntil: navigationWaitUntil(), timeout: timeoutMs() }),
   openHistoryLink: open3D66RewrittenFootprintCard,
 });
+
+export async function resolve3D66HybridModelWithBrowser(url, cookieValue, { resolvedLink, includeFormatOptions = false } = {}) {
+  const queuedAt = Date.now();
+  const sourceSeed = validate3D66HybridInput(url);
+  const seed = { ...sourceSeed, mode: "hybrid", hybridSourceUrl: url };
+  if (resolvedLink) {
+    seed.productId = assert3D66CleanModelUrl(resolvedLink.url, { expectedProductId: sourceSeed.sourceProductId });
+    const parsed = new URL(resolvedLink.url);
+    seed.modelPage = parsed.origin + parsed.pathname;
+  }
+  return withBrowserContext(resolvedLink?.url || seed.url, cookieValue, async ({ page, context, reuseVerifiedPage }) => {
+    const started = Date.now();
+    let result;
+    if (resolvedLink || reuseVerifiedPage) {
+      if (!reuseVerifiedPage) await goto3D66Page(page, resolvedLink.url);
+      await assert3D66FootprintPageVerified(page);
+      assert3D66CleanModelUrl(page.url(), { expectedProductId: sourceSeed.sourceProductId });
+      const parsed = new URL(page.url());
+      seed.modelPage = parsed.origin + parsed.pathname;
+      assert3D66RewrittenFootprintLink(page.url(), seed);
+      result = { url: page.url(), productId: seed.productId, canonicalModelPage: seed.modelPage, route: "signed_link" };
+    } else {
+      result = await resolveRewrittenFootprintPage({ page, seed, navigate: goto3D66Page,
+        navigateSeed: (target, value) => target.goto(stripInternalUrlHash(value), { waitUntil: navigationWaitUntil(), timeout: timeoutMs() }),
+        openHistoryLink: (target, card, boundSeed) => open3D66RewrittenFootprintCard(target, card, boundSeed, context),
+        timeout: timeoutMs(), settleMs: postCommitWaitMs(), refreshAttempts: footprintRefreshAttempts(), refreshDelayMs: footprintRefreshDelayMs() });
+      result.route = "rewritten_history";
+    }
+    seed.modelPage = result.canonicalModelPage;
+    const opened = context.pages().find(target => target.url() === result.url) || page;
+    if (opened.url() !== result.url) await goto3D66Page(opened, result.url);
+    const bound = { ...seed, modelPage: result.canonicalModelPage };
+    await assert3D66FootprintPageVerified(opened);
+    assert3D66RewrittenFootprintLink(opened.url(), bound);
+    const formatsAt = Date.now();
+    let inspection;
+    if (includeFormatOptions) {
+      await evaluateMetadataWithRetry(opened);
+      const formatOptions = await read3D66InlineFormats(opened);
+      const metadata = await opened.evaluate(evaluateMetadata);
+      await assert3D66FootprintPageVerified(opened);
+      assert3D66RewrittenFootprintLink(opened.url(), bound);
+      if (metadata.found && !Object.values(metadata.found).some(Boolean)) {
+        throw browserHttpError("The model page has not finished loading. Please retry the preview.", 503,
+          { stage: "preview-formats" }, "THREED66_PREVIEW_NOT_READY");
+      }
+      inspection = { metadata: { ...metadata, formatOptions, formatOptionsSource: "selector",
+        selectedFormat: formatOptions.find(option => option.isDefault) || formatOptions[0] || null }, formatsChecked: true };
+    }
+    return { ...result, inspection,
+      timings: { browserQueueMs: started - queuedAt, cleaningMs: formatsAt - started, formatsMs: Date.now() - formatsAt },
+      cookieValue: serializeCookies(await context.cookies()) || cookieValue };
+  }, { allowProxyFallback: false, rewrittenFootprintSeed: seed, readOnly: true });
+}
 
 export async function resume3D66Verification(entry) {
   try {

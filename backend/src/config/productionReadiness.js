@@ -50,7 +50,11 @@ export function productionReadinessIssues(env = process.env) {
   }
   try { required3D66AccountMarker(env); }
   catch { errors.push("THREED66_REQUIRED_ACCOUNT_MARKER must be 6-12 digits; the required clean-link check cannot be disabled"); }
-  if (text(env, "THREED66_MODEL_RESOLVE_MODE").toLowerCase() === "collection") {
+  const resolveMode = text(env, "THREED66_MODEL_RESOLVE_MODE").toLowerCase() || "search";
+  if (!["search", "footprint", "direct", "collection", "rewritten_footprint", "hybrid"].includes(resolveMode)) {
+    errors.push("THREED66_MODEL_RESOLVE_MODE must be search, footprint, direct, collection, rewritten_footprint or hybrid");
+  }
+  if (resolveMode === "collection") {
     try { collectionResolutionConfig(env); }
     catch { errors.push("Collection resolution requires a valid THREED66_COLLECTION_ID and THREED66_COLLECTION_USER"); }
   }

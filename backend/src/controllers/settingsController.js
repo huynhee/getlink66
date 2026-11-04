@@ -6,7 +6,7 @@ import { REFERRAL_REWARD_FIELDS, validReferralRewardAmount } from "../utils/refe
 import { required3D66AccountMarker } from "../utils/3d66CleanLink.js";
 
 const REFERRAL_MODES = ["both", "referrer_only", "off"];
-const THREED66_MODEL_RESOLVE_MODES = ["search", "footprint", "direct", "collection", "rewritten_footprint"];
+const THREED66_MODEL_RESOLVE_MODES = ["search", "footprint", "direct", "collection", "rewritten_footprint", "hybrid"];
 const COLLECTION_FIELDS = {
   threed66CollectionId: { env: "THREED66_COLLECTION_ID", pattern: /^[1-9]\d{0,18}$/ },
   threed66CollectionUser: { env: "THREED66_COLLECTION_USER", pattern: /^[A-Z]{3}\d{5,20}$/ },

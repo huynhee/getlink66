@@ -5,6 +5,7 @@ import {
   getLink,
   getlinkHistory,
   inspectGetlink,
+  prepareGetlinkPreview,
   prepareRedownload,
   previewGetlink,
   proxyCachedGetlinkPreviewImage,
@@ -41,6 +42,7 @@ const getlinkIpLimit = createRateLimit({
 });
 
 router.post("/getlink/preview", requireAuth, requireNotBanned, previewLimit, previewIpLimit, previewGetlink);
+router.post("/getlink/preview/prepare", requireAuth, requireNotBanned, previewLimit, previewIpLimit, prepareGetlinkPreview);
 router.post("/getlink/inspect", requireAuth, adminOnly, previewLimit, inspectGetlink);
 router.post("/getlink/jobs", requireAuth, requireNotBanned, getlinkLimit, getlinkIpLimit, createJob);
 router.get("/getlink/jobs/latest", requireAuth, latestJob);

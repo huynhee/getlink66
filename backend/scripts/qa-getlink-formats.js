@@ -55,8 +55,8 @@ export async function verifyGetlinkFormats(page, context, { origin, screenshotRo
     }
     if (url.pathname === "/api/getlink/preview") return route.fulfill({ json: {
       productId: "ACI896357714629725", title: "Format preview fixture", creditCost: 28,
-      formatOptions: mode === "inline" ? formatOptions : [],
-      selectedFormat: mode === "inline" ? formatOptions[0] : null,
+      formatOptions: mode === "legacy" ? [] : formatOptions,
+      selectedFormat: mode === "legacy" ? null : formatOptions[0],
     } });
     if (url.pathname === "/api/getlink/jobs/latest") return route.fulfill({ json: { job: latestJob } });
     if (url.pathname === "/api/getlink/history") return route.fulfill({ json: { history: [] } });
@@ -71,6 +71,10 @@ export async function verifyGetlinkFormats(page, context, { origin, screenshotRo
     }
     if (url.pathname === "/api/getlink/jobs" && request.method() === "POST") {
       submissions.push(request.postDataJSON());
+      if (mode === "insufficient-credit") {
+        latestJob = { id: "insufficient-credit-fixture", status: "failed", error: { message: "Insufficient credit: 28 required" } };
+        return route.fulfill({ json: { job: latestJob } });
+      }
       const job = { id: "format-fixture", status: mode === "legacy" ? "awaiting_format" : "queued",
         title: "Format preview fixture", creditCost: 28, progress: 0,
         ...(mode === "legacy" ? { formatOptions, selectedFormat: formatOptions[0] } : {}),
@@ -88,6 +92,9 @@ export async function verifyGetlinkFormats(page, context, { origin, screenshotRo
         await page.evaluate(({ language, theme }) => {
           globalThis.localStorage.setItem("language", language);
           globalThis.localStorage.setItem("3dipl-theme", theme);
+          for (const key of Object.keys(globalThis.localStorage)) {
+            if (key.startsWith("3dipl-getlink-draft:")) globalThis.localStorage.removeItem(key);
+          }
         }, { language, theme });
         await page.goto(`${origin}/getlink`, { waitUntil: "domcontentloaded" });
         await page.waitForFunction(() => globalThis.document.querySelector("#modelUrl")?.placeholder.includes("3D66"));
@@ -112,6 +119,17 @@ export async function verifyGetlinkFormats(page, context, { origin, screenshotRo
         assert.equal(submissions.at(-1).downloadFormat.rendererType, "3");
       }
     }
+    mode = "insufficient-credit";
+    await page.locator("#modelUrl").fill(source.replace("formats.html", "insufficient-credit.html"));
+    await page.locator(".getlinkForm button[type=submit]").click();
+    await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).click();
+    await page.locator(".result").getByRole("button", { name: /Xác nhận tải|Confirm download/ }).click();
+    await page.getByText("Insufficient credit: 28 required", { exact: true }).waitFor();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.getByText("Insufficient credit: 28 required", { exact: true }).waitFor();
+    await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/, pressed: true }).waitFor();
+    latestJob = null;
+
     mode = "delayed";
     delayedPreview = new Promise((resolve) => { releasePreview = resolve; });
     const arrived = new Promise((resolve) => { delayedPreviewArrived = resolve; });
@@ -183,5 +201,319 @@ export async function verifyGetlinkFormats(page, context, { origin, screenshotRo
     releasePreview?.();
     releaseAcknowledgement?.();
     for (const pattern of patterns) await context.unroute(pattern, handler);
+  }
+  await verifyHybridGetlinkPreview(page, context, { origin, screenshotRoot, viewport });
+}
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+export async function verifyHybridGetlinkPreview(page, context, { origin, screenshotRoot, viewport }) {
+  let resolverMode = "hybrid";
+  let scenario = "progressive";
+  let gate = deferred();
+  let arrived = deferred();
+  let delivered = deferred();
+  let latestJob = null;
+  let resumedKey = "";
+  let account = { _id: "hybrid-qa-user", name: "Hybrid QA", email: "hybrid@local.test", credit: 100, role: "user" };
+  const previewRequests = [];
+  const prepareRequests = [];
+  const submissions = [];
+  const obj = { key: "3|obj|0", fileFormat: "3", label: "OBJ (.obj)", size: "24 MB" };
+  const completeOptions = [formatOptions[1], formatOptions[0], obj];
+  const source = "https://3d.3d66.com/reshtmla/model/items/fixture/hybrid.html?sof=ACI896357714629725&sign=fixture";
+  const metadata = { productId: "ACI896357714629725", title: "Hybrid early model", creditCost: 28,
+    imageUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=" };
+  const handler = async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === "/api/auth/user") return route.fulfill({ json: { user: account } });
+    if (pathname === "/api/settings") return route.fulfill({ json: { settings: { threed66ModelResolveMode: resolverMode } } });
+    if (pathname === "/api/system/3d66-status") return route.fulfill({ json: { online: true } });
+    if (pathname === "/api/account/events") return route.fulfill({ status: 204, body: "" });
+    if (pathname === "/api/getlink/jobs/latest") return route.fulfill({ json: { job: latestJob } });
+    if (pathname === "/api/getlink/history") return route.fulfill({ json: { history: [] } });
+    if (pathname === "/api/getlink/preview") {
+      previewRequests.push(request.postDataJSON());
+      return route.fulfill({ json: { ...metadata,
+        ...(scenario === "incomplete" ? { title: "", imageUrl: "", creditCost: null, metadataIncomplete: true } : {}),
+        formatsChecked: ["no-choice", "awaiting-format"].includes(scenario),
+        formatOptions: ["metadata-only", "incomplete", "no-choice", "prepared-no-choice", "awaiting-format"].includes(scenario) ? [] : formatOptions,
+        selectedFormat: ["no-choice", "awaiting-format"].includes(scenario) ? null : formatOptions[0],
+        preparationStatus: ["ready", "metadata-only", "no-choice", "awaiting-format"].includes(scenario) ? "ready" : "pending" } });
+    }
+    if (pathname === "/api/getlink/preview/prepare") {
+      prepareRequests.push(request.postDataJSON());
+      const currentScenario = scenario;
+      const responseDelivered = delivered;
+      arrived.resolve();
+      await gate.promise;
+      if (currentScenario === "failure") {
+        await route.fulfill({ status: 403, json: { code: "THREED66_MANUAL_VERIFICATION_REQUIRED", message: "Preparation fixture failed" } });
+      } else {
+        await route.fulfill({ json: { ...metadata,
+          title: currentScenario === "stale" ? "Stale hybrid preparation" : "Hybrid prepared model",
+          preparationStatus: "ready", metadataIncomplete: false, creditCost: currentScenario === "changed" ? 42 : 28,
+          formatsChecked: true,
+          formatOptions: currentScenario === "changed" ? [obj] : currentScenario === "prepared-no-choice" ? []
+            : currentScenario === "details-changed" ? [formatOptions[0], { ...formatOptions[1], size: "800 MB" }] : completeOptions,
+          selectedFormat: formatOptions[0] } });
+      }
+      responseDelivered.resolve();
+      return;
+    }
+    if (pathname === "/api/getlink/jobs" && request.method() === "POST") {
+      submissions.push(request.postDataJSON());
+      if (scenario === "awaiting-format") {
+        latestJob = { id: "hybrid-awaiting-format", status: "awaiting_format", ...metadata, formatOptions,
+          selectedFormat: formatOptions[0] };
+        return route.fulfill({ json: { job: latestJob } });
+      }
+      return route.fulfill({ status: 402, json: { message: "Insufficient credit fixture" } });
+    }
+    if (pathname.endsWith("/format")) {
+      resumedKey = request.postDataJSON().formatKey;
+      latestJob = null;
+      return route.fulfill({ json: { job: null } });
+    }
+    throw new Error(`Unexpected hybrid QA request: ${pathname}`);
+  };
+  const patterns = ["**/api/auth/user", "**/api/settings", "**/api/system/3d66-status", "**/api/account/events", "**/api/getlink/**"];
+  for (const pattern of patterns) await context.route(pattern, handler);
+  const confirm = () => page.locator(".result").getByRole("button", { name: /Xác nhận tải|Confirm download/ });
+  const status = (value) => page.locator(`[data-preparation-status="${value}"]`).waitFor();
+  const resetGate = (nextScenario) => {
+    scenario = nextScenario;
+    gate = deferred(); arrived = deferred(); delivered = deferred();
+  };
+  const check = async (url = source) => {
+    await page.locator("#modelUrl").fill(url);
+    await page.locator(".getlinkForm button[type=submit]").click();
+  };
+  try {
+    for (const language of ["vi", "en"]) {
+      resetGate("progressive");
+      await page.evaluate((lang) => {
+        globalThis.localStorage.setItem("language", lang);
+        for (const key of Object.keys(globalThis.localStorage)) {
+          if (key.startsWith("3dipl-getlink-draft:")) globalThis.localStorage.removeItem(key);
+        }
+      }, language);
+      await page.goto(`${origin}/getlink`, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => globalThis.document.querySelector("#modelUrl")?.placeholder.includes("3D66"));
+      const beforeInvalid = previewRequests.length;
+      await check("ACI896357714629725");
+      await page.locator(".error").waitFor();
+      assert.equal(previewRequests.length, beforeInvalid, "Hybrid requires a full URL");
+      await check();
+      await arrived.promise;
+      await status("pending");
+      await page.getByText("Hybrid early model", { exact: true }).waitFor();
+      assert.equal(await page.locator(".formatSelector .formatOption").count(), 2);
+      assert.equal(await confirm().isDisabled(), true, "Early metadata must never authorize payment");
+      assert.deepEqual(previewRequests.at(-1), { modelId: source, progressive: true });
+      assert.deepEqual(prepareRequests.at(-1), { modelId: source });
+      await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).click();
+      await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-hybrid-early-${language}.png`), fullPage: true });
+      gate.resolve();
+      await status("ready");
+      assert.equal(await page.locator(".formatSelector .formatOption").count(), 3, "Prepared options replace the early list");
+      assert.equal(await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).getAttribute("aria-pressed"), "true");
+      assert.equal(await confirm().isDisabled(), true, "Changed actual options require review even when the selected key survives");
+      await page.getByRole("checkbox", { name: /Tôi xác nhận|I confirm/ }).check();
+      assert.equal(await confirm().isEnabled(), true);
+      await confirm().click();
+      await page.getByText("Insufficient credit fixture", { exact: true }).waitFor();
+      assert.equal(submissions.at(-1).downloadFormat.key, formatOptions[1].key);
+      await page.getByText("Hybrid prepared model", { exact: true }).waitFor();
+      assert.equal(await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).getAttribute("aria-pressed"), "true");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await status("stale");
+      assert.equal(await confirm().isDisabled(), true, "Even a fresh ready hybrid draft cannot authorize payment");
+      assert.equal(await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).getAttribute("aria-pressed"), "true");
+
+      resetGate("failure");
+      await page.getByRole("button", { name: /Thử chuẩn bị lại|Retry preparation/ }).click();
+      await arrived.promise;
+      gate.resolve();
+      await status("error");
+      await page.getByText("Hybrid early model", { exact: true }).waitFor();
+      assert.equal(await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).getAttribute("aria-pressed"), "true");
+      assert.equal(await confirm().isDisabled(), true);
+      await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-hybrid-failure-${language}.png`), fullPage: true });
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await status("stale");
+      await page.getByText("Hybrid early model", { exact: true }).waitFor();
+      assert.equal(await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).getAttribute("aria-pressed"), "true");
+      assert.equal(await confirm().isDisabled(), true, "A failed pending draft remains display-only on reload");
+
+      resetGate("changed");
+      await page.getByRole("button", { name: /Thử chuẩn bị lại|Retry preparation/ }).click();
+      await arrived.promise;
+      gate.resolve();
+      await status("ready");
+      assert.equal(await page.locator(".formatSelector .formatOption[aria-pressed=true]").count(), 0,
+        "A removed selection must not silently become the default format");
+      assert.equal(await confirm().isDisabled(), true);
+      await page.locator(".formatSelector").getByRole("button", { name: /OBJ/ }).click();
+      assert.equal(await confirm().isDisabled(), true, "A changed price also needs deliberate review");
+      await page.getByRole("checkbox", { name: /Tôi xác nhận|I confirm/ }).check();
+      assert.equal(await confirm().isEnabled(), true);
+      assert.match(await confirm().innerText(), /42/);
+      assert.equal(await page.locator(".formatSelector").evaluate((node) => node.scrollWidth > node.clientWidth + 2), false);
+      await page.screenshot({ path: path.join(screenshotRoot, `${viewport}-hybrid-prepared-${language}.png`), fullPage: true });
+    }
+
+    resetGate("stale");
+    await check(source.replace("hybrid.html", "slow.html"));
+    await arrived.promise;
+    const staleDelivered = delivered.promise;
+    const releaseStale = gate.resolve;
+    scenario = "ready";
+    await check(source.replace("hybrid.html", "current.html"));
+    await status("ready");
+    releaseStale();
+    await staleDelivered;
+    assert.equal(await page.getByText("Stale hybrid preparation", { exact: true }).count(), 0);
+    await page.getByText("Hybrid early model", { exact: true }).waitFor();
+    const preparesBeforeReady = prepareRequests.length;
+    await check(source.replace("hybrid.html", "ready.html"));
+    await status("ready");
+    assert.equal(prepareRequests.length, preparesBeforeReady, "Ready previews do not need a prepare request");
+
+    scenario = "metadata-only";
+    await check(source.replace("hybrid.html", "metadata-only.html"));
+    await status("error");
+    assert.equal(await confirm().isDisabled(), true, "A metadata-only ready response still cannot authorize payment");
+    assert.equal(await page.locator(".formatSelector").count(), 0, "No formats may be invented");
+
+    resetGate("incomplete");
+    await check(source.replace("hybrid.html", "incomplete.html"));
+    await arrived.promise;
+    await status("pending");
+    assert.equal(await confirm().isDisabled(), true, "Empty early metadata must still prepare without authorizing payment");
+    assert.equal(await page.locator(".formatSelector").count(), 0);
+    assert.equal(await page.locator(".result .coinAmount").count(), 0, "Unknown prices must not render as one credit");
+    gate.resolve();
+    await status("ready");
+    await page.getByText("Hybrid prepared model", { exact: true }).waitFor();
+    assert.equal(await page.locator(".formatSelector .formatOption").count(), 3);
+
+    resetGate("details-changed");
+    await check(source.replace("hybrid.html", "details-changed.html"));
+    await arrived.promise;
+    await status("pending");
+    await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).click();
+    gate.resolve();
+    await status("ready");
+    assert.equal(await page.locator(".formatSelector").getByRole("button", { name: /CR max 2016/ }).getAttribute("aria-pressed"), "true");
+    assert.equal(await confirm().isDisabled(), true, "Changed format details alone require review");
+    await page.getByRole("checkbox", { name: /Tôi xác nhận|I confirm/ }).check();
+    assert.equal(await confirm().isEnabled(), true);
+
+    resetGate("prepared-no-choice");
+    await check(source.replace("hybrid.html", "prepared-no-choice.html"));
+    await arrived.promise;
+    gate.resolve();
+    await status("ready");
+    assert.equal(await page.locator(".formatSelector").count(), 0);
+    assert.equal(await confirm().isEnabled(), true, "Prepared, checked empty lists are valid without invented choices");
+
+    scenario = "no-choice";
+    await check(source.replace("hybrid.html", "no-choice.html"));
+    await status("ready");
+    assert.equal(await page.locator(".formatSelector").count(), 0);
+    assert.equal(await confirm().isEnabled(), true, "A complete, checked model without format choices is valid");
+    await confirm().click();
+    await page.getByText("Insufficient credit fixture", { exact: true }).waitFor();
+    assert.equal(submissions.at(-1).downloadFormat, undefined, "No-choice checkout must not invent a format");
+
+    scenario = "awaiting-format";
+    await check(source.replace("hybrid.html", "awaiting-format.html"));
+    await status("ready");
+    await confirm().click();
+    const dialog = page.locator(".redownloadFormatOverlay");
+    await dialog.waitFor();
+    assert.match(await dialog.innerText(), /28/);
+    await dialog.getByRole("button", { name: /CR max 2016/ }).click();
+    const submittedBeforeChoice = submissions.length;
+    await dialog.getByRole("button", { name: /Xác nhận tải|Confirm download/ }).click();
+    await dialog.waitFor({ state: "hidden" });
+    assert.equal(resumedKey, formatOptions[1].key);
+    assert.equal(submissions.length, submittedBeforeChoice, "Late choices must resume the job, not create another payment");
+
+    resetGate("stale");
+    await check(source.replace("hybrid.html", "old-user.html"));
+    await arrived.promise;
+    const oldAccountDelivery = delivered.promise;
+    account = { ...account, _id: "hybrid-qa-next-user" };
+    await page.evaluate(() => globalThis.dispatchEvent(new globalThis.StorageEvent("storage", {
+      key: "3dipl-user-sync-event", newValue: JSON.stringify({ type: "refresh-user", source: "qa", at: Date.now() }),
+    })));
+    await page.waitForFunction(() => globalThis.document.querySelector("#modelUrl")?.value === "");
+    gate.resolve();
+    await oldAccountDelivery;
+    assert.equal(await page.locator(".result").count(), 0, "Old-account preparation must not restore a payable preview");
+
+    resetGate("stale");
+    await check(source.replace("hybrid.html", "old-mode.html"));
+    await arrived.promise;
+    const oldModeDelivery = delivered.promise;
+    resolverMode = "search";
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => !globalThis.document.querySelector("#modelUrl")?.placeholder.includes("3D66"));
+    gate.resolve();
+    await oldModeDelivery;
+    assert.equal(await page.locator(".result").count(), 0, "A mode change must invalidate the old hybrid draft and response");
+    console.log(`Hybrid Getlink QA passed: ${viewport} (vi/en, progressive, selection, price review, failure, draft, stale URL/user/mode)`);
+  } finally {
+    gate.resolve();
+    for (const pattern of patterns) await context.unroute(pattern, handler);
+  }
+}
+
+// Run the browser fixtures without a backend, credentials, or outbound requests.
+if (process.argv.includes("--local")) {
+  const { chromium } = await import("playwright");
+  const { createServer } = await import("../../frontend/node_modules/vite/dist/node/index.js");
+  const server = await createServer({
+    root: path.resolve(import.meta.dirname, "../../frontend"),
+    define: { "import.meta.env.VITE_API_URL": "window.location.origin" },
+    server: { host: "127.0.0.1", port: 0, open: false },
+  });
+  const screenshotRoot = path.resolve(import.meta.dirname, "../../.cache/hybrid-getlink-qa");
+  fs.mkdirSync(screenshotRoot, { recursive: true });
+  let browser;
+  try {
+    await server.listen();
+    const origin = server.resolvedUrls.local[0].replace(/\/$/, "");
+    const executablePath = [chromium.executablePath(),
+      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"].find((file) => fs.existsSync(file));
+    browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+    for (const viewport of [{ name: "desktop", width: 1365, height: 900 }, { name: "mobile", width: 390, height: 844 }]) {
+      const context = await browser.newContext({ viewport });
+      try {
+        await context.route("**/*", (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+        await context.route("**/api/**", (route) => {
+          const pathname = new URL(route.request().url()).pathname;
+          if (pathname === "/api/auth/user") return route.fulfill({ json: { user: {
+            _id: "local-getlink-qa", name: "Local QA", email: "local@local.test", role: "user", credit: 100,
+          } } });
+          if (pathname === "/api/auth/csrf") return route.fulfill({ json: { csrfToken: "local-qa-token" } });
+          return route.fulfill({ json: { events: [], history: [], settings: {} } });
+        });
+        const page = await context.newPage();
+        await page.goto(origin, { waitUntil: "domcontentloaded" });
+        await verifyGetlinkFormats(page, context, { origin, screenshotRoot, viewport: viewport.name });
+      } finally { await context.close(); }
+    }
+  } finally {
+    await browser?.close();
+    await server.close();
   }
 }

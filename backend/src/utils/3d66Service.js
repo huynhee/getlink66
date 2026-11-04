@@ -10,11 +10,15 @@ import {
   resolve3D66ModelUrlFromFootprint,
   resolve3D66ModelUrlFromCollection,
   resolve3D66ModelUrlFromRewrittenFootprint,
+  resolve3D66HybridModelWithBrowser,
 } from "./3d66BrowserService.js";
+import { create3D66HybridResolver, validate3D66HybridInput } from "./3d66HybridResolver.js";
 import { collectionModelPage, collectionResolutionConfig } from "./3d66CollectionResolver.js";
 import { build3D66FootprintSeed, assert3D66RewrittenFootprintLink,
   is3D66RewrittenFootprintError } from "./3d66RewrittenFootprintResolver.js";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
+import logger from "./logger.js";
+import { queue3D66Metadata } from "./3d66Queue.js";
 import { threed66VerificationStore } from "./3d66VerificationStore.js";
 import { normalizeAccountModelId, accountMarkerFromUserId } from "./parse3d66.js";
 import { inspect3D66CookieHeader, parse3D66CookieHeader } from "./3d66CookieHeader.js";
@@ -37,12 +41,18 @@ const PROXY_STAGE_ENV = {
 };
 const ACCOUNT_SEARCH_ENDPOINT = "https://www.3d66.com/api/v1/search/checkKeyword";
 const SEARCH_REFERER = "https://user.3d66.com/";
-const MODEL_RESOLVE_MODES = new Set(["search", "footprint", "direct", "collection", "rewritten_footprint"]);
+const MODEL_RESOLVE_MODES = new Set(["search", "footprint", "direct", "collection", "rewritten_footprint", "hybrid"]);
 const FOOTPRINT_CACHE_TTL_MS = 2 * 60 * 1000;
 const FOOTPRINT_CACHE_MAX = 500;
 const PROXY_AGENT_CACHE_MAX = 5;
 const proxyAgentCache = new Map();
 const footprintModelUrlCache = new Map();
+const hybridResolver = create3D66HybridResolver({
+  readMetadata: (url, cookie) => queue3D66Metadata(() => readHybridApiMetadata(url, cookie)),
+  openModel: resolve3D66HybridModelWithBrowser,
+  configurationKey: () => JSON.stringify([get3D66VerificationConfigurationKey(), proxyUrl(),
+    ...Object.values(PROXY_STAGE_ENV).map(name => process.env[name]), process.env.THREED66_PROXY_ENABLED]),
+});
 const DEFAULT_SITE_CONTEXTS = {
   "3d.3d66.com": {
     site: "1",
@@ -185,6 +195,7 @@ async function fetch3D66(url, options = {}, { stage = "api" } = {}) {
   try {
     dispatcher = proxyDispatcher(stage, url);
   } catch (error) {
+    if (modelResolveMode() === "hybrid") throw error;
     if (!booleanEnv("THREED66_PROXY_FAIL_CLOSED", false)) {
       notify3D66ProxyFallback({
         stage,
@@ -202,6 +213,7 @@ async function fetch3D66(url, options = {}, { stage = "api" } = {}) {
     return await fetch(url, { ...options, dispatcher });
   } catch (error) {
     if (error.name === "AbortError") throw error;
+    if (modelResolveMode() === "hybrid") throw error;
     if (!booleanEnv("THREED66_PROXY_FAIL_CLOSED", false)) {
       notify3D66ProxyFallback({
         stage,
@@ -429,6 +441,7 @@ function cacheFootprintModelUrl(key, value) {
 }
 
 export function cacheVerified3D66Footprint(seed, result, cookieValue) {
+  if (seed.mode === "hybrid" && seed.hybridSourceUrl) hybridResolver.remember(seed.hybridSourceUrl, result, cookieValue);
   const boundSeed = { ...seed, modelPage: result.canonicalModelPage || seed.modelPage };
   assert3D66RewrittenFootprintLink(result.url, boundSeed);
   for (const page of new Set([seed.modelPage, boundSeed.modelPage])) {
@@ -547,6 +560,15 @@ async function resolveAccountModelUrl(
   required3D66AccountMarker();
 
   const mode = modelResolveMode();
+  if (mode === "hybrid") {
+    await threed66VerificationStore.assertAvailable(cookieValue, get3D66VerificationConfigurationKey());
+    const seed = validate3D66HybridInput(normalized.toString());
+    const result = await hybridResolver.resolve(normalized.toString(), cookieValue);
+    return { productId, resolvedProductId: result.productId, url: markFootprintResolvedUrl(result.url, productId),
+      usedAccountSearch: false, usedFootprint: true, cookieValue: result.cookieValue || cookieValue, cookies,
+      rewrittenFootprintSeed: { ...seed, mode: "hybrid", hybridSourceUrl: seed.inputUrl,
+        productId: result.productId, modelPage: result.canonicalModelPage } };
+  }
   if (mode === "rewritten_footprint") {
     const source = new URL(normalized);
     if (isFootprintResolvedUrl(normalized.toString()) && resolvedLogicalProductId) {
@@ -2019,10 +2041,17 @@ function mergeBrowserMetadata(metadata = {}, browserMetadata = {}, fields = {}) 
   };
 }
 
-async function requestDownloadPop(fields, cookieValue, context) {
+async function requestDownloadPop(fields, cookieValue, context, { readOnlyMetadata = false } = {}) {
   if (!fields.llId) return null;
-  assert3D66AccountProductId(fields.llId);
+  if (!readOnlyMetadata) assert3D66AccountProductId(fields.llId);
   const endpoint = process.env.THREED66_DOWNLOAD_POP_ENDPOINT || DEFAULT_DOWNLOAD_POP_ENDPOINT;
+  if (readOnlyMetadata) {
+    const target = new URL(endpoint);
+    if (target.protocol !== "https:" || target.username || target.password || target.port || target.search
+      || !isAllowed3D66Host(target.hostname) || target.pathname !== "/api/v1/download/pop") {
+      throw Object.assign(new Error("The read-only preview endpoint is invalid."), { status: 503, code: "THREED66_HYBRID_CONFIGURATION_INVALID" });
+    }
+  }
   const { controller, done } = withTimeout();
   const payload = new URLSearchParams({
     sof: fields.llId,
@@ -2032,6 +2061,7 @@ async function requestDownloadPop(fields, cookieValue, context) {
   try {
     const response = await fetch3D66(endpoint, {
       method: "POST",
+      ...(readOnlyMetadata ? { redirect: "manual" } : {}),
       signal: controller.signal,
       headers: {
         accept: "application/json, text/javascript, */*; q=0.01",
@@ -2050,6 +2080,11 @@ async function requestDownloadPop(fields, cookieValue, context) {
     try {
       json = JSON.parse(text);
     } catch {
+      if (readOnlyMetadata && /<title[^>]*>\s*(?:滑动验证(?:页面)?|安全验证|访问验证|captcha|security verification|verification required)\s*<\/title>/i.test(text)) {
+        throw Object.assign(new Error("3D66 requires administrator verification before the preview can continue."), {
+          status: 403, code: "THREED66_HYBRID_VERIFICATION_REQUIRED", details: { stage: "hybrid-api", reason: "upstream_verification_required" },
+        });
+      }
       throw httpError("3D66 download pop returned non-JSON response", 502, { body: text.slice(0, 300) });
     }
 
@@ -2059,13 +2094,16 @@ async function requestDownloadPop(fields, cookieValue, context) {
       });
     }
 
-    if (json.data?.resInfo?.sof && String(json.data.resInfo.sof) !== String(fields.llId)) {
+    const verifiedReadUrl = readOnlyMetadata ? verifiedHybridApiModelUrl(json.data, fields.llId) : "";
+    const verifiedReadId = verifiedReadUrl ? new URL(verifiedReadUrl).searchParams.get("sof") : "";
+    if (json.data?.resInfo?.sof && String(json.data.resInfo.sof) !== String(fields.llId)
+      && !(readOnlyMetadata && String(json.data.resInfo.sof) === verifiedReadId)) {
       throw Object.assign(httpError("3D66 clean link validation failed. Download stopped.", 422, {
         stage: "clean-link-validation", reason: "pop_model_mismatch",
       }), { code: "THREED66_CLEAN_LINK_REQUIRED" });
     }
 
-    return json.data || null;
+    return json.data ? { ...json.data, ...(verifiedReadUrl ? { verifiedModelUrl: verifiedReadUrl } : {}) } : null;
   } catch (error) {
     if (error.name === "AbortError") {
       throw httpError("3D66 download pop timed out", 504);
@@ -2338,7 +2376,86 @@ export async function validate3D66Cookie(cookieValue, modelUrl = "") {
   };
 }
 
-export async function fetch3D66Preview(url, cookieValue, { includeFormatOptions = false } = {}) {
+function verifiedHybridApiModelUrl(value, expectedProductId, depth = 0) {
+  if (depth > 5 || value == null) return "";
+  if (typeof value === "string") {
+    for (const candidate of candidateUrlsFromText(value)) {
+      try {
+        assert3D66CleanModelUrl(candidate, { expectedProductId });
+        const source = validate3D66HybridInput(`https://3d.3d66.com/reshtmla/model/items/fixture/model.html?sof=${encodeURIComponent(expectedProductId)}`);
+        const target = validate3D66HybridInput(candidate);
+        if (source.productId.slice(1).toUpperCase() !== target.productId.slice(1).toUpperCase()) continue;
+        return candidate;
+      } catch { /* Keep unverified/foreign URLs out of the authorization cache. */ }
+    }
+    return "";
+  }
+  if (typeof value !== "object") return "";
+  for (const item of Object.values(value)) {
+    const candidate = verifiedHybridApiModelUrl(item, expectedProductId, depth + 1);
+    if (candidate) return candidate;
+  }
+  return "";
+}
+
+async function readHybridApiMetadata(url, cookieValue) {
+  const seed = validate3D66HybridInput(url);
+  const cookies = requireCookie(cookieValue);
+  const fields = parseDynamicFields("", seed.inputUrl);
+  const context = applyFieldsToContext(siteContext(seed.inputUrl, cookies), fields);
+  try {
+    // Only this read-only popup may inspect foreign IDs. Purchase calls retain their account gate.
+    const pop = await requestDownloadPop(fields, cookieValue, context, { readOnlyMetadata: true });
+    const metadata = mergeDownloadPopMetadata({ productId: seed.sourceProductId, sourceUrl: seed.inputUrl }, pop, seed.inputUrl, fields);
+    const choice = hasDownloadFormatChoice(pop);
+    return { ...metadata, verifiedModelUrl: verifiedHybridApiModelUrl(pop, seed.sourceProductId), formatOptionsSource: "api",
+      formatOptionsComplete: choice === false || (choice === true && metadata.formatOptions.length > 1) };
+  } catch (error) {
+    if (is3D66CleanLinkError(error) || String(error.code || "").startsWith("THREED66_HYBRID_")) throw error;
+    return null;
+  }
+}
+
+async function fetchHybridPreview(url, cookieValue, progressive) {
+  const seed = validate3D66HybridInput(url);
+  requireCookie(cookieValue);
+  await threed66VerificationStore.assertAvailable(cookieValue, get3D66VerificationConfigurationKey());
+  const started = Date.now();
+  try {
+    if (progressive) {
+      const metadata = await hybridResolver.read(url, cookieValue);
+      logger.info({ event: "GETLINK_HYBRID_PREVIEW", stage: "metadata", modelId: seed.sourceProductId,
+        durationMs: Date.now() - started, formats: metadata?.formatOptions?.length || 0 }, "Getlink hybrid metadata read");
+      return { ...(metadata || {}), productId: seed.sourceProductId, sourceUrl: seed.inputUrl,
+        formatOptions: metadata?.formatOptions || [], selectedFormat: metadata?.selectedFormat || null,
+        metadataIncomplete: !metadata || isWeakMetadata(metadata), preparationStatus: "pending", elapsedMs: Date.now() - started };
+    }
+    const result = await hybridResolver.prepare(url, cookieValue);
+    const metadata = result.inspection?.metadata || {};
+    const early = await hybridResolver.read(url, cookieValue);
+    const formatOptions = metadata.formatOptions || [];
+    logger.info({ event: "GETLINK_HYBRID_PREVIEW", stage: "ready", modelId: seed.sourceProductId,
+      durationMs: Date.now() - started, route: result.route, formats: formatOptions.length,
+      browserQueueMs: result.timings?.browserQueueMs, cleaningMs: result.timings?.cleaningMs,
+      formatsMs: result.timings?.formatsMs }, "Getlink hybrid preview prepared");
+    return { ...metadata, productId: seed.sourceProductId, sourceUrl: seed.inputUrl,
+      title: metadata.title || early?.title || "", imageUrl: metadata.imageUrl || early?.imageUrl || "",
+      creditCost: metadata.priceKnown ? metadata.creditCost : early?.creditCost || metadata.creditCost || 1,
+      priceKnown: Boolean(metadata.priceKnown || early?.priceKnown),
+      resolvedSourceUrl: markFootprintResolvedUrl(result.url, seed.sourceProductId),
+      formatOptions, selectedFormat: selectedOrDefaultFormat(formatOptions),
+      preparationStatus: "ready", formatsChecked: true, elapsedMs: Date.now() - started, resolutionRoute: result.route };
+  } catch (error) {
+    if (is3D66CleanLinkError(error) || is3D66RewrittenFootprintError(error)
+      || String(error.code || "").startsWith("THREED66_HYBRID_")) throw error;
+    throw Object.assign(new Error("The model preview could not be prepared. Please retry."), {
+      status: error.status || 502, code: "THREED66_HYBRID_PREVIEW_FAILED",
+      details: { stage: "hybrid-preview", reason: error.details?.reason || "preparation_failed" },
+    });
+  }
+}
+
+export async function fetch3D66Preview(url, cookieValue, { includeFormatOptions = false, progressive = false } = {}) {
   if (process.env.THREED66_MOCK !== "false") {
     const digest = crypto.createHash("sha256").update(url).digest("hex").slice(0, 16);
     return {
@@ -2347,9 +2464,12 @@ export async function fetch3D66Preview(url, cookieValue, { includeFormatOptions 
       imageUrl: "",
       creditCost: 1,
       priceKnown: true,
-      sourceUrl: url
+      sourceUrl: url,
+      ...(modelResolveMode() === "hybrid" ? { preparationStatus: progressive ? "pending" : "ready" } : {}),
     };
   }
+
+  if (modelResolveMode() === "hybrid") return fetchHybridPreview(url, cookieValue, progressive);
 
   const initialCookies = requireCookie(cookieValue);
   const accountModel = await resolveAccountModelUrl(url, cookieValue, initialCookies);

@@ -33,6 +33,7 @@ import { writeSystemLog } from "../utils/systemLog.js";
 import { streamGetlinkFile } from "../utils/getlinkDownloadTransfer.js";
 import { downloadTransferLimiter } from "../utils/downloadTransfer.js";
 import { assert3D66StoredDownload, is3D66CleanLinkError } from "../utils/3d66CleanLink.js";
+import { validate3D66HybridInput } from "../utils/3d66HybridResolver.js";
 
 const productLocks = new Map();
 const historyRefreshLocks = new Map();
@@ -369,8 +370,10 @@ function findDownloadFormatOption(formatOptions = [], requestedFormat = null) {
   );
 }
 
-function readUrlRequest(req, res) {
-  const unknownKey = rejectUnknownKeys(req.body, ["url", "modelId", "includePreviewImage", "downloadFormat"]);
+function readUrlRequest(req, res, { allowProgressive = false } = {}) {
+  const allowedKeys = ["url", "modelId", "includePreviewImage", "downloadFormat"];
+  if (allowProgressive) allowedKeys.push("progressive");
+  const unknownKey = rejectUnknownKeys(req.body, allowedKeys);
   if (unknownKey) {
     res.status(400).json({ message: "Invalid getlink request" });
     return null;
@@ -383,13 +386,19 @@ function readUrlRequest(req, res) {
   }
 
   try {
+    let url;
     if (/^https?:\/\//i.test(input)) {
       extractProductId(input);
-      return input;
+      url = input;
+    } else {
+      url = modelIdTo3D66Url(extractModelIdInput(input));
     }
-    return modelIdTo3D66Url(extractModelIdInput(input));
+    if (String(process.env.THREED66_MODEL_RESOLVE_MODE || "").trim().toLowerCase() === "hybrid") {
+      validate3D66HybridInput(url);
+    }
+    return url;
   } catch (error) {
-    res.status(error.status || 400).json({ message: error.message });
+    res.status(error.status || 400).json({ message: error.message, ...(error.code ? { code: error.code } : {}) });
     return null;
   }
 }
@@ -1191,14 +1200,28 @@ export function hasUsablePreviewSource(value) {
   }
 }
 
-export async function previewGetlink(req, res, next) {
+export function previewGetlink(req, res, next) {
+  return handlePreviewGetlink(req, res, next, { allowProgressive: true });
+}
+
+export function prepareGetlinkPreview(req, res, next) {
+  return handlePreviewGetlink(req, res, next);
+}
+
+async function handlePreviewGetlink(req, res, next, { allowProgressive = false } = {}) {
   try {
-    const url = readUrlRequest(req, res);
+    if (allowProgressive && Object.hasOwn(req.body || {}, "progressive")
+      && typeof req.body.progressive !== "boolean") {
+      return res.status(400).json({ message: "progressive must be a boolean" });
+    }
+    const url = readUrlRequest(req, res, { allowProgressive });
     if (!url) return;
 
+    const hybrid = String(process.env.THREED66_MODEL_RESOLVE_MODE || "").trim().toLowerCase() === "hybrid";
+    const progressive = hybrid && allowProgressive && req.body.progressive === true;
     const productId = extractProductId(url);
     const previewProductId = lockedProductId(url, productId, productId);
-    const cache = await ProductCache.findOne({ productId });
+    const cache = progressive ? null : await ProductCache.findOne({ productId });
     const cacheMatchesCurrentUrl = cacheMatchesModelUrl(cache, url);
     const cachedTitle = String(cache?.title || "").trim();
     const hasRealCachedTitle = Boolean(
@@ -1212,7 +1235,8 @@ export async function previewGetlink(req, res, next) {
     const hasPreviewMetadata = Boolean(
       cacheMatchesCurrentUrl && hasRealCachedTitle && hasKnownCachedPrice && hasUsablePreviewSource(cache?.imageUrl),
     );
-    if (hasPreviewMetadata && hasFreshPreviewFormats(cache)) {
+    // Hybrid verification is credential-bound; shared product metadata is not proof.
+    if (!hybrid && hasPreviewMetadata && hasFreshPreviewFormats(cache)) {
       const formatOptions = cacheDownloadFormatOptions(cache);
       return res.json({
         productId: previewProductId,
@@ -1226,13 +1250,48 @@ export async function previewGetlink(req, res, next) {
       });
     }
 
-    const preview = await with3D66Cookie((cookieValue) =>
-      queue3D66Preview(() => fetch3D66Preview(url, cookieValue, { includeFormatOptions: true })),
-    );
+    const queuedAt = Date.now();
+    const preview = await with3D66Cookie((cookieValue) => {
+      const read = () => {
+        if (hybrid) logger.info({ event: "GETLINK_HYBRID_QUEUE", stage: progressive ? "metadata" : "prepare",
+          queueMs: Date.now() - queuedAt }, "Getlink hybrid queue released");
+        return fetch3D66Preview(url, cookieValue, {
+          includeFormatOptions: !progressive,
+          progressive,
+        });
+      };
+      // Fast API reads have their own bounded limiter and cannot wait behind Chromium.
+      return progressive ? read() : queue3D66Preview(read);
+    });
     const resolvedProductId = lockedProductId(url, productId, preview.productId);
+    const metadataIncomplete = Boolean(preview.metadataIncomplete || isFallbackMetadata(preview, resolvedProductId));
+    if (progressive) {
+      const earlyFormats = preview.formatOptionsSource === "api" ? sanitizeDownloadFormatOptions(preview.formatOptions) : [];
+      let imageUrl = "";
+      if (preview.imageUrl) {
+        try {
+          imageUrl = resolvePreviewImageUrl(preview.imageUrl, preview.sourceUrl || url);
+        } catch {
+          // Fast metadata is not persisted; omit an unsafe image instead of proxying it.
+        }
+      }
+      return res.json({
+        productId: resolvedProductId,
+        title: preview.title || resolvedProductId,
+        imageUrl,
+        creditCost: preview.priceKnown ? normalizeDownloadCreditCost(preview.creditCost, 1) : null,
+        cached: false,
+        preparationStatus: "pending",
+        metadataIncomplete: metadataIncomplete || !imageUrl
+          || !(preview.priceKnown || Number(preview.creditCost || 0) > 1),
+        formatOptions: earlyFormats,
+        selectedFormat: selectedDownloadFormat(earlyFormats),
+        hasDownloadFormats: earlyFormats.length > 0,
+      });
+    }
     if (
       process.env.THREED66_MOCK === "false" &&
-      isFallbackMetadata(preview, resolvedProductId)
+      metadataIncomplete
     ) {
       return res.status(422).json({
         message:
@@ -1253,20 +1312,27 @@ export async function previewGetlink(req, res, next) {
       formatOptionsVersion: DOWNLOAD_FORMAT_OPTIONS_VERSION,
       formatOptionsCheckedAt: new Date(),
     };
-    await upsertProductCache(previewPayload, cache);
+    let cachePayload = previewPayload;
+    if (hybrid && cache?.fileUrl) {
+      // A fresh preview must not reauthorize bytes fetched with an older account context.
+      cachePayload = { ...previewPayload };
+      delete cachePayload.sourceUrl;
+      delete cachePayload.resolvedSourceUrl;
+    } else if (hybrid) {
+      cachePayload = { ...previewPayload, isPurchased: false };
+    }
+    await upsertProductCache(cachePayload, cache);
     res.json({
       productId: resolvedProductId,
       title: preview.title,
       imageUrl: preview.imageUrl ? publicCachedPreviewImageUrl(req, resolvedProductId) : "",
       creditCost: normalizeDownloadCreditCost(preview.creditCost, 1),
       cached: false,
+      ...(hybrid ? { preparationStatus: "ready", formatsChecked: preview.formatsChecked === true } : {}),
       formatOptions: previewPayload.formatOptions,
       selectedFormat: selectedDownloadFormat(previewPayload.formatOptions),
       hasDownloadFormats: previewPayload.formatOptions.length > 0,
-      metadataIncomplete: isFallbackMetadata(
-        preview,
-        resolvedProductId,
-      ),
+      metadataIncomplete,
     });
   } catch (error) {
     if (shouldWriteSystemError(error)) {

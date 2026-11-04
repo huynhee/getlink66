@@ -12,6 +12,12 @@ const previewLimiter = createAsyncLimiter({
   maxQueue: Number(process.env.THREED66_PREVIEW_QUEUE_MAX || 200),
 });
 
+const metadataLimiter = createAsyncLimiter({
+  envName: "THREED66_METADATA_CONCURRENCY",
+  fallback: 1,
+  maxQueue: Number(process.env.THREED66_METADATA_QUEUE_MAX || 200),
+});
+
 const refreshLimiter = createAsyncLimiter({
   envName: "THREED66_REFRESH_CONCURRENCY",
   fallback: 1,
@@ -26,6 +32,10 @@ export function queue3D66Preview(task) {
   return previewLimiter.run(task);
 }
 
+export function queue3D66Metadata(task) {
+  return metadataLimiter.run(task);
+}
+
 export function queue3D66Refresh(task) {
   return refreshLimiter.run(task);
 }
@@ -34,6 +44,7 @@ export function get3D66GetlinkQueueStatus() {
   return {
     getlink: getlinkLimiter.stats(),
     preview: previewLimiter.stats(),
+    metadata: metadataLimiter.stats(),
     refresh: refreshLimiter.stats(),
   };
 }

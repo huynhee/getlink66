@@ -9,6 +9,8 @@ export function restoreGetlinkDraft(stored, { initialUrl = "", resolveMode, now 
   return {
     url, includePreviewImage: Boolean(draft.includePreviewImage),
     preview: reusable && draft.preview && typeof draft.preview === "object" ? draft.preview : null,
+    // Preserve metadata/status for display, but never restore hybrid checkout authority.
+    requiresPreparation: Boolean(reusable && resolveMode === "hybrid"),
     previewUrl: reusable ? draft.previewUrl : "",
     selectedFormatKey: reusable ? String(draft.selectedFormatKey || "") : "",
     previewCheckedAt: reusable ? draft.previewCheckedAt : 0,

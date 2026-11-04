@@ -152,6 +152,7 @@ async function alert3D66CookiesUnavailable(reason, error) {
 }
 
 export function isSwitchable3D66Error(error) {
+  if (String(error?.code || "").startsWith("THREED66_HYBRID_")) return false;
   if (is3D66CleanLinkError(error) || is3D66CollectionError(error) || is3D66RewrittenFootprintError(error)) return false;
   const status = Number(error?.status || error?.statusCode || 0);
   const text = `${error?.message || ""} ${JSON.stringify(error?.details || {})}`.toLowerCase();

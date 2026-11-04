@@ -15,12 +15,13 @@ const cookie = "PHPSESSID=fixture; login_sign=fixture";
 let sequence = 0;
 
 async function fixture(t, options = {}) {
-  const env = { THREED66_MOCK: "false", THREED66_MODEL_RESOLVE_MODE: "rewritten_footprint",
+  const env = { THREED66_MOCK: "false", THREED66_MODEL_RESOLVE_MODE: options.mode || "rewritten_footprint",
     THREED66_REQUIRED_ACCOUNT_MARKER: "89635771", THREED66_PROXY_ENABLED: "false",
     THREED66_BROWSER_ALWAYS: "false", THREED66_BROWSER_PROFILE_DIR: "", THREED66_FOOTPRINT_REFRESH_ATTEMPTS: "1",
     THREED66_PROXY_FOR_BROWSER: "false", THREED66_PROXY_URL: "",
     THREED66_DISABLE_BROWSER_PAGE_FALLBACK: "true", THREED66_DISABLE_BROWSER_DOWNLOAD_FALLBACK: "true",
-    THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK: "false" };
+    THREED66_DOWNLOAD_HANDLE_BROWSER_FALLBACK: "false",
+    ...(options.popEndpoint ? { THREED66_DOWNLOAD_POP_ENDPOINT: options.popEndpoint } : {}) };
   const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
   Object.assign(process.env, env);
   await close3D66Browser();
@@ -99,11 +100,14 @@ async function fixture(t, options = {}) {
     assert.ok(request.headers.cookie.startsWith("PHPSESSID=fixture"));
     assert.equal(new URL(request.headers.referer).origin, "https://3d.3d66.com");
     if (url.pathname === "/api/v1/download/pop") {
-      assert.equal(request.body.get("sof"), seed().productId);
+      if (options.popResponse) return options.popResponse();
+      const requestedId = request.body.get("sof");
+      if (options.mode === "hybrid") assert.ok([options.inputId || inputId, seed().productId].includes(requestedId));
+      else assert.equal(requestedId, seed().productId);
       return Response.json({ status: 200, data: { token: "fixture-token", is_direct_download: 1,
         format_list: options.popFormats,
-        resInfo: { sof: seed().productId, res_name: "Fixture", res_price: 28, res_type: "1",
-          img: "https://respic.3d66.com/fixture.jpg" } } });
+        resInfo: { sof: requestedId, res_name: "Fixture", res_price: 28, res_type: "1",
+          img: "https://respic.3d66.com/fixture.jpg" }, ...options.popData?.(clean(), requestedId) } });
     }
     if (url.pathname === "/api/v1/download/handle") {
       assert.equal(request.body.get("ll_id"), seed().productId);
@@ -117,6 +121,91 @@ async function fixture(t, options = {}) {
   return { source, base, seed, clean, navigations, requests, pages,
     contexts: () => browserContexts, closed: () => closedContexts, cookieSeeds: () => cookieSeeds, contextOptions };
 }
+
+test("hybrid progressive API metadata is immediate and preparation reuses one context through seed/history/formats", async t => {
+  const formats = [{ key: "1|2014|4", fileFormat: "1", formatVersion: "2014", rendererType: "4", isDefault: true },
+    { key: "1|max2016|3", fileFormat: "1", formatVersion: "max2016", rendererType: "3" }];
+  const state = await fixture(t, { mode: "hybrid", inlineFormats: formats, seedHome: "https://www.3d66.com/", seedInterrupted: true });
+  const early = await fetch3D66Preview(state.source, cookie, { progressive: true });
+  assert.equal(early.preparationStatus, "pending");
+  assert.equal(early.creditCost, 28);
+  assert.equal(state.contexts(), 0);
+  assert.equal(early.resolvedSourceUrl, undefined);
+  const ready = await fetch3D66Preview(state.source, cookie, { includeFormatOptions: true });
+  assert.equal(ready.preparationStatus, "ready");
+  assert.equal(ready.formatsChecked, true);
+  assert.deepEqual(ready.formatOptions, formats);
+  assert.equal(new URL(ready.resolvedSourceUrl).searchParams.get("sof"), state.seed().productId);
+  assert.equal(state.contexts(), 1);
+  assert.equal(state.navigations.includes(state.source), false);
+  assert.equal(state.navigations.filter(url => url === state.seed().url).length, 1);
+  assert.deepEqual(state.requests, ["/api/v1/download/pop"]);
+  const before = state.navigations.length;
+  await fetch3D66Preview(state.source, cookie, { includeFormatOptions: true });
+  assert.equal(state.navigations.length, before);
+  const download = await fetchFrom3D66(ready.resolvedSourceUrl, cookie, { sourceUrl: state.source });
+  assert.equal(download.productId, inputId);
+  assert.equal(new URL(download.resolvedSourceUrl).searchParams.get("sof"), state.seed().productId);
+  assert.equal(state.contexts(), 1);
+  assert.equal(state.requests.filter(url => url.endsWith("/handle")).length, 1);
+});
+
+test("hybrid signed-page preparation permits a verified page without a format selector and skips rewriting", async t => {
+  const state = await fixture(t, { mode: "hybrid" });
+  const ready = await fetch3D66Preview(state.clean(), cookie, { includeFormatOptions: true });
+  assert.equal(ready.preparationStatus, "ready");
+  assert.equal(ready.formatsChecked, true);
+  assert.deepEqual(ready.formatOptions, []);
+  assert.deepEqual(state.navigations, [state.clean()]);
+});
+
+test("a signed account URL returned by the API with complete choices skips Chromium", async t => {
+  const state = await fixture(t, { mode: "hybrid", popData: url => ({ is_choice: 0, model_url: url }) });
+  const result = await fetch3D66Preview(state.source, cookie, { includeFormatOptions: true });
+  assert.equal(result.preparationStatus, "ready");
+  assert.equal(result.resolutionRoute, "api_link");
+  assert.equal(state.contexts(), 0);
+  assert.deepEqual(state.requests, ["/api/v1/download/pop"]);
+});
+
+test("an API URL with only a matching short suffix cannot bypass full-model verification", async t => {
+  const state = await fixture(t, { mode: "hybrid", popData: url => ({ is_choice: 0,
+    model_url: url.replace("4629725", "9929725") }) });
+  const result = await fetch3D66Preview(state.source, cookie, { includeFormatOptions: true });
+  assert.equal(result.resolutionRoute, "rewritten_history");
+  assert.equal(state.contexts(), 1);
+});
+
+test("hybrid read-only metadata rejects a configured purchase endpoint before any IO", async t => {
+  const state = await fixture(t, { mode: "hybrid", popEndpoint: "https://3d.3d66.com/api/v1/download/handle" });
+  await assert.rejects(fetch3D66Preview(state.source, cookie, { progressive: true }), {
+    code: "THREED66_HYBRID_CONFIGURATION_INVALID",
+  });
+  assert.deepEqual(state.requests, []);
+  assert.equal(state.contexts(), 0);
+});
+
+test("an API CAPTCHA stops without browser retries or a purchase request", async t => {
+  const state = await fixture(t, { mode: "hybrid", popResponse: () => new Response("<title>访问验证</title>", { status: 403 }) });
+  await assert.rejects(fetch3D66Preview(state.source, cookie, { progressive: true }), {
+    code: "THREED66_HYBRID_VERIFICATION_REQUIRED", status: 403,
+  });
+  assert.deepEqual(state.requests, ["/api/v1/download/pop"]);
+  assert.equal(state.contexts(), 0);
+});
+
+test("hybrid CAPTCHA retains its exact context and does not restart with another route", async t => {
+  const state = await fixture(t, { mode: "hybrid", challenge: url => !new URL(url).searchParams.has("sign") });
+  await assert.rejects(fetch3D66Preview(state.source, cookie, { includeFormatOptions: true }), { status: 403 });
+  const [pending] = await threed66VerificationStore.list();
+  assert.ok(pending);
+  const entry = threed66VerificationStore.get(pending.id);
+  assert.equal(entry.seed.mode, "hybrid");
+  assert.equal(entry.page, state.pages[0]);
+  assert.equal(state.contexts(), 1);
+  assert.equal(state.closed(), 0);
+  assert.deepEqual(state.navigations, [state.seed().url]);
+});
 
 test("ordinary Direct previews keep one native browser session without re-seeding old cookies", async t => {
   const state = await fixture(t);

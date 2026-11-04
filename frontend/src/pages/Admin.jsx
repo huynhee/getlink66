@@ -1803,6 +1803,14 @@ export default function Admin({ user, language = "vi" }) {
   ];
   const modelResolveModes = [
     {
+      value: "hybrid",
+      label: l("Tự động kết hợp", "Automatic hybrid"),
+      help: l(
+        "Nhận link model đầy đủ, hiển thị thông tin sớm và chuẩn bị đầy đủ định dạng trước khi xác nhận tải.",
+        "Accept a full model URL, show early metadata, and prepare complete formats before download confirmation.",
+      ),
+    },
+    {
       value: "rewritten_footprint",
       label: l("Đổi ID rồi lấy từ lịch sử", "Rewrite ID, then read history"),
       help: l(
