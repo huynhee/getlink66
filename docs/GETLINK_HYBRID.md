@@ -172,3 +172,31 @@ clean-link account checks must remain enabled. For a code rollback, retain both
 previous container images before rebuilding and restore backend/frontend as a
 pair. Do not revert cookies, credit balances, or download history. Keep the new
 code while investigating if returning to the previous mode is sufficient.
+
+## VPS Read-Only Verification
+
+On 2026-11-04 the backend/frontend deployment and production `env:check` passed.
+Both containers were healthy and `/ready` reported both databases available.
+The existing `footprint` task mode, headed browser setting and encrypted profile
+volume were retained. Hybrid was not activated in SiteSetting.
+
+An isolated Node process used the configured credential and a model URL with a
+foreign account marker. It opted into hybrid only within that diagnostic process.
+Only the read-only popup API and guarded browser preparation were permitted;
+no purchase/download was attempted and the stored cookie fingerprint was unchanged.
+
+| Stage | Observed Time | Browser / API Work |
+| --- | --- | --- |
+| Early metadata | 917 ms | One read-only API call; no Chromium |
+| First full preparation | 22,748 ms | One Chromium launch, four main-frame navigations, two real format choices |
+| Repeat within verification TTL | 2 ms | No new API call, Chromium launch or navigation |
+
+The first full preparation used rewritten history: browser queue/startup was
+812 ms, cleaning/navigation 10,594 ms and format reading 11,268 ms. The final URL
+contained one `sof` and one `sign`. These measurements cover one model and an
+isolated service process, not an HTTP latency guarantee; account throttling,
+server queues, source load and human verification can add time. No assertion is
+made that Chromium will never encounter CAPTCHA.
+
+Rollback image tags retained on VPS: `3dipl-backend:pre-hybrid-20261104` and
+`3dipl-frontend:pre-hybrid-20261104`. No database migration was needed.
