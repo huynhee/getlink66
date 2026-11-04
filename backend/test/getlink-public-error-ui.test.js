@@ -173,7 +173,7 @@ test("Getlink locale defaults safely when browser storage is unavailable", async
 test("Getlink scope matching excludes similar paths and admin routes", () => {
   assert.equal(isPublicGetlinkPath("/api/getlink?fresh=1"), true);
   assert.equal(isPublicGetlinkPath("/api/plugin/getlink/history"), true);
-  for (const path of ["/api/getlinks", "/api/getlink-admin", "/api/admin/getlink", "/api/plugin/getlink-config", "/api/auth/csrf"]) {
+  for (const path of ["/api/getlinks", "/api/getlink-admin", "/api/admin/getlink", "/api/getlink/inspect", "/api/getlink/inspect?check=1", "/api/plugin/getlink-config", "/api/auth/csrf"]) {
     assert.equal(isPublicGetlinkPath(path), false);
   }
 });

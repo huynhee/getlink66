@@ -20,7 +20,9 @@ const messages = {
 const technicalDetails = /THREED66_|\b(?:captcha|recaptcha|hcaptcha|cookies?|playwright|puppeteer|browser|chromium|chrome|profiles?|admin(?:istrator)?|footprint|collection|hybrid|resolver|proxy|upstream|cdp|PHPSESSID|login_sign|fingerprint|acw_sc|aliyun|sof)\b|st\s*(?:=|%3d)\s*2|user[_ -]?data[_ -]?dir|launchPersistentContext|rewritten|signed (?:model |download )?link|clean link|(?:login|access|refresh)[_ -]?token|trình duyệt|hồ sơ|quản trị|xác minh|thuật toán|lịch sử truy cập|bộ sưu tập|(?:tài khoản|đăng nhập)\s*3d66|3d66\s*account/i;
 
 export function isPublicGetlinkPath(path = "") {
-  return /^\/api\/(?:plugin\/)?getlink(?:[/?#]|$)/.test(String(path));
+  const value = String(path);
+  if (/^\/api\/getlink\/inspect(?:[?#]|$)/.test(value)) return false;
+  return /^\/api\/(?:plugin\/)?getlink(?:[/?#]|$)/.test(value);
 }
 
 export function getlinkLanguage() {
