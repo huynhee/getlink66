@@ -177,8 +177,10 @@ code while investigating if returning to the previous mode is sufficient.
 
 On 2026-11-04 the backend/frontend deployment and production `env:check` passed.
 Both containers were healthy and `/ready` reported both databases available.
-The existing `footprint` task mode, headed browser setting and encrypted profile
-volume were retained. Hybrid was not activated in SiteSetting.
+The existing database task mode `rewritten_footprint`, headed browser setting and
+encrypted profile volume were retained. The environment file still says
+`footprint`, but SiteSetting is the runtime authority; the public settings API
+confirmed `rewritten_footprint`. Hybrid was not activated in SiteSetting.
 
 An isolated Node process used the configured credential and a model URL with a
 foreign account marker. It opted into hybrid only within that diagnostic process.
