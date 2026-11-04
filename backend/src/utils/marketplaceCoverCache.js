@@ -198,6 +198,26 @@ async function cacheFileInfo(key) {
   };
 }
 
+async function ensurePublicCoverDirectory(key) {
+  const root = marketplaceCoverCacheConfig().root;
+  const relative = path.relative(root, path.dirname(marketplaceCoverCachePath(key)));
+  await fs.promises.mkdir(root, { recursive: true, mode: 0o755 });
+  let directory = root;
+  for (const segment of ["", ...relative.split(path.sep).filter(Boolean)]) {
+    if (segment) {
+      directory = path.join(directory, segment);
+      try { await fs.promises.mkdir(directory, { mode: 0o755 }); }
+      catch (error) { if (error.code !== "EEXIST") throw error; }
+    }
+    const stats = await fs.promises.lstat(directory);
+    if (!stats.isDirectory() || stats.isSymbolicLink()) {
+      throw new Error("Marketplace cover cache directories cannot be symlinks.");
+    }
+    // Public image shards must be traversable even when the caller uses umask 077.
+    await fs.promises.chmod(directory, 0o755);
+  }
+}
+
 async function generateCover(model) {
   const config = marketplaceCoverCacheConfig();
   const fingerprint = String(model.coverCache?.sourceFingerprint || "");
@@ -209,7 +229,7 @@ async function generateCover(model) {
   if (!fingerprint || !candidates.length) throw new Error("Marketplace cover source is missing.");
   const key = coverCacheKey(model, fingerprint);
   const targetPath = marketplaceCoverCachePath(key);
-  await fs.promises.mkdir(path.dirname(targetPath), { recursive: true, mode: 0o755 });
+  await ensurePublicCoverDirectory(key);
 
   try {
     return await cacheFileInfo(key);
