@@ -4,7 +4,7 @@ import test from "node:test";
 import { getStorageSourceValidator, openStorageStream } from "../src/utils/storageProvider.js";
 import { openCommentedArchive, prepareArchiveComment } from "../src/utils/archiveCommentStream.js";
 import { rar5Block, rarVint } from "../src/utils/archiveCommentFormat.js";
-import { zipFixture } from "./fixtures/archiveFixture.js";
+import { rar4Fixture, zipFixture } from "./fixtures/archiveFixture.js";
 import { serializeArchiveCommentPlan, restoreArchiveCommentPlan } from "../src/utils/archiveCommentPlan.js";
 
 process.env.GOOGLE_DRIVE_ACCESS_TOKEN = "archive-validator-fixture-token";
@@ -171,6 +171,26 @@ test("new Drive sessions pin once, persist a bounded patch and open without repe
   assert.deepEqual(await consume(file), f.payload.subarray(0, 64));
   f.metadata.version = "18446744073709551613";
   await assert.rejects(openCommentedArchive(f.session, restored, { range: "bytes=0-63" }), { code: "ARCHIVE_SOURCE_CHANGED" });
+});
+
+test("RAR4 Drive patches persist without extra probes on resume and reject a version change at the end record", async (t) => {
+  const f = driveFixture(t, rar4Fixture(Buffer.alloc(300000, 82)));
+  f.session.archiveFormat = "rar";
+  const comment = "3dipl.org\n\nipl1.rar4-fixture";
+  const plan = await prepareArchiveComment(f.session, comment, { pinDriveVersion: true });
+  assert.equal(plan.format, "rar4");
+  assert.equal(f.mediaCount, 2, "Only a bounded prefix and seven-byte end record are read");
+  const session = { ...f.session, sourceFileSize: f.session.fileSize, fileSize: plan.size,
+    archiveComment: comment, archiveSourceFingerprint: plan.fingerprint,
+    archiveCommentPlan: serializeArchiveCommentPlan(f.session, comment, plan) };
+  const restored = restoreArchiveCommentPlan(JSON.parse(JSON.stringify(session)));
+  assert.deepEqual(restored.bytes, plan.bytes);
+  const before = f.mediaCount;
+  const patchRange = `bytes=${plan.start}-${plan.start + plan.bytes.length - 1}`;
+  assert.deepEqual(await consume(await openCommentedArchive(f.session, restored, { range: patchRange })), plan.bytes);
+  assert.equal(f.mediaCount, before);
+  f.onMedia = () => { if (f.mediaCount === before + 2) f.metadata.version = "18446744073709551613"; };
+  await assert.rejects(prepareArchiveComment(f.session, comment, { pinDriveVersion: true }), { code: "ARCHIVE_SOURCE_CHANGED" });
 });
 
 test("saved patches are bound to the comment and source; malformed or corrupted snapshots cannot be used", async (t) => {

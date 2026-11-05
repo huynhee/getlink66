@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { getStorageSourceValidator, openStorageStream } from "./storageProvider.js";
 import { DOWNLOAD_STREAM_BUFFER_BYTES, normalizeDownloadRange } from "./downloadTransfer.js";
 import { archiveFormatError, rar5CommentPatch, RAR_PREFIX_BYTES, zipCommentPatch, ZIP_TAIL_BYTES } from "./archiveCommentFormat.js";
+import { RAR4_MAGIC, rar4CommentPatch } from "./archiveCommentRar4.js";
 
 function changed() {
   return Object.assign(new Error("The source archive changed. Create a new download session."), { status: 409, code: "ARCHIVE_SOURCE_CHANGED" });
@@ -50,7 +51,7 @@ export async function prepareArchiveComment(session, comment, options = {}) {
   const bytes = Buffer.from(comment, "utf8");
   if (bytes.length > 8192) throw archiveFormatError("Archive comment is too long.");
   const format = String(session.archiveFormat || "").toLowerCase();
-  if (format !== "zip" && format !== "rar") throw archiveFormatError("Archive comments currently support ZIP and plain single-volume RAR5 on web downloads only.");
+  if (format !== "zip" && format !== "rar") throw archiveFormatError("Archive comments currently support ZIP and plain single-volume RAR4/RAR5 on web downloads only.");
   const start = format === "zip" ? Math.max(0, total - ZIP_TAIL_BYTES) : 0;
   const end = format === "zip" ? total - 1 : Math.min(total, RAR_PREFIX_BYTES) - 1;
   let sourceValidator = "";
@@ -65,7 +66,15 @@ export async function prepareArchiveComment(session, comment, options = {}) {
     sample = await inspectBytes(session, start, end, { ...options, validator: sourceValidator, sourceValidator });
   }
   if (!sample.validator) throw archiveFormatError("Storage must supply a stable ETag or Last-Modified validator for marked downloads.");
-  const patch = format === "zip" ? zipCommentPatch(sample.bytes, total, bytes) : rar5CommentPatch(sample.bytes, total, bytes);
+  let patch;
+  if (format === "zip") patch = zipCommentPatch(sample.bytes, total, bytes);
+  else if (sample.bytes.subarray(0, 7).equals(RAR4_MAGIC)) {
+    const tail = total <= sample.bytes.length ? sample.bytes.subarray(-7)
+      : (await inspectBytes(session, total - 7, total - 1, {
+        ...options, validator: sample.validator, sourceValidator: sample.sourceValidator,
+      })).bytes;
+    patch = rar4CommentPatch(sample.bytes, total, bytes, tail);
+  } else patch = rar5CommentPatch(sample.bytes, total, bytes);
   const size = total - (patch.end - patch.start) + patch.bytes.length;
   const fingerprint = crypto.createHash("sha256").update(JSON.stringify({
     total, validator: sample.validator, start: patch.start, end: patch.end,

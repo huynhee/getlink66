@@ -4,7 +4,7 @@ import test from "node:test";
 import express from "express";
 import cookieParser from "cookie-parser";
 import { useMemoryDb } from "../src/config/memoryStore.js";
-import { zipFixture } from "./fixtures/archiveFixture.js";
+import { rar4Fixture, zipFixture } from "./fixtures/archiveFixture.js";
 
 useMemoryDb();
 process.env.NODE_ENV = "test";
@@ -195,6 +195,44 @@ test("unsafe archive/key/Drive failure rejects session before quota, Credit or d
   assert.equal(await DailyDownloadQuota.countDocuments({ userId: f.user._id }), 0);
   assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), 0);
 });
+
+for (const assetType of ["model", "scene"]) for (const paymentMethod of ["credit", "free_quota"]) {
+  test(`RAR4 ${assetType} marked downloads preserve one trace and one ${paymentMethod} charge across retries`, async (t) => {
+    const f = await fixture(t, { assetType, paymentMethod, archiveExt: "rar", httpValidators: false,
+      payload: rar4Fixture(Buffer.alloc(300000, 82), "original comment") });
+    const created = await f.create("trace-rar4-0001");
+    assert.equal((await f.create("trace-rar4-0001")).session._id, created.session._id);
+    const stored = await DownloadSession.findById(created.session._id);
+    const trace = readArchiveTrace(stored.archiveComment);
+    assert.equal(trace.userId, String(f.user._id));
+    assert.equal(trace.assetType, assetType);
+    assert.equal((await User.findById(f.user._id)).credit, 100);
+    const url = f.base + created.downloadUrl;
+    const head = await f.fetch(url, { method: "HEAD" });
+    assert.equal(head.status, 200);
+    const first = await f.fetch(url);
+    assert.equal(first.status, 200);
+    assert.equal(first.headers.get("location"), null);
+    const output = Buffer.from(await first.arrayBuffer());
+    assert.equal(output.length, Number(head.headers.get("content-length")));
+    assert.ok(output.includes(Buffer.from(stored.archiveComment, "utf16le")));
+    assert.ok(!output.includes(Buffer.from("original comment")));
+    const resumed = await f.fetch(url, { headers: { range: "bytes=7-150" } });
+    assert.equal(resumed.status, 206);
+    assert.deepEqual(Buffer.from(await resumed.arrayBuffer()), output.subarray(7, 151));
+    assert.equal((await MarketplaceModel.findById(f.asset._id)).downloadCount, 1);
+    assert.equal(await ModelDownload.countDocuments({ userId: f.user._id }), 1);
+    if (paymentMethod === "credit") {
+      assert.equal((await User.findById(f.user._id)).credit, assetType === "scene" ? 80 : 95);
+      assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), 1);
+      assert.equal(await DailyDownloadQuota.countDocuments({ userId: f.user._id }), 0);
+    } else {
+      assert.equal((await User.findById(f.user._id)).credit, 100);
+      assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), 0);
+      assert.equal((await DailyDownloadQuota.findOne({ userId: f.user._id })).count, assetType === "scene" ? 5 : 1);
+    }
+  });
+}
 
 for (const httpValidators of [true, false]) test(`changed source fails before credit billing without mixing archive bytes (HTTP validators: ${httpValidators})`, async (t) => {
   const f = await fixture(t, { httpValidators });

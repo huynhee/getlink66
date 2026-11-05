@@ -4,8 +4,9 @@
 
 - New **web** Model/Scene download sessions can receive a custom comment and a randomized AES-256-GCM reference.
 - Original Drive files, compressed file data, and marketplace metadata are never written or recompressed.
-- Supported: ZIP (including single-volume ZIP64), plain single-volume RAR5 with ordinary/solid compression and optional quick-open records.
-- RAR4, SFX, split/multi-volume archives, RAR recovery records, locked RAR archives, encrypted RAR headers, oversized or malformed headers, and 7z are rejected **before creating/charging a new marked session**. Disable comments to allow original web downloads of unsupported files.
+- Supported: ZIP (including single-volume ZIP64), plain single-volume RAR4, and plain single-volume RAR5 with ordinary/solid compression and optional quick-open records.
+- RAR4 requires a CRC-valid 13-byte main header and plain 7-byte end record. Unicode comments use an uncompressed UTF-16LE CMT service block; an existing leading CMT is replaced, not duplicated. Old embedded main comments, archive-wide checksums, signatures and unknown layouts are rejected.
+- SFX, split/multi-volume archives, RAR recovery records, locked RAR archives, encrypted RAR headers, oversized or malformed headers, and 7z are rejected **before creating/charging a new marked session**. No automatic unmarked fallback is allowed. Disabling tracing remains an explicit admin policy decision.
 - Existing plugin clients verify the original archive SHA-256, so plugin downloads remain byte-for-byte original and are **not marked**. Adding tracing to those clients requires a negotiated integrity contract and a corresponding plugin update; never substitute a modified archive under the old checksum.
 - Getlink downloads and plugin release installers are unchanged.
 
@@ -23,7 +24,7 @@ New comments place the opaque `ipl1....` token on its own line without a `Ref:` 
 
 ## Delivery and Resources
 
-The service reads at most 65,557 trailing ZIP bytes or 128 KiB of RAR prefix to build a byte-splice plan. It streams original compressed payload bytes around a small generated patch. There is no full-file buffering, archive extraction, temporary full-file copy, or recompression. Preflight adds a small ranged upstream request; the primary cost remains network bandwidth.
+The service reads at most 65,557 trailing ZIP bytes or 128 KiB of RAR prefix to build a byte-splice plan. RAR4 additionally checks the final 7 bytes under the same source validator (reusing the prefix if the archive is small). It streams original compressed payload bytes around a small generated patch. There is no full-file buffering, archive extraction, temporary full-file copy, or recompression. The primary cost remains network bandwidth.
 
 The virtual representation has its own `Content-Length`, strong session-specific ETag, and byte-range mapping. A stale/weak/unknown If-Range causes a complete response. The source size, probe fingerprint, and upstream validator are pinned; a changed source is rejected instead of mixing old and new bytes. Storage must support exact byte-range responses. A transient source/open failure is never silently downgraded to an unmarked download or public Drive redirect.
 
@@ -46,7 +47,10 @@ The marker is **not DRM**, cannot be made undeletable, and can be copied to anot
 ## Verification / Rollback
 
 - Run `npm run check`.
-- Run `node --test backend/test/archive-comment.test.js backend/test/archive-comment-drive.test.js backend/test/archive-comment-http.test.js` for encryption, auth, format, Range, Drive responses without HTTP validators, source changes, quota/Credit, idempotency and plugin compatibility.
-- On Windows with WinRAR installed, format tests additionally create an isolated real RAR5, modify its comment, verify it with `Rar.exe t`, and compare extracted file bytes. They never run a downloaded executable or use customer archives.
+- Run `node --test backend/test/archive-comment.test.js backend/test/archive-comment-rar4.test.js backend/test/archive-comment-drive.test.js backend/test/archive-comment-http.test.js` for encryption, auth, format, Range, Drive responses without HTTP validators, source changes, quota/Credit, idempotency and plugin compatibility.
+- On Windows with WinRAR installed, format tests additionally validate RAR4/RAR5 fixtures with `Rar.exe t`, compare extracted file bytes, and verify Unicode comments. RAR4 also replaces a native WinRAR-written comment. They never run a downloaded executable or use customer archives.
+
 - Run `node backend/scripts/qa-archive-comments.js frontend/dist <temporary-evidence-directory>` after `npm run build:release` for VI/EN, light/dark and desktop/mobile admin UI.
 - Operational rollback: disable the admin flag first. New sessions receive originals; active marked sessions retain their original comment until expiry. Keep the encryption key and new server for at least the active-session TTL. Do not restart an older server that ignores marks while marked sessions are still being resumed.
+
+RAR4 layout references: [UnRAR header parsing](https://github.com/pmachapman/unrar/blob/master/arcread.cpp), [Unicode archive comments](https://github.com/pmachapman/unrar/blob/master/arccmt.cpp). The RAR4 code is a bounded byte-splice writer, not an extractor.
