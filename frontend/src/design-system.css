@@ -3203,9 +3203,9 @@ label,
 
   .topbarMenu .account {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 42px 42px 42px;
-    align-items: stretch;
-    gap: 8px;
+    grid-template-columns: repeat(4, 40px) minmax(0, 1fr) 40px;
+    align-items: center;
+    gap: 6px;
     padding-top: 12px;
   }
 
@@ -3225,23 +3225,29 @@ label,
   .account > .pluginDownloadButton {
     grid-column: 1;
     grid-row: 1;
-    width: 100%;
+    width: 40px;
+    height: 42px;
     min-width: 0;
+    padding: 0;
+  }
+
+  .account > .pluginDownloadButton span {
+    display: none;
   }
 
   .account > .themeToggle {
     grid-column: 2;
     grid-row: 1;
-    width: 42px;
-    min-width: 42px;
+    width: 40px;
+    min-width: 0;
   }
 
   .account > .languageToggle {
     box-sizing: border-box;
     grid-column: 3;
     grid-row: 1;
-    width: 42px;
-    min-width: 42px;
+    width: 40px;
+    min-width: 0;
     min-height: 42px;
     padding: 3px;
   }
@@ -3253,44 +3259,80 @@ label,
   }
 
   .account > .notificationMenu {
+    display: contents;
     grid-column: 4;
     grid-row: 1;
-    width: 42px;
+    width: 40px;
   }
 
   .account > .notificationMenu .notificationButton {
-    width: 42px;
+    grid-column: 4;
+    grid-row: 1;
+    width: 40px;
     height: 42px;
   }
 
   .account > .accountCreditPill {
-    grid-column: 1 / -1;
-    grid-row: 2;
+    grid-column: 5;
+    grid-row: 1;
     width: 100%;
     min-height: 42px;
+    min-width: 0;
+    padding-inline: 6px;
     justify-content: center;
   }
 
-  .account > .accountProfile {
-    grid-column: 1 / -1;
-    grid-row: 3;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    width: 100%;
+  .account > .accountCreditPill > svg {
+    display: none;
   }
 
-  .accountProfile .accountTrigger,
-  .accountProfile .accountMenuContent {
-    width: 100%;
+  .accountCreditPill strong,
+  .accountCreditPill .coinAmount {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .accountCreditPill .coinAmount > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .account > .accountProfile {
+    display: contents;
   }
 
   .accountProfile .accountTrigger {
-    justify-content: flex-start;
+    grid-column: 6;
+    grid-row: 1;
+    width: 40px;
+    min-height: 42px;
+    padding: 0;
+    justify-content: center;
   }
 
   .accountProfile .accountMenuContent {
+    grid-column: 1 / -1;
+    grid-row: 2;
     position: static;
+    width: 100%;
+    min-width: 0;
     margin-top: 8px;
+  }
+
+  .account.open .accountMenuContent .coinAmount {
+    display: inline-flex;
+  }
+
+  .accountStatusHeader > div > span {
+    overflow-wrap: anywhere;
+  }
+
+  .account > .notificationMenu .notificationDropdown {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    position: static;
+    width: 100%;
+    min-width: 0;
   }
 
   .marketSearchPanel {
@@ -3317,6 +3359,22 @@ label,
 
   .marketResultControls .marketAccessToggle {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 359px) {
+  .topbarMenu .account:not(.accountGuest) {
+    grid-template-columns: repeat(4, 36px) minmax(0, 1fr) 36px;
+    gap: 4px;
+  }
+
+  .account:not(.accountGuest) > .pluginDownloadButton,
+  .account:not(.accountGuest) > .themeToggle,
+  .account:not(.accountGuest) > .languageToggle,
+  .account > .notificationMenu,
+  .account > .notificationMenu .notificationButton,
+  .accountProfile .accountTrigger {
+    width: 36px;
   }
 }
 

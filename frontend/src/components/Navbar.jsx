@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Bell, CalendarClock, Chrome, Download, History, LogOut, Menu, Moon, Sun, UserCircle, UserPlus, Wallet, X } from "lucide-react";
 import { API_URL, api, prefetchApi } from "../api.js";
 import CoinAmount from "./CoinAmount.jsx";
@@ -74,6 +74,7 @@ function PluginDownloadButton({ language = "vi" }) {
     <a
       className="pluginDownloadButton"
       href="/plugin"
+      aria-label={language === "vi" ? "Tải plugin" : "Download plugin"}
       title={language === "vi" ? "Xem và tải plugin 3ds Max" : "Explore and download the 3ds Max plugin"}
     >
       <Download size={16} />
@@ -122,6 +123,7 @@ export default function Navbar({
   const t = translations[language] || translations.vi;
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const accountMenuId = useId();
   const accountRef = useRef(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const notificationRef = useRef(null);
@@ -350,7 +352,11 @@ export default function Navbar({
         <button
           type="button"
           className="mobileMenuButton"
-          onClick={() => setMenuOpen((current) => !current)}
+          onClick={() => {
+            setMenuOpen((current) => !current);
+            setAccountOpen(false);
+            setNotificationOpen(false);
+          }}
           aria-label="Menu"
           aria-expanded={menuOpen}
         >
@@ -424,6 +430,7 @@ export default function Navbar({
                 className="accountCreditPill"
                 onClick={() => goPath("/topup?mode=credit")}
                 title={language === "vi" ? "Nạp credit" : "Top up credits"}
+                aria-label={`${language === "vi" ? "Nạp credit. Số dư" : "Top up credits. Balance"}: ${user.credit ?? 0} Credit`}
               >
                 <Wallet size={15} />
                 <strong><CoinAmount value={user.credit} className="compact" /></strong>
@@ -435,6 +442,7 @@ export default function Navbar({
                   onClick={toggleAccountMenu}
                   aria-label={language === "vi" ? "Trạng thái tài khoản" : "Account status"}
                   aria-expanded={accountOpen}
+                  aria-controls={accountOpen ? accountMenuId : undefined}
                 >
                   <span className="accountAvatar" aria-hidden="true">
                     {user.avatar ? (
@@ -448,7 +456,7 @@ export default function Navbar({
                     <small>{user.isPro ? "PRO" : "FREE"}</small>
                   </span>
                 </button>
-                <div className="accountMenuContent">
+                {accountOpen && <div className="accountMenuContent" id={accountMenuId}>
                   <div className="accountStatusHeader">
                     <span className="accountAvatar large" aria-hidden="true">
                       {user.avatar ? (
@@ -516,7 +524,7 @@ export default function Navbar({
                       <LogOut size={17} />
                     </button>
                   </div>
-                </div>
+                </div>}
               </div>
             </div>
           ) : (
