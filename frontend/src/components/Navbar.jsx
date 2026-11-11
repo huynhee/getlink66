@@ -142,7 +142,7 @@ export default function Navbar({
   );
 
   useEffect(() => {
-    if (adminMode) return undefined;
+    if (adminMode || !userId) return undefined;
     const warm = () => { warmModelCatalog(); };
     if (typeof window.requestIdleCallback === "function") {
       const idleId = window.requestIdleCallback(warm, { timeout: 1_500 });
@@ -150,7 +150,7 @@ export default function Navbar({
     }
     const timer = window.setTimeout(warm, 500);
     return () => window.clearTimeout(timer);
-  }, [adminMode]);
+  }, [adminMode, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -370,11 +370,11 @@ export default function Navbar({
                   <button
                     key={key}
                     className={page === key ? "active" : ""}
-                    onMouseEnter={key === "models" ? warmModelCatalog : key === "scenes" ? warmSceneCatalog : undefined}
-                    onFocus={key === "models" ? warmModelCatalog : key === "scenes" ? warmSceneCatalog : undefined}
+                    onMouseEnter={key === "models" && user ? warmModelCatalog : key === "scenes" ? warmSceneCatalog : undefined}
+                    onFocus={key === "models" && user ? warmModelCatalog : key === "scenes" ? warmSceneCatalog : undefined}
                     onClick={() => {
-                      if (!user && !["guide", "models"].includes(key)) {
-                        window.location.href = googleHref("/");
+                      if (!user && key !== "guide") {
+                        window.location.href = googleHref(key === "models" ? "/models" : "/");
                       } else if (key === "guide") {
                         goPath("/guide");
                       } else if (key === "models") {

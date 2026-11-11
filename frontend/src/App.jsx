@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { MessageCircle } from "lucide-react";
+import { Chrome, MessageCircle } from "lucide-react";
 import { API_URL, api } from "./api.js";
 import { createAccountRefresh } from "./utils/accountRefresh.js";
 import { useGoogleOneTap } from "./utils/useGoogleOneTap.js";
@@ -300,6 +300,21 @@ function pageFromPath(pathname) {
   if (cleanPath === "/plugin") return "plugin";
   if (cleanPath === "/") return "";
   return "getlink";
+}
+
+function ModelLoginGate({ path, language }) {
+  const params = new URLSearchParams({ returnTo: path || "/models" });
+  const referral = new URLSearchParams(window.location.search).get("ref");
+  if (referral) params.set("ref", referral);
+  return (
+    <section className="panel emptyState modelLoginGate" aria-labelledby="model-login-title">
+      <h2 id="model-login-title">{language === "vi" ? "Đăng nhập để xem thư viện Model" : "Sign in to view the model library"}</h2>
+      <a className="primaryButton" href={`${API_URL}/api/auth/google?${params.toString()}`}>
+        <Chrome size={18} aria-hidden="true" />
+        {translations[language].googleLogin}
+      </a>
+    </section>
+  );
 }
 
 function App() {
@@ -655,7 +670,9 @@ function App() {
       <FacebookGroupBanner language={language} />
       <main className={`shell shell-${page || "getlink"}${page === "scenes" && path.startsWith("/scenes/") ? " shell-scene-detail" : ""}`}>
         {!user && !["guide", "privacy", "terms", "models", "scenes", "plugin"].includes(page) && <Login user={user} onLogin={refreshUser} returnTo={path || "/"} language={language} />}
-        {page === "models" && <Models user={user} language={language} path={path} onNavigate={navigate} onUserChange={handleUserChange} />}
+        {page === "models" && (user
+          ? <Models user={user} language={language} path={path} onNavigate={navigate} onUserChange={handleUserChange} />
+          : <ModelLoginGate path={path} language={language} />)}
         {page === "scenes" && <Scenes user={user} language={language} path={path} onNavigate={navigate} onUserChange={handleUserChange} />}
         {page === "guide" && <Guide language={language} />}
         {page === "plugin" && <PluginDownload language={language} />}

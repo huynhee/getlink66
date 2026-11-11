@@ -387,6 +387,22 @@ textarea:focus-visible,
 }
 
 /* Header and global navigation */
+.modelLoginGate {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 20px;
+  min-height: 240px;
+  padding: 32px 24px;
+}
+
+.modelLoginGate h2 {
+  max-width: 32ch;
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.4;
+}
+
 .topbar {
   min-height: 64px;
   padding-inline: 24px;

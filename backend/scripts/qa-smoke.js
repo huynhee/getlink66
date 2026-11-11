@@ -10,6 +10,7 @@ import { verify3D66ManualHandoff } from "./qa-3d66-verification.js";
 import { verifyGetlinkFormats } from "./qa-getlink-formats.js";
 import { verify3D66BrowserSessions } from "./qa-3d66-browser-sessions.js";
 import { verifyCompactNavbar } from "./qa-navbar.js";
+import { verifyModelLogin } from "./qa-model-login.js";
 
 const backendPort = Number(process.env.QA_BACKEND_PORT || 5511);
 const frontendPort = Number(process.env.QA_FRONTEND_PORT || 5512);
@@ -1186,6 +1187,7 @@ async function main() {
   const verificationOnly = process.env.QA_3D66_VERIFICATION_ONLY === "true";
   const formatsOnly = process.env.QA_GETLINK_FORMATS_ONLY === "true";
   const navbarOnly = process.env.QA_NAVBAR_ONLY === "true";
+  const modelLoginOnly = process.env.QA_MODEL_LOGIN_ONLY === "true";
   if (!fs.existsSync(path.join(buildRoot, "index.html"))) {
     throw new Error(`Build is missing: ${buildRoot}`);
   }
@@ -1369,27 +1371,15 @@ async function main() {
 
       for (const route of routeSet) {
         const startedAt = Date.now();
-        const catalogResponse = route === "/models"
-          ? page.waitForResponse((candidate) => {
-              const url = new URL(candidate.url());
-              return url.pathname === "/api/marketplace/models"
-                && url.searchParams.get("sort") === "newest";
-            }, { timeout: 15_000 })
-          : Promise.resolve(null);
-        const [response, modelResponse] = await Promise.all([
-          page.goto(`${frontendOrigin}${route}`, {
-            waitUntil: "domcontentloaded",
-            timeout: 15_000,
-          }),
-          catalogResponse,
-        ]);
+        const response = await page.goto(`${frontendOrigin}${route}`, {
+          waitUntil: "domcontentloaded",
+          timeout: 15_000,
+        });
         if (!response?.ok()) throw new Error(`${viewport.name} ${route} returned HTTP ${response?.status()}`);
-        if (modelResponse && !modelResponse.ok()) {
-          throw new Error(`${viewport.name} Model catalog returned HTTP ${modelResponse.status()}`);
-        }
         await page.waitForSelector("#root", { state: "visible" });
         if (route === "/models") {
-          await page.waitForFunction(() => globalThis.document.querySelector(".marketSortControl select")?.value === "newest");
+          await page.locator(".modelLoginGate").waitFor({ state: "visible" });
+          if (await page.locator(".marketSortControl").count()) throw new Error("Guest Model route exposed the catalog");
         }
         const text = (await page.locator("#root").innerText()).trim();
         if (!text) throw new Error(`${viewport.name} ${route} rendered an empty root`);
@@ -1455,6 +1445,11 @@ async function main() {
         await context.close();
         continue;
       }
+      await verifyModelLogin(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
+      if (modelLoginOnly) {
+        await context.close();
+        continue;
+      }
       await verifyLanguageFlags(page, viewport.name, "admin");
       await verifyCompactNavbar(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
       await verifyAdminRevenueChart(page, context, viewport.name);
@@ -1478,8 +1473,8 @@ async function main() {
     if (errors.length) {
       throw new Error(`Browser smoke errors:\n${errors.slice(0, 20).join("\n")}`);
     }
-    if (verificationOnly || formatsOnly || navbarOnly) {
-      const summary = { ok: true, focus: navbarOnly ? "compact-navbar" : formatsOnly ? "getlink-inline-formats" : "getlink-manual-verification", viewports: 2,
+    if (verificationOnly || formatsOnly || navbarOnly || modelLoginOnly) {
+      const summary = { ok: true, focus: modelLoginOnly ? "model-login" : navbarOnly ? "compact-navbar" : formatsOnly ? "getlink-inline-formats" : "getlink-manual-verification", viewports: 2,
         languages: ["vi", "en"], themes: ["light", "dark"], externalFailures: externalFailures.length };
       fs.writeFileSync(resultPath, JSON.stringify(summary, null, 2));
       console.log(JSON.stringify(summary, null, 2));
@@ -1494,6 +1489,7 @@ async function main() {
       configuredCreditCopy: true,
       languageFlags: true,
       compactNavbar: true,
+      modelLogin: true,
       adminPackageDeletion: true,
       unifiedSubscriptionToggles: true,
       adminVoucherPlanScopes: true,
