@@ -695,7 +695,7 @@ button:disabled {
   background: rgba(0, 255, 136, 0.06);
 }
 
-.adminSectionNav button span {
+.adminSectionNav button .adminNavCount {
   margin-left: auto;
   min-width: 24px;
   height: 22px;

@@ -16,6 +16,7 @@ import { text, translations } from "../i18n.js";
 import { formatPaymentMoney, parseAdminUsdPrice } from "../utils/paymentPresentation.js";
 import { subscriptionBillingPeriod } from "../utils/membershipPresentation.js";
 import { NOTIFICATION_PAGES, notificationPageLabels } from "../utils/notificationPages.js";
+import "./admin-responsive.css";
 
 const emptyPackage = {
   name: "",
@@ -1884,11 +1885,12 @@ export default function Admin({ user, language = "vi" }) {
                 key={section.key}
                 type="button"
                 className={activeSection === section.key ? "active" : ""}
+                aria-pressed={activeSection === section.key}
                 onClick={() => setActiveSection(section.key)}
               >
                 <Icon size={16} />
-                {section.label}
-                {typeof section.count === "number" && <span>{section.count}</span>}
+                <span className="adminNavLabel">{section.label}</span>
+                {typeof section.count === "number" && <span className="adminNavCount">{section.count}</span>}
               </button>
             );
           })}
@@ -1911,11 +1913,12 @@ export default function Admin({ user, language = "vi" }) {
                   key={section.key}
                   type="button"
                   className={subNavigation.activeKey === section.key ? "active" : ""}
+                  aria-pressed={subNavigation.activeKey === section.key}
                   onClick={() => subNavigation.onChange(section.key)}
                 >
                   <Icon size={16} />
-                  {section.label}
-                  {typeof section.count === "number" && <span>{section.count}</span>}
+                  <span className="adminNavLabel">{section.label}</span>
+                  {typeof section.count === "number" && <span className="adminNavCount">{section.count}</span>}
                 </button>
               );
             })}

@@ -1,0 +1,213 @@
+.adminPage {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.adminPage > *,
+.adminPage .panel,
+.adminPage .stack,
+.adminPage .table,
+.adminPage .tableRow > *,
+.adminPage .adminSearchField,
+.adminPage .adminSearchField input {
+  min-width: 0;
+}
+
+.adminPage .table {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.adminPage .tableRow {
+  min-width: 0;
+}
+
+.adminPage .adminSectionNav button {
+  gap: 8px;
+}
+
+.adminPage .adminSectionNav button > svg,
+.adminPage .adminNavCount {
+  flex-shrink: 0;
+}
+
+.adminPage .adminNavLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.adminPage :is(h2, h3, p, code, time) {
+  overflow-wrap: anywhere;
+}
+
+.adminPage .marketTaxonomyField {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.marketTaxonomyField > span {
+  display: none;
+}
+
+.pluginAdminConfirmation {
+  margin: auto;
+  overflow-y: auto;
+}
+
+@media (max-width: 980px) {
+  .adminPage :is(.getlinkAuditTable, .logTable, .referralTable, .adminUserTable, .topupAuditTable) .tableRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+
+  .adminPage .tableRow {
+    overflow-wrap: anywhere;
+  }
+
+  .adminPage .tableRow > .badge {
+    justify-self: start;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .adminPage .banUserControls {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 760px) {
+  .adminPage :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea) {
+    min-width: 0;
+    max-width: 100%;
+    font-size: 16px;
+  }
+
+  .adminPage :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select) {
+    min-height: 42px;
+  }
+
+  .adminPage :is(.smallButton, .iconButton, .adminSubTabs button, .segmentedControl button) {
+    min-height: 42px;
+  }
+
+  .adminPage :is(.adminSubTabs, .segmentedControl, .inputRow, .marketAdminSyncActions, .marketAdminPanelTitle) {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .adminPage .inputRow > :is(input, select, textarea) {
+    flex: 1 1 200px;
+    width: 100%;
+  }
+
+  .adminPage .runtimeSettingRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adminPage .runtimeSettingText {
+    min-width: 0;
+  }
+
+  .adminPage :is(.getlinkAuditUser, .getlinkAuditModel, .logUserIdentity, .adminUserIdentity) :is(strong, span),
+  .adminPage .topupAuditPayment code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .adminPage :is(.getlinkAuditUser, .getlinkAuditModel, .logUserIdentity, .adminUserIdentity) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adminPage .marketTaxonomyTable {
+    overflow: visible;
+  }
+
+  .adminPage .marketTaxonomyRow {
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .adminPage .marketTaxonomyRow.header {
+    display: none;
+  }
+
+  .adminPage .marketTaxonomyRow > :is(.marketTaxonomyKey, .marketTaxonomyVisual) {
+    grid-column: 1 / -1;
+  }
+
+  .adminPage .marketTaxonomyField > span,
+  .adminPage .marketTaxonomyVisual::before,
+  .adminPage .marketTaxonomyUsage::before {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .adminPage .marketTaxonomyVisual {
+    display: grid;
+    gap: 6px;
+  }
+
+  .adminPage :is(.marketTaxonomyVisual, .marketTaxonomyUsage)::before {
+    content: attr(data-label);
+  }
+
+  .adminPage .marketTaxonomyUsage {
+    text-align: left;
+  }
+
+  .adminPage .marketTaxonomyToggle {
+    min-height: 42px;
+  }
+
+  .adminPage .marketTaxonomyRow > .iconButton {
+    justify-self: end;
+    width: 42px;
+  }
+
+  .adminPage .pluginAdminTable :is(th, td):last-child {
+    position: sticky;
+    right: 0;
+    background: var(--surface-1);
+    border-left: 1px solid var(--border);
+  }
+
+  .adminPage .pluginAdminTable th:last-child {
+    background: var(--surface-2);
+  }
+}
+
+@media (max-width: 640px) {
+  .adminPage :is(.getlinkAuditTable, .logTable, .referralTable, .adminUserTable, .topupAuditTable) .tableRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adminPage .adminTableToolbar > select,
+  .adminPage .adminTableToolbar > .adminSearchField {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .adminPage .packageGrid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .adminPage .voucherList {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adminPage .marketTaxonomyIconEditor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adminPage .marketTaxonomyModal {
+    max-height: calc(100dvh - 16px);
+  }
+}

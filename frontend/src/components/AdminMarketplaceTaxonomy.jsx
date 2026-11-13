@@ -23,6 +23,10 @@ function rowId(type, row) {
   return `${type}:${row._id}`;
 }
 
+function TaxonomyField({ label, children }) {
+  return <label className="marketTaxonomyField"><span>{label}</span>{children}</label>;
+}
+
 function makeKey(value = "") {
   return String(value)
     .trim()
@@ -331,29 +335,29 @@ export default function AdminMarketplaceTaxonomy({ assetType = "model", language
                 <code>{type === "category" ? row.sourceCategoryId : row.value}</code>
                 <small><KeyRound size={11} /> {row.isActive === false ? l("Đã tắt", "Disabled") : l("Đã khóa", "Locked")}</small>
               </div>
-              <input
+              <TaxonomyField label={l("Nhãn tiếng Việt", "Vietnamese label")}><input
                 aria-label={l("Nhãn tiếng Việt", "Vietnamese label")}
                 value={type === "category" ? draft.title : draft.labelVi}
                 onChange={(event) => updateDraft(type, row, type === "category" ? "title" : "labelVi", event.target.value)}
-              />
-              <input
+              /></TaxonomyField>
+              <TaxonomyField label={l("Nhãn tiếng Anh", "English label")}><input
                 aria-label={l("Nhãn tiếng Anh", "English label")}
                 value={type === "category" ? draft.titleEn : draft.labelEn}
                 onChange={(event) => updateDraft(type, row, type === "category" ? "titleEn" : "labelEn", event.target.value)}
-              />
-              <input
+              /></TaxonomyField>
+              <TaxonomyField label={l("Từ khóa tiếng Việt", "Vietnamese aliases")}><input
                 aria-label={l("Từ khóa tiếng Việt", "Vietnamese aliases")}
                 placeholder={l("Cách nhau bằng dấu phẩy", "Comma separated")}
                 value={draft.aliasesVi}
                 onChange={(event) => updateDraft(type, row, "aliasesVi", event.target.value)}
-              />
-              <input
+              /></TaxonomyField>
+              <TaxonomyField label={l("Từ khóa tiếng Anh", "English aliases")}><input
                 aria-label={l("Từ khóa tiếng Anh", "English aliases")}
                 placeholder={l("Cách nhau bằng dấu phẩy", "Comma separated")}
                 value={draft.aliasesEn}
                 onChange={(event) => updateDraft(type, row, "aliasesEn", event.target.value)}
-              />
-              <div className="marketTaxonomyVisual">
+              /></TaxonomyField>
+              <div className="marketTaxonomyVisual" data-label={group === "category" ? l("Danh mục mẹ", "Parent") : l("Hiển thị", "Visual")}>
                 {type === "category" && <span>{parent?.title || parent?.titleEn || (isChild ? row.parentSourceCategoryId : l("Gốc", "Root"))}</span>}
                 {type === "filter" && row.facet === "color" && (
                   <label className="marketTaxonomyColor"><input type="color" value={draft.hex} onChange={(event) => updateDraft(type, row, "hex", event.target.value)} /><code>{draft.hex}</code></label>
@@ -377,15 +381,15 @@ export default function AdminMarketplaceTaxonomy({ assetType = "model", language
                 )}
                 {type === "filter" && row.facet !== "color" && !data.iconKeysByFacet[row.facet]?.length && <span>{l(...(facetNames[row.facet] || [row.facet, row.facet]))}</span>}
               </div>
-              <input
+              <TaxonomyField label={l("Vị trí", "Order")}><input
                 aria-label={l("Vị trí", "Order")}
                 type="number"
                 min="0"
                 max="100000"
                 value={draft.position}
                 onChange={(event) => updateDraft(type, row, "position", Number(event.target.value || 0))}
-              />
-              <strong className="marketTaxonomyUsage">{Number(row.usageCount || 0).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</strong>
+              /></TaxonomyField>
+              <strong className="marketTaxonomyUsage" data-label={l("Đang dùng", "Usage")}>{Number(row.usageCount || 0).toLocaleString(language === "vi" ? "vi-VN" : "en-US")}</strong>
               <label className="marketTaxonomyToggle">
                 <input
                   type="checkbox"
