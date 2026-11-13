@@ -4,6 +4,9 @@ import { getStorageSourceValidator, openStorageStream } from "./storageProvider.
 import { DOWNLOAD_STREAM_BUFFER_BYTES, normalizeDownloadRange } from "./downloadTransfer.js";
 import { archiveFormatError, rar5CommentPatch, RAR_PREFIX_BYTES, zipCommentPatch, ZIP_TAIL_BYTES } from "./archiveCommentFormat.js";
 import { RAR4_MAGIC, rar4CommentPatch } from "./archiveCommentRar4.js";
+import { readArchiveExtraFiles } from "./archiveExtraFiles.js";
+import { rarExtraFilesPatch, RAR_END_INSPECTION_BYTES } from "./archiveExtraRar.js";
+import { prepareZipExtraFiles } from "./archiveExtraZip.js";
 
 function changed() {
   return Object.assign(new Error("The source archive changed. Create a new download session."), { status: 409, code: "ARCHIVE_SOURCE_CHANGED" });
@@ -66,16 +69,38 @@ export async function prepareArchiveComment(session, comment, options = {}) {
     sample = await inspectBytes(session, start, end, { ...options, validator: sourceValidator, sourceValidator });
   }
   if (!sample.validator) throw archiveFormatError("Storage must supply a stable ETag or Last-Modified validator for marked downloads.");
+  const files = readArchiveExtraFiles(session.archiveExtraFiles);
+  const read = async (from, to) => {
+    if (![from, to].every(Number.isSafeInteger) || from < 0 || to < from || to >= total || to - from + 1 > 2 * 1024 * 1024) {
+      throw archiveFormatError("Archive metadata exceeds the safe inspection window.");
+    }
+    if (from >= start && to <= end) return sample.bytes.subarray(from - start, to - start + 1);
+    return (await inspectBytes(session, from, to, { ...options, validator: sample.validator, sourceValidator: sample.sourceValidator })).bytes;
+  };
   let patch;
-  if (format === "zip") patch = zipCommentPatch(sample.bytes, total, bytes);
+  if (format === "zip") patch = files.length
+    ? await prepareZipExtraFiles({ tail: sample.bytes, total, comment: bytes, files, read })
+    : zipCommentPatch(sample.bytes, total, bytes);
   else if (sample.bytes.subarray(0, 7).equals(RAR4_MAGIC)) {
-    const tail = total <= sample.bytes.length ? sample.bytes.subarray(-7)
-      : (await inspectBytes(session, total - 7, total - 1, {
-        ...options, validator: sample.validator, sourceValidator: sample.sourceValidator,
-      })).bytes;
+    const tail = await read(total - 7, total - 1);
     patch = rar4CommentPatch(sample.bytes, total, bytes, tail);
+    if (files.length) patch = { patches: [patch, rarExtraFilesPatch("rar4", tail, total, files)], format: "rar4" };
   } else patch = rar5CommentPatch(sample.bytes, total, bytes);
-  const size = total - (patch.end - patch.start) + patch.bytes.length;
+  if (files.length && patch.format === "rar5") {
+    const tail = await read(Math.max(0, total - RAR_END_INSPECTION_BYTES), total - 1);
+    patch = { patches: [patch, rarExtraFilesPatch("rar5", tail, total, files)], format: "rar5" };
+  }
+  const patches = patch.patches || [patch];
+  const size = patches.reduce((size, piece) => size - (piece.end - piece.start) + piece.bytes.length, total);
+  if (!Number.isSafeInteger(size)) throw archiveFormatError("Marked archive size exceeds safe integer limits.");
+  if (patch.patches) {
+    const digest = crypto.createHash("sha256").update(JSON.stringify({ total, validator: sample.validator,
+      patches: patches.map(({ start, end }) => ({ start, end })) })).update(sample.bytes);
+    for (const piece of patches) digest.update(piece.bytes);
+    const fingerprint = digest.digest("hex");
+    return { ...patch, size, fingerprint, validator: sample.validator, sourceValidator: sample.sourceValidator,
+      lastModified: sample.lastModified, etag: `"ipl-${fingerprint}"` };
+  }
   const fingerprint = crypto.createHash("sha256").update(JSON.stringify({
     total, validator: sample.validator, start: patch.start, end: patch.end,
   })).update(sample.bytes).update(patch.bytes).digest("hex");
@@ -105,9 +130,17 @@ export async function openCommentedArchive(session, plan, options = {}) {
     if (bytes) blocks.push({ bytes: bytes.subarray(start - from, end - from + 1) });
     else blocks.push({ start: sourceStart + start - from, end: sourceStart + end - from });
   };
-  add(0, plan.start, 0);
-  add(plan.start, plan.bytes.length, 0, plan.bytes);
-  add(plan.start + plan.bytes.length, session.fileSize - plan.end, plan.end);
+  let sourceAt = 0;
+  let outputAt = 0;
+  for (const patch of plan.patches || [plan]) {
+    const length = patch.start - sourceAt;
+    add(outputAt, length, sourceAt);
+    outputAt += length;
+    add(outputAt, patch.bytes.length, 0, patch.bytes);
+    outputAt += patch.bytes.length;
+    sourceAt = patch.end;
+  }
+  add(outputAt, session.fileSize - sourceAt, sourceAt);
   const upstreamOptions = { ...options, validator: plan.validator, sourceValidator: plan.sourceValidator };
   let current = null;
   const firstSource = blocks.find((block) => !block.bytes);

@@ -6,6 +6,7 @@ import { openCommentedArchive, prepareArchiveComment } from "../src/utils/archiv
 import { rar5Block, rarVint } from "../src/utils/archiveCommentFormat.js";
 import { rar4Fixture, zipFixture } from "./fixtures/archiveFixture.js";
 import { serializeArchiveCommentPlan, restoreArchiveCommentPlan } from "../src/utils/archiveCommentPlan.js";
+import { createArchiveExtraFiles } from "../src/utils/archiveExtraFiles.js";
 
 process.env.GOOGLE_DRIVE_ACCESS_TOKEN = "archive-validator-fixture-token";
 
@@ -230,4 +231,40 @@ test("a patch-only range still verifies Drive before billing, and a patch-first 
   f.metadata.version = "18446744073709551613";
   await assert.rejects(openCommentedArchive(f.session, plan, { range: patchRange }), { code: "ARCHIVE_SOURCE_CHANGED" });
   await assert.rejects(openCommentedArchive(f.session, plan, { range: `bytes=${plan.start}-` }), { code: "ARCHIVE_SOURCE_CHANGED" });
+});
+
+for (const format of ["zip", "rar"]) test(`${format} multi-patch snapshots bind the added files and resume without re-reading metadata tables`, async (t) => {
+  const f = driveFixture(t, format === "rar" ? rar4Fixture(Buffer.alloc(300000, 82)) : undefined);
+  f.session.archiveFormat = format;
+  f.session.archiveExtraFiles = createArchiveExtraFiles({ archiveTextFileEnabled: true }, "ipl1.fixture-not-a-live-token");
+  const comment = "3dipl.org\n\nipl1.fixture-not-a-live-token";
+  const plan = await prepareArchiveComment(f.session, comment, { pinDriveVersion: true });
+  assert.equal(plan.patches.length, 2);
+  const session = { ...f.session, sourceFileSize: f.session.fileSize, fileSize: plan.size,
+    archiveComment: comment, archiveSourceFingerprint: plan.fingerprint,
+    archiveCommentPlan: serializeArchiveCommentPlan(f.session, comment, plan) };
+  assert.equal(JSON.parse(session.archiveCommentPlan).v, 2);
+  assert.ok(session.archiveCommentPlan.length < 20000, "Do not persist the source central directory in each session");
+  const restored = restoreArchiveCommentPlan(JSON.parse(JSON.stringify(session)));
+  assert.deepEqual(restored.patches, plan.patches.map(({ start, end, bytes }) => ({ start, end, bytes })));
+  const before = f.mediaCount;
+  const first = plan.patches[0];
+  const generated = `bytes=${first.start}-${first.start + first.bytes.length - 1}`;
+  assert.deepEqual(await consume(await openCommentedArchive(f.session, restored, { range: generated })), first.bytes);
+  assert.equal(f.mediaCount, before, "Generated-only resume needs only the version check");
+  for (const change of [{ archiveExtraFiles: "" }, { archiveExtraFiles: session.archiveExtraFiles + " " }]) {
+    assert.throws(() => restoreArchiveCommentPlan({ ...session, ...change }), { code: "ARCHIVE_SOURCE_CHANGED" });
+  }
+  const { checksum: _checksum, ...data } = JSON.parse(session.archiveCommentPlan);
+  for (const patches of [[], Array.from({ length: 5 }, () => data.patches[0]),
+    [{ ...data.patches[0], start: -1 }, data.patches[1]],
+    [data.patches[1], data.patches[0]],
+    [data.patches[0], { ...data.patches[1], end: f.session.fileSize + 1 }],
+    [{ ...data.patches[0], bytes: "" }, data.patches[1]]]) {
+    const invalid = { ...data, patches };
+    const encoded = JSON.stringify({ ...invalid, checksum: crypto.createHash("sha256").update(JSON.stringify(invalid)).digest("hex") });
+    assert.throws(() => restoreArchiveCommentPlan({ ...session, archiveCommentPlan: encoded }), { code: "ARCHIVE_SOURCE_CHANGED" });
+  }
+  f.metadata.version = "18446744073709551613";
+  await assert.rejects(openCommentedArchive(f.session, restored, { range: generated }), { code: "ARCHIVE_SOURCE_CHANGED" });
 });

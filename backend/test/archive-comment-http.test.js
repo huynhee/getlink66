@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import test from "node:test";
 import express from "express";
 import cookieParser from "cookie-parser";
+import yauzl from "yauzl";
 import { useMemoryDb } from "../src/config/memoryStore.js";
 import { rar4Fixture, zipFixture } from "./fixtures/archiveFixture.js";
 
@@ -36,11 +37,13 @@ const { invalidateMarketplacePricingCache } = await import("../src/utils/marketp
 const { prepareArchiveComment } = await import("../src/utils/archiveCommentStream.js");
 let sequence = 0;
 
-async function fixture(t, { assetType = "model", archiveExt = "zip", paymentMethod = "credit", httpValidators = true, payload = zipFixture(Buffer.alloc(300000, 82)) } = {}) {
+async function fixture(t, { assetType = "model", archiveExt = "zip", paymentMethod = "credit", httpValidators = true,
+  extraFiles = false, payload = zipFixture(Buffer.alloc(300000, 82)) } = {}) {
   sequence += 1;
   const user = await User.create({ email: `trace-${sequence}@example.test`, credit: 100 });
   await SiteSetting.findOneAndUpdate({ key: "homepage" }, { $set: { archiveCommentEnabled: true,
-    archiveCommentText: "3dipl.org", marketplaceModelCreditPrice: 5, marketplaceSceneCreditPrice: 20 } }, { upsert: true });
+    archiveCommentText: "3dipl.org", archiveTextFileEnabled: extraFiles, archiveTextFileName: "3dipl.txt",
+    archiveTextFileText: "3dipl.org\nLicensed download", marketplaceModelCreditPrice: 5, marketplaceSceneCreditPrice: 20 } }, { upsert: true });
   invalidateMarketplacePricingCache();
   const asset = await MarketplaceModel.create({ title: `Trace ${sequence}`, slug: `trace-${sequence}`, assetType,
     accessType: paymentMethod === "free_quota" ? "free" : "member", metadataStatus: "complete", fileStatus: "ready", isPublished: true,
@@ -179,6 +182,7 @@ test("admin settings are private, CSRF/2FA guarded, and source lookup is audited
   await getSettings({ user: null }, { json(value) { publicData = value; } }, (err) => { throw err; });
   assert.equal(Object.hasOwn(publicData.settings, "archiveCommentEnabled"), false);
   assert.equal(Object.hasOwn(publicData.settings, "archiveCommentText"), false);
+  for (const field of ["archiveTextFileEnabled", "archiveTextFileName", "archiveTextFileText"]) assert.equal(Object.hasOwn(publicData.settings, field), false);
 });
 
 test("unsafe archive/key/Drive failure rejects session before quota, Credit or download history is created", async (t) => {
@@ -284,15 +288,101 @@ test("corrupt snapshots and changed Drive versions on generated-only ranges neve
   assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), 0);
 });
 
-test("legacy plugins retain exact size, SHA-256 and original bytes when web tracing is enabled", async (t) => {
-  const f = await fixture(t, { httpValidators: false });
+test("legacy plugins retain exact size, SHA-256 and original bytes when web tracing and extra files are enabled", async (t) => {
+  const f = await fixture(t, { httpValidators: false, extraFiles: true });
   process.env.MARKETPLACE_DOWNLOAD_DELIVERY = "proxy";
   t.after(() => { process.env.MARKETPLACE_DOWNLOAD_DELIVERY = "drive_redirect"; });
   const created = await f.create("trace-plugin-001", "plugin");
   assert.equal(created.session.archiveComment || "", "");
+  assert.equal(created.session.archiveExtraFiles || "", "");
   const response = await f.fetch(f.base + created.downloadUrl);
   const output = Buffer.from(await response.arrayBuffer());
   assert.deepEqual(output, f.payload);
   assert.equal(output.length, created.session.fileSize);
   assert.equal(crypto.createHash("sha256").update(output).digest("hex"), created.session.sha256);
+});
+
+async function zipEntries(buffer) {
+  return new Promise((resolve, reject) => {
+    yauzl.fromBuffer(buffer, { lazyEntries: true }, (error, zip) => {
+      if (error) return reject(error);
+      const entries = new Map();
+      zip.once("error", reject);
+      zip.once("end", () => resolve(entries));
+      zip.on("entry", (entry) => zip.openReadStream(entry, async (failure, stream) => {
+        if (failure) return reject(failure);
+        try {
+          const chunks = [];
+          for await (const chunk of stream) chunks.push(chunk);
+          entries.set(entry.fileName, Buffer.concat(chunks));
+          zip.readEntry();
+        } catch (err) { reject(err); }
+      }));
+      zip.readEntry();
+    });
+  });
+}
+
+for (const archiveExt of ["zip", "rar"]) for (const assetType of ["model", "scene"]) for (const paymentMethod of ["credit", "free_quota"]) {
+  test(`${archiveExt} ${assetType} TXT/URL snapshots survive settings changes and charge ${paymentMethod} only once`, async (t) => {
+    const payload = archiveExt === "zip" ? zipFixture(Buffer.alloc(300000, 82)) : rar4Fixture(Buffer.alloc(300000, 82), "old comment");
+    const f = await fixture(t, { assetType, archiveExt, paymentMethod, payload, extraFiles: true, httpValidators: false });
+    const created = await f.create("trace-extra-files-0001");
+    assert.equal((await f.create("trace-extra-files-0001")).session._id, created.session._id);
+    const stored = await DownloadSession.findById(created.session._id);
+    const files = JSON.parse(stored.archiveExtraFiles);
+    const plan = JSON.parse(stored.archiveCommentPlan);
+    assert.equal(plan.v, 2);
+    assert.equal(plan.patches.length, 2);
+    assert.equal(readArchiveTrace(files[0].text).sessionId, String(stored._id));
+    assert.equal(readArchiveTrace(files[0].text).userId, String(f.user._id));
+    assert.ok(files[0].text.endsWith(stored.archiveComment.split("\n").at(-1)));
+    await SiteSetting.findOneAndUpdate({ key: "homepage" }, { $set: { archiveTextFileEnabled: false, archiveTextFileText: "later settings" } });
+    const url = f.base + created.downloadUrl;
+    const head = await f.fetch(url, { method: "HEAD" });
+    assert.equal(head.status, 200);
+    assert.equal((await User.findById(f.user._id)).credit, 100);
+    const responses = await Promise.all(Array.from({ length: 5 }, (_, index) => {
+      const start = Math.floor(index * stored.fileSize / 5);
+      const end = Math.floor((index + 1) * stored.fileSize / 5) - 1;
+      return f.fetch(url, { headers: { range: `bytes=${start}-${end}`, "if-range": head.headers.get("etag") } });
+    }));
+    const pieces = await Promise.all(responses.map(async (response) => {
+      assert.equal(response.status, 206);
+      assert.equal(response.headers.get("location"), null);
+      return Buffer.from(await response.arrayBuffer());
+    }));
+    const full = await f.fetch(url);
+    assert.equal(full.status, 200);
+    const output = Buffer.from(await full.arrayBuffer());
+    assert.deepEqual(Buffer.concat(pieces), output);
+    assert.equal(output.length, stored.fileSize);
+    if (archiveExt === "zip") {
+      const entries = await zipEntries(output);
+      assert.equal(entries.size, 3);
+      assert.deepEqual(entries.get("fixture.max"), Buffer.alloc(300000, 82));
+      for (const file of files) assert.deepEqual(entries.get(file.name), Buffer.from(file.text, "utf8"));
+    } else for (const file of files) assert.ok(output.includes(Buffer.from(file.text, "utf8")));
+    assert.equal((await MarketplaceModel.findById(f.asset._id)).downloadCount, 1);
+    assert.equal(await ModelDownload.countDocuments({ userId: f.user._id }), 1);
+    if (paymentMethod === "credit") {
+      assert.equal((await User.findById(f.user._id)).credit, assetType === "scene" ? 80 : 95);
+      assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), 1);
+      assert.equal(await DailyDownloadQuota.countDocuments({ userId: f.user._id }), 0);
+    } else {
+      assert.equal((await User.findById(f.user._id)).credit, 100);
+      assert.equal((await DailyDownloadQuota.findOne({ userId: f.user._id })).count, assetType === "scene" ? 5 : 1);
+    }
+  });
+}
+
+test("invalid extra-file settings fail before a session, quota debit or Credit debit exists", async (t) => {
+  const f = await fixture(t, { extraFiles: true, paymentMethod: "free_quota" });
+  await SiteSetting.findOneAndUpdate({ key: "homepage" }, { $set: { archiveTextFileName: "../unsafe.txt" } });
+  await assert.rejects(f.create("trace-extra-invalid-01"), { code: "ARCHIVE_COMMENT_UNSUPPORTED" });
+  assert.equal(await DownloadSession.countDocuments({ userId: f.user._id }), 0);
+  assert.equal(await ModelDownload.countDocuments({ userId: f.user._id }), 0);
+  assert.equal(await DailyDownloadQuota.countDocuments({ userId: f.user._id }), 0);
+  assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), 0);
+  assert.equal((await User.findById(f.user._id)).credit, 100);
 });
