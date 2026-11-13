@@ -1,0 +1,163 @@
+TAP version 13
+# Subtest: plugin release emits stable ETag and returns 304
+ok 1 - plugin release emits stable ETag and returns 304
+  ---
+  duration_ms: 2.0985
+  ...
+# Subtest: plugin release feed is unavailable while release publishing is disabled
+ok 2 - plugin release feed is unavailable while release publishing is disabled
+  ---
+  duration_ms: 0.456
+  ...
+# Subtest: ETags isolate manifest contract and channel and change on publish
+ok 3 - ETags isolate manifest contract and channel and change on publish
+  ---
+  duration_ms: 0.3191
+  ...
+# [15:42:52] [33mWARN[39m (32472):
+#     [35mtype[39m: "SECURITY"
+#     [35mevent[39m: "ADMIN_ACCESS_DENIED"
+#     [35memail[39m: "user@example.test"
+#     [35mpath[39m: "/plugin/releases"
+#     [35mmethod[39m: "GET"
+# [15:42:52] [33mWARN[39m (32472):
+#     [35mtype[39m: "SECURITY"
+#     [35mevent[39m: "ADMIN_2FA_SETUP_REQUIRED"
+#     [35memail[39m: "release-admin@example.test"
+#     [35mpath[39m: "/plugin/releases"
+# [15:42:52] [33mWARN[39m (32472):
+#     [35mtype[39m: "SECURITY"
+#     [35mevent[39m: "ADMIN_2FA_REQUIRED"
+#     [35memail[39m: "release-admin@example.test"
+#     [35mpath[39m: "/plugin/releases"
+# [15:42:52] [33mWARN[39m (32472):
+#     [35mtype[39m: "SECURITY"
+#     [35mevent[39m: "CSRF_TOKEN_INVALID"
+#     [35mip[39m: "127.0.0.1"
+#     [35mpath[39m: "/api/admin/plugin/releases/000000000000000000000002/files/desktop.zip/chunks/0"
+#     [35mmethod[39m: "PUT"
+# [15:42:52] [32mINFO[39m (32472):
+#     [35mtype[39m: "AUDIT"
+#     [35mevent[39m: "DELETE_PLUGIN_RELEASE_DRAFT"
+#     [35mactor[39m: "release-admin@example.test"
+#     [35mtarget[39m: "000000000000000000000002"
+#     [35mip[39m: "127.0.0.1"
+# Subtest: real admin release routes enforce auth, 2FA, CSRF and bounded binary chunks
+ok 4 - real admin release routes enforce auth, 2FA, CSRF and bounded binary chunks
+  ---
+  duration_ms: 113.0564
+  ...
+# Subtest: publication commits release status and contract pointer in the same session
+ok 5 - publication commits release status and contract pointer in the same session
+  ---
+  duration_ms: 2.7693
+  ...
+# Subtest: stale publication revision leaves the verified release and current feed unchanged
+ok 6 - stale publication revision leaves the verified release and current feed unchanged
+  ---
+  duration_ms: 0.6716
+  ...
+# Subtest: publication does not partially commit or fall back when release fails
+ok 7 - publication does not partially commit or fall back when release fails
+  ---
+  duration_ms: 0.4609
+  ...
+# Subtest: publication does not partially commit or fall back when channel fails
+ok 8 - publication does not partially commit or fall back when channel fails
+  ---
+  duration_ms: 0.2192
+  ...
+# Subtest: publication does not partially commit or fall back when unsupported fails
+ok 9 - publication does not partially commit or fall back when unsupported fails
+  ---
+  duration_ms: 0.2931
+  ...
+# Subtest: withdrawal atomically clears both contracts while preserving the original publication date
+ok 10 - withdrawal atomically clears both contracts while preserving the original publication date
+  ---
+  duration_ms: 0.5699
+  ...
+# Subtest: withdrawal with a stale revision cannot leave a published feed pointing to withdrawn data
+ok 11 - withdrawal with a stale revision cannot leave a published feed pointing to withdrawn data
+  ---
+  duration_ms: 0.4624
+  ...
+# Subtest: isolated memory publication compensates a failed CAS without opening an Atlas fallback
+ok 12 - isolated memory publication compensates a failed CAS without opening an Atlas fallback
+  ---
+  duration_ms: 0.3991
+  ...
+# Subtest: V3 signature binds channel, both families, protocol, notes, URL and hash
+ok 13 - V3 signature binds channel, both families, protocol, notes, URL and hash
+  ---
+  duration_ms: 19.7624
+  ...
+# Subtest: release uploads resume, retry idempotently, verify, publish and withdraw
+ok 14 - release uploads resume, retry idempotently, verify, publish and withdraw
+  ---
+  duration_ms: 173.1378
+  ...
+# Subtest: verification rejects missing chunks, hash mismatch and wrong signing pin
+ok 15 - verification rejects missing chunks, hash mismatch and wrong signing pin
+  ---
+  duration_ms: 38.3788
+  ...
+# Subtest: publishing concurrently has one current release and detects stale revisions
+ok 16 - publishing concurrently has one current release and detects stale revisions
+  ---
+  duration_ms: 53.3097
+  ...
+# Subtest: kill switch and production approval remain closed; expired drafts cannot upload
+ok 17 - kill switch and production approval remain closed; expired drafts cannot upload
+  ---
+  duration_ms: 51.2636
+  ...
+# Subtest: production publication still requires its own trusted ES256 key and explicit approval
+ok 18 - production publication still requires its own trusted ES256 key and explicit approval
+  ---
+  duration_ms: 33.679
+  ...
+# Subtest: file metadata rejects foreign origins, traversal, duplicate files and oversized artifacts
+ok 19 - file metadata rejects foreign origins, traversal, duplicate files and oversized artifacts
+  ---
+  duration_ms: 0.8356
+  ...
+# Subtest: archive verification fails closed for non-ZIP payloads
+ok 20 - archive verification fails closed for non-ZIP payloads
+  ---
+  duration_ms: 3.7403
+  ...
+# Subtest: shared Node/.NET fixture signs Unicode and escapes identically
+ok 21 - shared Node/.NET fixture signs Unicode and escapes identically
+  ---
+  duration_ms: 2.0693
+  ...
+# Subtest: publishing V3 preserves the independently signed V2 feed without env fallback
+ok 22 - publishing V3 preserves the independently signed V2 feed without env fallback
+  ---
+  duration_ms: 56.8785
+  ...
+# Subtest: public downloads preserve signed env V2 until the explicit database switch
+ok 23 - public downloads preserve signed env V2 until the explicit database switch
+  ---
+  duration_ms: 3.1606
+  ...
+# Subtest: plugin release ES256 signature rejects a tampered manifest
+ok 24 - plugin release ES256 signature rejects a tampered manifest
+  ---
+  duration_ms: 13.2475
+  ...
+# Subtest: plugin release v2 verifies independently signed desktop and bridge artifacts
+ok 25 - plugin release v2 verifies independently signed desktop and bridge artifacts
+  ---
+  duration_ms: 4.5129
+  ...
+1..25
+# tests 25
+# suites 0
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1622.8876

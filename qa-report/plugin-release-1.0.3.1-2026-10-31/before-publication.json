@@ -1,0 +1,122 @@
+{
+  "checkedAt": "2026-10-31T04:08:04.920Z",
+  "etag": "\"sha256:75dec1c976812d8079d80424264f474fcf7b971513a581795f8961fb0031d8e7\"",
+  "manifest": {
+    "manifestVersion": 3,
+    "channel": "live-test",
+    "version": "1.0.3",
+    "minimumVersion": "1.0.0",
+    "maxVersions": [
+      "2020",
+      "2021",
+      "2022",
+      "2023",
+      "2024",
+      "2025",
+      "2026",
+      "2027"
+    ],
+    "publishedAt": "2026-10-31T03:01:04.267Z",
+    "signatureAlgorithm": "ES256",
+    "desktopArtifact": {
+      "component": "desktop",
+      "maxFamily": "",
+      "maxVersions": [
+        "2020",
+        "2021",
+        "2022",
+        "2023",
+        "2024",
+        "2025",
+        "2026",
+        "2027"
+      ],
+      "channel": "live-test",
+      "version": "1.0.3",
+      "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.3/3DiPL-Asset-Manager-Desktop-LiveTest-1.0.3.zip",
+      "sha256": "505ea9b0e02177a41a4063b1858e9eaeba7f9fe852693ee7d30e2a71820fb65c",
+      "protocolMinimum": 2,
+      "protocolMaximum": 2,
+      "requiresMaxRestart": false,
+      "signatureAlgorithm": "ES256",
+      "publishedAt": "2026-10-31T03:01:04.267Z"
+    },
+    "bridgeArtifacts": [
+      {
+        "component": "maxBridgeLegacy",
+        "maxFamily": "2020-2025",
+        "maxVersions": [
+          "2020",
+          "2021",
+          "2022",
+          "2023",
+          "2024",
+          "2025"
+        ],
+        "channel": "live-test",
+        "version": "1.0.3",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.3/3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.3.mzp",
+        "sha256": "1e8e46d62136c9cbb949e34a333854b226b647adc4ff6320fbcbdc6d07b7b018",
+        "protocolMinimum": 2,
+        "protocolMaximum": 2,
+        "requiresMaxRestart": true,
+        "signatureAlgorithm": "ES256",
+        "publishedAt": "2026-10-31T03:01:04.267Z"
+      },
+      {
+        "component": "maxBridgeModern",
+        "maxFamily": "2026-2027",
+        "maxVersions": [
+          "2026",
+          "2027"
+        ],
+        "channel": "live-test",
+        "version": "1.0.3",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.3/3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.3.mzp",
+        "sha256": "cb07828579b30a460083fc3affdec93d04bf9b114c04f3d13f01fbda5ba1e1d0",
+        "protocolMinimum": 2,
+        "protocolMaximum": 2,
+        "requiresMaxRestart": true,
+        "signatureAlgorithm": "ES256",
+        "publishedAt": "2026-10-31T03:01:04.267Z"
+      }
+    ],
+    "releaseNotes": {
+      "vi": "Dịu màu xanh và tăng tương phản chữ, hiển thị Credit/quota trên đầu trang, chuyển phần cập nhật vào Tài khoản.",
+      "en": "Improve button contrast, show Credit and remaining daily quota in the header, and move app updates into Account."
+    },
+    "signature": "4jfSxCqoqzQ59bWkFkVe0c9x1QVJuUPWHSgit6Kt8PdX21E+PgMQXornE9hF5LpvZYb1BBMhaWsMqhs+07/6Lw=="
+  },
+  "downloads": {
+    "available": true,
+    "channel": "live-test",
+    "releases": [
+      {
+        "maxFamily": "2020-2025",
+        "maxVersions": [
+          "2020",
+          "2021",
+          "2022",
+          "2023",
+          "2024",
+          "2025"
+        ],
+        "version": "1.0.3",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.3/3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.3.mzp",
+        "sha256": "1e8e46d62136c9cbb949e34a333854b226b647adc4ff6320fbcbdc6d07b7b018",
+        "publishedAt": "2026-10-31T03:01:04.267Z"
+      },
+      {
+        "maxFamily": "2026-2027",
+        "maxVersions": [
+          "2026",
+          "2027"
+        ],
+        "version": "1.0.3",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.3/3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.3.mzp",
+        "sha256": "cb07828579b30a460083fc3affdec93d04bf9b114c04f3d13f01fbda5ba1e1d0",
+        "publishedAt": "2026-10-31T03:01:04.267Z"
+      }
+    ]
+  }
+}

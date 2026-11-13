@@ -2,8 +2,11 @@
 
 ## Scope
 
-For `rewritten_footprint` resolution, an upstream verification error retains the
-actual failed Playwright page and context. It does not launch another browser,
+For `rewritten_footprint` resolution and eligible, exactly bound `direct` browser
+requests, an upstream verification error retains the actual failed Playwright
+page and context. Direct sessions remain bound to their original model path;
+rewritten history resolution can follow a validated source HTTP canonical redirect.
+The handoff does not launch another browser,
 change proxy, solve a CAPTCHA, purchase a model, or retry a charged job.
 
 In Admin, open **Getlink > Cookie > Getlink verification sessions**, then select
@@ -18,6 +21,12 @@ ID. A signature is never synthesized. The source cookie is updated atomically on
 if it has not been replaced or disabled in the meantime. Browser cookies never
 leave the backend. The verified context and signed target are retained briefly
 for an explicit retry of the failed Getlink request.
+
+Live context/lease state is distinct from the optional encrypted cookie/localStorage
+snapshot. Backend restart ends the retained tab but does not delete database cookies
+or saved authentication profiles. See the
+[Getlink system handoff, 2026-11-04](GETLINK_SYSTEM_HANDOFF_2026-11-04.md)
+for current headed/headless observations, profile limits and the VPS runbook.
 
 ## Boundaries
 

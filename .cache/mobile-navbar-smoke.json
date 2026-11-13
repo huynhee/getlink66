@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "focus": "compact-navbar",
+  "viewports": 2,
+  "languages": [
+    "vi",
+    "en"
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "externalFailures": 0
+}

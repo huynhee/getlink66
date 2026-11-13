@@ -1,0 +1,61 @@
+✔ plugin release emits stable ETag and returns 304 (1.6157ms)
+✔ plugin release feed is unavailable while release publishing is disabled (0.2974ms)
+✔ ETags isolate manifest contract and channel and change on publish (0.2635ms)
+[10:26:34] [33mWARN[39m (21768):
+    [35mtype[39m: "SECURITY"
+    [35mevent[39m: "ADMIN_ACCESS_DENIED"
+    [35memail[39m: "user@example.test"
+    [35mpath[39m: "/plugin/releases"
+    [35mmethod[39m: "GET"
+[10:26:34] [33mWARN[39m (21768):
+    [35mtype[39m: "SECURITY"
+    [35mevent[39m: "ADMIN_2FA_SETUP_REQUIRED"
+    [35memail[39m: "release-admin@example.test"
+    [35mpath[39m: "/plugin/releases"
+[10:26:34] [33mWARN[39m (21768):
+    [35mtype[39m: "SECURITY"
+    [35mevent[39m: "ADMIN_2FA_REQUIRED"
+    [35memail[39m: "release-admin@example.test"
+    [35mpath[39m: "/plugin/releases"
+[10:26:34] [33mWARN[39m (21768):
+    [35mtype[39m: "SECURITY"
+    [35mevent[39m: "CSRF_TOKEN_INVALID"
+    [35mip[39m: "127.0.0.1"
+    [35mpath[39m: "/api/admin/plugin/releases/000000000000000000000002/files/desktop.zip/chunks/0"
+    [35mmethod[39m: "PUT"
+[10:26:34] [32mINFO[39m (21768):
+    [35mtype[39m: "AUDIT"
+    [35mevent[39m: "DELETE_PLUGIN_RELEASE_DRAFT"
+    [35mactor[39m: "release-admin@example.test"
+    [35mtarget[39m: "000000000000000000000002"
+    [35mip[39m: "127.0.0.1"
+✔ real admin release routes enforce auth, 2FA, CSRF and bounded binary chunks (142.9053ms)
+✔ publication commits release status and contract pointer in the same session (2.244ms)
+✔ stale publication revision leaves the verified release and current feed unchanged (0.6424ms)
+✔ publication does not partially commit or fall back when release fails (0.2492ms)
+✔ publication does not partially commit or fall back when channel fails (0.1833ms)
+✔ publication does not partially commit or fall back when unsupported fails (0.1941ms)
+✔ withdrawal atomically clears both contracts while preserving the original publication date (0.3974ms)
+✔ withdrawal with a stale revision cannot leave a published feed pointing to withdrawn data (0.3236ms)
+✔ isolated memory publication compensates a failed CAS without opening an Atlas fallback (0.2898ms)
+✔ V3 signature binds channel, both families, protocol, notes, URL and hash (17.2113ms)
+✔ release uploads resume, retry idempotently, verify, publish and withdraw (149.1405ms)
+✔ verification rejects missing chunks, hash mismatch and wrong signing pin (32.9176ms)
+✔ publishing concurrently has one current release and detects stale revisions (50.3322ms)
+✔ kill switch and production approval remain closed; expired drafts cannot upload (45.0487ms)
+✔ production publication still requires its own trusted ES256 key and explicit approval (29.1318ms)
+✔ file metadata rejects foreign origins, traversal, duplicate files and oversized artifacts (0.8062ms)
+✔ archive verification fails closed for non-ZIP payloads (7.067ms)
+✔ shared Node/.NET fixture signs Unicode and escapes identically (40.818ms)
+✔ publishing V3 preserves the independently signed V2 feed without env fallback (40.0545ms)
+✔ public downloads preserve signed env V2 until the explicit database switch (2.1972ms)
+✔ plugin release ES256 signature rejects a tampered manifest (6.0655ms)
+✔ plugin release v2 verifies independently signed desktop and bridge artifacts (1.8272ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10665.4633

@@ -1,0 +1,34 @@
+{
+  "observedOn": "2026-11-04 Asia/Saigon",
+  "sourceCommit": "3a02f0d",
+  "scope": "Current VPS, current cookie and current 3D66 service; old preview/browser source code; not the historical Oct-8 browser/environment",
+  "summary": {
+    "legacyPreview": {
+      "success": true,
+      "elapsedMs": 891,
+      "browserLaunches": 0,
+      "metadataTitle": "法式雕花 石膏线 罗马柱 灯盘 角花 石膏构件",
+      "productId": "BJI010779713376927",
+      "creditCost": 28,
+      "priceKnown": true,
+      "hasImage": true,
+      "upstream": {
+        "method": "POST",
+        "host": "user.3d66.com",
+        "path": "/api/v1/download/pop",
+        "status": 200
+      }
+    },
+    "legacyHeadlessDirectPage": {
+      "success": false,
+      "elapsedMs": 4122,
+      "captchaDetected": true,
+      "upstreamDocumentStatus": 200,
+      "reportedStatus": 504
+    },
+    "cookieUnchanged": true,
+    "databaseWrites": 0,
+    "purchaseAndFileRequestsSent": 0
+  },
+  "rawToolOutput": "LEGACY_READ_ONLY_RESULT {\"sourceCommit\":\"3a02f0d\",\"testKind\":\"legacy preview and\r\n\u001b[23;80Hd legacy browser on current VPS, current source site and current database cookie\"\r\n\u001b[23;80H\",\"historicalEnvironmentReproduced\":false,\"cases\":[{\"kind\":\"exact-legacy-preview\"\r\n\u001b[23;80H\",\"ok\":true,\"title\":\"法式雕花 石膏线 罗马柱 灯盘 角花 石膏构件\",\"productId\":\"BJI0\r\n\u001b[23;80H010779713376927\",\"creditCost\":28,\"priceKnown\":true,\"hasImage\":true,\"browserLaunch\r\n\u001b[23;80Hhes\":0,\"elapsedMs\":891},{\"kind\":\"legacy-headless-direct-page-read\",\"ok\":false,\"co\r\n\u001b[23;80Hode\":null,\"status\":504,\"captcha\":true,\"elapsedMs\":4122}],\"settings\":{\"mode\":\"foot\r\n\u001b[23;80Htprint\",\"headless\":true,\"browserAlways\":false,\"hasLegacyLoginToken\":true,\"hasSess\r\n\u001b[23;80Hsion\":true,\"hasLoginSign\":true,\"cookieSource\":\"read-only active database cookie; \r\n\u001b[23;80H no persistent browser profile imported\"},\"captchaSeen\":true,\"browserLaunches\":1,\r\n\u001b[23;80H,\"requests\":[{\"channel\":\"fetch\",\"method\":\"POST\",\"host\":\"user.3d66.com\",\"path\":\"/a\r\n\u001b[23;80Hapi/v1/download/pop\",\"status\":200},{\"channel\":\"browser\",\"method\":\"GET\",\"host\":\"3d\r\n\u001b[23;80Hd.3d66.com\",\"path\":\"/reshtmla/model/items/zm/zmO4AZgFk84WE9fR78Wg.html\",\"status\":\r\n\u001b[23;80H:200}],\"blocked\":[],\"cookieUnchanged\":true,\"databaseWrites\":0,\"purchaseAndFileReq\r\n\u001b[23;80HquestsSent\":0}\r\nubuntu@vps-aff7c876:/opt/3dipl/app$ "
+}

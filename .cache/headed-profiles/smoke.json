@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "focus": "getlink-manual-verification",
+  "viewports": 2,
+  "languages": [
+    "vi",
+    "en"
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "externalFailures": 0
+}

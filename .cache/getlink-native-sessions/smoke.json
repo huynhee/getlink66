@@ -1,0 +1,69 @@
+{
+  "ok": true,
+  "routes": 7,
+  "viewports": 2,
+  "liveAccountBalance": true,
+  "configuredCreditCopy": true,
+  "languageFlags": true,
+  "adminPackageDeletion": true,
+  "unifiedSubscriptionToggles": true,
+  "adminVoucherPlanScopes": true,
+  "notificationPageScopes": true,
+  "notificationRepeatOnVisit": true,
+  "referralRewardSettings": true,
+  "collectionResolutionSettings": true,
+  "voucherPlanScopes": true,
+  "subscriptionCatalog": true,
+  "topupLayout": true,
+  "adminPaymentProviderRouting": true,
+  "bilingualGuides": true,
+  "getlinkAuditPageLinks": true,
+  "getlinkManualVerification": true,
+  "getlinkInlineFormats": true,
+  "homepagePricingRemoved": true,
+  "completedGetlinkBalanceReplay": false,
+  "nativeBrowserSessions": true,
+  "externalFailures": 0,
+  "externalFailureSamples": [],
+  "load": {
+    "total": 300,
+    "concurrency": 20,
+    "medianMs": 7.76,
+    "p95Ms": 12.97,
+    "maximumMs": 19.85
+  },
+  "memory": {
+    "beforeHeapBytes": 50222000,
+    "afterHeapBytes": 50998832,
+    "heapDeltaBytes": 776832,
+    "beforeRssBytes": 182521856,
+    "afterRssBytes": 184016896
+  },
+  "slowest": [
+    {
+      "viewport": "mobile",
+      "route": "/",
+      "durationMs": 407
+    },
+    {
+      "viewport": "mobile",
+      "route": "/plugin",
+      "durationMs": 378
+    },
+    {
+      "viewport": "mobile",
+      "route": "/guide",
+      "durationMs": 351
+    },
+    {
+      "viewport": "mobile",
+      "route": "/models",
+      "durationMs": 324
+    },
+    {
+      "viewport": "mobile",
+      "route": "/scenes",
+      "durationMs": 280
+    }
+  ]
+}

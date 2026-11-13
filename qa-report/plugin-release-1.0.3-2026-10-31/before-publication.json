@@ -1,0 +1,122 @@
+{
+  "checkedAt": "2026-10-31T03:26:04.525Z",
+  "etag": "\"sha256:e204372d6b832c784174f1bd3f5d836b35d373d423b855a88cc5445a5a8086a0\"",
+  "manifest": {
+    "manifestVersion": 3,
+    "channel": "live-test",
+    "version": "1.0.2",
+    "minimumVersion": "1.0.0",
+    "maxVersions": [
+      "2020",
+      "2021",
+      "2022",
+      "2023",
+      "2024",
+      "2025",
+      "2026",
+      "2027"
+    ],
+    "publishedAt": "2026-10-21T06:38:18.316Z",
+    "signatureAlgorithm": "ES256",
+    "desktopArtifact": {
+      "component": "desktop",
+      "maxFamily": "",
+      "maxVersions": [
+        "2020",
+        "2021",
+        "2022",
+        "2023",
+        "2024",
+        "2025",
+        "2026",
+        "2027"
+      ],
+      "channel": "live-test",
+      "version": "1.0.2",
+      "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.2/3DiPL-Asset-Manager-Desktop-LiveTest-1.0.2.zip",
+      "sha256": "7d16e63e59104626cf590acd6bad23fda7642adbff505659a5e9e7603d4a0ef3",
+      "protocolMinimum": 2,
+      "protocolMaximum": 2,
+      "requiresMaxRestart": false,
+      "signatureAlgorithm": "ES256",
+      "publishedAt": "2026-10-21T06:38:18.316Z"
+    },
+    "bridgeArtifacts": [
+      {
+        "component": "maxBridgeLegacy",
+        "maxFamily": "2020-2025",
+        "maxVersions": [
+          "2020",
+          "2021",
+          "2022",
+          "2023",
+          "2024",
+          "2025"
+        ],
+        "channel": "live-test",
+        "version": "1.0.2",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.2/3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.2.mzp",
+        "sha256": "5a638e21dd2b73a2773134de187ca87d4932574fcb7f1a8ac93d08429b94e221",
+        "protocolMinimum": 2,
+        "protocolMaximum": 2,
+        "requiresMaxRestart": true,
+        "signatureAlgorithm": "ES256",
+        "publishedAt": "2026-10-21T06:38:18.316Z"
+      },
+      {
+        "component": "maxBridgeModern",
+        "maxFamily": "2026-2027",
+        "maxVersions": [
+          "2026",
+          "2027"
+        ],
+        "channel": "live-test",
+        "version": "1.0.2",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.2/3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.2.mzp",
+        "sha256": "9c244ae9fa776bcfa46f3a50dfb89fccdaf4059692ff796df1b049ea524da140",
+        "protocolMinimum": 2,
+        "protocolMaximum": 2,
+        "requiresMaxRestart": true,
+        "signatureAlgorithm": "ES256",
+        "publishedAt": "2026-10-21T06:38:18.316Z"
+      }
+    ],
+    "releaseNotes": {
+      "vi": "Sua loi khoi dong tren SDK 3ds Max 2022 cu; giu nguyen bao ve script, dependency resolver va sua loi named pipe.",
+      "en": "Fix startup on early 3ds Max 2022 managed SDKs without weakening script security. Preserve legacy dependency binding and named pipe recovery fixes."
+    },
+    "signature": "V0+mjTx8V9E1emBR4jLOoyfh3tD063WIMqu7VX1wRL9UcI54MztNyIowy43eBmHFGbswdzRIgY36ua6VBS0aLg=="
+  },
+  "downloads": {
+    "available": true,
+    "channel": "live-test",
+    "releases": [
+      {
+        "maxFamily": "2020-2025",
+        "maxVersions": [
+          "2020",
+          "2021",
+          "2022",
+          "2023",
+          "2024",
+          "2025"
+        ],
+        "version": "1.0.2",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.2/3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.2.mzp",
+        "sha256": "5a638e21dd2b73a2773134de187ca87d4932574fcb7f1a8ac93d08429b94e221",
+        "publishedAt": "2026-10-21T06:38:18.316Z"
+      },
+      {
+        "maxFamily": "2026-2027",
+        "maxVersions": [
+          "2026",
+          "2027"
+        ],
+        "version": "1.0.2",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.2/3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.2.mzp",
+        "sha256": "9c244ae9fa776bcfa46f3a50dfb89fccdaf4059692ff796df1b049ea524da140",
+        "publishedAt": "2026-10-21T06:38:18.316Z"
+      }
+    ]
+  }
+}

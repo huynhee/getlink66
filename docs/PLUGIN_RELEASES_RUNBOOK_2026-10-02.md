@@ -1,8 +1,8 @@
 # Plugin Update V3: Admin, VPS and Desktop
 
-Current status: LiveTest 1.0.1 was published on the existing web/VPS release
-channel on 2026-10-15 and rechecked on 2026-10-16. Production remains closed.
-See section 13 for current publication evidence; earlier sections retain their
+Current status: LiveTest 1.0.3 build 2 (internal 1.0.3.2) was published on the existing web/VPS release
+channel on 2026-11-10. Production remains closed.
+See section 17 for current publication evidence; earlier sections retain their
 historical local-only verification status.
 This document supersedes the updater gaps in `PLUGIN_UPDATE_HANDOFF_1.0.0_2026-10-01.md`.
 
@@ -528,3 +528,130 @@ URLs remained accessible. A fresh check on 2026-10-16 confirmed version 1.0.1.
 
 Exact artifact hashes, evidence, rollback and remaining limitations:
 `docs/PLUGIN_RELEASE_1.0.1_WEB_2026-10-15.md`.
+
+## 14. LiveTest 1.0.2 Published: Max 2022 SDK Repair
+
+At the user's explicit request, the exact RC2 tested locally was uploaded,
+verified and published through the existing release services on 2026-10-21
+15:47:29 Asia/Saigon (08:47:29 UTC). This is an artifact-only LiveTest publication,
+not a Production cutover or an application source deployment.
+
+- Current release: `6ad87bb854d390587467c6fc`, channel revision 7.
+- Previous release: `6ad0fe9e86baeeaabcc7751b`, revision 6, version 1.0.1.
+- Version 1.0.2; minimum version 1.0.0; protocol 2; existing trust pin unchanged.
+- Source artifacts: plugin `artifacts/release-1.0.2-livetest-max2022-sdk-2026-10-21-rc2`.
+- Real Max 2022 direct-host fixture passed bootstrap, exact bridge version,
+  Unsafe loading, SDK queries/execute, merge, hierarchy, group/flatten,
+  Replace Selection, rollback/undo and shutdown. This is not all-renderer or
+  all-version Production acceptance.
+- Full serial .NET run passed 378 tests; 25 targeted backend release tests,
+  packaged EXE smoke and independent signature/checksum verification passed.
+- The previous release and files were retained. A rollback snapshot and receipt
+  are saved under `/home/ubuntu/3dipl-release-1.0.2-20261021`.
+- Public verification completed: all three full HTTPS files matched SHA-256,
+  Range returned 206, new ETag returned 304, old ETag returned 200 with 1.0.2,
+  and all old 1.0.1 URLs remained accessible.
+
+Users must install the MZP for their Max family and restart Max to replace the
+bridge. A Desktop-only update cannot replace an already loaded bridge DLL.
+Public HTTPS verification and exact hashes are recorded in
+`docs/PLUGIN_RELEASE_1.0.2_WEB_2026-10-21.md` and
+`qa-report/plugin-release-1.0.2-2026-10-21`.
+
+## 15. LiveTest 1.0.3 Published: UI and Account Update
+
+The owner confirmed that 1.0.3 had not previously been published and requested
+keeping the new UI under that version. The exact October 31 UI/account build
+was published on 2026-10-31 10:32:35 Asia/Saigon (03:32:35 UTC).
+
+- Current release: `6ae5613601a994e51ed448b0`, channel revision 8.
+- Previous: `6ad87bb854d390587467c6fc`, revision 7, version 1.0.2.
+- Source: plugin `artifacts/release-1.0.3-livetest-ui-account-2026-10-31-rc1`.
+- Version 1.0.3, minimum 1.0.0, protocol 2; existing LiveTest trust pin unchanged.
+- UI: mint/dark button contrast, header Credit/daily quota, updates moved into
+  Account, separate About page removed.
+- Corrected-version .NET suite: 388 passed; packaged EXE smoke and independent
+  archive/signature/checksum verification passed. Backend release tests: 25 passed
+  using Node 24.22.2 and mock/memory data.
+- Rollback snapshot and receipt are retained under
+  `/home/ubuntu/3dipl-release-1.0.3-20261031-ui`.
+- Public HTTPS checks completed: all three full files matched SHA-256/size,
+  Range returned 206, new ETag 304, previous ETag 200 with 1.0.3, and all old
+  1.0.2 URLs remained accessible. Final database readiness passed.
+- No env/secret/production-approval, Drive, billing, quota or migration change was
+  part of this operation. A concurrent application deployment to `edb8844` was
+  observed and health/readiness rechecked; it was not initiated or reverted here.
+
+The earlier local October 22 1.0.3 and superseded 1.0.4 artifacts are not the
+published files. Users already running an earlier same-version 1.0.3 test build
+must install this MZP manually. Close the plugin and fully restart Max afterward.
+
+Exact hashes, HTTPS evidence and recovery:
+`docs/PLUGIN_RELEASE_1.0.3_WEB_2026-10-31.md` and
+`qa-report/plugin-release-1.0.3-2026-10-31`.
+
+## 16. LiveTest 1.0.3 Build 1: Header and Text Repair
+
+The owner accepted the friendly label 1.0.3 build 1 and internal 1.0.3.1 so the
+published 1.0.3 artifacts could remain immutable. Build 1 was published on
+2026-10-31 11:17:19 Asia/Saigon (04:17:19 UTC).
+
+- Current release: `6ae56bb4fc934d96a88a77f0`, channel revision 9.
+- Previous: `6ae5613601a994e51ed448b0`, revision 8, version 1.0.3.
+- Source: plugin `artifacts/release-1.0.3.1-livetest-header-text-2026-10-31-rc1`.
+- Minimum 1.0.0, protocol 2, manifest V3; existing LiveTest trust pin unchanged.
+- Online / Downloaded moved into the brand header; reserved catalog strip
+  removed. Primary labels now use Segoe UI 12 SemiBold for readable accents/e.
+- Credit/quota, Account updates and existing Max/download repairs are retained.
+- Full serial plugin suite: 402 passed; focused UI: 33 passed; backend release
+  tests: 25 passed. Legacy smoke, packaged EXE, locked restore, source fingerprint,
+  independent archive/checksum/signature verification passed.
+- Rollback snapshot/receipt:
+  `/home/ubuntu/3dipl-release-1.0.3.1-20261031-header-text`.
+- Public full-file HTTPS checks passed for all three sizes/hashes, Range 206,
+  signed feed, downloads, HTML page and ETag revalidation. All old 1.0.3 URLs
+  remain HTTP 200. Readiness passed and SSH/SCP sessions were closed.
+  No env/secret/Production approval, payment,
+  quota, Drive, migration or application deployment change was made.
+
+The existing updater can compare 1.0.3.1 as newer than 1.0.3. A manual MZP install
+still requires saving the scene, closing Desktop and fully restarting Max.
+No new real-Max renderer or installed auto-update acceptance is claimed.
+
+Exact hashes, verification evidence and recovery:
+`docs/PLUGIN_RELEASE_1.0.3_BUILD1_WEB_2026-10-31.md` and
+`qa-report/plugin-release-1.0.3.1-2026-10-31`.
+
+## 17. LiveTest 1.0.3 Build 2: Getlink Preview Sync
+
+Published at the owner's request on 2026-11-10 16:13:29 Asia/Saigon
+(09:13:29 UTC), version 1.0.3.2, friendly label 1.0.3 build 2.
+
+- Current release `6af2e015b79131f7ebbff665`, revision 10; previous build 1
+  `6ae56bb4fc934d96a88a77f0`, revision 9, remains immutable.
+- Both Max-family MZPs and Desktop ZIP come from
+  `artifacts/release-1.0.3.2-livetest-getlink-preview-2026-11-10-rc1`.
+- Progressive preview support, actual pre-purchase formats, changed-price review,
+  stale-request cancellation, expiry and visible image retry are included.
+- Actual build-version full plugin suite: 435 passed. Focused release backend
+  tests: 25 passed; source backend suite: 981 passed, 1 skipped. Packaged EXE,
+  legacy smoke, independent archive/signature/checksum checks and locked restore
+  passed. No new real-Max renderer or live upstream purchase acceptance is claimed.
+- VPS base `0ffd2b5` received only the reviewed two-line prepare-route patch.
+  Backend only was rebuilt/recreated; readiness, route registration and env check
+  passed. Original image is retained as
+  `3dipl-backend:pre-plugin-1.0.3.2-20261110`.
+- Resolver mode remains `rewritten_footprint`; hybrid was not automatically
+  enabled. Existing modes use full preview; early two-stage metadata requires
+  explicitly selecting Hybrid in Admin.
+- Existing runtime dependency audit warnings were recorded, not remediated in
+  this scoped release. No env/secrets, billing, quota, Drive, source profile or
+  database migration change was made. Production approval remains closed.
+- Public HTTPS verification passed: all three full hashes/sizes, Range 206,
+  signed feed/download metadata, HTML page, ETag 304/current and 200/old.
+  All original build 1 URLs remain HTTP 200. Final readiness passed, receipts
+  were verified locally, and SSH/SCP sessions were closed.
+
+Evidence, exact hashes, image IDs and both rollback procedures:
+`docs/PLUGIN_RELEASE_1.0.3_BUILD2_WEB_2026-11-10.md` and
+`qa-report/plugin-release-1.0.3.2-2026-11-10`.

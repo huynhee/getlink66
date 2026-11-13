@@ -1,5 +1,9 @@
 # Rewritten Footprint Resolution
 
+For the complete architecture, current deployment observations, CAPTCHA test
+results and operations checklist, see the
+[Getlink system handoff, 2026-11-04](GETLINK_SYSTEM_HANDOFF_2026-11-04.md).
+
 ## Enable
 
 In Admin > Getlink > Tasks, select **Rewrite ID, then read history** and save
@@ -48,12 +52,20 @@ status and the account marker, not the rest of the upstream account profile.
    entire asset suffix. Keep the remaining letters and original path for the seed.
 3. Remove all original query parameters and fragment. Visit
    `?sof=<rewritten-id>&st=2` using the authenticated browser. `st` must have the
-   value `2`; a bare `st2` flag is invalid. An empty seed page does not mean resolution succeeded.
+   value `2`; a bare `st2` flag is invalid. Visit the seed once and allow its
+   redirects to settle. A blank page or a redirect to an allowlisted HTTPS source
+   homepage can have registered the view; neither is a successful signed result.
+   Interrupted navigation is accepted only for the narrowly validated homepage
+   landing, not for arbitrary network errors or redirects.
 4. Read account footprint history and match the **entire rewritten `sof`**. The
    account's canonical model path may differ from the submitted path. If the card
    is unsigned, physically click that exact card to trigger the site's signature
-   handler. Require the opened URL to keep the selected canonical path, exact `sof`
-   and one nonempty `sign` supplied by 3D66. Never match only a trailing substring.
+   handler. An observed HTTP redirect from that allowed request may supply a new
+   canonical path with the exact full `sof` and one nonempty `sign` from 3D66.
+   Track both route callbacks and request events because redirect requests may
+   bypass routing. A different path without that redirect provenance remains
+   blocked. Validate the final URL against the bound canonical path and full ID;
+   never match only a trailing substring.
    Purchase/download APIs are blocked while resolving a history card. The final
    signed URL is retained as supplied; signatures are never generated.
 5. Only the signed URL can enter preview, format selection or download APIs.

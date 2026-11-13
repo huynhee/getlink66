@@ -1,0 +1,142 @@
+{
+  "channel": "live-test",
+  "previousChannel": {
+    "_id": "live-test",
+    "__v": 0,
+    "activeReleaseId": "6ae56bb4fc934d96a88a77f0",
+    "activeReleaseV2Id": null,
+    "activeReleaseV3Id": "6ae56bb4fc934d96a88a77f0",
+    "createdAt": "2026-10-02T21:26:13.340Z",
+    "revision": 9,
+    "updatedAt": "2026-10-31T04:17:19.876Z"
+  },
+  "previousRelease": {
+    "_id": "6ae56bb4fc934d96a88a77f0",
+    "channel": "live-test",
+    "version": "1.0.3.1",
+    "manifest": {
+      "manifestVersion": 3,
+      "channel": "live-test",
+      "version": "1.0.3.1",
+      "minimumVersion": "1.0.0",
+      "maxVersions": [
+        "2020",
+        "2021",
+        "2022",
+        "2023",
+        "2024",
+        "2025",
+        "2026",
+        "2027"
+      ],
+      "publishedAt": "2026-10-31T04:09:28.742Z",
+      "signatureAlgorithm": "ES256",
+      "desktopArtifact": {
+        "component": "desktop",
+        "maxFamily": "",
+        "maxVersions": [
+          "2020",
+          "2021",
+          "2022",
+          "2023",
+          "2024",
+          "2025",
+          "2026",
+          "2027"
+        ],
+        "channel": "live-test",
+        "version": "1.0.3.1",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.3.1/3DiPL-Asset-Manager-Desktop-LiveTest-1.0.3.1.zip",
+        "sha256": "c7f40895621d1af59bfb3821ddb7b473f622bb447882861783bce6e7d81d1db1",
+        "protocolMinimum": 2,
+        "protocolMaximum": 2,
+        "requiresMaxRestart": false,
+        "signatureAlgorithm": "ES256",
+        "publishedAt": "2026-10-31T04:09:28.742Z"
+      },
+      "bridgeArtifacts": [
+        {
+          "component": "maxBridgeLegacy",
+          "maxFamily": "2020-2025",
+          "maxVersions": [
+            "2020",
+            "2021",
+            "2022",
+            "2023",
+            "2024",
+            "2025"
+          ],
+          "channel": "live-test",
+          "version": "1.0.3.1",
+          "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.3.1/3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.3.1.mzp",
+          "sha256": "d16d01070b9ca834782516377e8692d8df6db436d8cf07327d69f1fb951d32ff",
+          "protocolMinimum": 2,
+          "protocolMaximum": 2,
+          "requiresMaxRestart": true,
+          "signatureAlgorithm": "ES256",
+          "publishedAt": "2026-10-31T04:09:28.742Z"
+        },
+        {
+          "component": "maxBridgeModern",
+          "maxFamily": "2026-2027",
+          "maxVersions": [
+            "2026",
+            "2027"
+          ],
+          "channel": "live-test",
+          "version": "1.0.3.1",
+          "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.3.1/3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.3.1.mzp",
+          "sha256": "429a216c6dd330b17f124cec40db1f8e3e2eb56326363738f9ef6e83694ac2e5",
+          "protocolMinimum": 2,
+          "protocolMaximum": 2,
+          "requiresMaxRestart": true,
+          "signatureAlgorithm": "ES256",
+          "publishedAt": "2026-10-31T04:09:28.742Z"
+        }
+      ],
+      "releaseNotes": {
+        "vi": "1.0.3 build 1: Chuyển Online/Đã tải lên header để tăng không gian catalog. Sửa chữ nhỏ và dấu tiếng Việt trên nút bằng Segoe UI rõ nét hơn. Giữ hiển thị Credit/quota và cập nhật trong Tài khoản.",
+        "en": "1.0.3 build 1: Online/Downloaded now share the header, reclaiming catalog space. Clearer Segoe UI button labels fix small letters and Vietnamese accents. Header Credit/quota and Account updates are retained."
+      },
+      "signature": "87nras0S6rg/eP/RydE3vNAag81qI0agIHtPlzWbB8QhzVtRiQWlG3sxZ7BKj2BRHWsobdNpsuTG+4WokL78Lw=="
+    },
+    "status": "published",
+    "files": [
+      {
+        "name": "3DiPL-Asset-Manager-Desktop-LiveTest-1.0.3.1.zip",
+        "bytes": 100960021,
+        "sha256": "c7f40895621d1af59bfb3821ddb7b473f622bb447882861783bce6e7d81d1db1",
+        "role": "desktop",
+        "maxFamily": "",
+        "complete": true,
+        "_id": "6ae56bb4fc934d96a88a77f1"
+      },
+      {
+        "name": "3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.3.1.mzp",
+        "bytes": 101464521,
+        "sha256": "d16d01070b9ca834782516377e8692d8df6db436d8cf07327d69f1fb951d32ff",
+        "role": "bridge",
+        "maxFamily": "2020-2025",
+        "complete": true,
+        "_id": "6ae56bb4fc934d96a88a77f2"
+      },
+      {
+        "name": "3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.3.1.mzp",
+        "bytes": 101094206,
+        "sha256": "429a216c6dd330b17f124cec40db1f8e3e2eb56326363738f9ef6e83694ac2e5",
+        "role": "bridge",
+        "maxFamily": "2026-2027",
+        "complete": true,
+        "_id": "6ae56bb4fc934d96a88a77f3"
+      }
+    ],
+    "error": "",
+    "createdAt": "2026-10-31T04:16:52.029Z",
+    "updatedAt": "2026-10-31T04:17:19.838Z",
+    "__v": 0,
+    "verificationLease": "2026-10-31T04:16:57.213Z",
+    "verifiedAt": "2026-10-31T04:16:59.469Z",
+    "publishedAt": "2026-10-31T04:17:19.837Z"
+  },
+  "preparedAt": "2026-11-10T09:12:51.672Z"
+}

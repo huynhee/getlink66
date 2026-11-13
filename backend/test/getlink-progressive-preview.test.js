@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import test, { afterEach, beforeEach } from "node:test";
+import express from "express";
 import { useMemoryDb } from "../src/config/memoryStore.js";
 
 useMemoryDb();
@@ -35,7 +36,12 @@ const hooks = registerHooks({
 const { fixture: upstream } = await import(serviceUrl);
 const { previewGetlink, prepareGetlinkPreview, getLink, inspectGetlink } = await import("../src/controllers/getlinkController.js");
 const { default: router } = await import("../src/routes/getlinkRoutes.js");
+const { default: pluginRouter } = await import("../src/routes/pluginRoutes.js");
 hooks.deregister();
+const { startDeviceAuthorization, approveDeviceAuthorization, pollDeviceAuthorization } = await import("../src/services/pluginAuthService.js");
+const { default: PluginDeviceSession } = await import("../src/models/PluginDeviceSession.js");
+const { default: GetlinkJob } = await import("../src/models/GetlinkJob.js");
+const localFetch = globalThis.fetch;
 const { default: ProductCache } = await import("../src/models/ProductCache.js");
 const { default: Getlink } = await import("../src/models/Getlink.js");
 const { default: User } = await import("../src/models/User.js");
@@ -104,6 +110,54 @@ async function assertUncharged() {
   assert.equal((await User.findById(user._id)).credit, 100);
   assert.equal(await Getlink.countDocuments({}), 0);
 }
+
+test("plugin HTTP preview and preparation share the new contract without bypassing device auth or creating a purchase", async (t) => {
+  const app = express();
+  app.use(express.json());
+  app.use("/api/plugin", pluginRouter);
+  app.use((error, _req, res, _next) => res.status(error.status || 500).json({ code: error.code }));
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise((resolve) => server.once("listening", resolve));
+  t.after(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
+  const base = `http://127.0.0.1:${server.address().port}/api/plugin/getlink`;
+  const req = { ip: "127.0.0.1", get: () => "" };
+  const started = await startDeviceAuthorization(req, { deviceName: "preview-fixture", pluginVersion: "1.0.3.1", maxVersion: "2026" });
+  await approveDeviceAuthorization(user, started.userCode);
+  const issued = await pollDeviceAuthorization(req, started.deviceCode);
+  const call = async (path, body, authenticated = true) => {
+    const res = await localFetch(base + path, { method: "POST", headers: { "content-type": "application/json",
+      ...(authenticated ? { Authorization: `Bearer ${issued.accessToken}` } : {}) }, body: JSON.stringify(body) });
+    return { status: res.status, body: await res.json() };
+  };
+  assert.equal((await call("/preview/prepare", { url: sourceUrl }, false)).status, 401);
+  assert.equal(upstream.calls.length, 0);
+  upstream.result.formatOptionsSource = "api";
+  const early = await call("/preview", { url: sourceUrl, progressive: true });
+  assert.equal(early.status, 200);
+  assert.equal(early.body.preparationStatus, "pending");
+  assert.equal(early.body.imageUrl, imageUrl);
+  assert.deepEqual(early.body.formatOptions, [format]);
+  upstream.result.preparationStatus = "ready";
+  upstream.result.formatsChecked = true;
+  const ready = await call("/preview/prepare", { url: sourceUrl });
+  assert.equal(ready.status, 200);
+  assert.equal(ready.body.preparationStatus, "ready");
+  assert.equal(ready.body.formatsChecked, true);
+  assert.ok(ready.body.imageUrl.endsWith(`/api/plugin/getlink/preview-cache/${productId}`));
+  assert.deepEqual(ready.body.formatOptions, early.body.formatOptions);
+  assert.equal((await call("/preview/prepare", { url: sourceUrl, progressive: false })).status, 400);
+  const calls = upstream.calls.length;
+  await User.findByIdAndUpdate(user._id, { $set: { isBanned: true } });
+  assert.equal((await call("/preview/prepare", { url: sourceUrl })).status, 403);
+  await User.findByIdAndUpdate(user._id, { $set: { isBanned: false } });
+  await PluginDeviceSession.findByIdAndUpdate(issued.sessionId, { $set: { riskChallengeRequired: true } });
+  const risky = await call("/preview/prepare", { url: sourceUrl });
+  assert.equal(risky.status, 403);
+  assert.equal(risky.body.code, "DEVICE_REAUTH_REQUIRED");
+  assert.equal(upstream.calls.length, calls);
+  assert.equal(await GetlinkJob.countDocuments({ userId: user._id }), 0);
+  await assertUncharged();
+});
 
 test("hybrid progressive preview bypasses full cache and leaves paid and verified cache untouched", async (t) => {
   const cache = await paidCache();

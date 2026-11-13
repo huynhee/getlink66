@@ -1,0 +1,122 @@
+{
+  "checkedAt": "2026-10-21T08:40:31.880Z",
+  "etag": "\"sha256:765e77eeab7674f203563008e3f40eb97a28525128a1523996427aab4872ac69\"",
+  "manifest": {
+    "manifestVersion": 3,
+    "channel": "live-test",
+    "version": "1.0.1",
+    "minimumVersion": "1.0.0",
+    "maxVersions": [
+      "2020",
+      "2021",
+      "2022",
+      "2023",
+      "2024",
+      "2025",
+      "2026",
+      "2027"
+    ],
+    "publishedAt": "2026-10-15T16:17:32.233Z",
+    "signatureAlgorithm": "ES256",
+    "desktopArtifact": {
+      "component": "desktop",
+      "maxFamily": "",
+      "maxVersions": [
+        "2020",
+        "2021",
+        "2022",
+        "2023",
+        "2024",
+        "2025",
+        "2026",
+        "2027"
+      ],
+      "channel": "live-test",
+      "version": "1.0.1",
+      "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.1/3DiPL-Asset-Manager-Desktop-LiveTest-1.0.1.zip",
+      "sha256": "d4f3e23e9dd9f0d116e9fb4129e817bfc50c1822c7eccfde9a8e4fbf992022f6",
+      "protocolMinimum": 2,
+      "protocolMaximum": 2,
+      "requiresMaxRestart": false,
+      "signatureAlgorithm": "ES256",
+      "publishedAt": "2026-10-15T16:17:32.233Z"
+    },
+    "bridgeArtifacts": [
+      {
+        "component": "maxBridgeLegacy",
+        "maxFamily": "2020-2025",
+        "maxVersions": [
+          "2020",
+          "2021",
+          "2022",
+          "2023",
+          "2024",
+          "2025"
+        ],
+        "channel": "live-test",
+        "version": "1.0.1",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.1/3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.1.mzp",
+        "sha256": "7a2a5685d40988bce83524a91a8df4c162d664730e5e2507a6c669e9d28f4e4c",
+        "protocolMinimum": 2,
+        "protocolMaximum": 2,
+        "requiresMaxRestart": true,
+        "signatureAlgorithm": "ES256",
+        "publishedAt": "2026-10-15T16:17:32.233Z"
+      },
+      {
+        "component": "maxBridgeModern",
+        "maxFamily": "2026-2027",
+        "maxVersions": [
+          "2026",
+          "2027"
+        ],
+        "channel": "live-test",
+        "version": "1.0.1",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.1/3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.1.mzp",
+        "sha256": "9ddb313b2b988df149ee470e571c68248cc83044a45d57579ce269e522d35ba7",
+        "protocolMinimum": 2,
+        "protocolMaximum": 2,
+        "requiresMaxRestart": true,
+        "signatureAlgorithm": "ES256",
+        "publishedAt": "2026-10-15T16:17:32.233Z"
+      }
+    ],
+    "releaseNotes": {
+      "vi": "Sửa lỗi kết nối và phản hồi lỗi bridge Max 2020–2025. Cài lại MZP đúng phiên bản Max và khởi động lại 3ds Max để áp dụng; giữ nguyên cache đã tải. Bao gồm các sửa Getlink, thẻ Free và dependency trước đó.",
+      "en": "Fix Max 2020-2025 bridge connection failures and error responses. Install the matching MZP and restart 3ds Max to apply the bridge fix; keep downloaded cache. Includes previous Getlink, Free badge and dependency fixes."
+    },
+    "signature": "qGe2m89/oXjzGKm+8ce2EQEBHcpGkS+S+jqutrR8p7X5dS1hmW6RHcMCVelKc6tzp+Ez5XAGvJ0gQmpffOZTDQ=="
+  },
+  "downloads": {
+    "available": true,
+    "channel": "live-test",
+    "releases": [
+      {
+        "maxFamily": "2020-2025",
+        "maxVersions": [
+          "2020",
+          "2021",
+          "2022",
+          "2023",
+          "2024",
+          "2025"
+        ],
+        "version": "1.0.1",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.1/3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.1.mzp",
+        "sha256": "7a2a5685d40988bce83524a91a8df4c162d664730e5e2507a6c669e9d28f4e4c",
+        "publishedAt": "2026-10-15T16:17:32.233Z"
+      },
+      {
+        "maxFamily": "2026-2027",
+        "maxVersions": [
+          "2026",
+          "2027"
+        ],
+        "version": "1.0.1",
+        "downloadUrl": "https://3dipl.org/plugin-releases/live-test/1.0.1/3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.1.mzp",
+        "sha256": "9ddb313b2b988df149ee470e571c68248cc83044a45d57579ce269e522d35ba7",
+        "publishedAt": "2026-10-15T16:17:32.233Z"
+      }
+    ]
+  }
+}

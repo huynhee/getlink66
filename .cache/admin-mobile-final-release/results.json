@@ -1,0 +1,1802 @@
+[
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "overview",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "NG-I-D-NG-100",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "user-credit-editor",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "L-CH-S-T-I",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "archive-settings",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "asset-downloads",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "L-CH-S-N-P-100",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "timo-open",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "GI-I-THI-U-1",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "LOG-L-I-1",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "AUDIT-100",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "B-O-M-T",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "G-I-N-P-2",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "subscription",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "subscription-edit",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "VOUCHER-1",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "voucher-pro",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "TH-NG-B-O-1",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "TEXT-TRANG-CH-",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "B-I-VI-T-1",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "B-N-PH-T-H-NH-PLUGIN",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "plugin-detail",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "plugin-dialog",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "getlink-TÁC VỤ",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "getlink-COOKIE",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "getlink-TẢI FILE",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "getlink-PROXY",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "getlink-PLAYWRIGHT",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "getlink-TRẠNG THÁI",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Model-0",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Model-1",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Model-edit",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Model-2",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Model-3",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Model-4",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Model-taxonomy-modal",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Model-taxonomy-render",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Scene-0",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Scene-1",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Scene-edit",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Scene-2",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Scene-3",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Scene-4",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Scene-taxonomy-modal",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "language": "vi",
+    "theme": "light",
+    "name": "Scene-taxonomy-render",
+    "viewport": 320,
+    "page": 320,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "overview",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "USERS-100",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "user-credit-editor",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "DOWNLOAD-HISTORY",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "archive-settings",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "asset-downloads",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "TOP-UP-HISTORY-100",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "timo-open",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "REFERRALS-1",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "ERROR-LOGS-1",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "AUDIT-100",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "SECURITY",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "TOP-UP-PACKAGES-2",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "subscription",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "subscription-edit",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "VOUCHERS-1",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "voucher-pro",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "NOTIFICATIONS-1",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "HOMEPAGE-TEXT",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "ARTICLES-1",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "PLUGIN-RELEASES",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "plugin-detail",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "plugin-dialog",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "getlink-TASKS",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "getlink-COOKIE",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "getlink-DOWNLOADS",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "getlink-PROXY",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "getlink-PLAYWRIGHT",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "getlink-STATUS",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Model-0",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Model-1",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Model-edit",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Model-2",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Model-3",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Model-4",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Model-taxonomy-modal",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Model-taxonomy-render",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Scene-0",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Scene-1",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Scene-edit",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Scene-2",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Scene-3",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Scene-4",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Scene-taxonomy-modal",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 390,
+    "language": "en",
+    "theme": "dark",
+    "name": "Scene-taxonomy-render",
+    "viewport": 390,
+    "page": 390,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "overview",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "NG-I-D-NG-100",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "user-credit-editor",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "L-CH-S-T-I",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "archive-settings",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "asset-downloads",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "L-CH-S-N-P-100",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "timo-open",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "GI-I-THI-U-1",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "LOG-L-I-1",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "AUDIT-100",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "B-O-M-T",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "G-I-N-P-2",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "subscription",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "subscription-edit",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "VOUCHER-1",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "voucher-pro",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "TH-NG-B-O-1",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "TEXT-TRANG-CH-",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "B-I-VI-T-1",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "B-N-PH-T-H-NH-PLUGIN",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "plugin-detail",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "plugin-dialog",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "getlink-TÁC VỤ",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "getlink-COOKIE",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "getlink-TẢI FILE",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "getlink-PROXY",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "getlink-PLAYWRIGHT",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "getlink-TRẠNG THÁI",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Model-0",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Model-1",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Model-edit",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Model-2",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Model-3",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Model-4",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Model-taxonomy-modal",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Model-taxonomy-render",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Scene-0",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Scene-1",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Scene-edit",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Scene-2",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Scene-3",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Scene-4",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Scene-taxonomy-modal",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 768,
+    "language": "vi",
+    "theme": "dark",
+    "name": "Scene-taxonomy-render",
+    "viewport": 768,
+    "page": 768,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "overview",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "USERS-100",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "user-credit-editor",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "DOWNLOAD-HISTORY",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "archive-settings",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "asset-downloads",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "TOP-UP-HISTORY-100",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "timo-open",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "REFERRALS-1",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "ERROR-LOGS-1",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "AUDIT-100",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "SECURITY",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "TOP-UP-PACKAGES-2",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "subscription",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "subscription-edit",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "VOUCHERS-1",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "voucher-pro",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "NOTIFICATIONS-1",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "HOMEPAGE-TEXT",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "ARTICLES-1",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "PLUGIN-RELEASES",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "plugin-detail",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "plugin-dialog",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "getlink-TASKS",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "getlink-COOKIE",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "getlink-DOWNLOADS",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "getlink-PROXY",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "getlink-PLAYWRIGHT",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "getlink-STATUS",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Model-0",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Model-1",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Model-edit",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Model-2",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Model-3",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Model-4",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Model-taxonomy-modal",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Model-taxonomy-render",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Scene-0",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Scene-1",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Scene-edit",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Scene-2",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Scene-3",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Scene-4",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Scene-taxonomy-modal",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  },
+  {
+    "width": 1440,
+    "language": "en",
+    "theme": "light",
+    "name": "Scene-taxonomy-render",
+    "viewport": 1440,
+    "page": 1440,
+    "outside": [],
+    "clipped": []
+  }
+]

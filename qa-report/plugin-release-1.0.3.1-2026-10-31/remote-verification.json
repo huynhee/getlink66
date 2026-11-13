@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "checkedAt": "2026-10-31T04:19:33.212Z",
+  "version": "1.0.3.1",
+  "channel": "live-test",
+  "feedSignatureValid": true,
+  "downloadsValid": true,
+  "pageStatus": 200,
+  "etagRevalidation": 304,
+  "previousEtagStatus": 200,
+  "files": [
+    {
+      "name": "3DiPL-Asset-Manager-Desktop-LiveTest-1.0.3.1.zip",
+      "bytes": 100960021,
+      "sha256": "c7f40895621d1af59bfb3821ddb7b473f622bb447882861783bce6e7d81d1db1",
+      "range": true
+    },
+    {
+      "name": "3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.3.1.mzp",
+      "bytes": 101464521,
+      "sha256": "d16d01070b9ca834782516377e8692d8df6db436d8cf07327d69f1fb951d32ff",
+      "range": true
+    },
+    {
+      "name": "3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.3.1.mzp",
+      "bytes": 101094206,
+      "sha256": "429a216c6dd330b17f124cec40db1f8e3e2eb56326363738f9ef6e83694ac2e5",
+      "range": true
+    }
+  ],
+  "previousFiles": [
+    {
+      "url": "https://3dipl.org/plugin-releases/live-test/1.0.3/3DiPL-Asset-Manager-Desktop-LiveTest-1.0.3.zip",
+      "status": 200
+    },
+    {
+      "url": "https://3dipl.org/plugin-releases/live-test/1.0.3/3DiPL-Asset-Manager-Max2020-2025-LiveTest-1.0.3.mzp",
+      "status": 200
+    },
+    {
+      "url": "https://3dipl.org/plugin-releases/live-test/1.0.3/3DiPL-Asset-Manager-Max2026-2027-LiveTest-1.0.3.mzp",
+      "status": 200
+    }
+  ]
+}

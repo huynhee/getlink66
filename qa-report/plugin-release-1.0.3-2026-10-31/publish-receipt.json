@@ -1,0 +1,10 @@
+{
+  "published": true,
+  "version": "1.0.3",
+  "channel": "live-test",
+  "activeReleaseId": "6ae5613601a994e51ed448b0",
+  "previousReleaseId": "6ad87bb854d390587467c6fc",
+  "revision": 8,
+  "at": "2026-10-31T03:32:35.660Z",
+  "operator": "authorized-vps-operator:ubuntu"
+}

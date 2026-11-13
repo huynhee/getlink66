@@ -1,0 +1,20 @@
+diff --git a/backend/src/routes/pluginRoutes.js b/backend/src/routes/pluginRoutes.js
+index ee3fd25..8006615 100644
+--- a/backend/src/routes/pluginRoutes.js
++++ b/backend/src/routes/pluginRoutes.js
+@@ -20,6 +20,7 @@ import {
+   downloadGetlink,
+   downloadGetlinkPreviewImage,
+   getlinkHistory,
++  prepareGetlinkPreview,
+   prepareRedownload,
+   previewGetlink,
+   proxyCachedGetlinkPreviewImage,
+@@ -79,6 +80,7 @@ router.use("/getlink", pluginBearerAuth, privateLimit, (req, res, next) => {
+   return next();
+ });
+ router.post("/getlink/preview", downloadLimit, previewGetlink);
++router.post("/getlink/preview/prepare", downloadLimit, prepareGetlinkPreview);
+ router.post("/getlink/jobs", downloadLimit, createJob);
+ router.get("/getlink/jobs/latest", latestJob);
+ router.get("/getlink/jobs/:id", getJob);

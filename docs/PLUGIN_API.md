@@ -708,7 +708,8 @@ are not accepted as an ownership bypass on these plugin routes.
 
 | Method | Route under `/api/plugin/getlink` | Purpose |
 | --- | --- | --- |
-| POST | `/preview` | Inspect `{modelId}`; returns title, productId and creditCost |
+| POST | `/preview` | Inspect `{modelId, progressive?: boolean}`; hybrid can return early metadata |
+| POST | `/preview/prepare` | Fully prepare `{modelId}` or `{url}` for price/format confirmation |
 | POST | `/jobs` | Create the existing asynchronous Getlink job |
 | GET | `/jobs/latest` | Resume the user's latest job |
 | GET | `/jobs/:id` | Poll job status |
@@ -720,6 +721,38 @@ are not accepted as an ownership bypass on these plugin routes.
 | GET | `/download/:id` | Authenticated history file stream |
 | GET | `/preview-image/:id` | Authenticated history preview image |
 | GET | `/preview-cache/:productId` | Cached JPEG preview |
+
+### Progressive Preview Sync (2026-11-10)
+
+Desktop can send `progressive:true` to `/preview`. In hybrid mode this returns
+`preparationStatus:"pending"`, `metadataIncomplete`, nullable `creditCost`, actual
+`formatOptions` and a direct allowlisted HTTPS `imageUrl` when available. The
+metadata is not a purchase, price reservation or download authorization. A null
+price must not be shown as zero/free. Do not request `preview-cache` for pending
+metadata: no verified cache record was written. Never send the plugin Bearer
+token to the source image host.
+
+Then POST the same input, without `progressive`, to `/preview/prepare`. The route
+uses the same Bearer, ban/risk checks and shared private/download rate limits as
+the original plugin preview. Full hybrid output must have `preparationStatus:"ready"`,
+complete metadata, a nonnegative integer price and usable choices, or
+an explicitly empty `formatOptions:[]` with `formatsChecked:true`. Its image URL
+uses the authenticated plugin image proxy.
+
+Render early metadata while preparing but keep purchase disabled. Cancel and
+discard superseded requests. Preserve the current preview when preparation or
+image loading fails; do not reuse it as readiness. Retain a selected format only
+if it still exists in the prepared choices. If price or choices changed, require
+explicit review; if the selected choice disappeared, require a new selection.
+Recheck a hybrid preview after two minutes before creating a job. Backend price,
+format and account-bound download verification remain authoritative at purchase.
+
+Non-hybrid modes retain full one-step behavior. Older plugin routers can still
+perform full preparation through `/preview` without the progressive flag. The
+Desktop compatibility fallback is restricted to 404/405 on the new prepare route;
+it does not retry verification, risk or authorization failures through another
+endpoint. This sync changes source code only; no rollout or release-feed switch
+is implied.
 
 Create body:
 

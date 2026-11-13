@@ -110,6 +110,13 @@ authoritative when creating a download job.
 
 ## Service Integration Contract
 
+The Desktop/plugin integration was synchronized on 2026-11-10. It uses Bearer
+POST `/api/plugin/getlink/preview` with `progressive:true`, followed by
+`/api/plugin/getlink/preview/prepare` with the same input and no progressive flag.
+The plugin route retains its existing auth, banned-account/risk and rate-limit
+guards. See `docs/PLUGIN_API.md` for pending/ready, nullable price, image, review
+and compatibility rules. This source sync does not deploy or enable hybrid mode.
+
 The controller invokes the existing service as follows:
 
 ```js

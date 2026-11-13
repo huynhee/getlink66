@@ -1,0 +1,9 @@
+{
+  "version": "1.0.3.2",
+  "pluginPassed": 435,
+  "pluginFailed": 0,
+  "backendSourcePassed": 981,
+  "backendSourceSkipped": 1,
+  "backendReleaseTestsPassed": 25,
+  "packagedExePassed": true
+}
