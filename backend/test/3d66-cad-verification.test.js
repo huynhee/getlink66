@@ -77,12 +77,20 @@ test("CAD verification checks authenticated account, full DOM asset and read-onl
   assert.equal(state.calls.some(value => value.endsWith("/handle")), false);
 });
 
+test("CAD without origin_ll_url binds the actual loaded CAD page to the same DOM and API identity", async () => {
+  for (const originUrl of [undefined, null, ""]) {
+    const result = await fixture({ document: { originUrl } }).run();
+    assert.equal(read3D66CadVerification(result.url).url, url);
+  }
+});
+
 for (const [label, options] of [
   ["wrong account", { accountId: 999999999 }], ["wrong source account", { document: { sourceAccountId: 999999999 } }],
   ["login redirect", { accountRedirect: true }], ["wrong DOM asset", { document: { productId: "AJI89635771994629725" } }],
   ["missing public asset", { document: { publicAssetId: null } }],
   ["wrong resource", { document: { resourceType: 1 } }], ["deleted DOM", { document: { deleted: 1 } }],
   ["missing deletion flag", { document: { deleted: undefined } }], ["foreign origin link", { document: { originUrl: url.replace(id, "AJI139810814629725") } }],
+  ["invalid explicit origin link", { document: { originUrl: "https://cad.3d66.com/" } }],
   ["wrong API model", { info: { sof: "AJI89635771994629725" } }], ["wrong API type", { info: { res_type: 1 } }],
   ["deleted API model", { info: { is_delete: 1 } }], ["changed price", { info: { res_price: 29 } }],
   ["missing DOM price", { document: { price: null }, info: { res_price: 0 } }],

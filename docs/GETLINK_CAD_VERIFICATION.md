@@ -17,6 +17,9 @@ After the model loads, the backend checks all of:
   SOF asset suffix agree. CAD's numeric `res.ll_id_out` is a separate public ID,
   not the SOF suffix; it must be present and remain unchanged during verification.
   The canonical resource cannot cross hosts or models.
+- `origin_ll_url` is optional in CAD documents. When absent, the observed loaded
+  page URL is bound to that same DOM/API SOF. A present but conflicting or invalid
+  `origin_ll_url` is rejected, never silently replaced.
 - The fixed, no-redirect account API authenticates the exact effective cookie;
   its user ID matches `sof_user_id` and the configured account marker.
 - The fixed, read-only download-pop API returns the same full SOF, CAD type,

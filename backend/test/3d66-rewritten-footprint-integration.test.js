@@ -256,7 +256,7 @@ for (const mode of ["footprint", "rewritten_footprint", "hybrid"]) {
 
 test("unsigned CAD does not invent a format when the source only declares a CAD version", async t => {
   const state = await fixture(t, { cadUnsigned: true, origin: "https://cad.3d66.com", resource: "cad", site: "8",
-    cadDocument: { fileFormat: "", formatVersion: "CAD2007", suffix: "" } });
+    cadDocument: { fileFormat: "", formatVersion: "CAD2007", suffix: "", originUrl: undefined } });
   const preview = await fetch3D66Preview(state.source, cookie);
   assert.deepEqual(preview.formatOptions, []);
   assert.equal(preview.selectedFormat, null);

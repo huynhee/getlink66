@@ -8,7 +8,7 @@ export async function verify3D66UnsignedCad(browser) {
   const previous = process.env.THREED66_REQUIRED_ACCOUNT_MARKER;
   process.env.THREED66_REQUIRED_ACCOUNT_MARKER = "89635771";
   try {
-    for (const scenario of [{ width: 1440 }, { width: 390 }, { width: 390, sameTab: true },
+    for (const scenario of [{ width: 1440 }, { width: 390, noOrigin: true }, { width: 390, sameTab: true },
       { width: 1440, wrongAccount: true }, { width: 390, wrongAsset: true }]) {
       const source = "https://cad.3d66.com/reshtmla/cad/items/fixture/source.html?sof=JJI139810814629725&sign=sender-fixture";
       const seed = build3D66FootprintSeed(source);
@@ -41,7 +41,7 @@ export async function verify3D66UnsignedCad(browser) {
         if (url === model) {
           const detail = { code: 200, data: { sof_user_id: 177536980, res: {
             ll_id: scenario.wrongAsset ? "AJI89635771994629725" : seed.productId, ll_id_out: 21681188, res_type: 8,
-            is_delete: 0, origin_ll_url: model, res_price: 28, file_format: 8, cad_version: "2014", res_suffix: "DWG",
+            is_delete: 0, ...(scenario.noOrigin ? {} : { origin_ll_url: model }), res_price: 28, file_format: 8, cad_version: "2014", res_suffix: "DWG",
           } } };
           const escaped = JSON.stringify(detail).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
           return route.fulfill({ contentType: "text/html", body: `<title>CAD fixture</title><h1 class="model-name">CAD fixture</h1>

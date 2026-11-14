@@ -23,11 +23,12 @@ export function read3D66CadDocument() {
 }
 
 function checkDocument(doc, expectedId) {
+  const sourceUrl = doc?.originUrl == null || doc?.originUrl === "" ? doc?.pageUrl : doc.originUrl;
   if (!doc || Number(doc.code) !== 200 || Number(doc.resourceType) !== 8 || Number(doc.deleted) !== 0
-    || doc.deleted == null || !is3D66CadModelUrl(doc.pageUrl) || !is3D66CadModelUrl(doc.originUrl)) {
+    || doc.deleted == null || !is3D66CadModelUrl(doc.pageUrl) || !is3D66CadModelUrl(sourceUrl)) {
     throw cadVerificationError("invalid_cad_document");
   }
-  const page = new URL(doc.pageUrl), origin = new URL(doc.originUrl);
+  const page = new URL(doc.pageUrl), origin = new URL(sourceUrl);
   for (const url of [page, origin]) {
     if (url.searchParams.getAll("sof").length !== 1 || url.searchParams.get("sof") !== doc.productId
       || url.searchParams.has("sign") || url.searchParams.getAll("id").length > 1
@@ -40,7 +41,7 @@ function checkDocument(doc, expectedId) {
   if (!/^[1-9]\d{4,19}$/.test(assetId) || !/^[1-9]\d{0,19}$/.test(String(doc.publicAssetId))
     || !modelIdsShareExactAssetIdentity(doc.productId, expectedId)
     || page.origin + page.pathname !== origin.origin + origin.pathname) throw cadVerificationError("cad_model_mismatch");
-  return { marker, assetId };
+  return { marker, assetId, sourceUrl };
 }
 
 async function readResponse(request) {
@@ -61,7 +62,7 @@ async function readResponse(request) {
 
 export async function verify3D66CadPage({ page, context, expectedId, cookieValue, configurationKey }) {
   const doc = await page.evaluate(read3D66CadDocument);
-  const { marker, assetId } = checkDocument(doc, expectedId);
+  const { marker, assetId, sourceUrl } = checkDocument(doc, expectedId);
   const account = await readResponse(() => context.request.get("https://user.3d66.com/new-user-api/api/v1/user/info", {
     timeout: 10000, maxRedirects: 0, headers: { accept: "application/json", cookie: cookieValue },
   }));
@@ -82,8 +83,8 @@ export async function verify3D66CadPage({ page, context, expectedId, cookieValue
   }
   if (JSON.stringify(await page.evaluate(read3D66CadDocument)) !== JSON.stringify(doc)) throw cadVerificationError("cad_document_changed", 409);
   return {
-    url: seal3D66CadVerification({ url: doc.originUrl, accountId, assetId, marker, cookieValue, configurationKey }),
-    productId: doc.productId, canonicalModelPage: new URL(doc.originUrl).origin + new URL(doc.originUrl).pathname,
+    url: seal3D66CadVerification({ url: sourceUrl, accountId, assetId, marker, cookieValue, configurationKey }),
+    productId: doc.productId, canonicalModelPage: new URL(sourceUrl).origin + new URL(sourceUrl).pathname,
     document: doc, popData: pop.data,
   };
 }
