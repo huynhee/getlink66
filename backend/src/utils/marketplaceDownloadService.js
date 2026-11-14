@@ -412,7 +412,7 @@ export async function createMarketplaceDownloadSession({ req, modelId, clientTyp
     _id: sessionId, userId: req.user._id, modelId: model._id, assetType, clientType: normalizedClientType,
     storageProvider: model.storageProvider, storageKey: model.storageKey, driveFileId: model.driveFileId,
     fileSize: Number(model.fileSize || 0), fileName: safeDownloadFileName(model), archiveFormat: safeArchiveExt(model.archiveExt),
-  });
+  }, { correlationId: req.correlationId });
   if (paymentMethod !== "credit") quota = await chargeQuota(req, tier, quotaCost);
   const pluginTokenNonce = idempotencyKey || normalizedClientType === "plugin" ? makeToken() : "";
   let token = pluginTokenNonce ? "" : makeToken();

@@ -55,12 +55,17 @@ export async function prepareArchiveComment(session, comment, options = {}) {
   if (bytes.length > 8192) throw archiveFormatError("Archive comment is too long.");
   const format = String(session.archiveFormat || "").toLowerCase();
   if (format !== "zip" && format !== "rar") throw archiveFormatError("Archive comments currently support ZIP and plain single-volume RAR4/RAR5 on web downloads only.");
-  const start = format === "zip" ? Math.max(0, total - ZIP_TAIL_BYTES) : 0;
+  const files = readArchiveExtraFiles(session.archiveExtraFiles);
+  // yauzl scans the 20-byte ZIP64 locator too; include it now instead of opening a second Drive range.
+  const tailBytes = ZIP_TAIL_BYTES + (files.length ? 20 : 0);
+  const start = format === "zip" ? Math.max(0, total - tailBytes) : 0;
   const end = format === "zip" ? total - 1 : Math.min(total, RAR_PREFIX_BYTES) - 1;
   let sourceValidator = "";
   if (options.pinDriveVersion && session.storageProvider === "google_drive") {
+    options.onStage?.("pin_source");
     sourceValidator = await getStorageSourceValidator(session, { signal: options.signal });
   }
+  options.onStage?.("read_archive_probe");
   let sample = await inspectBytes(session, start, end, sourceValidator
     ? { ...options, validator: sourceValidator, sourceValidator } : options);
   if (!sample.validator && session.storageProvider === "google_drive") {
@@ -69,17 +74,18 @@ export async function prepareArchiveComment(session, comment, options = {}) {
     sample = await inspectBytes(session, start, end, { ...options, validator: sourceValidator, sourceValidator });
   }
   if (!sample.validator) throw archiveFormatError("Storage must supply a stable ETag or Last-Modified validator for marked downloads.");
-  const files = readArchiveExtraFiles(session.archiveExtraFiles);
   const read = async (from, to) => {
     if (![from, to].every(Number.isSafeInteger) || from < 0 || to < from || to >= total || to - from + 1 > 2 * 1024 * 1024) {
       throw archiveFormatError("Archive metadata exceeds the safe inspection window.");
     }
     if (from >= start && to <= end) return sample.bytes.subarray(from - start, to - start + 1);
+    options.onStage?.("read_archive_metadata");
     return (await inspectBytes(session, from, to, { ...options, validator: sample.validator, sourceValidator: sample.sourceValidator })).bytes;
   };
+  const canonicalSample = format === "zip" ? sample.bytes.subarray(-ZIP_TAIL_BYTES) : sample.bytes;
   let patch;
   if (format === "zip") patch = files.length
-    ? await prepareZipExtraFiles({ tail: sample.bytes, total, comment: bytes, files, read })
+    ? await prepareZipExtraFiles({ tail: canonicalSample, total, comment: bytes, files, read })
     : zipCommentPatch(sample.bytes, total, bytes);
   else if (sample.bytes.subarray(0, 7).equals(RAR4_MAGIC)) {
     const tail = await read(total - 7, total - 1);
@@ -95,7 +101,7 @@ export async function prepareArchiveComment(session, comment, options = {}) {
   if (!Number.isSafeInteger(size)) throw archiveFormatError("Marked archive size exceeds safe integer limits.");
   if (patch.patches) {
     const digest = crypto.createHash("sha256").update(JSON.stringify({ total, validator: sample.validator,
-      patches: patches.map(({ start, end }) => ({ start, end })) })).update(sample.bytes);
+      patches: patches.map(({ start, end }) => ({ start, end })) })).update(canonicalSample);
     for (const piece of patches) digest.update(piece.bytes);
     const fingerprint = digest.digest("hex");
     return { ...patch, size, fingerprint, validator: sample.validator, sourceValidator: sample.sourceValidator,

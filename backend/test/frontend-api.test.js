@@ -143,3 +143,19 @@ test("an HTML gateway response does not assert that the backend timed out", asyn
     return true;
   });
 });
+
+for (const language of ["vi", "en"]) for (const code of ["DOWNLOAD_PREPARATION_TIMEOUT", "DOWNLOAD_PREPARATION_UNAVAILABLE"]) {
+  test(`${code} gives safe ${language} feedback without exposing archive/source internals`, async (t) => {
+    const originalWindow = globalThis.window;
+    globalThis.window = { localStorage: { getItem: (key) => key === "language" ? language : "fixture-session-00000000000000" } };
+    t.after(() => { if (originalWindow === undefined) delete globalThis.window; else globalThis.window = originalWindow; });
+    const api = await fixture(t, async (url) => url.endsWith("/api/auth/csrf")
+      ? json({ csrfToken: "fixture-token" }) : json({ code, message: "Internal server error" }, 504));
+    await assert.rejects(api.api("/api/marketplace/models/fixture/download-session", { method: "POST" }), (error) => {
+      assert.equal(error.code, code);
+      assert.match(error.message, language === "en" ? /No quota or Credit was charged/ : /Lượt tải và Credit chưa bị trừ/);
+      assert.doesNotMatch(error.message, /Drive|ZIP|DOMException|Internal server error/);
+      return true;
+    });
+  });
+}

@@ -55,6 +55,12 @@ async function readResponseData(response) {
 }
 
 function responseErrorMessage(response, data = {}) {
+  if (["DOWNLOAD_PREPARATION_TIMEOUT", "DOWNLOAD_PREPARATION_UNAVAILABLE"].includes(data.code)) {
+    let english = false;
+    try { english = typeof window !== "undefined" && window.localStorage.getItem("language") === "en"; } catch { /* Keep the fallback locale. */ }
+    return english ? "The download could not be prepared in time. Please try again. No quota or Credit was charged."
+      : "Chưa thể chuẩn bị file tải. Vui lòng thử lại. Lượt tải và Credit chưa bị trừ.";
+  }
   if (data.code === "PAYMENT_PROVIDER_CHANGED") {
     let english = false;
     try { english = typeof window !== "undefined" && window.localStorage.getItem("language") === "en"; } catch { /* Keep the default locale. */ }

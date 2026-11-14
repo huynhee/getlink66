@@ -7,6 +7,7 @@ import { rar5Block, rarVint } from "../src/utils/archiveCommentFormat.js";
 import { rar4Fixture, zipFixture } from "./fixtures/archiveFixture.js";
 import { serializeArchiveCommentPlan, restoreArchiveCommentPlan } from "../src/utils/archiveCommentPlan.js";
 import { createArchiveExtraFiles } from "../src/utils/archiveExtraFiles.js";
+import { prepareZipExtraFiles } from "../src/utils/archiveExtraZip.js";
 
 process.env.GOOGLE_DRIVE_ACCESS_TOKEN = "archive-validator-fixture-token";
 
@@ -97,6 +98,35 @@ test("a source change between version pin and repeated probe fails before creati
   const f = driveFixture(t);
   f.onMedia = () => { if (f.mediaCount === 2) f.metadata.version = "18446744073709551613"; };
   await assert.rejects(prepareArchiveComment(f.session, "comment"), { code: "ARCHIVE_SOURCE_CHANGED" });
+});
+
+test("TXT/URL ZIP preparation coalesces the locator read while preserving legacy v2 fingerprints and bytes", async (t) => {
+  const f = driveFixture(t);
+  f.session.archiveExtraFiles = createArchiveExtraFiles({ archiveTextFileEnabled: true }, "ipl1.fixture");
+  const comment = "fixture-comment";
+  const plan = await prepareArchiveComment(f.session, comment, { pinDriveVersion: true });
+  assert.equal(f.mediaCount, 1, "Do not open a second Drive stream just to inspect 20 locator bytes");
+  assert.equal(f.requests.filter((request) => request.media)[0].range, `bytes=${f.payload.length - 65577}-${f.payload.length - 1}`);
+  const tail = f.payload.subarray(-65557);
+  const legacy = await prepareZipExtraFiles({ tail, total: f.payload.length, comment: Buffer.from(comment),
+    files: JSON.parse(f.session.archiveExtraFiles), read: async (start, end) => f.payload.subarray(start, end + 1) });
+  const digest = crypto.createHash("sha256").update(JSON.stringify({ total: f.payload.length, validator: plan.validator,
+    patches: legacy.patches.map(({ start, end }) => ({ start, end })) })).update(tail);
+  for (const patch of legacy.patches) digest.update(patch.bytes);
+  assert.equal(plan.fingerprint, digest.digest("hex"), "Existing v2 fallback sessions must keep the same ETag and representation");
+  assert.deepEqual(plan.patches, legacy.patches);
+});
+
+test("maximum ZIP comments still read the central directory under the pinned validator, not a tiny locator range", async (t) => {
+  const f = driveFixture(t, zipFixture(Buffer.alloc(300000, 82), "x".repeat(65535)));
+  f.session.archiveExtraFiles = createArchiveExtraFiles({ archiveTextFileEnabled: true }, "ipl1.fixture");
+  const plan = await prepareArchiveComment(f.session, "comment", { pinDriveVersion: true });
+  assert.equal(f.mediaCount, 2);
+  assert.ok(f.requests.filter((request) => request.media).every((request) => {
+    const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(request.range);
+    return Number(end) - Number(start) + 1 !== 20;
+  }));
+  assert.equal(plan.patches.length, 2);
 });
 
 test("a source change or metadata outage after preflight rejects the held body stream", async (t) => {

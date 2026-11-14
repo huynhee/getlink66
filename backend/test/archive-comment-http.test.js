@@ -50,6 +50,7 @@ async function fixture(t, { assetType = "model", archiveExt = "zip", paymentMeth
     storageProvider: "google_drive", driveFileId: "trace-fixture-file", fileSize: payload.length, archiveExt,
     sha256: crypto.createHash("sha256").update(payload).digest("hex"), source: { provider: "google_drive" } });
   let upstreamError = false;
+  let timeoutFailures = 0;
   let sourceEtag = '"original"';
   const metadata = { id: asset.driveFileId, size: String(payload.length), version: "10", trashed: false, capabilities: { canDownload: true } };
   const requests = [];
@@ -60,6 +61,7 @@ async function fixture(t, { assetType = "model", archiveExt = "zip", paymentMeth
     const url = new URL(input);
     assert.equal(options.method || "GET", "GET", "Marked downloads must not write Drive metadata");
     requests.push(options);
+    if (timeoutFailures > 0) { timeoutFailures -= 1; throw new DOMException("Fixture timeout", "TimeoutError"); }
     if (upstreamError) return new Response("Fixture Drive failure", { status: 500 });
     if (url.searchParams.get("alt") !== "media") {
       assert.ok(url.searchParams.get("fields").includes("version"), "Only private source version metadata is needed");
@@ -105,7 +107,8 @@ async function fixture(t, { assetType = "model", archiveExt = "zip", paymentMeth
     req: { user, body: { paymentMethod, clientRequestId: requestId }, ip: "127.0.0.1",
       get: (name) => name === "idempotency-key" ? requestId : "trace-fixture" } });
   return { base, headers, create, user, asset, payload, requests, metadata, fetch: realFetch,
-    fail: () => { upstreamError = true; }, change: () => { sourceEtag = '"changed"'; metadata.version = "11"; } };
+    fail: () => { upstreamError = true; }, failNext: (count = 1) => { timeoutFailures = count; },
+    change: () => { sourceEtag = '"changed"'; metadata.version = "11"; } };
 }
 
 for (const httpValidators of [true, false]) test(`marked web ranges, HEAD, retries and idempotency preserve one representation and one debit (HTTP validators: ${httpValidators})`, async (t) => {
@@ -189,7 +192,7 @@ test("unsafe archive/key/Drive failure rejects session before quota, Credit or d
   const f = await fixture(t, { paymentMethod: "free_quota", payload: Buffer.alloc(100, 82), archiveExt: "rar" });
   await assert.rejects(f.create("trace-invalid-rar"), { code: "ARCHIVE_COMMENT_UNSUPPORTED" });
   f.fail();
-  await assert.rejects(f.create("trace-drive-fail"), /Google Drive .*failed/);
+  await assert.rejects(f.create("trace-drive-fail"), { status: 502, code: "DOWNLOAD_PREPARATION_UNAVAILABLE" });
   const secret = process.env.ARCHIVE_TRACE_SECRET;
   delete process.env.ARCHIVE_TRACE_SECRET;
   try { await assert.rejects(f.create("trace-key-absent"), { code: "ARCHIVE_TRACE_KEY_REQUIRED" }); }
@@ -386,3 +389,31 @@ test("invalid extra-file settings fail before a session, quota debit or Credit d
   assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), 0);
   assert.equal((await User.findById(f.user._id)).credit, 100);
 });
+
+for (const paymentMethod of ["free_quota", "credit"]) {
+  test(`a recovered preparation timeout creates only one session and charges ${paymentMethod} once`, async (t) => {
+    const f = await fixture(t, { paymentMethod, extraFiles: true, httpValidators: false });
+    f.failNext();
+    const created = await f.create("trace-preparation-retry-01");
+    assert.equal(await DownloadSession.countDocuments({ userId: f.user._id }), 1);
+    assert.equal(await ModelDownload.countDocuments({ userId: f.user._id }), 1);
+    const response = await f.fetch(f.base + created.downloadUrl);
+    assert.equal(response.status, 200);
+    await response.arrayBuffer();
+    assert.equal((await MarketplaceModel.findById(f.asset._id)).downloadCount, 1);
+    assert.equal((await User.findById(f.user._id)).credit, paymentMethod === "credit" ? 95 : 100);
+    assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), paymentMethod === "credit" ? 1 : 0);
+    assert.equal((await DailyDownloadQuota.findOne({ userId: f.user._id }))?.count || 0, paymentMethod === "free_quota" ? 1 : 0);
+  });
+
+  test(`exhausted preparation timeouts leave no session, history, debit or ${paymentMethod} quota`, async (t) => {
+    const f = await fixture(t, { paymentMethod, extraFiles: true });
+    f.failNext(2);
+    await assert.rejects(f.create("trace-preparation-fail-01"), { status: 504, code: "DOWNLOAD_PREPARATION_TIMEOUT" });
+    assert.equal(await DownloadSession.countDocuments({ userId: f.user._id }), 0);
+    assert.equal(await ModelDownload.countDocuments({ userId: f.user._id }), 0);
+    assert.equal(await CreditLedgerEntry.countDocuments({ userId: f.user._id }), 0);
+    assert.equal(await DailyDownloadQuota.countDocuments({ userId: f.user._id }), 0);
+    assert.equal((await User.findById(f.user._id)).credit, 100);
+  });
+}
