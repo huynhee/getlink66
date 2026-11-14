@@ -4,10 +4,12 @@ import { threed66VerificationStore } from "./3d66VerificationStore.js";
 import { install3D66VerificationGuard } from "./3d66VerificationGuard.js";
 import { create3D66BrowserSessionPool } from "./3d66BrowserSessionPool.js";
 import { create3D66BrowserProfileStore } from "./3d66BrowserProfileStore.js";
+import { missing3D66OriginAuthCookies } from "./3d66BrowserOriginCookies.js";
 import { create3D66CollectionResolver } from "./3d66CollectionResolver.js";
 import { create3D66RewrittenFootprintResolver, assert3D66RewrittenFootprintLink,
   assert3D66FootprintPageVerified, is3D66RewrittenFootprintError, get3D66VerificationPage,
-  resolveRewrittenFootprintHistory, resolveRewrittenFootprintPage, is3D66FootprintModelPage } from "./3d66RewrittenFootprintResolver.js";
+  resolveRewrittenFootprintHistory, resolveRewrittenFootprintPage, is3D66FootprintModelPage,
+  FOOTPRINT_MODEL_SELECTOR } from "./3d66RewrittenFootprintResolver.js";
 import { validate3D66HybridInput } from "./3d66HybridResolver.js";
 import {
   assert3D66BrowserDownloadRequest, assert3D66CleanModelUrl, assert3D66DownloadFields,
@@ -399,6 +401,9 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
         const cookies = buildBrowserCookies(cookieValue, url);
         if (!ready && !lease.restored && cookies.length) {
           await context.addCookies(cookies);
+        } else if (!ready && rewrittenFootprintSeed?.sourceFirst) {
+          const missing = missing3D66OriginAuthCookies(await context.cookies(), cookieValue, url);
+          if (missing.length) await context.addCookies(missing);
         }
 
         const page = ready?.entry.page || context.pages()[0] || await context.newPage();
@@ -1254,7 +1259,7 @@ export const resolve3D66ModelUrlFromCollection = create3D66CollectionResolver({
 });
 
 export async function open3D66RewrittenFootprintCard(page, card, seed, context) {
-  const anchor = page.locator('a[href*="/reshtmla/"][href*="sof="]').nth(card.index);
+  const anchor = page.locator(FOOTPRINT_MODEL_SELECTOR).nth(card.index);
   const href = await anchor.evaluate((element) => element.href);
   if (href !== card.url) throw browserHttpError("The selected history item changed. Retry the model.", 422,
     { stage: "rewritten-footprint", reason: "history_card_changed" }, "THREED66_REWRITTEN_FOOTPRINT_FAILED");
@@ -1263,7 +1268,7 @@ export async function open3D66RewrittenFootprintCard(page, card, seed, context) 
   const allowedNavigations = new WeakSet();
   const checkNavigation = (request) => {
     const url = new URL(request.url());
-    if (request.isNavigationRequest() && /\/(?:model|sketchup)\/items\//.test(url.pathname)) {
+    if (request.isNavigationRequest() && /\/items\//.test(url.pathname)) {
       let allowed = is3D66FootprintModelPage(url) && url.origin + url.pathname === canonicalModelPage
         && url.searchParams.getAll("sof").length === 1 && url.searchParams.get("sof").toUpperCase() === seed.productId
         && url.searchParams.getAll("id").every(id => id.toUpperCase() === seed.productId);
@@ -1396,7 +1401,7 @@ export async function resume3D66Verification(entry) {
         const current = new URL(entry.page.url());
         const boundSeed = { ...entry.seed, modelPage: current.origin + current.pathname };
         assert3D66RewrittenFootprintLink(current.href, boundSeed);
-        result = { url: current.href, productId: entry.seed.productId,
+        result = { url: current.href, productId: current.searchParams.get("sof"),
           canonicalModelPage: boundSeed.modelPage, usedFootprint: true };
       } catch {
         result = await resolveRewrittenFootprintHistory({

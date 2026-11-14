@@ -44,24 +44,32 @@ status and the account marker, not the rest of the upstream account profile.
 
 ## Flow
 
-1. Accept a full HTTPS `3d.3d66.com/reshtmla/model/items/.../...html` or
-   `su.3d66.com/reshtmla/sketchup/items/.../...html` URL containing one `sof`.
+1. Accept a full HTTPS resource URL containing one `sof` and at most one `sign`.
+   Supported hosts are `3d.3d66.com`, `su.3d66.com`, `cad.3d66.com`,
+   `tietu.3d66.com`, `xiaoguotu.3d66.com` and `fanganwenben.3d66.com`.
    The host must match the resource path. ID-only inputs and synthetic
    `/items/id/model.html` pages are rejected.
-2. For tracked IDs, split `sof` into three letters, **exactly eight sender ID digits**,
+2. **Only `3d.3d66.com` rewrites the visited URL.** For tracked IDs, split `sof` into three letters, **exactly eight sender ID digits**,
    and the asset suffix. Short public IDs (5-8 digits) have only the asset suffix.
    Change the first letter to `A` and add the required account marker before the
    entire asset suffix. Keep the remaining letters and original path for the seed.
-3. Remove all original query parameters and fragment. Visit
+3. For `3d.3d66.com`, remove all original query parameters and fragment. Visit
    `?sof=<rewritten-id>&st=2` using the authenticated browser. `st` must have the
    value `2`; a bare `st2` flag is invalid. Visit the seed once and allow its
    redirects to settle. A blank page or a redirect to an allowlisted HTTPS source
    homepage can have registered the view; neither is a successful signed result.
    Interrupted navigation is accepted only for the narrowly validated homepage
    landing, not for arbitrary network errors or redirects.
-4. Read account footprint history and match the **entire rewritten `sof`** and
+   For the other five hosts, visit the supplied URL unchanged except for its
+   fragment, then read history. Do not replace its SOF, signature or tracking
+   parameters and do not construct an `st=2` URL for those hosts. The source visit
+   only registers history; it is never a clean result or a purchase context.
+4. Read account footprint history and match the **entire asset suffix**, family,
+   configured account marker and
    the same resource host. A SketchUp card cannot resolve to a 3ds Max resource
-   with an identical ID, or vice versa. The account's canonical model path may
+   with an identical ID, or vice versa. For source-first hosts, keep the first
+   SOF letter returned by history rather than requiring a synthetic `A` prefix.
+   Never match only a trailing substring. The account's canonical model path may
    differ from the submitted path within that resource. If the card
    is unsigned, physically click that exact card to trigger the site's signature
    handler. An observed HTTP redirect from that allowed request may supply a new
@@ -80,13 +88,21 @@ The lookup refreshes history a bounded number of times using the existing
 Results are cached briefly per cookie, model path and rewritten ID. Concurrent
 identical lookups share a browser task. Another cookie never reuses that cache.
 
-SketchUp uses the SU page origin and resource site `6` for API requests, even if
+Source-first resources use their own page origin and site code (SU `6`, CAD `8`,
+texture `5`, effect image `10`, design document `12`) for API requests, even if
 the legacy origin setting or a tracking cookie still points at a Max page.
 Format and renderer values come from the selected upstream file; absent values
 do not inherit the Max-only `max2018` or V-Ray defaults. No format is invented.
 Manual verification uses the same resource-bound page and keeps the existing
 purchase/download restrictions. No cookie, profile, account or mode is changed
 by installing this support.
+
+A restored Max profile can lack host-only login cookies for a newly visited
+resource. Seed only missing authentication cookies for that resource origin;
+never clear the profile, replace refreshed host credentials, copy stale challenge
+cookies, or change the Cookie document in the database. Complete inherited
+domain credentials need no re-seeding. CAPTCHA handoff also permits the exact
+original source model while continuing to block purchases and other assets.
 
 ## Failure And Rollback
 

@@ -32,12 +32,13 @@ async function fixture(t, options = {}) {
       else process.env[key] = value;
     }
   });
-  const origin = options.sketchup ? "https://su.3d66.com" : "https://3d.3d66.com";
-  const resource = options.sketchup ? "sketchup" : "model";
-  const base = `${origin}/reshtmla/${resource}/items/fixture/rewritten-${++sequence}.html`;
+  const origin = options.origin || (options.sketchup ? "https://su.3d66.com" : "https://3d.3d66.com");
+  const resource = options.resource || (options.sketchup ? "sketchup" : "model");
+  const base = `${origin}/${options.itemPath || `reshtmla/${resource}/items/fixture`}/rewritten-${++sequence}.html`;
   const source = `${base}?sof=${options.inputId || inputId}&sign=old-sign&r_id=old-owner`;
   const seed = () => build3D66FootprintSeed(source);
-  const clean = () => `${base}?sof=${seed().productId}&st=2&sign=history-fixture`;
+  const cleanId = () => options.historyPrefix ? options.historyPrefix + seed().productId.slice(1) : seed().productId;
+  const clean = () => `${base}?sof=${cleanId()}&st=2&sign=history-fixture`;
   const navigations = [];
   const requests = [];
   const payloads = [];
@@ -106,15 +107,15 @@ async function fixture(t, options = {}) {
     if (url.pathname === "/api/v1/download/pop") {
       if (options.popResponse) return options.popResponse();
       const requestedId = request.body.get("sof");
-      if (options.mode === "hybrid") assert.ok([options.inputId || inputId, seed().productId].includes(requestedId));
-      else assert.equal(requestedId, seed().productId);
+      if (options.mode === "hybrid") assert.ok([options.inputId || inputId, cleanId()].includes(requestedId));
+      else assert.equal(requestedId, cleanId());
       return Response.json({ status: 200, data: { token: "fixture-token", is_direct_download: 1,
         format_list: options.popFormats,
-        resInfo: { sof: requestedId, res_name: "Fixture", res_price: 28, res_type: options.sketchup ? "6" : "1",
+        resInfo: { sof: requestedId, res_name: "Fixture", res_price: 28, res_type: options.site || (options.sketchup ? "6" : "1"),
           img: "https://respic.3d66.com/fixture.jpg" }, ...options.popData?.(clean(), requestedId) } });
     }
     if (url.pathname === "/api/v1/download/handle") {
-      assert.equal(request.body.get("ll_id"), seed().productId);
+      assert.equal(request.body.get("ll_id"), cleanId());
       const resUrl = new URL(request.body.get("resUrl"));
       assert.equal(resUrl.searchParams.get("sign"), "history-fixture");
       assert.equal(resUrl.hash, "");
@@ -151,6 +152,38 @@ test("SketchUp rewritten preview and mock download reuse a signed history URL wi
   assert.deepEqual(state.navigations, [state.seed().url, "https://user.3d66.com/newUser/index/index/footprint"]);
   assert.equal(state.contexts(), 1);
   assert.equal(state.requests.filter(url => url.endsWith("/handle")).length, 1);
+});
+
+for (const [host, resource, site, itemPath] of [["su", "sketchup", "6"], ["cad", "cad", "8"],
+  ["tietu", "tietu", "5"], ["fanganwenben", "fanganwenben", "12"],
+  ["xiaoguotu", "", "10", "imghtml/items/fixture"]]) {
+  test(`${host} uses source-first history and its own API site without Max defaults`, async t => {
+    const origin = `https://${host}.3d66.com`;
+    const state = await fixture(t, { origin, resource, site, itemPath, seedHome: origin + "/" });
+    const preview = await fetch3D66Preview(state.source, cookie);
+    assert.deepEqual(state.navigations, [state.source, "https://user.3d66.com/newUser/index/index/footprint"]);
+    assert.equal(new URL(preview.resolvedSourceUrl).origin, origin);
+    assert.equal(state.payloads[0].body.get("res_type"), site);
+    await fetchFrom3D66(preview.resolvedSourceUrl, cookie, { sourceUrl: state.source });
+    const handle = state.payloads.find(item => item.path.endsWith("/handle"));
+    assert.equal(handle.origin, origin);
+    assert.equal(handle.body.get("site"), site);
+    assert.equal(handle.body.has("renderer_type"), false);
+    assert.equal(handle.body.has("format_version"), false);
+    assert.equal(state.contexts(), 1);
+    assert.equal(state.navigations.some(url => new URL(url).searchParams.get("st") === "2"), false);
+  });
+}
+
+test("source-first history preserves the source account prefix through cache and mock download", async t => {
+  const state = await fixture(t, { sketchup: true, historyPrefix: "J" });
+  const first = await fetch3D66Preview(state.source, cookie);
+  const second = await fetch3D66Preview(state.source, cookie);
+  assert.equal(first.resolvedSourceUrl, second.resolvedSourceUrl);
+  assert.equal(new URL(first.resolvedSourceUrl).searchParams.get("sof"), "JCI896357714629725");
+  await fetchFrom3D66(first.resolvedSourceUrl, cookie, { sourceUrl: state.source });
+  assert.equal(state.contexts(), 1);
+  assert.equal(state.payloads.find(item => item.path.endsWith("/handle")).body.get("ll_id"), "JCI896357714629725");
 });
 
 test("hybrid progressive API metadata is immediate and preparation reuses one context through seed/history/formats", async t => {

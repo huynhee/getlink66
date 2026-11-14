@@ -1,8 +1,17 @@
 import crypto from "node:crypto";
-import { assert3D66CleanModelUrl, required3D66AccountMarker } from "./3d66CleanLink.js";
+import { assert3D66CleanModelUrl, assert3D66AccountProductId, modelIdsShareExactAssetIdentity,
+  required3D66AccountMarker } from "./3d66CleanLink.js";
 
 const FOOTPRINT_URL = "https://user.3d66.com/newUser/index/index/footprint";
-const MODEL_SELECTOR = 'a[href*="/reshtmla/"][href*="sof="]';
+export const FOOTPRINT_MODEL_SELECTOR = 'a[href*="/items/"][href*="sof="]';
+const RESOURCE_PATHS = {
+  "3d.3d66.com": /^\/reshtmla\/model\/items\/[^/]+\/[^/]+\.html$/,
+  "su.3d66.com": /^\/reshtmla\/sketchup\/items\/[^/]+\/[^/]+\.html$/,
+  "cad.3d66.com": /^\/reshtmla\/cad\/items\/[^/]+\/[^/]+\.html$/,
+  "tietu.3d66.com": /^\/reshtmla\/tietu\/items\/[^/]+\/[^/]+\.html$/,
+  "fanganwenben.3d66.com": /^\/(?:reshtmla\/fanganwenben\/items\/[^/]+|items)\/[^/]+\.html$/,
+  "xiaoguotu.3d66.com": /^\/(?:imghtml\/items\/[^/]+|items)\/[^/]+\.html$/,
+};
 const verificationPages = new WeakMap();
 const NETWORK_CODES = new Set(["ERR_ABORTED", "ERR_FAILED", "ERR_BLOCKED_BY_CLIENT", "ERR_CONNECTION_CLOSED",
   "ERR_CONNECTION_RESET", "ERR_CONNECTION_REFUSED", "ERR_CONNECTION_TIMED_OUT", "ERR_TIMED_OUT",
@@ -44,7 +53,8 @@ async function historyOperation(operation, run) {
 export function is3D66FootprintHome(value) {
   try {
     const url = new URL(value);
-    return ["https://3d66.com", "https://www.3d66.com", "https://3d.3d66.com", "https://su.3d66.com"].includes(url.origin)
+    return ["3d66.com", "www.3d66.com", ...Object.keys(RESOURCE_PATHS)].includes(url.hostname)
+      && url.protocol === "https:" && !url.port
       && !url.username && !url.password && url.pathname === "/" && !url.search;
   } catch { return false; }
 }
@@ -65,10 +75,9 @@ export async function assert3D66FootprintPageVerified(page) {
 export function is3D66FootprintModelPage(value) {
   try {
     const url = new URL(value);
-    const resource = url.origin === "https://3d.3d66.com" ? "model"
-      : url.origin === "https://su.3d66.com" ? "sketchup" : "";
-    return Boolean(resource && !url.username && !url.password
-      && new RegExp(`^/reshtmla/${resource}/items/[^/]+/[^/]+\\.html$`).test(url.pathname)
+    const pattern = RESOURCE_PATHS[url.hostname];
+    return Boolean(pattern && url.protocol === "https:" && !url.port && !url.username && !url.password
+      && pattern.test(url.pathname)
       && !url.pathname.endsWith("/items/id/model.html"));
   } catch { return false; }
 }
@@ -85,7 +94,7 @@ function modelPage(value) {
 export function build3D66FootprintSeed(value) {
   const source = modelPage(value);
   const ids = source.searchParams.getAll("sof");
-  if (ids.length !== 1 || source.searchParams.getAll("id").length > 1
+  if (ids.length !== 1 || source.searchParams.getAll("sign").length > 1 || source.searchParams.getAll("id").length > 1
     || source.searchParams.getAll("id").some((id) => id !== ids[0])) {
     throw resolutionError("missing_or_conflicting_model_id", 400);
   }
@@ -93,13 +102,23 @@ export function build3D66FootprintSeed(value) {
   if (!parts) throw resolutionError("invalid_source_model_id", 400);
   // Tracked IDs have an eight-digit sender marker; short public IDs contain only the asset suffix.
   const digits = parts[2];
-  const suffix = digits.length >= 13 ? digits.slice(8) : digits.length <= 8 ? digits : "";
+  const marker = required3D66AccountMarker();
+  const suffix = digits.startsWith(marker) && digits.length - marker.length >= 5 ? digits.slice(marker.length)
+    : digits.length >= 13 ? digits.slice(8) : digits.length <= 8 ? digits : "";
   if (!suffix) throw resolutionError("ambiguous_source_model_id", 400);
-  const productId = `A${parts[1].slice(1).toUpperCase()}${required3D66AccountMarker()}${suffix}`;
+  const productId = `A${parts[1].slice(1).toUpperCase()}${marker}${suffix}`;
+  const sourceFirst = source.hostname !== "3d.3d66.com";
+  source.hash = "";
   return {
     sourceProductId: ids[0], productId, modelPage: source.origin + source.pathname,
-    url: `${source.origin}${source.pathname}?${new URLSearchParams({ sof: productId, st: "2" })}`,
+    url: sourceFirst ? source.href : `${source.origin}${source.pathname}?${new URLSearchParams({ sof: productId, st: "2" })}`,
+    ...(sourceFirst ? { sourceFirst: true } : {}),
   };
+}
+
+export function footprintLookupKey(seed, page = seed.modelPage) {
+  return JSON.stringify([seed.sourceFirst ? "source-history" : "rewritten-history", page,
+    seed.sourceFirst ? `A${seed.productId.slice(1)}` : seed.productId]);
 }
 
 export function assert3D66RewrittenFootprintLink(value, seed) {
@@ -107,7 +126,8 @@ export function assert3D66RewrittenFootprintLink(value, seed) {
   if (url.origin + url.pathname !== seed.modelPage
     || url.origin !== modelPage(seed.url || seed.modelPage).origin) throw resolutionError("model_page_mismatch");
   const productId = assert3D66CleanModelUrl(value, { expectedProductId: seed.productId });
-  if (productId.toUpperCase() !== seed.productId) throw resolutionError("model_id_mismatch");
+  if (productId.toUpperCase() !== seed.productId && !(seed.sourceFirst
+    && modelIdsShareExactAssetIdentity(productId, seed.productId))) throw resolutionError("model_id_mismatch");
   return productId;
 }
 
@@ -116,16 +136,23 @@ export function selectRewrittenFootprintCard(links, seed) {
   for (const [index, link] of links.entries()) {
     let url;
     try { url = new URL(link); } catch { continue; }
-    if (!url.searchParams.getAll("sof").some((id) => id.toUpperCase() === seed.productId)) continue;
+    const matches = id => {
+      if (!seed.sourceFirst) return id.toUpperCase() === seed.productId;
+      try { assert3D66AccountProductId(id); }
+      catch { return false; }
+      return modelIdsShareExactAssetIdentity(id, seed.productId);
+    };
+    if (!url.searchParams.getAll("sof").some(matches)) continue;
     modelPage(link);
     if (url.origin !== origin) continue;
-    if (url.searchParams.getAll("sof").length !== 1 || url.searchParams.getAll("id").some((id) => id.toUpperCase() !== seed.productId)) {
+    const productId = url.searchParams.get("sof").toUpperCase();
+    if (url.searchParams.getAll("sof").length !== 1 || url.searchParams.getAll("id").some((id) => id.toUpperCase() !== productId)) {
       throw resolutionError("ambiguous_history_model_id");
     }
     url.hash = "";
     const canonicalModelPage = url.origin + url.pathname;
-    if (url.searchParams.has("sign")) assert3D66RewrittenFootprintLink(url.href, { ...seed, modelPage: canonicalModelPage });
-    return { url: url.href, productId: seed.productId, canonicalModelPage, index };
+    if (url.searchParams.has("sign")) assert3D66RewrittenFootprintLink(url.href, { ...seed, productId, modelPage: canonicalModelPage });
+    return { url: url.href, productId, canonicalModelPage, index };
   }
   return null;
 }
@@ -141,14 +168,19 @@ export async function resolveRewrittenFootprintPage({ page, seed, navigate, navi
     }
     await page.waitForLoadState("domcontentloaded", { timeout: Math.min(timeout, 8000) }).catch(() => {});
     await page.waitForTimeout(Math.min(5000, Math.max(500, Number(settleMs) || 1200)));
+    await assert3D66FootprintPageVerified(page);
     // The seed can register a view and redirect home. That landing never authorizes a download.
     if (!is3D66FootprintHome(page.url())) {
       if (navigationError) throw navigationError;
       const opened = modelPage(page.url());
-      if (opened.searchParams.getAll("sof").length !== 1 || opened.searchParams.get("sof") !== seed.productId
-        || opened.searchParams.getAll("id").some(id => id !== seed.productId)) throw resolutionError("seed_redirected");
+      const visitId = seed.sourceFirst ? seed.sourceProductId : seed.productId;
+      if (opened.origin !== new URL(seed.url).origin || opened.searchParams.getAll("sof").length !== 1
+        || opened.searchParams.getAll("id").some(id => id !== opened.searchParams.get("sof"))) throw resolutionError("seed_redirected");
+      if (opened.searchParams.get("sof") !== visitId) {
+        if (!seed.sourceFirst) throw resolutionError("seed_redirected");
+        assert3D66RewrittenFootprintLink(opened.href, { ...seed, modelPage: opened.origin + opened.pathname });
+      }
     }
-    await assert3D66FootprintPageVerified(page);
   });
   return resolveRewrittenFootprintHistory({ page, seed, navigate, openHistoryLink, timeout, refreshAttempts, refreshDelayMs });
 }
@@ -165,19 +197,19 @@ export async function resolveRewrittenFootprintHistory({ page, seed, navigate, o
         throw resolutionError("history_redirected");
       }
       await page.waitForLoadState("domcontentloaded", { timeout: Math.min(timeout, 8000) }).catch(() => {});
-      await page.locator(MODEL_SELECTOR).first().waitFor({ state: "attached", timeout: Math.min(timeout, 5000) }).catch(() => {});
+      await page.locator(FOOTPRINT_MODEL_SELECTOR).first().waitFor({ state: "attached", timeout: Math.min(timeout, 5000) }).catch(() => {});
       await assert3D66FootprintPageVerified(page);
-      return page.locator(MODEL_SELECTOR).evaluateAll((anchors) => anchors.slice(0, 500).map((anchor) => anchor.href));
+      return page.locator(FOOTPRINT_MODEL_SELECTOR).evaluateAll((anchors) => anchors.slice(0, 500).map((anchor) => anchor.href));
     });
     const selected = selectRewrittenFootprintCard(links, seed);
     if (selected) {
-      const boundSeed = { ...seed, modelPage: selected.canonicalModelPage };
+      const boundSeed = { ...seed, productId: selected.productId, modelPage: selected.canonicalModelPage };
       const opened = new URL(selected.url).searchParams.has("sign") ? selected.url
         : openHistoryLink ? await historyOperation("history_card_open", () => openHistoryLink(page, selected, boundSeed)) : "";
       const url = typeof opened === "string" ? opened : opened.url;
       const canonicalModelPage = typeof opened === "string" ? boundSeed.modelPage : opened.canonicalModelPage;
       assert3D66RewrittenFootprintLink(url, { ...boundSeed, modelPage: canonicalModelPage });
-      return { url, productId: seed.productId, usedFootprint: true, canonicalModelPage };
+      return { url, productId: selected.productId, usedFootprint: true, canonicalModelPage };
     }
   }
   throw resolutionError("signed_model_not_found_in_history");
@@ -199,7 +231,7 @@ export function create3D66RewrittenFootprintResolver({ withBrowserContext, navig
             refreshAttempts: process.env.THREED66_FOOTPRINT_REFRESH_ATTEMPTS,
             refreshDelayMs: process.env.THREED66_FOOTPRINT_REFRESH_DELAY_MS });
           return historyOperation("session_save", async () => ({ ...result, cookieValue: serializeCookies(await context.cookies()) || cookieValue }));
-        }, { allowProxyFallback: false, rewrittenFootprintSeed: seed });
+        }, { allowProxyFallback: false, rewrittenFootprintSeed: seed, readOnly: true });
       });
     })();
     pending.set(key, task);

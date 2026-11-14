@@ -4,16 +4,18 @@ import { open3D66RewrittenFootprintCard } from "../src/utils/3d66BrowserService.
 
 export async function verify3D66SketchUp(browser) {
   const history = "https://user.3d66.com/newUser/index/index/footprint";
-  for (const sketchup of [false, true]) {
+  for (const [host, itemRoot] of [["3d", "reshtmla/model/items/fixture"], ["su", "reshtmla/sketchup/items/fixture"],
+    ["cad", "reshtmla/cad/items/fixture"], ["tietu", "reshtmla/tietu/items/fixture"],
+    ["fanganwenben", "reshtmla/fanganwenben/items/fixture"], ["xiaoguotu", "imghtml/items/fixture"]]) {
     for (const unsigned of [false, true]) {
-      const origin = sketchup ? "https://su.3d66.com" : "https://3d.3d66.com";
-      const resource = sketchup ? "sketchup" : "model";
-      const base = `${origin}/reshtmla/${resource}/items/fixture/browser-model.html`;
+      const sourceFirst = host !== "3d";
+      const origin = `https://${host}.3d66.com`;
+      const base = `${origin}/${itemRoot}/browser-model.html`;
       const seed = build3D66FootprintSeed(`${base}?sof=JJI139810814629725&sign=sender-fixture`);
-      const canonical = `${origin}/reshtmla/${resource}/items/fixture/canonical.html`;
+      const canonical = `${origin}/${itemRoot}/canonical.html`;
       const signed = `${canonical}?sof=${seed.productId}&st=2&sign=source-fixture`;
-      const wrongOrigin = sketchup ? "https://3d.3d66.com" : "https://su.3d66.com";
-      const wrongResource = sketchup ? "model" : "sketchup";
+      const wrongOrigin = sourceFirst ? "https://3d.3d66.com" : "https://su.3d66.com";
+      const wrongResource = sourceFirst ? "model" : "sketchup";
       const wrong = `${wrongOrigin}/reshtmla/${wrongResource}/items/fixture/browser-model.html?sof=${seed.productId}&sign=other-resource`;
       const visits = [];
       const forbidden = [];
@@ -53,7 +55,7 @@ export async function verify3D66SketchUp(browser) {
         assert.equal(result.productId, seed.productId);
         assert.equal(visits.filter(url => url === seed.url).length, 1);
         assert.ok(visits.includes(history));
-        assert.equal(visits.some(url => url.includes("sender-fixture")), false);
+        assert.equal(visits.some(url => url.includes("sender-fixture")), sourceFirst);
         assert.deepEqual(forbidden, []);
         assert.equal(context.pages().length, unsigned ? 2 : 1);
       } finally {

@@ -15,7 +15,7 @@ import {
 import { create3D66HybridResolver, validate3D66HybridInput } from "./3d66HybridResolver.js";
 import { collectionModelPage, collectionResolutionConfig } from "./3d66CollectionResolver.js";
 import { build3D66FootprintSeed, assert3D66RewrittenFootprintLink,
-  is3D66RewrittenFootprintError, is3D66FootprintModelPage } from "./3d66RewrittenFootprintResolver.js";
+  is3D66RewrittenFootprintError, is3D66FootprintModelPage, footprintLookupKey } from "./3d66RewrittenFootprintResolver.js";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 import logger from "./logger.js";
 import { queue3D66Metadata } from "./3d66Queue.js";
@@ -417,7 +417,7 @@ function modelResolveMode() {
 function footprintCacheKey(productIds = [], cookieValue = "") {
   const cookieHash = crypto
     .createHash("sha256")
-    .update(String(cookieValue || ""))
+    .update(JSON.stringify([String(cookieValue || ""), get3D66VerificationConfigurationKey()]))
     .digest("hex")
     .slice(0, 16);
   return `${cookieHash}:${productIds.join(",")}`;
@@ -446,8 +446,7 @@ export function cacheVerified3D66Footprint(seed, result, cookieValue) {
   const boundSeed = { ...seed, modelPage: result.canonicalModelPage || seed.modelPage };
   assert3D66RewrittenFootprintLink(result.url, boundSeed);
   for (const page of new Set([seed.modelPage, boundSeed.modelPage])) {
-    const seedUrl = `${page}?${new URLSearchParams({ sof: seed.productId, st: "2" })}`;
-    cacheFootprintModelUrl(`rewritten-footprint:${seedUrl}:${footprintCacheKey([], cookieValue)}`,
+    cacheFootprintModelUrl(`rewritten-footprint:${footprintLookupKey(seed, page)}:${footprintCacheKey([], cookieValue)}`,
       { ...result, cookieValue });
   }
 }
@@ -574,23 +573,23 @@ async function resolveAccountModelUrl(
     const source = new URL(normalized);
     if (isFootprintResolvedUrl(normalized.toString()) && resolvedLogicalProductId) {
       assert3D66CleanModelUrl(normalized.toString(), { expectedProductId: productId });
-      source.search = new URLSearchParams({ sof: productId }).toString();
+      if (source.hostname === "3d.3d66.com") source.search = new URLSearchParams({ sof: productId }).toString();
     }
     const seed = build3D66FootprintSeed(source.toString());
-    const key = `rewritten-footprint:${seed.url}:${footprintCacheKey([], cookieValue)}`;
+    const key = `rewritten-footprint:${footprintLookupKey(seed)}:${footprintCacheKey([], cookieValue)}`;
     const cached = cachedFootprintModelUrl(key);
     const result = cached || await resolve3D66ModelUrlFromRewrittenFootprint(source.toString(), cookieValue);
     const boundSeed = { ...seed, modelPage: result.canonicalModelPage || seed.modelPage };
     assert3D66RewrittenFootprintLink(result.url, boundSeed);
+    boundSeed.productId = result.productId;
     if (!cached) {
       for (const page of new Set([seed.modelPage, boundSeed.modelPage])) {
-        const seedUrl = `${page}?${new URLSearchParams({ sof: seed.productId, st: "2" })}`;
         for (const value of new Set([cookieValue, result.cookieValue || cookieValue])) {
-          cacheFootprintModelUrl(`rewritten-footprint:${seedUrl}:${footprintCacheKey([], value)}`, result);
+          cacheFootprintModelUrl(`rewritten-footprint:${footprintLookupKey(seed, page)}:${footprintCacheKey([], value)}`, result);
         }
       }
     }
-    return { productId, resolvedProductId: seed.productId, url: markFootprintResolvedUrl(result.url, productId),
+    return { productId, resolvedProductId: result.productId, url: markFootprintResolvedUrl(result.url, productId),
       usedAccountSearch: false, usedFootprint: true, rewrittenFootprintSeed: boundSeed,
       cookieValue: result.cookieValue || cookieValue, cookies };
   }
@@ -923,14 +922,14 @@ export function resolve3D66ContextUrl(candidate, fallback) {
 
 function siteContext(pageUrl, cookies) {
   const parsed = new URL(stripInternalUrlHash(pageUrl));
-  const sketchup = parsed.hostname === "su.3d66.com" && is3D66FootprintModelPage(parsed);
-  const origin = sketchup ? parsed.origin : new URL(
+  const sourceResource = parsed.hostname !== "3d.3d66.com" && is3D66FootprintModelPage(parsed);
+  const origin = sourceResource ? parsed.origin : new URL(
     resolve3D66ContextUrl(process.env.THREED66_ORIGIN, parsed.origin),
   ).origin;
   const originHost = new URL(origin).hostname;
   const configured = configuredSiteContexts()[originHost] || {};
   const cookieReferrer = parseJsonCookie(cookies, "resUrlreferrer") || {};
-  const referrerContext = sketchup && String(cookieReferrer.site || configured.site) !== String(configured.site)
+  const referrerContext = sourceResource && String(cookieReferrer.site || configured.site) !== String(configured.site)
     ? {} : cookieReferrer;
   const site = String(referrerContext.site || configured.site || "6");
   const pageType = String(referrerContext.page_type || configured.pageType || "5");
@@ -945,7 +944,7 @@ function siteContext(pageUrl, cookies) {
     accessSourceSite,
     accessSourcePage,
     fileFormat,
-    sketchup,
+    sourceResource,
   };
 }
 
@@ -1836,10 +1835,10 @@ function buildDownloadPayload(fields, urls, cookies, context) {
     : context.fileFormat;
   const rendererType = selectedFormat
     ? String(selectedFormat.rendererType || "")
-    : context.rendererType || (context.sketchup ? "" : process.env.THREED66_RENDERER_TYPE || "4");
+    : context.rendererType || (context.sourceResource ? "" : process.env.THREED66_RENDERER_TYPE || "4");
   const formatVersion = selectedFormat
     ? String(selectedFormat.formatVersion || "")
-    : context.formatVersion || fields.formatVersion || (context.sketchup ? "" : process.env.THREED66_FORMAT_VERSION || "max2018");
+    : context.formatVersion || fields.formatVersion || (context.sourceResource ? "" : process.env.THREED66_FORMAT_VERSION || "max2018");
   const payload = new URLSearchParams({
     action: "user_pay_download",
     rartype: "1",
@@ -1890,8 +1889,8 @@ function buildDownloadPayload(fields, urls, cookies, context) {
   });
 
   if (!fileFormat) payload.delete("file_format");
-  if (context.sketchup && !rendererType) payload.delete("renderer_type");
-  if (context.sketchup && !formatVersion) payload.delete("format_version");
+  if (context.sourceResource && !rendererType) payload.delete("renderer_type");
+  if (context.sourceResource && !formatVersion) payload.delete("format_version");
   return payload;
 }
 

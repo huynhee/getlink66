@@ -23,7 +23,7 @@ export function validate3D66HybridInput(value) {
     const digits = seed.sourceProductId.slice(3);
     if (digits.startsWith(marker) && digits.length - marker.length >= 5) {
       seed.productId = `A${seed.sourceProductId.slice(1)}`;
-      seed.url = `${seed.modelPage}?${new URLSearchParams({ sof: seed.productId, st: "2" })}`;
+      if (!seed.sourceFirst) seed.url = `${seed.modelPage}?${new URLSearchParams({ sof: seed.productId, st: "2" })}`;
     }
     return { ...seed, inputUrl: url.href };
   }

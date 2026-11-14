@@ -12,10 +12,10 @@ const source = `${base}?sof=${sourceId}&sign=sender-fixture&kw=tracking`;
 const clean = `${base}?sof=${accountId}&st=2&sign=history-fixture`;
 const maxPage = "https://3d.3d66.com/reshtmla/model/items/fixture/SketchUpFixture.html";
 
-test("SketchUp rewriting retains its host, case-sensitive path and complete asset suffix", () => {
+test("SketchUp visits the original source while binding history to the configured account and full asset", () => {
   const seed = build3D66FootprintSeed(source);
   assert.deepEqual(seed, { sourceProductId: sourceId, productId: accountId, modelPage: base,
-    url: `${base}?sof=${accountId}&st=2` });
+    url: source, sourceFirst: true });
   assert.equal(assert3D66RewrittenFootprintLink(clean, seed), accountId);
   assert.equal(is3D66FootprintModelPage(base), true);
   assert.equal(is3D66FootprintModelPage(maxPage), true);
@@ -62,7 +62,7 @@ test("SketchUp seed may return home before looking up the signed history entry",
     } });
     assert.equal(result.url, clean);
     assert.deepEqual(visits, [seed.url, history]);
-    assert.ok(!visits.includes(source));
+    assert.equal(visits[0], source);
   }
 });
 
