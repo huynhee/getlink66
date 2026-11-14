@@ -1,5 +1,5 @@
 import { create3D66VerificationDiagnostics } from "./3d66VerificationDiagnostics.js";
-import { is3D66FootprintHome } from "./3d66RewrittenFootprintResolver.js";
+import { is3D66FootprintHome, is3D66FootprintModelPage } from "./3d66RewrittenFootprintResolver.js";
 
 const VENDOR_DOMAINS = ["alicdn.com", "aliyuncs.com", "aliyun.com"];
 const FOOTPRINT = "https://user.3d66.com/newUser/index/index/footprint";
@@ -15,13 +15,16 @@ export function manual3D66RequestAllowed(request, { productId, initialUrl, mode 
   if (/\/(?:download|pay|payment|purchase|order)(?:s)?(?:[/.]|$)/i.test(url.pathname)) return false;
   // Source-site mutations stay disabled; the vendor widget handles manual verification.
   if (source && !["GET", "HEAD", "OPTIONS"].includes(request.method())) return false;
-  const targetModel = url.origin === "https://3d.3d66.com" && /^\/reshtmla\/model\/items\/[^/]+\/[^/]+\.html$/.test(url.pathname)
+  let modelOrigin;
+  try { modelOrigin = new URL(modelPage || initialUrl).origin; } catch { return false; }
+  const targetModel = is3D66FootprintModelPage(url) && url.origin === modelOrigin
     && url.searchParams.getAll("sof").length === 1 && url.searchParams.get("sof") === productId
     && url.searchParams.getAll("id").every(id => id === productId)
     && (mode !== "direct" || url.origin + url.pathname === modelPage);
-  if (mode === "direct" && url.pathname.includes("/model/items/") && !targetModel) return false;
+  const modelPath = /\/(?:model|sketchup)\/items\//.test(url.pathname);
+  if (mode === "direct" && modelPath && !targetModel) return false;
   if (request.isNavigationRequest()) {
-    if (url.pathname.includes("/model/items/") && !targetModel) return false;
+    if (modelPath && !targetModel) return false;
     let mainFrame;
     try { const frame = request.frame(); mainFrame = frame === frame.page().mainFrame(); }
     catch {

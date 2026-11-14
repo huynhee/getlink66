@@ -7,7 +7,7 @@ import { create3D66BrowserProfileStore } from "./3d66BrowserProfileStore.js";
 import { create3D66CollectionResolver } from "./3d66CollectionResolver.js";
 import { create3D66RewrittenFootprintResolver, assert3D66RewrittenFootprintLink,
   assert3D66FootprintPageVerified, is3D66RewrittenFootprintError, get3D66VerificationPage,
-  resolveRewrittenFootprintHistory, resolveRewrittenFootprintPage } from "./3d66RewrittenFootprintResolver.js";
+  resolveRewrittenFootprintHistory, resolveRewrittenFootprintPage, is3D66FootprintModelPage } from "./3d66RewrittenFootprintResolver.js";
 import { validate3D66HybridInput } from "./3d66HybridResolver.js";
 import {
   assert3D66BrowserDownloadRequest, assert3D66CleanModelUrl, assert3D66DownloadFields,
@@ -379,7 +379,7 @@ async function withBrowserContext(url, cookieValue, callback, { allowProxyFallba
     const proxy = browserProxyConfig();
     const runWithProxy = async (currentProxy) => {
       const ready = await threed66VerificationStore.acquireReady(cookieValue, configurationKey,
-        verificationSeed?.productId || modelIdFromUrl(url), directSeed?.modelPage);
+        verificationSeed?.productId || modelIdFromUrl(url), verificationSeed?.modelPage);
       const sessionKey = crypto.createHash("sha256").update(JSON.stringify([cookieValue, configurationKey, currentProxy])).digest("hex");
       const lease = ready ? null : await browserSessions.acquire(sessionKey, async storageState => {
         await threed66VerificationStore.assertAvailable(cookieValue, configurationKey);
@@ -1263,8 +1263,8 @@ export async function open3D66RewrittenFootprintCard(page, card, seed, context) 
   const allowedNavigations = new WeakSet();
   const checkNavigation = (request) => {
     const url = new URL(request.url());
-    if (request.isNavigationRequest() && url.pathname.includes("/model/items/")) {
-      let allowed = url.origin + url.pathname === canonicalModelPage
+    if (request.isNavigationRequest() && /\/(?:model|sketchup)\/items\//.test(url.pathname)) {
+      let allowed = is3D66FootprintModelPage(url) && url.origin + url.pathname === canonicalModelPage
         && url.searchParams.getAll("sof").length === 1 && url.searchParams.get("sof").toUpperCase() === seed.productId
         && url.searchParams.getAll("id").every(id => id.toUpperCase() === seed.productId);
       const parent = request.redirectedFrom?.();

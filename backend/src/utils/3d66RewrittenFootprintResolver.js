@@ -44,7 +44,7 @@ async function historyOperation(operation, run) {
 export function is3D66FootprintHome(value) {
   try {
     const url = new URL(value);
-    return ["https://3d66.com", "https://www.3d66.com", "https://3d.3d66.com"].includes(url.origin)
+    return ["https://3d66.com", "https://www.3d66.com", "https://3d.3d66.com", "https://su.3d66.com"].includes(url.origin)
       && !url.username && !url.password && url.pathname === "/" && !url.search;
   } catch { return false; }
 }
@@ -62,12 +62,21 @@ export async function assert3D66FootprintPageVerified(page) {
   }
 }
 
+export function is3D66FootprintModelPage(value) {
+  try {
+    const url = new URL(value);
+    const resource = url.origin === "https://3d.3d66.com" ? "model"
+      : url.origin === "https://su.3d66.com" ? "sketchup" : "";
+    return Boolean(resource && !url.username && !url.password
+      && new RegExp(`^/reshtmla/${resource}/items/[^/]+/[^/]+\\.html$`).test(url.pathname)
+      && !url.pathname.endsWith("/items/id/model.html"));
+  } catch { return false; }
+}
+
 function modelPage(value) {
   let url;
   try { url = new URL(value); } catch { throw resolutionError("invalid_source_url", 400); }
-  if (url.protocol !== "https:" || url.origin !== "https://3d.3d66.com" || url.username || url.password
-    || !/^\/reshtmla\/model\/items\/[^/]+\/[^/]+\.html$/.test(url.pathname)
-    || url.pathname.endsWith("/items/id/model.html")) {
+  if (!is3D66FootprintModelPage(url)) {
     throw resolutionError("a_real_3d_model_page_is_required", 400);
   }
   return url;
@@ -95,18 +104,21 @@ export function build3D66FootprintSeed(value) {
 
 export function assert3D66RewrittenFootprintLink(value, seed) {
   const url = modelPage(value);
-  if (url.origin + url.pathname !== seed.modelPage) throw resolutionError("model_page_mismatch");
+  if (url.origin + url.pathname !== seed.modelPage
+    || url.origin !== modelPage(seed.url || seed.modelPage).origin) throw resolutionError("model_page_mismatch");
   const productId = assert3D66CleanModelUrl(value, { expectedProductId: seed.productId });
   if (productId.toUpperCase() !== seed.productId) throw resolutionError("model_id_mismatch");
   return productId;
 }
 
 export function selectRewrittenFootprintCard(links, seed) {
+  const origin = modelPage(seed.url || seed.modelPage).origin;
   for (const [index, link] of links.entries()) {
     let url;
     try { url = new URL(link); } catch { continue; }
     if (!url.searchParams.getAll("sof").some((id) => id.toUpperCase() === seed.productId)) continue;
     modelPage(link);
+    if (url.origin !== origin) continue;
     if (url.searchParams.getAll("sof").length !== 1 || url.searchParams.getAll("id").some((id) => id.toUpperCase() !== seed.productId)) {
       throw resolutionError("ambiguous_history_model_id");
     }

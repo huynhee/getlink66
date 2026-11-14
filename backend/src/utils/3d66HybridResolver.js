@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { assert3D66CleanModelUrl, required3D66AccountMarker } from "./3d66CleanLink.js";
-import { build3D66FootprintSeed } from "./3d66RewrittenFootprintResolver.js";
+import { build3D66FootprintSeed, is3D66FootprintModelPage } from "./3d66RewrittenFootprintResolver.js";
 
 function inputError(reason) {
   return Object.assign(new Error("Invalid or ambiguous 3D66 model URL."), {
@@ -65,8 +65,7 @@ export function create3D66HybridResolver({ readMetadata, openModel, configuratio
   function validateResult(seed, result) {
     const productId = assert3D66CleanModelUrl(result?.url, { expectedProductId: seed.sourceProductId });
     const parsed = new URL(result.url);
-    if (parsed.origin !== "https://3d.3d66.com"
-      || !/^\/reshtmla\/model\/items\/[^/]+\/[^/]+\.html$/.test(parsed.pathname)
+    if (!is3D66FootprintModelPage(parsed) || parsed.origin !== new URL(seed.modelPage).origin
       || productId.slice(1).toUpperCase() !== seed.productId.slice(1).toUpperCase()) {
       throw inputError("resolved_model_mismatch");
     }

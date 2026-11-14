@@ -44,8 +44,10 @@ status and the account marker, not the rest of the upstream account profile.
 
 ## Flow
 
-1. Accept a full HTTPS `3d.3d66.com/reshtmla/model/items/.../...html` URL containing
-   one `sof`. ID-only inputs and synthetic `/items/id/model.html` pages are rejected.
+1. Accept a full HTTPS `3d.3d66.com/reshtmla/model/items/.../...html` or
+   `su.3d66.com/reshtmla/sketchup/items/.../...html` URL containing one `sof`.
+   The host must match the resource path. ID-only inputs and synthetic
+   `/items/id/model.html` pages are rejected.
 2. For tracked IDs, split `sof` into three letters, **exactly eight sender ID digits**,
    and the asset suffix. Short public IDs (5-8 digits) have only the asset suffix.
    Change the first letter to `A` and add the required account marker before the
@@ -57,8 +59,10 @@ status and the account marker, not the rest of the upstream account profile.
    homepage can have registered the view; neither is a successful signed result.
    Interrupted navigation is accepted only for the narrowly validated homepage
    landing, not for arbitrary network errors or redirects.
-4. Read account footprint history and match the **entire rewritten `sof`**. The
-   account's canonical model path may differ from the submitted path. If the card
+4. Read account footprint history and match the **entire rewritten `sof`** and
+   the same resource host. A SketchUp card cannot resolve to a 3ds Max resource
+   with an identical ID, or vice versa. The account's canonical model path may
+   differ from the submitted path within that resource. If the card
    is unsigned, physically click that exact card to trigger the site's signature
    handler. An observed HTTP redirect from that allowed request may supply a new
    canonical path with the exact full `sof` and one nonempty `sign` from 3D66.
@@ -75,6 +79,14 @@ The lookup refreshes history a bounded number of times using the existing
 `THREED66_FOOTPRINT_REFRESH_ATTEMPTS` and `THREED66_FOOTPRINT_REFRESH_DELAY_MS`.
 Results are cached briefly per cookie, model path and rewritten ID. Concurrent
 identical lookups share a browser task. Another cookie never reuses that cache.
+
+SketchUp uses the SU page origin and resource site `6` for API requests, even if
+the legacy origin setting or a tracking cookie still points at a Max page.
+Format and renderer values come from the selected upstream file; absent values
+do not inherit the Max-only `max2018` or V-Ray defaults. No format is invented.
+Manual verification uses the same resource-bound page and keeps the existing
+purchase/download restrictions. No cookie, profile, account or mode is changed
+by installing this support.
 
 ## Failure And Rollback
 

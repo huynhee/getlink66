@@ -32,12 +32,15 @@ async function fixture(t, options = {}) {
       else process.env[key] = value;
     }
   });
-  const base = `https://3d.3d66.com/reshtmla/model/items/fixture/rewritten-${++sequence}.html`;
+  const origin = options.sketchup ? "https://su.3d66.com" : "https://3d.3d66.com";
+  const resource = options.sketchup ? "sketchup" : "model";
+  const base = `${origin}/reshtmla/${resource}/items/fixture/rewritten-${++sequence}.html`;
   const source = `${base}?sof=${options.inputId || inputId}&sign=old-sign&r_id=old-owner`;
   const seed = () => build3D66FootprintSeed(source);
   const clean = () => `${base}?sof=${seed().productId}&st=2&sign=history-fixture`;
   const navigations = [];
   const requests = [];
+  const payloads = [];
   const pages = [];
   let closedContexts = 0;
   let browserContexts = 0;
@@ -98,7 +101,8 @@ async function fixture(t, options = {}) {
     const url = new URL(input);
     requests.push(url.pathname);
     assert.ok(request.headers.cookie.startsWith("PHPSESSID=fixture"));
-    assert.equal(new URL(request.headers.referer).origin, "https://3d.3d66.com");
+    assert.equal(new URL(request.headers.referer).origin, origin);
+    payloads.push({ path: url.pathname, body: new URLSearchParams(request.body), origin: request.headers.origin });
     if (url.pathname === "/api/v1/download/pop") {
       if (options.popResponse) return options.popResponse();
       const requestedId = request.body.get("sof");
@@ -106,7 +110,7 @@ async function fixture(t, options = {}) {
       else assert.equal(requestedId, seed().productId);
       return Response.json({ status: 200, data: { token: "fixture-token", is_direct_download: 1,
         format_list: options.popFormats,
-        resInfo: { sof: requestedId, res_name: "Fixture", res_price: 28, res_type: "1",
+        resInfo: { sof: requestedId, res_name: "Fixture", res_price: 28, res_type: options.sketchup ? "6" : "1",
           img: "https://respic.3d66.com/fixture.jpg" }, ...options.popData?.(clean(), requestedId) } });
     }
     if (url.pathname === "/api/v1/download/handle") {
@@ -118,9 +122,36 @@ async function fixture(t, options = {}) {
     }
     assert.fail(`Unexpected upstream HTTP request: ${url.origin}${url.pathname}`);
   });
-  return { source, base, seed, clean, navigations, requests, pages,
+  return { source, base, seed, clean, navigations, requests, payloads, pages,
     contexts: () => browserContexts, closed: () => closedContexts, cookieSeeds: () => cookieSeeds, contextOptions };
 }
+
+test("SketchUp rewritten preview and mock download reuse a signed history URL with SU API context", async t => {
+  const state = await fixture(t, { sketchup: true, inputId: "JJI139810814629725", seedHome: "https://su.3d66.com/" });
+  const before = process.env.THREED66_ORIGIN;
+  process.env.THREED66_ORIGIN = "https://3d.3d66.com";
+  t.after(() => {
+    if (before === undefined) delete process.env.THREED66_ORIGIN;
+    else process.env.THREED66_ORIGIN = before;
+  });
+  const mixedCookie = cookie + "; resUrlreferrer=" + encodeURIComponent(JSON.stringify({ site: "1", access_source_site: "1" }));
+  const preview = await fetch3D66Preview(state.source, mixedCookie);
+  assert.equal(new URL(preview.resolvedSourceUrl).origin, "https://su.3d66.com");
+  assert.equal(new URL(preview.resolvedSourceUrl).searchParams.get("sof"), "AJI896357714629725");
+  assert.deepEqual(state.requests, ["/api/v1/download/pop"]);
+  assert.equal(state.payloads[0].body.get("res_type"), "6");
+  const result = await fetchFrom3D66(preview.resolvedSourceUrl, mixedCookie, { sourceUrl: state.source });
+  assert.ok(result.fileUrl.startsWith("https://download.3d66.com/fixture.zip"));
+  const handle = state.payloads.find(item => item.path.endsWith("/handle"));
+  assert.equal(handle.origin, "https://su.3d66.com");
+  assert.equal(handle.body.get("site"), "6");
+  assert.equal(handle.body.get("access_source_site"), "6");
+  assert.equal(handle.body.has("format_version"), false);
+  assert.equal(handle.body.has("renderer_type"), false);
+  assert.deepEqual(state.navigations, [state.seed().url, "https://user.3d66.com/newUser/index/index/footprint"]);
+  assert.equal(state.contexts(), 1);
+  assert.equal(state.requests.filter(url => url.endsWith("/handle")).length, 1);
+});
 
 test("hybrid progressive API metadata is immediate and preparation reuses one context through seed/history/formats", async t => {
   const formats = [{ key: "1|2014|4", fileFormat: "1", formatVersion: "2014", rendererType: "4", isDefault: true },
@@ -474,9 +505,11 @@ for (const [name, browserRedirect] of [["another path", (url) => url.replace(".h
   });
 }
 
-function openedCardFixture({ navigation = "", downloadRequest = false, changedHref = false, challenge = false,
+function openedCardFixture({ navigation = "", downloadRequest = false, changedHref = false, challenge = false, sketchup = false,
   redirect = "", unknownParent = false, redirectBypassesRoute = false } = {}) {
-  const seed = build3D66FootprintSeed("https://3d.3d66.com/reshtmla/model/items/fixture/canonical.html?sof=GCI139810814629725");
+  const source = sketchup ? "https://su.3d66.com/reshtmla/sketchup/items/fixture/canonical.html"
+    : "https://3d.3d66.com/reshtmla/model/items/fixture/canonical.html";
+  const seed = build3D66FootprintSeed(source + "?sof=GCI139810814629725");
   const unsigned = `${seed.modelPage}?sof=${seed.productId}&st=2`;
   const signed = unsigned + "&sign=real-history-fixture";
   const finalUrl = redirect || signed;
@@ -528,6 +561,31 @@ test("history opening uses a physical pointer click and never calls the purchase
   assert.deepEqual(await open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context),
     { url: state.signed, canonicalModelPage: state.seed.modelPage });
   assert.deepEqual(state.actions, ["pointer-click", "blocked", "unroute"]);
+});
+
+test("SketchUp history cards can open a signature but cannot navigate to another resource or model", async () => {
+  const valid = openedCardFixture({ sketchup: true, downloadRequest: true });
+  assert.equal((await open3D66RewrittenFootprintCard(valid.page, valid.card, valid.seed, valid.context)).url, valid.signed);
+  assert.deepEqual(valid.actions, ["pointer-click", "blocked", "unroute"]);
+  for (const navigation of [valid.signed.replace("canonical.html", "other.html"),
+    valid.signed.replace("su.3d66.com/reshtmla/sketchup", "3d.3d66.com/reshtmla/model")]) {
+    const state = openedCardFixture({ sketchup: true, navigation });
+    await assert.rejects(open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context),
+      error => error.details?.reason === "opened_model_mismatch");
+    assert.deepEqual(state.actions, ["pointer-click", "blocked", "unroute"]);
+  }
+});
+
+test("SketchUp canonical redirects stay in the SU resource even when a Max link has the same ID", async () => {
+  const canonical = "https://su.3d66.com/reshtmla/sketchup/items/fixture/account-canonical.html?sof=ACI896357714629725&sign=server-fixture";
+  const valid = openedCardFixture({ sketchup: true, redirect: canonical });
+  assert.equal((await open3D66RewrittenFootprintCard(valid.page, valid.card, valid.seed, valid.context)).url, canonical);
+  for (const redirectBypassesRoute of [false, true]) {
+    const state = openedCardFixture({ sketchup: true, redirectBypassesRoute,
+      redirect: canonical.replace("su.3d66.com/reshtmla/sketchup", "3d.3d66.com/reshtmla/model") });
+    await assert.rejects(open3D66RewrittenFootprintCard(state.page, state.card, state.seed, state.context));
+    assert.equal(state.actions.includes("unroute"), true);
+  }
 });
 
 test("the exact history request may redirect to a server-signed canonical path for the same full model ID", async () => {

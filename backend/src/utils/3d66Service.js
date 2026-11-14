@@ -15,7 +15,7 @@ import {
 import { create3D66HybridResolver, validate3D66HybridInput } from "./3d66HybridResolver.js";
 import { collectionModelPage, collectionResolutionConfig } from "./3d66CollectionResolver.js";
 import { build3D66FootprintSeed, assert3D66RewrittenFootprintLink,
-  is3D66RewrittenFootprintError } from "./3d66RewrittenFootprintResolver.js";
+  is3D66RewrittenFootprintError, is3D66FootprintModelPage } from "./3d66RewrittenFootprintResolver.js";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 import logger from "./logger.js";
 import { queue3D66Metadata } from "./3d66Queue.js";
@@ -923,12 +923,15 @@ export function resolve3D66ContextUrl(candidate, fallback) {
 
 function siteContext(pageUrl, cookies) {
   const parsed = new URL(stripInternalUrlHash(pageUrl));
-  const origin = new URL(
+  const sketchup = parsed.hostname === "su.3d66.com" && is3D66FootprintModelPage(parsed);
+  const origin = sketchup ? parsed.origin : new URL(
     resolve3D66ContextUrl(process.env.THREED66_ORIGIN, parsed.origin),
   ).origin;
   const originHost = new URL(origin).hostname;
   const configured = configuredSiteContexts()[originHost] || {};
-  const referrerContext = parseJsonCookie(cookies, "resUrlreferrer") || {};
+  const cookieReferrer = parseJsonCookie(cookies, "resUrlreferrer") || {};
+  const referrerContext = sketchup && String(cookieReferrer.site || configured.site) !== String(configured.site)
+    ? {} : cookieReferrer;
   const site = String(referrerContext.site || configured.site || "6");
   const pageType = String(referrerContext.page_type || configured.pageType || "5");
   const accessSourceSite = String(referrerContext.access_source_site || configured.accessSourceSite || site);
@@ -941,7 +944,8 @@ function siteContext(pageUrl, cookies) {
     pageType,
     accessSourceSite,
     accessSourcePage,
-    fileFormat
+    fileFormat,
+    sketchup,
   };
 }
 
@@ -1832,10 +1836,10 @@ function buildDownloadPayload(fields, urls, cookies, context) {
     : context.fileFormat;
   const rendererType = selectedFormat
     ? String(selectedFormat.rendererType || "")
-    : context.rendererType || process.env.THREED66_RENDERER_TYPE || "4";
+    : context.rendererType || (context.sketchup ? "" : process.env.THREED66_RENDERER_TYPE || "4");
   const formatVersion = selectedFormat
     ? String(selectedFormat.formatVersion || "")
-    : context.formatVersion || fields.formatVersion || process.env.THREED66_FORMAT_VERSION || "max2018";
+    : context.formatVersion || fields.formatVersion || (context.sketchup ? "" : process.env.THREED66_FORMAT_VERSION || "max2018");
   const payload = new URLSearchParams({
     action: "user_pay_download",
     rartype: "1",
@@ -1886,6 +1890,8 @@ function buildDownloadPayload(fields, urls, cookies, context) {
   });
 
   if (!fileFormat) payload.delete("file_format");
+  if (context.sketchup && !rendererType) payload.delete("renderer_type");
+  if (context.sketchup && !formatVersion) payload.delete("format_version");
   return payload;
 }
 

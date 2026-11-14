@@ -9,6 +9,7 @@ import { verify3D66CookieCompatibility } from "./qa-3d66-cookies.js";
 import { verify3D66ManualHandoff } from "./qa-3d66-verification.js";
 import { verifyGetlinkFormats } from "./qa-getlink-formats.js";
 import { verify3D66BrowserSessions } from "./qa-3d66-browser-sessions.js";
+import { verify3D66SketchUp } from "./qa-3d66-sketchup.js";
 import { verifyCompactNavbar } from "./qa-navbar.js";
 import { verifyModelLogin } from "./qa-model-login.js";
 
@@ -1332,6 +1333,7 @@ async function main() {
 
     browser = await chromium.launch(browserLaunchOptions());
     await verify3D66BrowserSessions(browser);
+    await verify3D66SketchUp(browser);
     const errors = [];
     const externalFailures = [];
     const slowest = [];
