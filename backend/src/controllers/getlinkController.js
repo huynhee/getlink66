@@ -33,6 +33,7 @@ import { writeSystemLog } from "../utils/systemLog.js";
 import { streamGetlinkFile } from "../utils/getlinkDownloadTransfer.js";
 import { downloadTransferLimiter } from "../utils/downloadTransfer.js";
 import { assert3D66StoredDownload, is3D66CleanLinkError } from "../utils/3d66CleanLink.js";
+import { is3D66CadModelUrl } from "../utils/3d66CadProof.js";
 import { validate3D66HybridInput } from "../utils/3d66HybridResolver.js";
 
 const productLocks = new Map();
@@ -1079,7 +1080,7 @@ function looksLikeDownloadFile(upstream) {
   );
 }
 
-export async function resolveProductCache(productId, url, downloadFormat = null) {
+export async function resolveProductCache(productId, url, downloadFormat = null, expectedCreditCost = null) {
   const lockKey = JSON.stringify([productId, modelPageKey(url), downloadFormatKey(downloadFormat)]);
   const existing = await ProductCache.findOne({ productId });
   if (existing?.fileUrl && cacheMatchesModelUrl(existing, url)) assert3D66StoredDownload(existing);
@@ -1111,7 +1112,7 @@ export async function resolveProductCache(productId, url, downloadFormat = null)
         }
 
         const download = await with3D66Cookie((cookieValue) =>
-          queue3D66Getlink(() => fetchFrom3D66(url, cookieValue, { downloadFormat })),
+          queue3D66Getlink(() => fetchFrom3D66(url, cookieValue, { downloadFormat, expectedCreditCost })),
         );
         const fileUrl =
           typeof download === "string" ? download : download.fileUrl;
@@ -1218,7 +1219,7 @@ async function handlePreviewGetlink(req, res, next, { allowProgressive = false }
     if (!url) return;
 
     const hybrid = String(process.env.THREED66_MODEL_RESOLVE_MODE || "").trim().toLowerCase() === "hybrid";
-    const progressive = hybrid && allowProgressive && req.body.progressive === true;
+    const progressive = hybrid && allowProgressive && req.body.progressive === true && !is3D66CadModelUrl(url);
     const productId = extractProductId(url);
     const previewProductId = lockedProductId(url, productId, productId);
     const cache = progressive ? null : await ProductCache.findOne({ productId });
@@ -1313,12 +1314,12 @@ async function handlePreviewGetlink(req, res, next, { allowProgressive = false }
       formatOptionsCheckedAt: new Date(),
     };
     let cachePayload = previewPayload;
-    if (hybrid && cache?.fileUrl) {
+    if ((hybrid || is3D66CadModelUrl(url)) && cache?.fileUrl) {
       // A fresh preview must not reauthorize bytes fetched with an older account context.
       cachePayload = { ...previewPayload };
       delete cachePayload.sourceUrl;
       delete cachePayload.resolvedSourceUrl;
-    } else if (hybrid) {
+    } else if (hybrid || is3D66CadModelUrl(url)) {
       cachePayload = { ...previewPayload, isPurchased: false };
     }
     await upsertProductCache(cachePayload, cache);
@@ -1647,7 +1648,7 @@ export async function getLink(req, res, next) {
         cacheMatchesModelUrl(cachedBeforeDownload, url) &&
         cacheMatchesDownloadFormat(cachedBeforeDownload, downloadFormat),
     );
-    const cache = await resolveProductCache(effectiveProductId, url, downloadFormat);
+    const cache = await resolveProductCache(effectiveProductId, url, downloadFormat, expectedCreditCost);
     if (lockToInputProductId && !requestedProductIds.includes(String(cache.productId || ""))) {
       throw Object.assign(
         new Error("The source returned a different model than the requested link. Please retry this model."),

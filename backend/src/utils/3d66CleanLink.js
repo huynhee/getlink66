@@ -1,3 +1,5 @@
+import { read3D66CadVerification } from "./3d66CadProof.js";
+
 const DEFAULT_REQUIRED_MARKER = "89635771";
 const EXACT_ASSET_MODES = new Set(["footprint", "rewritten_footprint", "hybrid"]);
 
@@ -72,10 +74,12 @@ export function assert3D66CleanModelUrl(value, { expectedProductId = "" } = {}) 
     throw validationError("conflicting_model_id");
   }
   const signatures = url.searchParams.getAll("sign");
+  let cad = null;
   if (signatures.length !== 1 || !signatures[0] || signatures[0].length > 256 || /\s/.test(signatures[0])) {
-    throw validationError("missing_or_duplicate_signature");
+    cad = signatures.length === 0 ? read3D66CadVerification(value) : null;
+    if (!cad || cad.marker !== required3D66AccountMarker()) throw validationError("missing_or_duplicate_signature");
   }
-  const matchesAsset = exactAssetMode() ? modelIdsShareExactAssetIdentity : modelIdsShareAssetIdentity;
+  const matchesAsset = cad || exactAssetMode() ? modelIdsShareExactAssetIdentity : modelIdsShareAssetIdentity;
   if (expectedProductId && !matchesAsset(productId, expectedProductId)) {
     throw validationError("asset_identity_mismatch");
   }

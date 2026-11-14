@@ -209,7 +209,8 @@ export async function resolveRewrittenFootprintHistory({ page, seed, navigate, o
       const url = typeof opened === "string" ? opened : opened.url;
       const canonicalModelPage = typeof opened === "string" ? boundSeed.modelPage : opened.canonicalModelPage;
       assert3D66RewrittenFootprintLink(url, { ...boundSeed, modelPage: canonicalModelPage });
-      return { url, productId: selected.productId, usedFootprint: true, canonicalModelPage };
+      return { url, productId: selected.productId, usedFootprint: true, canonicalModelPage,
+        ...(typeof opened === "object" && opened.cad ? { cad: opened.cad } : {}) };
     }
   }
   throw resolutionError("signed_model_not_found_in_history");

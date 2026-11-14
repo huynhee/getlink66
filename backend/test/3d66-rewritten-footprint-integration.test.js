@@ -4,7 +4,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
-import { fetch3D66Preview, fetchFrom3D66 } from "../src/utils/3d66Service.js";
+import { fetch3D66Preview, fetchFrom3D66, request3D66File, inspect3D66DownloadChoice } from "../src/utils/3d66Service.js";
+import { read3D66CadVerification } from "../src/utils/3d66CadProof.js";
+import { assert3D66StoredDownload } from "../src/utils/3d66CleanLink.js";
 import { close3D66Browser, download3D66WithBrowser, inspect3D66DownloadFormatsWithBrowser,
   open3D66RewrittenFootprintCard, resume3D66Verification, get3D66VerificationConfigurationKey } from "../src/utils/3d66BrowserService.js";
 import { build3D66FootprintSeed } from "../src/utils/3d66RewrittenFootprintResolver.js";
@@ -38,7 +40,7 @@ async function fixture(t, options = {}) {
   const source = `${base}?sof=${options.inputId || inputId}&sign=old-sign&r_id=old-owner`;
   const seed = () => build3D66FootprintSeed(source);
   const cleanId = () => options.historyPrefix ? options.historyPrefix + seed().productId.slice(1) : seed().productId;
-  const clean = () => `${base}?sof=${cleanId()}&st=2&sign=history-fixture`;
+  const clean = () => `${base}?sof=${cleanId()}&st=2${options.cadUnsigned ? "" : "&sign=history-fixture"}`;
   const navigations = [];
   const requests = [];
   const payloads = [];
@@ -54,13 +56,42 @@ async function fixture(t, options = {}) {
       browserContexts += 1;
       contextOptions.push(config);
       let current;
+      let storedCookies = config.storageState?.cookies || [];
+      const cadDoc = () => ({ pageUrl: clean(), code: 200, productId: cleanId(), publicAssetId: 21681188,
+        resourceType: 8, deleted: 0, sourceAccountId: 177536980, originUrl: clean(), price: 28,
+        fileFormat: 8, formatVersion: "2014", suffix: "DWG", ...options.cadDocument });
+      const apiResponse = data => ({ ok: () => true, status: () => 200,
+        async body() { return Buffer.from(JSON.stringify(data)); }, async dispose() {} });
       return {
-        async route() {}, async unroute() {}, async addCookies() { cookieSeeds++; }, async cookies() { return []; },
+        async route() {}, async unroute() {},
+        async addCookies(cookies) {
+          cookieSeeds++;
+          storedCookies = cookies.map(c => ({ ...c, domain: c.domain || new URL(c.url).hostname, path: c.path || "/" }));
+        }, async cookies() { return storedCookies; },
+        request: {
+          async get(endpoint) {
+            assert.equal(endpoint, "https://user.3d66.com/new-user-api/api/v1/user/info");
+            return apiResponse({ code: 200, data: { basic: { user_id: options.cadAccountId || 177536980 } } });
+          },
+          async post(endpoint, req) {
+            assert.equal(endpoint, "https://user.3d66.com/api/v1/download/pop");
+            assert.deepEqual(req.form, { sof: cleanId(), res_type: "8" });
+            return apiResponse({ status: 200, data: { token: "cad-fixture-token", is_direct_download: 1,
+              resInfo: { sof: cleanId(), res_name: "Fixture CAD", img: "https://respic.3d66.com/cad.jpg",
+                res_type: 8, is_delete: 0, res_price: 28 } } });
+          },
+        },
         pages: () => pages,
         async close() { closedContexts += 1; },
         async newPage() {
-          const popup = { url: () => clean(), async title() { return "滑动验证页面"; },
-            async waitForLoadState() {}, async waitForURL() {} };
+          const popup = { url: () => clean(), async title() { return options.cadUnsigned ? "Fixture CAD" : "滑动验证页面"; },
+            frames: () => [], async close() { const i = pages.indexOf(popup); if (i >= 0) pages.splice(i, 1); },
+            async evaluate(read) {
+              if (read.name === "read3D66CadDocument") return cadDoc();
+              if (read.name === "evaluateFormatOptions") return [];
+              return { productId: cleanId(), title: "Fixture CAD", creditCost: 28, priceKnown: true,
+                found: { detailData: true }, dynamicFields: { llId: cleanId() } };
+            }, async waitForFunction() {}, async waitForLoadState() {}, async waitForURL() {} };
           const page = {
             frames: () => [{ url: () => current, async evaluate() { return []; } }],
             async goto(url) {
@@ -76,7 +107,7 @@ async function fixture(t, options = {}) {
             async waitForSelector() {}, async waitForFunction() { formatReady = true; },
             async content() { return options.html || "<title>Fixture</title>"; },
             async waitForEvent() {
-              if (!options.popupChallenge) throw new Error("No fixture popup");
+              if (!options.popupChallenge && !options.cadUnsigned) throw new Error("No fixture popup");
               pages.push(popup);
               return popup;
             },
@@ -101,6 +132,11 @@ async function fixture(t, options = {}) {
   t.mock.method(globalThis, "fetch", async (input, request) => {
     const url = new URL(input);
     requests.push(url.pathname);
+    if (options.cadUnsigned && url.hostname === "download.3d66.com") {
+      assert.equal(String(request.headers.referer).includes("cad_verified"), false);
+      assert.equal(String(request.headers.referer).includes("cad1."), false);
+      return new Response("fixture bytes", { headers: { "content-type": "application/octet-stream" } });
+    }
     assert.ok(request.headers.cookie.startsWith("PHPSESSID=fixture"));
     assert.equal(new URL(request.headers.referer).origin, origin);
     payloads.push({ path: url.pathname, body: new URLSearchParams(request.body), origin: request.headers.origin });
@@ -111,14 +147,16 @@ async function fixture(t, options = {}) {
       else assert.equal(requestedId, cleanId());
       return Response.json({ status: 200, data: { token: "fixture-token", is_direct_download: 1,
         format_list: options.popFormats,
-        resInfo: { sof: requestedId, res_name: "Fixture", res_price: 28, res_type: options.site || (options.sketchup ? "6" : "1"),
+        resInfo: { sof: requestedId, res_name: "Fixture", res_price: options.cadLivePrice || 28, is_delete: 0,
+          res_type: options.site || (options.sketchup ? "6" : "1"),
           img: "https://respic.3d66.com/fixture.jpg" }, ...options.popData?.(clean(), requestedId) } });
     }
     if (url.pathname === "/api/v1/download/handle") {
       assert.equal(request.body.get("ll_id"), cleanId());
       const resUrl = new URL(request.body.get("resUrl"));
-      assert.equal(resUrl.searchParams.get("sign"), "history-fixture");
+      assert.equal(resUrl.searchParams.get("sign"), options.cadUnsigned ? null : "history-fixture");
       assert.equal(resUrl.hash, "");
+      assert.equal(request.body.toString().includes("cad1."), false);
       return Response.json({ status: 200, data: { fileUrl: "https://download.3d66.com/fixture.zip?auth_key=fixture" } });
     }
     assert.fail(`Unexpected upstream HTTP request: ${url.origin}${url.pathname}`);
@@ -185,6 +223,62 @@ test("source-first history preserves the source account prefix through cache and
   assert.equal(state.contexts(), 1);
   assert.equal(state.payloads.find(item => item.path.endsWith("/handle")).body.get("ll_id"), "JCI896357714629725");
 });
+
+for (const mode of ["footprint", "rewritten_footprint", "hybrid"]) {
+  test(`unsigned CAD ${mode} verifies source evidence and keeps proof private through a mock purchase and stream`, async t => {
+    const state = await fixture(t, { mode, cadUnsigned: true, origin: "https://cad.3d66.com", resource: "cad", site: "8" });
+    const preview = await fetch3D66Preview(state.source, cookie, { includeFormatOptions: true });
+    assert.equal(preview.priceKnown, true);
+    assert.equal(preview.creditCost, 28);
+    assert.equal(preview.formatOptions.length, 1);
+    assert.equal(preview.formatOptions[0].fileFormat, "8");
+    assert.equal(preview.formatOptions[0].rendererType, "");
+    assert.equal(preview.dynamicFields, undefined);
+    assert.equal(new URL(preview.resolvedSourceUrl).searchParams.has("sign"), false);
+    assert.ok(read3D66CadVerification(preview.resolvedSourceUrl));
+    assert.equal(state.requests.some(value => value.endsWith("/handle")), false);
+    const choice = await inspect3D66DownloadChoice(preview.resolvedSourceUrl, cookie);
+    assert.equal(choice.hasFormatChoice, false);
+    const visits = state.navigations.length;
+    const result = await fetchFrom3D66(preview.resolvedSourceUrl, cookie, { sourceUrl: state.source,
+      downloadFormat: preview.selectedFormat, expectedCreditCost: 28 });
+    assert.ok(state.navigations.length > visits, "A new CAD purchase re-verifies the loaded source page");
+    assert.doesNotThrow(() => assert3D66StoredDownload(result));
+    const handle = state.payloads.find(item => item.path.endsWith("/handle"));
+    assert.equal(handle.body.get("file_format"), "8");
+    assert.equal(handle.body.get("format_version"), "2014");
+    assert.equal(handle.body.has("renderer_type"), false);
+    const response = await request3D66File(result.fileUrl, cookie, { sourceUrl: result.resolvedSourceUrl });
+    assert.equal(await response.text(), "fixture bytes");
+    assert.equal(state.requests.filter(path => path.endsWith("/handle")).length, 1);
+  });
+}
+
+test("unsigned CAD does not invent a format when the source only declares a CAD version", async t => {
+  const state = await fixture(t, { cadUnsigned: true, origin: "https://cad.3d66.com", resource: "cad", site: "8",
+    cadDocument: { fileFormat: "", formatVersion: "CAD2007", suffix: "" } });
+  const preview = await fetch3D66Preview(state.source, cookie);
+  assert.deepEqual(preview.formatOptions, []);
+  assert.equal(preview.selectedFormat, null);
+  await fetchFrom3D66(preview.resolvedSourceUrl, cookie, { expectedCreditCost: 28 });
+  const payload = state.payloads.find(item => item.path.endsWith("/handle")).body;
+  assert.equal(payload.has("file_format"), false);
+  assert.equal(payload.has("renderer_type"), false);
+  assert.equal(payload.has("format_version"), false);
+});
+
+for (const [label, extras, expectedCreditCost] of [
+  ["another signed-in account", { cadAccountId: 999999999 }, 28],
+  ["another source asset", { cadDocument: { productId: "AJI89635771994629725" } }, 28],
+  ["changed API price", { cadLivePrice: 29 }, 28],
+  ["changed confirmed price", {}, 27],
+]) {
+  test(`unsigned CAD rejects ${label} before the purchase API`, async t => {
+    const state = await fixture(t, { cadUnsigned: true, origin: "https://cad.3d66.com", resource: "cad", site: "8", ...extras });
+    await assert.rejects(fetchFrom3D66(state.source, cookie, { expectedCreditCost }), error => error.code === "THREED66_CLEAN_LINK_REQUIRED");
+    assert.equal(state.requests.some(value => value.endsWith("/handle")), false);
+  });
+}
 
 test("hybrid progressive API metadata is immediate and preparation reuses one context through seed/history/formats", async t => {
   const formats = [{ key: "1|2014|4", fileFormat: "1", formatVersion: "2014", rendererType: "4", isDefault: true },

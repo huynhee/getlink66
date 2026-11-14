@@ -22,6 +22,8 @@ import { queue3D66Metadata } from "./3d66Queue.js";
 import { threed66VerificationStore } from "./3d66VerificationStore.js";
 import { normalizeAccountModelId, accountMarkerFromUserId } from "./parse3d66.js";
 import { inspect3D66CookieHeader, parse3D66CookieHeader } from "./3d66CookieHeader.js";
+import { is3D66CadModelUrl, read3D66CadVerification } from "./3d66CadProof.js";
+import { cadVerificationError } from "./3d66CadPage.js";
 import {
   assert3D66AccountProductId, assert3D66CleanModelUrl, assert3D66DownloadFields, is3D66CleanLinkError,
   required3D66AccountMarker,
@@ -548,7 +550,7 @@ async function resolveAccountModelUrl(
   rawUrl,
   cookieValue,
   cookies = null,
-  { stage = "preview" } = {},
+  { stage = "preview", forceCadVerification = false } = {},
 ) {
   const normalized = normalizeModelUrl(rawUrl);
   const productIds = requestedProductIdCandidatesFromUrl(normalized.toString());
@@ -560,7 +562,8 @@ async function resolveAccountModelUrl(
   required3D66AccountMarker();
 
   const mode = modelResolveMode();
-  if (mode === "hybrid") {
+  const cadHistory = is3D66CadModelUrl(normalized) && ["footprint", "rewritten_footprint", "hybrid"].includes(mode);
+  if (mode === "hybrid" && !cadHistory) {
     await threed66VerificationStore.assertAvailable(cookieValue, get3D66VerificationConfigurationKey());
     const seed = validate3D66HybridInput(normalized.toString());
     const result = await hybridResolver.resolve(normalized.toString(), cookieValue);
@@ -569,7 +572,7 @@ async function resolveAccountModelUrl(
       rewrittenFootprintSeed: { ...seed, mode: "hybrid", hybridSourceUrl: seed.inputUrl,
         productId: result.productId, modelPage: result.canonicalModelPage } };
   }
-  if (mode === "rewritten_footprint") {
+  if (mode === "rewritten_footprint" || cadHistory) {
     const source = new URL(normalized);
     if (isFootprintResolvedUrl(normalized.toString()) && resolvedLogicalProductId) {
       assert3D66CleanModelUrl(normalized.toString(), { expectedProductId: productId });
@@ -577,7 +580,10 @@ async function resolveAccountModelUrl(
     }
     const seed = build3D66FootprintSeed(source.toString());
     const key = `rewritten-footprint:${footprintLookupKey(seed)}:${footprintCacheKey([], cookieValue)}`;
-    const cached = cachedFootprintModelUrl(key);
+    let cached = cachedFootprintModelUrl(key);
+    if (forceCadVerification && cadHistory && cached?.cad) cached = null;
+    if (cached?.cad && !read3D66CadVerification(cached.url, { fresh: true,
+      cookieValue: cached.cookieValue || cookieValue, configurationKey: get3D66VerificationConfigurationKey() })) cached = null;
     const result = cached || await resolve3D66ModelUrlFromRewrittenFootprint(source.toString(), cookieValue);
     const boundSeed = { ...seed, modelPage: result.canonicalModelPage || seed.modelPage };
     assert3D66RewrittenFootprintLink(result.url, boundSeed);
@@ -591,7 +597,7 @@ async function resolveAccountModelUrl(
     }
     return { productId, resolvedProductId: result.productId, url: markFootprintResolvedUrl(result.url, productId),
       usedAccountSearch: false, usedFootprint: true, rewrittenFootprintSeed: boundSeed,
-      cookieValue: result.cookieValue || cookieValue, cookies };
+      cookieValue: result.cookieValue || cookieValue, cookies, ...(result.cad ? { cad: result.cad } : {}) };
   }
   if (mode === "collection") {
     const config = collectionResolutionConfig();
@@ -1773,7 +1779,9 @@ function buildModelUrls(pageUrl, fields) {
   const resUrl = new URL(stripInternalUrlHash(pageUrl));
   if (fields.llId && !resUrl.searchParams.get("sof")) resUrl.searchParams.set("sof", fields.llId);
   if (fields.sign && !resUrl.searchParams.get("sign")) resUrl.searchParams.set("sign", fields.sign);
-  if (!resUrl.searchParams.get("alichlgref")) resUrl.searchParams.set("alichlgref", "https://user.3d66.com/");
+  if (!read3D66CadVerification(pageUrl) && !resUrl.searchParams.get("alichlgref")) {
+    resUrl.searchParams.set("alichlgref", "https://user.3d66.com/");
+  }
 
   const referrer = new URL(resUrl);
   referrer.searchParams.delete("alichlgref");
@@ -2248,8 +2256,12 @@ async function previewFromDownloadPopOnly(url, cookieValue, cookies) {
   return isWeakMetadata(enriched.metadata) ? null : enriched;
 }
 
-async function requestDownloadUrl(payload, cookieValue, origin) {
-  assert3D66DownloadFields(payload.get("ll_id"), payload.get("resUrl"));
+async function requestDownloadUrl(payload, cookieValue, origin, cadSource = "") {
+  if (cadSource) {
+    assertFreshCadSource(cadSource, cookieValue);
+    if (payload.get("resUrl") !== stripInternalUrlHash(cadSource)) throw cadVerificationError("cad_download_source_mismatch");
+    assert3D66DownloadFields(payload.get("ll_id"), cadSource);
+  } else assert3D66DownloadFields(payload.get("ll_id"), payload.get("resUrl"));
   const endpoint = process.env.THREED66_DOWNLOAD_ENDPOINT || DEFAULT_DOWNLOAD_ENDPOINT;
   const { controller, done } = withTimeout();
 
@@ -2460,6 +2472,69 @@ async function fetchHybridPreview(url, cookieValue, progressive) {
   }
 }
 
+function assertFreshCadSource(url, cookieValue) {
+  assert3D66CleanModelUrl(url);
+  if (!read3D66CadVerification(url, { cookieValue, configurationKey: get3D66VerificationConfigurationKey(), fresh: true })) {
+    throw cadVerificationError("cad_verification_expired_or_changed", 409);
+  }
+}
+
+function preparedCadMetadata(accountModel, popData = accountModel.cad.popData) {
+  const { document, metadata: browser } = accountModel.cad;
+  const fileFormat = /^(?:[1-9]\d*)$/.test(String(document.fileFormat || "")) ? String(document.fileFormat) : "";
+  const selector = browser.formatOptions || [];
+  let formatOptions = selector.length ? selector : formatOptionsFromAny(popData);
+  if (!formatOptions.length && fileFormat) {
+    formatOptions = uniqueFormatOptions([normalizeDownloadFormatOption({ fileFormat,
+      formatVersion: String(document.formatVersion || ""), label: String(document.suffix || "CAD") }, 0, true)]);
+  }
+  const fields = mergeDownloadPopFields({ llId: document.productId, fileFormat,
+    formatOptions, formatOptionsSource: "selector", selectedFormat: selectedOrDefaultFormat(formatOptions) }, popData);
+  const metadata = mergeDownloadPopMetadata({ ...browser, formatOptions, formatOptionsSource: "selector",
+    selectedFormat: selectedOrDefaultFormat(formatOptions), sourceUrl: accountModel.url }, popData, accountModel.url, fields);
+  metadata.priceKnown = true;
+  return { fields, metadata, formatOptions };
+}
+
+function cadPreview(accountModel, sourceUrl) {
+  const { metadata, formatOptions } = preparedCadMetadata(accountModel);
+  return { productId: accountModel.productId, title: metadata.title, imageUrl: metadata.imageUrl,
+    creditCost: metadata.creditCost, priceKnown: metadata.priceKnown, formatOptions,
+    selectedFormat: selectedOrDefaultFormat(formatOptions), sourceUrl, resolvedSourceUrl: accountModel.url,
+    preparationStatus: "ready", formatsChecked: true };
+}
+
+async function downloadVerifiedCad(accountModel, inputCookie, options) {
+  const cookieValue = accountModel.cookieValue || inputCookie;
+  assertFreshCadSource(accountModel.url, cookieValue);
+  const cookies = requireCookie(cookieValue);
+  const context = siteContext(accountModel.url, cookies);
+  const pop = await requestDownloadPop({ llId: accountModel.resolvedProductId }, cookieValue, context);
+  const info = pop?.resInfo;
+  if (!info || info.sof !== accountModel.resolvedProductId || Number(info.res_type) !== 8 || info.is_delete == null
+    || Number(info.is_delete) !== 0 || info.res_price == null || info.res_price === ""
+    || Number(info.res_price) !== Number(accountModel.cad.document.price)) {
+    throw cadVerificationError("cad_api_model_or_price_changed", 409);
+  }
+  let { fields, metadata } = preparedCadMetadata(accountModel, pop);
+  if (options.expectedCreditCost != null && Number(options.expectedCreditCost) !== Number(metadata.creditCost)) {
+    throw cadVerificationError("cad_price_changed", 409);
+  }
+  ({ fields, metadata } = applySelectedFormat(fields, metadata, options.downloadFormat));
+  validateDynamicFields(fields);
+  assert3D66DownloadFields(fields.llId, accountModel.url);
+  const urls = buildModelUrls(accountModel.url, fields);
+  applyFieldsToContext(context, fields);
+  const payload = buildDownloadPayload(fields, urls, cookies, context);
+  if (payload.get("site") !== "8") throw cadVerificationError("cad_download_type_mismatch");
+  // Only the API handles a confirmed CAD purchase; browser click/purchase fallback stays disabled.
+  const result = await requestDownloadUrl(payload, cookieValue, context.origin, accountModel.url);
+  return { fileUrl: result.fileUrl, productId: accountModel.productId, sourceUrl: options.sourceUrl,
+    resolvedSourceUrl: accountModel.url, title: metadata.title, imageUrl: metadata.imageUrl,
+    creditCost: result.creditCost || metadata.creditCost, priceKnown: true,
+    formatOptions: metadata.formatOptions || [], selectedFormat: metadata.selectedFormat || null };
+}
+
 export async function fetch3D66Preview(url, cookieValue, { includeFormatOptions = false, progressive = false } = {}) {
   if (process.env.THREED66_MOCK !== "false") {
     const digest = crypto.createHash("sha256").update(url).digest("hex").slice(0, 16);
@@ -2474,10 +2549,11 @@ export async function fetch3D66Preview(url, cookieValue, { includeFormatOptions 
     };
   }
 
-  if (modelResolveMode() === "hybrid") return fetchHybridPreview(url, cookieValue, progressive);
+  if (modelResolveMode() === "hybrid" && !is3D66CadModelUrl(url)) return fetchHybridPreview(url, cookieValue, progressive);
 
   const initialCookies = requireCookie(cookieValue);
   const accountModel = await resolveAccountModelUrl(url, cookieValue, initialCookies);
+  if (accountModel.cad) return cadPreview(accountModel, url);
   cookieValue = accountModel.cookieValue || cookieValue;
   const cookies = requireCookie(cookieValue);
   const normalized = normalizeModelUrl(accountModel.url);
@@ -2684,6 +2760,11 @@ export async function inspect3D66DownloadFormats(url, cookieValue) {
   const accountModel = await resolveAccountModelUrl(url, cookieValue, cookies, {
     stage: "download",
   });
+  if (accountModel.cad) {
+    const preview = cadPreview(accountModel, url);
+    return { metadata: preview, formatOptions: preview.formatOptions, sourceUrl: url,
+      resolvedSourceUrl: accountModel.url, pageUrl: accountModel.url };
+  }
   const normalized = normalizeModelUrl(accountModel.url);
   const inspection = await inspect3D66DownloadFormatsWithBrowserFallback(
     normalized.toString(),
@@ -2718,6 +2799,11 @@ export async function inspect3D66DownloadChoice(url, cookieValue) {
   const accountModel = await resolveAccountModelUrl(url, cookieValue, cookies, {
     stage: "download",
   });
+  if (accountModel.cad) {
+    const prepared = preparedCadMetadata(accountModel);
+    return { ...prepared, metadata: cadPreview(accountModel, url), hasFormatChoice: prepared.formatOptions.length > 1,
+      choiceValue: prepared.formatOptions.length > 1 ? 1 : 0 };
+  }
   const normalized = normalizeModelUrl(accountModel.url);
   const effectiveCookieValue = accountModel.cookieValue || cookieValue;
   const effectiveCookies = requireCookie(effectiveCookieValue);
@@ -2789,8 +2875,9 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   const initialCookies = requireCookie(cookieValue);
   const originalSourceUrl = options.sourceUrl || url;
   const accountModel = await resolveAccountModelUrl(url, cookieValue, initialCookies, {
-    stage: "download",
+    stage: "download", forceCadVerification: true,
   });
+  if (accountModel.cad) return downloadVerifiedCad(accountModel, cookieValue, { ...options, sourceUrl: originalSourceUrl });
   const normalized = normalizeModelUrl(accountModel.url);
   const logicalProductId =
     accountModel.productId || requestedProductIdFromUrl(normalized.toString());

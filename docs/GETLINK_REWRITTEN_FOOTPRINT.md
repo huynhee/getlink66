@@ -80,7 +80,9 @@ status and the account marker, not the rest of the upstream account profile.
    never match only a trailing substring.
    Purchase/download APIs are blocked while resolving a history card. The final
    signed URL is retained as supplied; signatures are never generated.
-5. Only the signed URL can enter preview, format selection or download APIs.
+5. Only a verified URL can enter preview, format selection or download APIs.
+   CAD alone can use the [unsigned CAD evidence and backend receipt](GETLINK_CAD_VERIFICATION.md)
+   instead of a source `sign`; other resource signatures remain mandatory.
    Original and resolved URLs remain available to the existing admin audit history.
 
 The lookup refreshes history a bounded number of times using the existing

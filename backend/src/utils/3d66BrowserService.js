@@ -5,6 +5,8 @@ import { install3D66VerificationGuard } from "./3d66VerificationGuard.js";
 import { create3D66BrowserSessionPool } from "./3d66BrowserSessionPool.js";
 import { create3D66BrowserProfileStore } from "./3d66BrowserProfileStore.js";
 import { missing3D66OriginAuthCookies } from "./3d66BrowserOriginCookies.js";
+import { is3D66CadModelUrl, read3D66CadVerification, cadCredentialDigest } from "./3d66CadProof.js";
+import { verify3D66CadPage, read3D66CadDocument, cadVerificationError } from "./3d66CadPage.js";
 import { create3D66CollectionResolver } from "./3d66CollectionResolver.js";
 import { create3D66RewrittenFootprintResolver, assert3D66RewrittenFootprintLink,
   assert3D66FootprintPageVerified, is3D66RewrittenFootprintError, get3D66VerificationPage,
@@ -513,6 +515,8 @@ async function installFastRoutes(context, onValidationError, rewrittenFootprintS
           { stage: "hybrid-preview", reason: "write_request_blocked" }, "THREED66_READ_ONLY_PREVIEW");
       }
       if (rewrittenFootprintSeed && /^\/api\/v1\/download\/(?:handle|pop)\/?$/.test(new URL(request.url()).pathname)) {
+        if (readOnly && is3D66CadModelUrl(rewrittenFootprintSeed.modelPage)
+          && new URL(request.url()).pathname.replace(/\/$/, "").endsWith("/pop")) return route.abort("blockedbyclient");
         assert3D66RewrittenFootprintLink(sourceUrl, rewrittenFootprintSeed);
       }
       assert3D66BrowserDownloadRequest({
@@ -1258,6 +1262,22 @@ export const resolve3D66ModelUrlFromCollection = create3D66CollectionResolver({
   withBrowserContext, navigate: goto3D66Page, serializeCookies, timeoutMs,
 });
 
+async function verifyOpenedCadPage(page, seed, context) {
+  const configurationKey = get3D66VerificationConfigurationKey();
+  const cookieValue = serializeCookies(await context.cookies());
+  const verified = await verify3D66CadPage({ page, context, expectedId: seed.productId, cookieValue, configurationKey });
+  const formatOptions = await read3D66InlineFormats(page);
+  const metadata = await page.evaluate(evaluateMetadata);
+  if (get3D66VerificationConfigurationKey() !== configurationKey || metadata.productId !== verified.productId
+    || JSON.stringify(await page.evaluate(read3D66CadDocument)) !== JSON.stringify(verified.document)
+    || cadCredentialDigest(serializeCookies(await context.cookies())) !== cadCredentialDigest(cookieValue)) {
+    throw cadVerificationError("cad_context_changed", 409);
+  }
+  return { url: verified.url, canonicalModelPage: verified.canonicalModelPage,
+    cad: { document: verified.document, popData: verified.popData,
+      metadata: { ...metadata, formatOptions, formatOptionsSource: "selector" } } };
+}
+
 export async function open3D66RewrittenFootprintCard(page, card, seed, context) {
   const anchor = page.locator(FOOTPRINT_MODEL_SELECTOR).nth(card.index);
   const href = await anchor.evaluate((element) => element.href);
@@ -1275,10 +1295,17 @@ export async function open3D66RewrittenFootprintCard(page, card, seed, context) 
       const parent = request.redirectedFrom?.();
       if (!allowed && parent && allowedNavigations.has(parent)) {
         try {
-          // Trust a new path only when the source redirects this exact request to a signed, exact-ID model.
-          assert3D66RewrittenFootprintLink(url.href, { ...seed, modelPage: url.origin + url.pathname });
-          canonicalModelPage = url.origin + url.pathname;
-          allowed = true;
+          if (is3D66CadModelUrl(seed.modelPage) && is3D66CadModelUrl(url) && !url.searchParams.has("sign")
+            && url.searchParams.getAll("sof").length === 1 && url.searchParams.get("sof") === seed.productId
+            && url.searchParams.getAll("id").length <= 1 && url.searchParams.getAll("id").every(id => id === seed.productId)) {
+            canonicalModelPage = url.origin + url.pathname;
+            allowed = true;
+          } else {
+            // Trust a new path only when the source redirects this exact request to a signed, exact-ID model.
+            assert3D66RewrittenFootprintLink(url.href, { ...seed, modelPage: url.origin + url.pathname });
+            canonicalModelPage = url.origin + url.pathname;
+            allowed = true;
+          }
         } catch { /* Unrelated or unsigned redirects stay blocked. */ }
       }
       if (!allowed) {
@@ -1305,9 +1332,12 @@ export async function open3D66RewrittenFootprintCard(page, card, seed, context) 
   context.on?.("request", trackRedirect);
   const signedModel = (url) => url.origin + url.pathname === canonicalModelPage
     && url.searchParams.get("sof")?.toUpperCase() === seed.productId && url.searchParams.has("sign");
+  const openedModel = url => signedModel(url) || (is3D66CadModelUrl(seed.modelPage) && is3D66CadModelUrl(url)
+    && url.origin + url.pathname === canonicalModelPage && !url.searchParams.has("sign")
+    && url.searchParams.getAll("sof").length === 1 && url.searchParams.get("sof") === seed.productId);
   const opening = Promise.any([
     page.waitForEvent("popup", { timeout: Math.min(timeoutMs(), 10000) }),
-    page.waitForURL(signedModel, { timeout: Math.min(timeoutMs(), 10000) }).then(() => page),
+    page.waitForURL(openedModel, { timeout: Math.min(timeoutMs(), 10000) }).then(() => page),
   ]).catch(() => null);
   try {
     // A real click also triggers the site's pointer handlers that append the signature.
@@ -1316,6 +1346,9 @@ export async function open3D66RewrittenFootprintCard(page, card, seed, context) 
     if (!opened) throw blockedError || new Error("The history item did not open a signed model.");
     await opened.waitForLoadState("domcontentloaded", { timeout: Math.min(timeoutMs(), 10000) });
     await assert3D66FootprintPageVerified(opened);
+    if (blockedError) throw blockedError;
+    if (is3D66CadModelUrl(seed.modelPage) && is3D66CadModelUrl(opened.url())
+      && !new URL(opened.url()).searchParams.has("sign")) return await verifyOpenedCadPage(opened, seed, context);
     await opened.waitForURL(signedModel, { timeout: Math.min(timeoutMs(), 10000), waitUntil: "domcontentloaded" });
     if (blockedError) throw blockedError;
     assert3D66RewrittenFootprintLink(opened.url(), { ...seed, modelPage: canonicalModelPage });
@@ -1391,6 +1424,11 @@ export async function resolve3D66HybridModelWithBrowser(url, cookieValue, { reso
 export async function resume3D66Verification(entry) {
   try {
     await assert3D66FootprintPageVerified(entry.page);
+    if (entry.seed.mode !== "direct" && is3D66CadModelUrl(entry.page.url())
+      && !new URL(entry.page.url()).searchParams.has("sign")
+      && new URL(entry.page.url()).searchParams.get("sof")?.slice(1) === entry.seed.productId.slice(1)) {
+      return await verifyOpenedCadPage(entry.page, entry.seed, entry.context);
+    }
     let result;
     if (entry.seed.mode === "direct") {
       assert3D66RewrittenFootprintLink(entry.page.url(), entry.seed);
@@ -1408,11 +1446,13 @@ export async function resume3D66Verification(entry) {
           page: entry.page, seed: entry.seed, navigate: goto3D66Page, timeout: timeoutMs(), refreshAttempts: 1,
           openHistoryLink: (page, card, seed) => open3D66RewrittenFootprintCard(page, card, seed, entry.context),
         });
-        const opened = entry.context.pages().find(page => page.url() === result.url);
+        const opened = entry.context.pages().find(page => page.url() === result.url
+          || (result.cad && stripInternalUrlHash(page.url()) === stripInternalUrlHash(result.url)));
         if (opened) entry.page = opened;
         else await goto3D66Page(entry.page, result.url);
       }
     }
+    if (result.cad && read3D66CadVerification(result.url)) return result;
     await entry.page.waitForLoadState("domcontentloaded", { timeout: 10000 });
     await assert3D66FootprintPageVerified(entry.page);
     assert3D66RewrittenFootprintLink(entry.page.url(), { ...entry.seed, modelPage: result.canonicalModelPage });
