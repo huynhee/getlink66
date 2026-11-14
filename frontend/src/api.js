@@ -55,6 +55,12 @@ async function readResponseData(response) {
 }
 
 function responseErrorMessage(response, data = {}) {
+  if (data.code === "ADMIN_MARKETPLACE_QUERY_TIMEOUT") {
+    let english = false;
+    try { english = typeof window !== "undefined" && window.localStorage.getItem("language") === "en"; } catch { /* Keep the fallback locale. */ }
+    return english ? "The catalog search took too long. Try a more specific name or model ID."
+      : "Tìm kiếm quá lâu. Hãy thử tên cụ thể hơn hoặc mã model.";
+  }
   if (["DOWNLOAD_PREPARATION_TIMEOUT", "DOWNLOAD_PREPARATION_UNAVAILABLE"].includes(data.code)) {
     let english = false;
     try { english = typeof window !== "undefined" && window.localStorage.getItem("language") === "en"; } catch { /* Keep the fallback locale. */ }

@@ -36,14 +36,14 @@ import {
   marketplaceReportStats,
 } from "./marketplaceReportController.js";
 import { scanMarketplaceDriveFolderBatch } from "../utils/marketplaceDriveReconcileService.js";
+import { isMemoryDb } from "../config/memoryStore.js";
+import { adminListingError, listAdminAssets } from "../utils/marketplaceAdminListing.js";
 import {
   MARKETPLACE_ADMIN_PREVIEW_LIMIT,
   marketplacePreviewRenamePlan,
   nextMarketplaceImageName,
   validateMarketplaceImageUpload,
 } from "../utils/marketplaceImageAdmin.js";
-
-const ADMIN_MODEL_PAGE_SIZE = 20;
 
 function adminAssetType(req) {
   return normalizeAssetType(req?.marketplaceAssetType || req?.query?.assetType || "model");
@@ -218,10 +218,13 @@ async function assertMarketplaceMigrationUnlocked(assetType = "model") {
 }
 
 export async function adminListMarketplaceModels(req, res, next) {
+  const abort = new AbortController();
+  const onClose = () => { if (!res.writableEnded) abort.abort(); };
+  res.once?.("close", onClose);
   try {
     const assetType = adminAssetType(req);
     const requestedPage = Number(req.query.page || 1);
-    const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const search = String(req.query.search || "").trim().slice(0, 120);
     const fileStatus = String(req.query.fileStatus || "all");
     const accessType = String(req.query.accessType || "all");
@@ -257,27 +260,24 @@ export async function adminListMarketplaceModels(req, res, next) {
         { driveFolderName: regex },
       ];
     }
-    const total = await MarketplaceModel.countDocuments(query);
-    const totalPages = Math.max(1, Math.ceil(total / ADMIN_MODEL_PAGE_SIZE));
-    const safePage = Math.min(page, totalPages);
-    const models = await MarketplaceModel.find(query)
-      .sort({ createdAt: -1 })
-      .skip((safePage - 1) * ADMIN_MODEL_PAGE_SIZE)
-      .limit(ADMIN_MODEL_PAGE_SIZE)
-      .select("-source.raw")
-      .lean();
+    const { models, pagination } = await listAdminAssets(MarketplaceModel, query, page, {
+      memory: isMemoryDb(), signal: abort.signal,
+    });
     const reportCounts = await marketplaceReportCountsForAssets(models);
+    abort.signal.throwIfAborted();
     res.json({
       assetType,
       deleted,
       models: models.map((model) => ({
-        ...model,
+        ...adminModel(model),
         openReportCount: Number(reportCounts.get(String(model._id)) || 0),
       })),
-      pagination: { page: safePage, pageSize: ADMIN_MODEL_PAGE_SIZE, total, totalPages },
+      pagination,
     });
   } catch (error) {
-    next(error);
+    if (!abort.signal.aborted) next(adminListingError(error));
+  } finally {
+    res.off?.("close", onClose);
   }
 }
 

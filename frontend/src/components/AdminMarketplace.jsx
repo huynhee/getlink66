@@ -752,6 +752,8 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
   const [reportReason, setReportReason] = useState("");
   const [reportNotes, setReportNotes] = useState({});
   const [reportLoadingId, setReportLoadingId] = useState("");
+  const modelRequestRef = useRef(null);
+  const summaryRequestRef = useRef(null);
 
   const currentSelectedModel = useMemo(() => {
     if (!selectedModel?._id) return null;
@@ -812,28 +814,53 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
     }));
   }
 
-  const loadModels = useCallback(async (nextPage = 1, deletionView = catalogView) => {
+  const loadSummary = useCallback(async () => {
+    summaryRequestRef.current?.abort();
+    const controller = new AbortController();
+    summaryRequestRef.current = controller;
+    try {
+      const [statsRes, syncRes] = await Promise.all([
+        api(isScene ? `${adminAssetBase}/stats` : "/api/admin/marketplace/stats", { signal: controller.signal }),
+        api(isScene ? `${adminAssetBase}/sync-state` : "/api/admin/marketplace/sync-state", { signal: controller.signal })
+          .catch(() => ({ config: null, state: null })),
+      ]);
+      if (controller.signal.aborted || summaryRequestRef.current !== controller) return;
+      setStats(statsRes.stats || null);
+      setSyncInfo(syncRes || null);
+      setSyncRootFolderId((current) => current || syncRes?.config?.rootFolderId || "");
+      setDriveImportForm((current) => ({
+        ...current,
+        rootFolderId: current.rootFolderId || syncRes?.config?.rootFolderId || "",
+        pageToken: syncRes?.state?.reconciliationPageToken || current.pageToken || "",
+        limit: String(syncRes?.state?.reconciliationBatchSize || current.limit || 100),
+      }));
+    } catch (err) {
+      if (!controller.signal.aborted) throw err;
+    } finally {
+      if (summaryRequestRef.current === controller) summaryRequestRef.current = null;
+    }
+  }, [adminAssetBase, isScene]);
+
+  const loadModels = useCallback(async (nextPage = 1, deletionView = catalogView, refreshSummary = true) => {
+    modelRequestRef.current?.abort();
+    const controller = new AbortController();
+    modelRequestRef.current = controller;
     const query = new URLSearchParams({ page: String(nextPage), fileStatus, accessType, published, metadataStatus, deleted: deletionView });
     if (search.trim()) query.set("search", search.trim());
     if (reportedOnly) query.set("reportedOnly", "true");
-    const [modelRes, statsRes, syncRes] = await Promise.all([
-      api(`${adminAssetBase}?${query.toString()}`),
-      api(isScene ? `${adminAssetBase}/stats` : "/api/admin/marketplace/stats"),
-      api(isScene ? `${adminAssetBase}/sync-state` : "/api/admin/marketplace/sync-state").catch(() => ({ config: null, state: null })),
-    ]);
-    setModels(modelRes.models || []);
-    setPagination(modelRes.pagination || { page: 1, totalPages: 1, total: 0 });
-    setStats(statsRes.stats || null);
-    setSyncInfo(syncRes || null);
-    setSyncRootFolderId((current) => current || syncRes?.config?.rootFolderId || "");
-    setDriveImportForm((current) => ({
-      ...current,
-      rootFolderId: current.rootFolderId || syncRes?.config?.rootFolderId || "",
-      pageToken: syncRes?.state?.reconciliationPageToken || current.pageToken || "",
-      limit: String(syncRes?.state?.reconciliationBatchSize || current.limit || 100),
-    }));
-    setSelectedModelIds((current) => current.filter((id) => (modelRes.models || []).some((model) => model._id === id)));
-  }, [accessType, adminAssetBase, catalogView, fileStatus, isScene, metadataStatus, published, reportedOnly, search]);
+    if (refreshSummary) loadSummary().catch((err) => setError(err.message));
+    try {
+      const modelRes = await api(`${adminAssetBase}?${query.toString()}`, { signal: controller.signal });
+      if (controller.signal.aborted || modelRequestRef.current !== controller) return;
+      setModels(modelRes.models || []);
+      setPagination(modelRes.pagination || { page: 1, totalPages: 1, total: 0 });
+      setSelectedModelIds((current) => current.filter((id) => (modelRes.models || []).some((model) => model._id === id)));
+    } catch (err) {
+      if (!controller.signal.aborted) throw err;
+    } finally {
+      if (modelRequestRef.current === controller) modelRequestRef.current = null;
+    }
+  }, [accessType, adminAssetBase, catalogView, fileStatus, loadSummary, metadataStatus, published, reportedOnly, search]);
 
   const loadReports = useCallback(async (nextPage = 1) => {
     const query = new URLSearchParams({
@@ -860,10 +887,18 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      loadModels(1).catch((err) => setError(err.message));
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [loadModels]);
+      loadModels(1, catalogView, false).catch((err) => setError(err.message));
+    }, 400);
+    return () => {
+      window.clearTimeout(timer);
+      modelRequestRef.current?.abort();
+    };
+  }, [catalogView, loadModels]);
+
+  useEffect(() => {
+    loadSummary().catch((err) => setError(err.message));
+    return () => summaryRequestRef.current?.abort();
+  }, [loadSummary]);
 
   useEffect(() => {
     loadTaxonomy().catch((err) => setError(err.message));
@@ -882,13 +917,15 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
     const reconciliationStatus = syncInfo?.state?.reconciliationStatus;
     if (!["queued", "running"].includes(reconciliationStatus)) return undefined;
     let disposed = false;
+    const controller = new AbortController();
+    let timer;
     const syncStateUrl = isScene ? `${adminAssetBase}/sync-state` : "/api/admin/marketplace/sync-state";
     const statsUrl = isScene ? `${adminAssetBase}/stats` : "/api/admin/marketplace/stats";
     const refreshProgress = async () => {
       try {
         const [syncRes, statsRes] = await Promise.all([
-          api(syncStateUrl),
-          api(statsUrl),
+          api(syncStateUrl, { signal: controller.signal }),
+          api(statsUrl, { signal: controller.signal }),
         ]);
         if (disposed) return;
         setSyncInfo(syncRes);
@@ -911,13 +948,15 @@ export default function AdminMarketplace({ language = "vi", assetType = "model" 
         }
       } catch (err) {
         if (!disposed) setError(err.message);
+      } finally {
+        if (!disposed) timer = window.setTimeout(refreshProgress, 2000);
       }
     };
-    const timer = window.setInterval(refreshProgress, 2000);
     refreshProgress();
     return () => {
       disposed = true;
-      window.clearInterval(timer);
+      controller.abort();
+      window.clearTimeout(timer);
     };
   }, [activeTab, adminAssetBase, isScene, l, loadModels, syncInfo?.state?.reconciliationStatus]);
 

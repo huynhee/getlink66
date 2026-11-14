@@ -200,6 +200,7 @@ marketplaceModelSchema.pre("validate", function normalizeTitleForSorting() {
 });
 
 marketplaceModelSchema.index({ assetType: 1, slug: 1 }, { unique: true });
+marketplaceModelSchema.index({ assetType: 1, createdAt: -1, _id: -1 }, { name: "admin_asset_created_page" });
 marketplaceModelSchema.index(
   { assetType: 1, "source.provider": 1, "source.assetId": 1 },
   { unique: true, partialFilterExpression: { "source.assetId": { $type: "string", $gt: "" } } },

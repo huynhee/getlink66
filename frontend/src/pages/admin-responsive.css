@@ -185,6 +185,10 @@
 }
 
 @media (max-width: 640px) {
+  .adminPage .inputRow > :is(input, select, textarea) {
+    flex: 0 1 auto;
+  }
+
   .adminPage :is(.getlinkAuditTable, .logTable, .referralTable, .adminUserTable, .topupAuditTable) .tableRow {
     grid-template-columns: minmax(0, 1fr);
   }

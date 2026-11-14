@@ -58,16 +58,29 @@ try {
   for (const [width, language, theme] of [[320, "vi", "light"], [390, "en", "dark"], [768, "vi", "dark"], [1440, "en", "light"]]) {
     const context = await browser.newContext({ viewport: { width, height: 850 }, isMobile: width < 768, hasTouch: width < 768 });
     const errors = [];
+    const summaryRequests = [];
+    const slowLists = [];
     await context.addInitScript(({ language, theme }) => {
       localStorage.setItem("language", language); localStorage.setItem("3dipl-theme", theme);
       globalThis.EventSource = class { addEventListener() {} removeEventListener() {} close() {} };
     }, { language, theme });
-    await context.route("**/api/**", (route) => {
+    await context.route("**/api/**", async (route) => {
       const request = route.request();
       assert.equal(request.method(), "GET", "Mobile layout tests must not mutate data");
-      const pathname = new URL(request.url()).pathname;
+      const url = new URL(request.url());
+      const pathname = url.pathname;
+      if (/\/marketplace\/(?:models\/|scenes\/)?(?:stats|sync-state)$/.test(pathname)) summaryRequests.push(pathname);
       let data = routes[pathname] || {};
-      if (/\/api\/admin\/marketplace\/(models|scenes)$/.test(pathname)) data = { models: [asset], scenes: [{ ...asset, assetType: "scene" }], assets: [asset], pagination, stats: {} };
+      if (/\/api\/admin\/marketplace\/(models|scenes)$/.test(pathname)) {
+        const search = url.searchParams.get("search");
+        if (search === "qa-slow") {
+          const finished = new Promise((resolve) => setTimeout(resolve, 1400));
+          slowLists.push(finished);
+          await finished;
+        }
+        const item = search?.startsWith("qa-") ? { ...asset, title: search === "qa-fast" ? "QA fast result" : "QA stale result" } : asset;
+        data = { models: [item], scenes: [{ ...item, assetType: "scene" }], assets: [item], pagination, stats: {} };
+      }
       return route.fulfill({ json: data });
     });
     await context.route("https://**", (route) => route.abort());
@@ -163,9 +176,32 @@ try {
     await primary.getByRole("button", { name: /^Getlink$/ }).click();
     const getlinkTabs = page.locator(".threed66SettingsTabs button");
     if (!await getlinkTabs.count()) console.log("Getlink tab selector unavailable");
-    for (const button of await getlinkTabs.all()) { await button.click(); await capture(`getlink-${await button.innerText()}`); }
+    for (const button of await getlinkTabs.all()) {
+      await button.click();
+      const label = page.locator(".cookieAccountLabel");
+      if (width <= 640 && await label.count()) {
+        const bounds = await label.boundingBox();
+        assert.ok(bounds && bounds.height <= 60, "Mobile cookie inputs must not inherit the horizontal flex basis as height");
+      }
+      await capture(`getlink-${await button.innerText()}`);
+    }
     for (const type of ["Model", "Scene"]) {
       await primary.getByRole("button", { name: type, exact: true }).click();
+      await page.locator(".marketAdminTabs button").nth(1).click();
+      const searchInput = page.getByPlaceholder(/Tìm tên, slug, ID|Search (model|scene) name/);
+      await page.locator(".marketAdminList").getByText(long, { exact: true }).first().waitFor();
+      const summariesBefore = summaryRequests.length;
+      const slowStarted = page.waitForRequest((request) => new URL(request.url()).searchParams.get("search") === "qa-slow");
+      await searchInput.fill("qa-slow");
+      await slowStarted;
+      await searchInput.fill("qa-fast");
+      await page.locator(".marketAdminList").getByText("QA fast result", { exact: true }).waitFor();
+      await Promise.all(slowLists);
+      await page.waitForTimeout(100);
+      assert.equal(await page.locator(".marketAdminList").getByText("QA stale result", { exact: true }).count(), 0, "Canceled searches must not replace the latest result");
+      assert.equal(summaryRequests.length, summariesBefore, "Typing must not rerun global statistics or Drive state queries");
+      await searchInput.fill("");
+      await page.locator(".marketAdminList").getByText(long, { exact: true }).first().waitFor();
       const tabs = page.locator(".marketAdminTabs button");
       for (let index = 0; index < await tabs.count(); index += 1) {
         await tabs.nth(index).click(); await capture(`${type}-${index}`);
