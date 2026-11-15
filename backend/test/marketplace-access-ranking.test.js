@@ -1,23 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  hasMarketplaceAccessFilter,
   marketplaceRankingMetadata,
-  shouldPrioritizeMarketplaceModelPro,
 } from "../src/utils/marketplaceAccessRanking.js";
 
-test("unfiltered Model discovery prioritizes Pro while keeping Free", () => {
-  assert.equal(shouldPrioritizeMarketplaceModelPro("model", ""), true);
+test("catalog discovery reports access-neutral ranking even for a legacy boost request", () => {
   assert.deepEqual(marketplaceRankingMetadata({ applied: true }), {
-    policy: "model_pro_first_v3",
-    proFirst: true,
-    bypassed: false,
+    policy: "access_neutral_v3",
+    proFirst: false,
+    bypassed: true,
+    reason: "access_neutral",
   });
 });
 
-test("explicit access filters and Scene discovery bypass the Model default", () => {
-  assert.equal(shouldPrioritizeMarketplaceModelPro("model", "free"), false);
-  assert.equal(shouldPrioritizeMarketplaceModelPro("model", "member"), false);
-  assert.equal(shouldPrioritizeMarketplaceModelPro("scene", ""), false);
-  assert.equal(marketplaceRankingMetadata({ applied: false, accessType: "free" }).reason, "access_filter");
-  assert.equal(marketplaceRankingMetadata({ applied: false }).reason, "asset_type");
+test("explicit access filters retain their metadata without enabling a ranking boost", () => {
+  for (const accessType of ["free", "pro", "member"]) {
+    assert.equal(hasMarketplaceAccessFilter(accessType), true);
+    assert.equal(marketplaceRankingMetadata({ accessType }).reason, "access_filter");
+    assert.equal(marketplaceRankingMetadata({ accessType }).proFirst, false);
+  }
+  assert.equal(hasMarketplaceAccessFilter(""), false);
+  assert.equal(marketplaceRankingMetadata().reason, "access_neutral");
 });

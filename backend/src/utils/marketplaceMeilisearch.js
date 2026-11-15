@@ -626,63 +626,9 @@ export async function searchMarketplaceMeili(options = {}) {
   const page = Math.max(1, Number(options.page || 1));
   const limit = Math.min(60, Math.max(1, Number(options.limit || 60)));
   const startedAt = performance.now();
-  const explicitAccess = options.accessType === "free" || options.accessType === "member";
-  let results = [];
-  let total = 0;
-  let processingTimeMs = 0;
-  if (options.prioritizePro && !explicitAccess) {
-    const globalOffset = (page - 1) * limit;
-    let mode = config().semanticEnabled && options.q ? "hybrid" : "lexical";
-    let [memberPage, freeCount] = await Promise.all([
-      rawSearch(options, "member", globalOffset, limit),
-      rawSearch(options, "free", 0, 0),
-    ]);
-    let memberTotal = totalHits(memberPage);
-    let freeTotal = totalHits(freeCount);
-    if (!memberTotal && !freeTotal && config().semanticEnabled && options.q) {
-      [memberPage, freeCount] = await Promise.all([
-        rawSearch(options, "member", 0, limit, 0.65),
-        rawSearch(options, "free", 0, 0, 0.65),
-      ]);
-      memberTotal = totalHits(memberPage);
-      freeTotal = totalHits(freeCount);
-      mode = "semantic_retry";
-    }
-    total = memberTotal + freeTotal;
-    const totalPages = Math.max(1, Math.ceil(total / limit));
-    const safePage = Math.min(page, totalPages);
-    const offset = (safePage - 1) * limit;
-    const memberTake = offset < memberTotal ? Math.min(limit, memberTotal - offset) : 0;
-    const freeOffset = Math.max(0, offset - memberTotal);
-    const freeTake = Math.min(limit - memberTake, Math.max(0, freeTotal - freeOffset));
-    const members = memberTake && safePage === page
-      ? memberPage
-      : (memberTake
-        ? await rawSearch(options, "member", offset, memberTake)
-        : { hits: [] });
-    const free = freeTake
-      ? await rawSearch(options, "free", freeOffset, freeTake)
-      : { hits: [] };
-    results = [
-      ...cards(members).slice(0, memberTake),
-      ...cards(free).slice(0, freeTake),
-    ];
-    processingTimeMs = Number(members.processingTimeMs || 0) + Number(free.processingTimeMs || 0);
-    return {
-      assets: results,
-      total,
-      totalPages,
-      safePage,
-      engine: "meilisearch_v3",
-      mode,
-      timingMs: Math.round((performance.now() - startedAt) * 10) / 10,
-      processingTimeMs,
-      correctedQuery: "",
-    };
-  }
   const access = options.accessType || "";
   let result = await rawSearch(options, access, (page - 1) * limit, limit);
-  total = totalHits(result);
+  let total = totalHits(result);
   let mode = config().semanticEnabled && options.q ? "hybrid" : "lexical";
   if (!total && config().semanticEnabled && options.q) {
     result = await rawSearch(options, access, 0, limit, 0.65);

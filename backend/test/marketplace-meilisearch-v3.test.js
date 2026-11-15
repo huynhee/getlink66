@@ -34,44 +34,65 @@ function hit(id, accessType, score = 0.9) {
   };
 }
 
-test("Meilisearch model results keep the complete Pro set before Free", async () => {
-  const previousFetch = globalThis.fetch;
+function mockRankedSearch(t, ranked) {
   const bodies = [];
-  globalThis.fetch = async (_url, options = {}) => {
+  t.mock.method(globalThis, "fetch", async (_url, options = {}) => {
     const body = JSON.parse(options.body || "{}");
     bodies.push(body);
-    const filter = Array.isArray(body.filter) ? body.filter.join(" ") : String(body.filter || "");
-    const isMember = filter.includes('accessType = "member"');
-    if (body.limit === 0) {
-      return new Response(JSON.stringify({ estimatedTotalHits: isMember ? 65 : 20, hits: [] }), { status: 200 });
-    }
-    const prefix = isMember ? "pro" : "free";
-    const accessType = isMember ? "member" : "free";
+    const filter = body.filter.join(" ");
+    const access = ["free", "member"].find(value => filter.includes(`accessType = "${value}"`));
+    const matching = access ? ranked.filter(item => item.card.accessType === access) : ranked;
     return new Response(JSON.stringify({
-      estimatedTotalHits: isMember ? 65 : 20,
+      estimatedTotalHits: matching.length,
       processingTimeMs: 4,
-      hits: Array.from({ length: body.limit }, (_, index) => hit(`${prefix}-${body.offset + index}`, accessType)),
+      hits: matching.slice(body.offset, body.offset + body.limit),
     }), { status: 200 });
-  };
+  });
+  return bodies;
+}
 
-  try {
-    const result = await searchMarketplaceMeili({
-      assetType: "model",
-      q: "ghe bamh",
-      page: 2,
-      limit: 60,
-      prioritizePro: true,
-      facets: {},
-      sort: "relevance",
-    });
-    assert.equal(result.total, 85);
-    assert.equal(result.assets.length, 25);
-    assert.deepEqual(result.assets.slice(0, 5).map((item) => item.accessType), Array(5).fill("member"));
-    assert.deepEqual(result.assets.slice(5).map((item) => item.accessType), Array(20).fill("free"));
-    assert.ok(bodies.every((body) => body.hybrid?.semanticRatio === 0.15));
-  } finally {
-    globalThis.fetch = previousFetch;
+test("Meilisearch keeps combined relevance across pages, ignoring the legacy Pro boost", async t => {
+  const ranked = Array.from({ length: 85 }, (_, index) => hit(`asset-${index}`, index % 4 ? "member" : "free", 1 - index / 100));
+  const bodies = mockRankedSearch(t, ranked);
+  const options = { assetType: "model", q: "ghe bamh", limit: 60, prioritizePro: true, facets: {}, sort: "relevance" };
+  const first = await searchMarketplaceMeili({ ...options, page: 1 });
+  const second = await searchMarketplaceMeili({ ...options, page: 2 });
+  assert.equal(first.total, 85);
+  assert.equal(first.assets[0].accessType, "free");
+  assert.equal(second.assets.length, 25);
+  assert.deepEqual([...first.assets, ...second.assets].map(item => item._id), ranked.map(item => item.card._id));
+  assert.equal(bodies.length, 2, "Each normal page uses one combined search request");
+  assert.ok(bodies.every(body => !body.filter.some(filter => filter.startsWith("accessType ="))));
+  assert.ok(bodies.every(body => body.hybrid?.semanticRatio === 0.15));
+});
+
+test("Meilisearch keeps explicit access filters and a shared last-page offset", async t => {
+  const ranked = [hit("free-exact", "free"), hit("pro-related", "member"), hit("free-other", "free")];
+  const bodies = mockRankedSearch(t, ranked);
+  for (const accessType of ["free", "member"]) {
+    const result = await searchMarketplaceMeili({ assetType: "model", q: "chair", accessType, limit: 60 });
+    assert.ok(result.assets.every(item => item.accessType === accessType));
+    assert.ok(bodies.at(-1).filter.includes(`accessType = "${accessType}"`));
   }
+  const last = await searchMarketplaceMeili({ assetType: "model", q: "chair", page: 999, limit: 2 });
+  assert.equal(last.safePage, 2);
+  assert.equal(last.total, 3);
+  assert.deepEqual(last.assets.map(item => item._id), ["free-other"]);
+  assert.equal(bodies.at(-1).offset, 2);
+});
+
+test("Meilisearch semantic retry searches the combined catalog without access bias", async t => {
+  const bodies = [];
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    const body = JSON.parse(options.body); bodies.push(body);
+    const hits = body.hybrid?.semanticRatio === 0.65 ? [hit("free-match", "free"), hit("pro-match", "member")] : [];
+    return Response.json({ estimatedTotalHits: hits.length, hits });
+  });
+  const result = await searchMarketplaceMeili({ assetType: "model", q: "sculptural vintage chair", limit: 10 });
+  assert.equal(result.mode, "semantic_retry");
+  assert.deepEqual(result.assets.map(item => item.accessType), ["free", "member"]);
+  assert.equal(bodies.length, 2);
+  assert.ok(bodies.every(body => !body.filter.some(filter => filter.startsWith("accessType ="))));
 });
 
 test("Meilisearch rollout bucket is stable and shadow only applies outside rollout", () => {

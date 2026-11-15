@@ -37,6 +37,7 @@ function catalogAsset(index, accessType = "member", assetType = "model", title =
     titleSort: resolvedTitle.toLowerCase(),
     slug: resolvedTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
     accessType,
+    sourceAssetIdSort: index,
     metadataStatus: "complete",
     fileStatus: "ready",
     isPublished: true,
@@ -55,7 +56,7 @@ async function list(query = {}, assetType = "model") {
   return capture.state.body;
 }
 
-test("unfiltered Model pages return Pro first and Free afterward", async () => {
+test("unfiltered Model pages rank Free and Pro together without duplicate or missing pagination", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
     ...Array.from({ length: 18 }, (_, index) => catalogAsset(index, "member")),
@@ -66,15 +67,15 @@ test("unfiltered Model pages return Pro first and Free afterward", async () => {
   const second = await list({ page: "2", limit: "10", sort: "popular" });
   const third = await list({ page: "3", limit: "10", sort: "popular" });
 
-  assert.ok(first.models.every((item) => item.accessType === "member"));
-  assert.deepEqual(second.models.map((item) => item.accessType), [
-    ...Array(8).fill("member"),
-    ...Array(2).fill("free"),
+  assert.ok(first.models.some((item) => item.accessType === "member"));
+  assert.ok(first.models.some((item) => item.accessType === "free"));
+  const all = [...first.models, ...second.models, ...third.models];
+  assert.deepEqual(all.map((item) => item.downloadCount), [
+    100, 100, 99, 99, 98, 98, 97, 97, ...Array.from({ length: 14 }, (_, index) => 96 - index),
   ]);
-  assert.ok(third.models.every((item) => item.accessType === "free"));
-  assert.equal(first.ranking.policy, "model_pro_first_v3");
-  assert.equal(first.ranking.proFirst, true);
-  assert.equal(first.ranking.bypassed, false);
+  assert.equal(first.ranking.policy, "access_neutral_v3");
+  assert.equal(first.ranking.proFirst, false);
+  assert.equal(first.ranking.bypassed, true);
   assert.equal(first.pagination.total, 22);
   assert.equal(
     new Set([...first.models, ...second.models, ...third.models].map((item) => item._id)).size,
@@ -82,7 +83,7 @@ test("unfiltered Model pages return Pro first and Free afterward", async () => {
   );
 });
 
-test("explicit Free and Pro filters bypass the access mix", async () => {
+test("explicit Free and Pro filters restrict the combined catalog", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
     ...Array.from({ length: 12 }, (_, index) => catalogAsset(index, "member")),
@@ -91,6 +92,7 @@ test("explicit Free and Pro filters bypass the access mix", async () => {
 
   const free = await list({ accessType: "free", limit: "60" });
   const pro = await list({ accessType: "member", limit: "60" });
+  const proAlias = await list({ accessType: "pro", limit: "60" });
 
   assert.equal(free.models.length, 5);
   assert.ok(free.models.every((item) => item.accessType === "free"));
@@ -98,9 +100,20 @@ test("explicit Free and Pro filters bypass the access mix", async () => {
   assert.equal(free.ranking.reason, "access_filter");
   assert.equal(pro.models.length, 12);
   assert.ok(pro.models.every((item) => item.accessType === "member"));
+  assert.deepEqual(proAlias.models.map(item => item._id), pro.models.map(item => item._id));
 });
 
-test("an exact Free title remains in results after matching Pro models", async () => {
+test("newest sorting mixes Free and Pro by source order", async () => {
+  await MarketplaceModel.deleteMany({});
+  await MarketplaceModel.insertMany([
+    catalogAsset(10, "free"), catalogAsset(20, "member"), catalogAsset(30, "free"),
+  ]);
+  const result = await list({ sort: "newest", limit: "10" });
+  assert.deepEqual(result.models.map(item => item.title), ["Free model 30", "Pro model 20", "Free model 10"]);
+  assert.deepEqual(result.models.map(item => item.accessType), ["free", "member", "free"]);
+});
+
+test("an exact Free title ranks ahead of less relevant Pro titles", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
     catalogAsset(1, "free", "model", "Ghe banh"),
@@ -111,8 +124,8 @@ test("an exact Free title remains in results after matching Pro models", async (
   const result = await list({ q: "ghế bành", sort: "relevance", limit: "10" });
 
   assert.equal(result.models.length, 3);
-  assert.deepEqual(result.models.map((item) => item.accessType), ["member", "member", "free"]);
-  assert.equal(result.models.at(-1).title, "Ghe banh");
+  assert.deepEqual(result.models.map((item) => item.accessType), ["free", "member", "member"]);
+  assert.equal(result.models[0].title, "Ghe banh");
   assert.equal(result.search.engine, "mongo_hybrid_v3");
 });
 
@@ -127,5 +140,33 @@ test("Scene discovery remains unchanged", async () => {
   assert.equal(result.scenes.length, 10);
   assert.ok(result.scenes.every((item) => item.accessType === "free"));
   assert.equal(result.ranking.bypassed, true);
-  assert.equal(result.ranking.reason, "asset_type");
+  assert.equal(result.ranking.reason, "access_neutral");
+});
+
+test("a Meilisearch outage retains access-neutral relevance in the Mongo fallback", async t => {
+  const settings = {
+    MARKETPLACE_SEARCH_ENGINE: "meilisearch", MEILISEARCH_URL: "http://meilisearch.test:7700",
+    MEILI_MASTER_KEY: "ranking-fixture-only", MARKETPLACE_MEILI_ROLLOUT_PERCENT: "100",
+    MARKETPLACE_SEARCH_SEMANTIC_ENABLED: "false",
+  };
+  const previous = Object.fromEntries(Object.keys(settings).map(key => [key, process.env[key]]));
+  Object.assign(process.env, settings);
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  let attempts = 0;
+  t.mock.method(globalThis, "fetch", async () => { attempts++; throw new Error("Fixture search unavailable"); });
+  await MarketplaceModel.deleteMany({});
+  await MarketplaceModel.insertMany([
+    catalogAsset(1, "free", "model", "Ghe banh"),
+    catalogAsset(2, "member", "model", "Ghe banh hien dai"),
+  ]);
+  const result = await list({ q: "ghe banh", limit: "10" });
+  assert.equal(attempts, 1);
+  assert.equal(result.search.engine, "mongo_hybrid_v3");
+  assert.deepEqual(result.models.map(item => item.accessType), ["free", "member"]);
+  assert.equal(result.ranking.proFirst, false);
 });
