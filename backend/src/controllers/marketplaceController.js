@@ -609,8 +609,20 @@ async function fuzzyMarketplacePage({
   };
 }
 
-async function marketplaceBrowseSlice({ query, sortSpec, offset, limit }) {
+async function marketplaceBrowseSlice({ query, sortSpec, offset, limit, prioritizePro = false }) {
   if (limit <= 0) return [];
+  if (prioritizePro) {
+    const memberQuery = { ...query, accessType: { $ne: "free" } };
+    const freeQuery = { ...query, accessType: "free" };
+    const memberTotal = await MarketplaceModel.countDocuments(memberQuery);
+    const memberTake = offset < memberTotal ? Math.min(limit, memberTotal - offset) : 0;
+    const freeTake = limit - memberTake;
+    const [members, free] = await Promise.all([
+      memberTake ? marketplaceBrowseSlice({ query: memberQuery, sortSpec, offset, limit: memberTake }) : [],
+      freeTake ? marketplaceBrowseSlice({ query: freeQuery, sortSpec, offset: Math.max(0, offset - memberTotal), limit: freeTake }) : [],
+    ]);
+    return [...members, ...free];
+  }
   return MarketplaceModel.find(query)
     .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
     .sort(sortSpec)
@@ -623,6 +635,7 @@ async function featuredMarketplaceBrowsePage({
   query,
   page,
   limit,
+  prioritizePro,
   userId,
   actorKey,
 }) {
@@ -662,7 +675,9 @@ async function featuredMarketplaceBrowsePage({
     })
       .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
       .lean();
-    const byId = new Map(matching.map((model) => [String(model._id), model]));
+    const byId = new Map(matching
+      .filter(model => !prioritizePro || model.accessType !== "free")
+      .map((model) => [String(model._id), model]));
     pinned = recommendedIds.map((id) => byId.get(String(id))).filter(Boolean);
   }
 
@@ -680,6 +695,7 @@ async function featuredMarketplaceBrowsePage({
     sortSpec: marketplaceSortSpec("featured"),
     offset: globalOffset,
     limit: remaining,
+    prioritizePro,
   });
   return {
     models: [...pinnedPage, ...globalModels],
@@ -698,6 +714,7 @@ async function bilingualMarketplacePage({
   sortSelection,
   page,
   limit,
+  prioritizePro = false,
   assetType = "model",
   userId = null,
   actorKey = "",
@@ -708,28 +725,20 @@ async function bilingualMarketplacePage({
         query,
         page,
         limit,
+        prioritizePro,
         userId,
         actorKey,
       });
     }
     const totalPromise = MarketplaceModel.countDocuments(query);
-    const requestedModelsPromise = MarketplaceModel.find(query)
-      .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
-      .sort(marketplaceSortSpec(sortSelection.effective))
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean();
+    const sortSpec = marketplaceSortSpec(sortSelection.effective);
+    const requestedModelsPromise = marketplaceBrowseSlice({ query, sortSpec, offset: (page - 1) * limit, limit, prioritizePro });
     const [total, requestedModels] = await Promise.all([totalPromise, requestedModelsPromise]);
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const safePage = Math.min(page, totalPages);
     const models = safePage === page
       ? requestedModels
-      : await MarketplaceModel.find(query)
-        .select(MARKETPLACE_PUBLIC_LIST_FIELDS)
-        .sort(marketplaceSortSpec(sortSelection.effective))
-        .skip((safePage - 1) * limit)
-        .limit(limit)
-        .lean();
+      : await marketplaceBrowseSlice({ query, sortSpec, offset: (safePage - 1) * limit, limit, prioritizePro });
     return { models, total, totalPages, safePage, engine: "catalog", mode: "browse", truncated: false };
   }
 
@@ -819,6 +828,7 @@ export async function listMarketplaceModels(req, res, next) {
       Boolean(search || searchInput.externalUrl),
     );
     const accessType = String(req.query.accessType || "").trim();
+    const ranking = marketplaceRankingMetadata({ assetType, accessType, search: searchInput.externalUrl ? "external-url" : search });
     if (searchInput.externalUrl) {
       const queryId = marketplaceSearchQueryId("external-url", {
         assetType,
@@ -840,7 +850,7 @@ export async function listMarketplaceModels(req, res, next) {
           correctedQuery: "",
         },
         sort: sortSelection,
-        ranking: marketplaceRankingMetadata({ accessType }),
+        ranking,
       });
     }
     const fileStatus = String(req.query.fileStatus || "").trim();
@@ -927,7 +937,7 @@ export async function listMarketplaceModels(req, res, next) {
               correctedQuery: meili.correctedQuery,
             },
             sort: sortSelection,
-            ranking: marketplaceRankingMetadata({ accessType }),
+            ranking,
           });
         }
       } catch {
@@ -943,6 +953,7 @@ export async function listMarketplaceModels(req, res, next) {
         sortSelection,
         page,
         limit,
+        prioritizePro: ranking.proFirst,
         assetType,
         userId: req.user?._id || null,
         actorKey: marketplaceActorKeyFromRequest(req),
@@ -989,7 +1000,7 @@ export async function listMarketplaceModels(req, res, next) {
         ...sortSelection,
         ...(sortSelection.effective === "featured" ? { mode } : {}),
       },
-      ranking: marketplaceRankingMetadata({ accessType }),
+      ranking,
     }, { private: personalizedFeatured });
   } catch (error) {
     const rawSearch = String(req.query.q || req.query.search || "").trim();
@@ -1017,7 +1028,7 @@ export async function listMarketplaceModels(req, res, next) {
           correctedQuery: "",
         },
         sort: sortSelection,
-        ranking: marketplaceRankingMetadata({ accessType }),
+        ranking: marketplaceRankingMetadata({ assetType, accessType, search: rawSearch }),
       });
     }
     next(error);
@@ -1233,7 +1244,7 @@ export async function searchMarketplaceByImage(req, res, next) {
       assets,
       ...(assetType === "scene" ? { scenes: assets } : { models: assets }),
       pagination: { page: 1, pageSize: limit, total: visibleModels.length, totalPages: 1 },
-      ranking: marketplaceRankingMetadata({ accessType }),
+      ranking: marketplaceRankingMetadata({ assetType, accessType, search: "image" }),
       imageSearch: {
         tier: tier === "member" ? "pro" : tier,
         limit: quota.limit,

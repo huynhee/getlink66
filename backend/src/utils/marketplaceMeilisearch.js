@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { normalizeAssetType } from "../data/marketplaceCatalogs.js";
 import { marketplaceCoverCachePublicUrl } from "./marketplaceCoverCache.js";
+import { shouldPrioritizeMarketplaceModelPro } from "./marketplaceAccessRanking.js";
 import {
   marketplaceCategorySnapshot,
   marketplaceFilterSnapshot,
@@ -626,6 +627,30 @@ export async function searchMarketplaceMeili(options = {}) {
   const page = Math.max(1, Number(options.page || 1));
   const limit = Math.min(60, Math.max(1, Number(options.limit || 60)));
   const startedAt = performance.now();
+  if (shouldPrioritizeMarketplaceModelPro({ ...options, search: options.q })) {
+    const [memberPage, freeCount] = await Promise.all([
+      rawSearch(options, "member", (page - 1) * limit, limit),
+      rawSearch(options, "free", 0, 0),
+    ]);
+    const memberTotal = totalHits(memberPage), freeTotal = totalHits(freeCount);
+    const total = memberTotal + freeTotal;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    const offset = (safePage - 1) * limit;
+    const memberTake = offset < memberTotal ? Math.min(limit, memberTotal - offset) : 0;
+    const freeOffset = Math.max(0, offset - memberTotal);
+    const freeTake = Math.min(limit - memberTake, Math.max(0, freeTotal - freeOffset));
+    const members = memberTake && safePage === page ? memberPage : (memberTake
+      ? await rawSearch(options, "member", offset, memberTake) : { hits: [] });
+    const free = freeTake ? await rawSearch(options, "free", freeOffset, freeTake) : { hits: [] };
+    return {
+      assets: [...cards(members).slice(0, memberTake), ...cards(free).slice(0, freeTake)],
+      total, totalPages, safePage, engine: "meilisearch_v3", mode: "lexical",
+      timingMs: Math.round((performance.now() - startedAt) * 10) / 10,
+      processingTimeMs: Number(members.processingTimeMs || 0) + Number(free.processingTimeMs || 0),
+      correctedQuery: "",
+    };
+  }
   const access = options.accessType || "";
   let result = await rawSearch(options, access, (page - 1) * limit, limit);
   let total = totalHits(result);

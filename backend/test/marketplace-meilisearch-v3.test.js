@@ -66,6 +66,37 @@ test("Meilisearch keeps combined relevance across pages, ignoring the legacy Pro
   assert.ok(bodies.every(body => body.hybrid?.semanticRatio === 0.15));
 });
 
+test("Meilisearch groups Pro before Free only for browsing, with continuous pagination", async t => {
+  const ranked = Array.from({ length: 85 }, (_, index) => hit(`asset-${index}`, index % 4 ? "member" : "free"));
+  const expected = [...ranked.filter(item => item.card.accessType === "member"), ...ranked.filter(item => item.card.accessType === "free")];
+  const bodies = mockRankedSearch(t, ranked);
+  const options = { assetType: "model", q: "  ", sort: "newest", limit: 60,
+    categoryKeys: ["chairs"], facets: { renderers: ["corona"] } };
+  const first = await searchMarketplaceMeili({ ...options, page: 1 });
+  const second = await searchMarketplaceMeili({ ...options, page: 2 });
+  const last = await searchMarketplaceMeili({ ...options, page: 999 });
+  assert.equal(first.total, 85);
+  assert.ok(first.assets.every(item => item.accessType === "member"));
+  assert.deepEqual([...first.assets, ...second.assets].map(item => item._id), expected.map(item => item.card._id));
+  assert.equal(last.safePage, 2);
+  assert.deepEqual(last.assets.map(item => item._id), second.assets.map(item => item._id));
+  assert.ok(bodies.every(body => body.hybrid === undefined));
+  assert.ok(bodies.every(body => body.sort[0] === "sourceAssetIdSort:desc"));
+  assert.ok(bodies.every(body => body.filter.includes('categoryKeys IN ["chairs"]') && body.filter.includes('renderers IN ["corona"]')));
+});
+
+test("Meilisearch browse priority does not affect explicit Free filters or Scenes", async t => {
+  const ranked = [hit("free-first", "free"), hit("pro-second", "member"), hit("free-last", "free")];
+  const bodies = mockRankedSearch(t, ranked);
+  const free = await searchMarketplaceMeili({ assetType: "model", accessType: "free", limit: 60 });
+  assert.deepEqual(free.assets.map(item => item._id), ["free-first", "free-last"]);
+  assert.equal(bodies.length, 1);
+  const scenes = await searchMarketplaceMeili({ assetType: "scene", limit: 60 });
+  assert.deepEqual(scenes.assets.map(item => item._id), ranked.map(item => item.card._id));
+  assert.equal(bodies.length, 2);
+  assert.ok(!bodies[1].filter.some(filter => filter.startsWith("accessType =")));
+});
+
 test("Meilisearch keeps explicit access filters and a shared last-page offset", async t => {
   const ranked = [hit("free-exact", "free"), hit("pro-related", "member"), hit("free-other", "free")];
   const bodies = mockRankedSearch(t, ranked);

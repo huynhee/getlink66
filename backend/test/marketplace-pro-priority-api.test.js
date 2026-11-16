@@ -56,7 +56,7 @@ async function list(query = {}, assetType = "model") {
   return capture.state.body;
 }
 
-test("unfiltered Model pages rank Free and Pro together without duplicate or missing pagination", async () => {
+test("Model browsing keeps all Pro before Free without duplicate or missing pagination", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
     ...Array.from({ length: 18 }, (_, index) => catalogAsset(index, "member")),
@@ -68,14 +68,15 @@ test("unfiltered Model pages rank Free and Pro together without duplicate or mis
   const third = await list({ page: "3", limit: "10", sort: "popular" });
 
   assert.ok(first.models.some((item) => item.accessType === "member"));
-  assert.ok(first.models.some((item) => item.accessType === "free"));
+  assert.ok(first.models.every((item) => item.accessType === "member"));
   const all = [...first.models, ...second.models, ...third.models];
+  assert.deepEqual(all.map((item) => item.accessType), [...Array(18).fill("member"), ...Array(4).fill("free")]);
   assert.deepEqual(all.map((item) => item.downloadCount), [
-    100, 100, 99, 99, 98, 98, 97, 97, ...Array.from({ length: 14 }, (_, index) => 96 - index),
+    ...Array.from({ length: 18 }, (_, index) => 100 - index), 100, 99, 98, 97,
   ]);
-  assert.equal(first.ranking.policy, "access_neutral_v3");
-  assert.equal(first.ranking.proFirst, false);
-  assert.equal(first.ranking.bypassed, true);
+  assert.equal(first.ranking.policy, "model_browse_pro_first_v3");
+  assert.equal(first.ranking.proFirst, true);
+  assert.equal(first.ranking.bypassed, false);
   assert.equal(first.pagination.total, 22);
   assert.equal(
     new Set([...first.models, ...second.models, ...third.models].map((item) => item._id)).size,
@@ -103,14 +104,46 @@ test("explicit Free and Pro filters restrict the combined catalog", async () => 
   assert.deepEqual(proAlias.models.map(item => item._id), pro.models.map(item => item._id));
 });
 
-test("newest sorting mixes Free and Pro by source order", async () => {
+test("newest browsing prioritizes Pro, while newest search mixes matching access types", async () => {
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
     catalogAsset(10, "free"), catalogAsset(20, "member"), catalogAsset(30, "free"),
   ]);
   const result = await list({ sort: "newest", limit: "10" });
-  assert.deepEqual(result.models.map(item => item.title), ["Free model 30", "Pro model 20", "Free model 10"]);
-  assert.deepEqual(result.models.map(item => item.accessType), ["free", "member", "free"]);
+  assert.deepEqual(result.models.map(item => item.title), ["Pro model 20", "Free model 30", "Free model 10"]);
+  assert.deepEqual(result.models.map(item => item.accessType), ["member", "free", "free"]);
+  const searched = await list({ q: "model", sort: "newest", limit: "10" });
+  assert.deepEqual(searched.models.map(item => item.title), ["Free model 30", "Pro model 20", "Free model 10"]);
+  assert.equal(searched.ranking.proFirst, false);
+});
+
+test("clearing a query restores browse priority and whitespace is not a search", async () => {
+  await MarketplaceModel.deleteMany({});
+  await MarketplaceModel.insertMany([
+    catalogAsset(1, "free", "model", "Ghe banh"),
+    catalogAsset(2, "member", "model", "Ghe banh hien dai"),
+  ]);
+  assert.equal((await list({ q: "ghe banh" })).models[0].accessType, "free");
+  for (const q of ["", "  "]) {
+    const result = await list({ q });
+    assert.equal(result.ranking.proFirst, true);
+    assert.equal(result.models[0].accessType, "member");
+  }
+  assert.equal((await list({ q: "ghe banh" })).models[0].accessType, "free");
+});
+
+test("featured browsing keeps Pro before Free across recommended and remaining pages", async () => {
+  await MarketplaceModel.deleteMany({});
+  await MarketplaceModel.insertMany([
+    ...Array.from({ length: 18 }, (_, index) => catalogAsset(index, "member")),
+    ...Array.from({ length: 4 }, (_, index) => ({ ...catalogAsset(index, "free"), downloadCount: 1000 - index })),
+  ]);
+  const pages = [];
+  for (let page = 1; page <= 3; page++) pages.push(await list({ sort: "featured", page: String(page), limit: "10" }));
+  const all = pages.flatMap(result => result.models);
+  assert.deepEqual(all.map(item => item.accessType), [...Array(18).fill("member"), ...Array(4).fill("free")]);
+  assert.equal(new Set(all.map(item => item._id)).size, 22);
+  assert.equal(pages[0].ranking.proFirst, true);
 });
 
 test("an exact Free title ranks ahead of less relevant Pro titles", async () => {
@@ -169,4 +202,7 @@ test("a Meilisearch outage retains access-neutral relevance in the Mongo fallbac
   assert.equal(result.search.engine, "mongo_hybrid_v3");
   assert.deepEqual(result.models.map(item => item.accessType), ["free", "member"]);
   assert.equal(result.ranking.proFirst, false);
+  const browsing = await list({ limit: "10" });
+  assert.deepEqual(browsing.models.map(item => item.accessType), ["member", "free"]);
+  assert.equal(browsing.ranking.proFirst, true);
 });

@@ -6,12 +6,13 @@ MongoDB VPS remains the catalog source of truth. Meilisearch is a rebuildable,
 read-only discovery index. Model and Scene use separate indexes, and no search
 operation writes metadata back to MongoDB or Google Drive.
 
-- `marketplace_models_v3`: Model card documents, Free and Pro ranked together by
-  relevance or the selected sort, without an access-type boost.
+- `marketplace_models_v3`: Model browsing without a keyword places Pro before
+  Free. Text search ranks Free and Pro together by relevance or the selected sort.
 - `marketplace_scenes_v3`: Scene card documents, normal relevance order.
 - MongoDB: bounded exact/prefix fallback when Meilisearch is unavailable.
-- Explicit Free/Pro filters restrict results without changing ranking. Both the
-  primary index and MongoDB fallback paginate a single combined result set.
+- Explicit Free/Pro filters restrict results without a ranking boost. Scene and
+  image search remain access-neutral. The primary index and MongoDB fallback use
+  the same browse/search distinction, including blank or cleared search input.
 - Recommendation cache: MongoDB VPS, rebuilt asynchronously per asset.
 
 The Meilisearch service is private to the Docker network. Do not publish port
