@@ -132,7 +132,25 @@ test("clearing a query restores browse priority and whitespace is not a search",
   assert.equal((await list({ q: "ghe banh" })).models[0].accessType, "free");
 });
 
-test("featured browsing keeps Pro before Free across recommended and remaining pages", async () => {
+test("featured browsing keeps Pro before Free and uses indexed ordering for remaining pages", async t => {
+  const find = MarketplaceModel.find.bind(MarketplaceModel);
+  const downloadSorts = [];
+  t.mock.method(MarketplaceModel, "find", (filter, ...args) => {
+    const request = find(filter, ...args);
+    if (filter.accessType === "member") {
+      const select = request.select.bind(request);
+      request.select = fields => {
+        const selected = select(fields);
+        const sort = selected.sort.bind(selected);
+        selected.sort = spec => {
+          if (spec.downloadCount) downloadSorts.push(spec);
+          return sort(spec);
+        };
+        return selected;
+      };
+    }
+    return request;
+  });
   await MarketplaceModel.deleteMany({});
   await MarketplaceModel.insertMany([
     ...Array.from({ length: 18 }, (_, index) => catalogAsset(index, "member")),
@@ -144,6 +162,8 @@ test("featured browsing keeps Pro before Free across recommended and remaining p
   assert.deepEqual(all.map(item => item.accessType), [...Array(18).fill("member"), ...Array(4).fill("free")]);
   assert.equal(new Set(all.map(item => item._id)).size, 22);
   assert.equal(pages[0].ranking.proFirst, true);
+  assert.ok(downloadSorts.length > 0);
+  assert.ok(downloadSorts.every(sort => JSON.stringify(sort) === JSON.stringify({ downloadCount: -1, createdAt: -1, _id: -1 })));
 });
 
 test("an exact Free title ranks ahead of less relevant Pro titles", async () => {

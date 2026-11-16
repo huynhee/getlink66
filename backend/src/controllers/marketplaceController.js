@@ -612,7 +612,7 @@ async function fuzzyMarketplacePage({
 async function marketplaceBrowseSlice({ query, sortSpec, offset, limit, prioritizePro = false }) {
   if (limit <= 0) return [];
   if (prioritizePro) {
-    const memberQuery = { ...query, accessType: { $ne: "free" } };
+    const memberQuery = { ...query, accessType: "member" };
     const freeQuery = { ...query, accessType: "free" };
     const memberTotal = await MarketplaceModel.countDocuments(memberQuery);
     const memberTake = offset < memberTotal ? Math.min(limit, memberTotal - offset) : 0;
@@ -692,7 +692,8 @@ async function featuredMarketplaceBrowsePage({
     : query;
   const globalModels = await marketplaceBrowseSlice({
     query: globalQuery,
-    sortSpec: marketplaceSortSpec("featured"),
+    // Match the access/download index; adding source-ID order forces a blocking sort.
+    sortSpec: { downloadCount: -1, createdAt: -1, _id: -1 },
     offset: globalOffset,
     limit: remaining,
     prioritizePro,
