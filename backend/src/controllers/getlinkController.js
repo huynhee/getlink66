@@ -432,6 +432,10 @@ function isModelResolutionDiagnostic(error) {
   return ["THREED66_REWRITTEN_FOOTPRINT_FAILED", "THREED66_CLEAN_LINK_REQUIRED"].includes(error.code);
 }
 
+const historyDiagnosticOutcomes = new Set([
+  "no_matching_card", "card_rejected_before_open", "card_open_failed", "final_link_rejected",
+]);
+
 function diagnosticSystemLogDetails(error, controllerStage) {
   const source = error?.details && typeof error.details === "object"
     ? error.details
@@ -460,6 +464,7 @@ function diagnosticSystemLogDetails(error, controllerStage) {
     for (const key of ["reason", "operation", "failure", "networkCode"]) {
       if (safeLabel(source[key])) details[key] = source[key];
     }
+    if (historyDiagnosticOutcomes.has(source.historyOutcome)) details.historyOutcome = source.historyOutcome;
     for (const key of ["legacyHistoryOtherPath", "legacyHistoryOtherId"]) {
       if (source[key] === true) details[key] = true;
     }
@@ -476,8 +481,8 @@ async function logGetlinkError(error, req, stage, productId) {
   if (typeof req.correlationId === "string" && /^[a-z0-9-]{1,64}$/i.test(req.correlationId)) {
     details.correlationId = req.correlationId;
   }
-  const labels = [details.reason, details.operation, details.failure, details.networkCode,
-    details.legacyHistoryOtherPath && "matching_id_other_path",
+  const labels = [details.reason, details.historyOutcome, details.operation, details.failure, details.networkCode,
+    details.legacyHistoryOtherPath && "candidate_id_other_path",
     details.legacyHistoryOtherId && "same_path_other_id"].filter(Boolean);
   // The existing Admin table displays message even when it has no dedicated diagnostics columns.
   const message = diagnostic

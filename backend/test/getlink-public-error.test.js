@@ -68,7 +68,8 @@ test("job serialization strips technical fields from old jobs without mutating s
 test("Getlink response protection covers direct errors and plugin routes, but preserves private diagnostics", async t => {
   const app = express();
   app.use(getlinkPublicErrors);
-  const payload = { ...privateFailure, correlationId: "public-error-fixture" };
+  const payload = { ...privateFailure, correlationId: "public-error-fixture",
+    details: { ...privateFailure.details, historyOutcome: "card_open_failed" } };
   for (const path of ["/api/getlink/preview", "/api/plugin/getlink/preview", "/api/getlink/download/fixture"]) {
     app.get(path, (_req, res) => res.status(403).json(payload));
   }

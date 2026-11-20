@@ -248,21 +248,30 @@ export async function resolveRewrittenFootprintHistory({ page, seed, navigate, o
       await assert3D66FootprintPageVerified(page);
       return page.locator(FOOTPRINT_MODEL_SELECTOR).evaluateAll((anchors) => anchors.slice(0, 500).map((anchor) => anchor.href));
     });
-    const selected = selectRewrittenFootprintCard(links, seed, observed);
-    if (selected) {
+    let historyOutcome = "card_rejected_before_open";
+    try {
+      const selected = selectRewrittenFootprintCard(links, seed, observed);
+      if (!selected) continue;
       const boundSeed = { ...seed, productId: selected.productId, modelPage: selected.canonicalModelPage,
         ...(seed.legacyIds ? { legacyIds: [selected.productId] } : {}) };
+      historyOutcome = "card_open_failed";
       const opened = new URL(selected.url).searchParams.has("sign") ? selected.url
         : openHistoryLink ? await historyOperation("history_card_open", () => openHistoryLink(page, selected, boundSeed)) : "";
+      historyOutcome = "final_link_rejected";
       const url = typeof opened === "string" ? opened : opened.url;
       const canonicalModelPage = typeof opened === "string" ? boundSeed.modelPage : opened.canonicalModelPage;
       assert3D66RewrittenFootprintLink(url, { ...boundSeed, modelPage: canonicalModelPage });
       return { url, productId: selected.productId, usedFootprint: true, canonicalModelPage,
         ...(typeof opened === "object" && opened.cad ? { cad: opened.cad } : {}) };
+    } catch (error) {
+      if (is3D66RewrittenFootprintError(error) || error?.code === "THREED66_CLEAN_LINK_REQUIRED") {
+        error.details = { ...error.details, historyOutcome };
+      }
+      throw error;
     }
   }
   throw resolutionError("signed_model_not_found_in_history", 422, {
-    operation: "history_match", footprintRefreshAttempts: attempts, ...observed,
+    operation: "history_match", historyOutcome: "no_matching_card", footprintRefreshAttempts: attempts, ...observed,
   });
 }
 

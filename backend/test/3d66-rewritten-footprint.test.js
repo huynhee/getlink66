@@ -109,10 +109,13 @@ test("six-digit sender IDs keep the full asset suffix and require the original m
   assert.equal((await resolveRewrittenFootprintPage({ ...state, seed: legacySeed })).url, resolved);
   assert.deepEqual(state.actions, [input, historyUrl]);
   assert.equal(selectRewrittenFootprintCard([wrongPath, input], legacySeed), null);
+  const unsignedOtherPath = resolved.replace("FixtureCaseSensitive", "otherHistoryPath").replace("sign=fresh-fixture", "st=2");
   await assert.rejects(resolveRewrittenFootprintPage({
-    ...fixture({ links: [wrongPath, input] }), seed: legacySeed, refreshAttempts: 1,
+    ...fixture({ links: [wrongPath, unsignedOtherPath, input] }), seed: legacySeed, refreshAttempts: 1,
+    openHistoryLink: async () => assert.fail("A different path must not be opened"),
   }), error => error.status === 422 && error.details.reason === "signed_model_not_found_in_history"
     && error.details.operation === "history_match" && error.details.footprintRefreshAttempts === 1
+    && error.details.historyOutcome === "no_matching_card"
     && error.details.legacyHistoryOtherPath === true && error.details.legacyHistoryOtherId === true
     && !JSON.stringify(error.details).includes(base));
   assert.throws(() => selectRewrittenFootprintCard([alternate, resolved], legacySeed),
@@ -141,6 +144,20 @@ test("unsigned cards can be opened, but malformed signatures and conflicting IDs
     assert.throws(() => selectRewrittenFootprintCard([value], seed), undefined, value);
   }
   assert.throws(() => selectRewrittenFootprintCard([clean.replace("https:", "http:")], seed));
+});
+
+test("history diagnostics distinguish a rejected card, an open failure and a rejected final link", async () => {
+  const run = (links, openHistoryLink) => resolveRewrittenFootprintPage({
+    ...fixture({ links }), seed, openHistoryLink, refreshAttempts: 1,
+  });
+  await assert.rejects(run([`${clean}&sign=duplicate`], async () => assert.fail("Card must not open")),
+    error => error.details.historyOutcome === "card_rejected_before_open"
+      && error.details.reason === "missing_or_duplicate_signature");
+  await assert.rejects(run([seed.url], async () => { throw new Error(`Timeout opening ${clean}`); }),
+    error => error.details.historyOutcome === "card_open_failed" && error.details.operation === "history_card_open"
+      && !JSON.stringify(error).includes("fresh-fixture"));
+  await assert.rejects(run([seed.url], async () => seed.url),
+    error => error.details.historyOutcome === "final_link_rejected" && error.details.reason === "missing_or_duplicate_signature");
 });
 
 test("an empty seed page can be followed by a signed history URL without opening or purchasing the seed", async () => {
@@ -320,7 +337,8 @@ test("history diagnostics identify the failing step without leaking URLs, cookie
     });
     await assert.rejects(resolver(source, "private-cookie"), error => {
       assert.deepEqual(error.details, { stage: "rewritten-footprint", reason: "history_operation_interrupted",
-        operation, failure: "network", networkCode: "ERR_CONNECTION_RESET" });
+        operation, failure: "network", networkCode: "ERR_CONNECTION_RESET",
+        ...(operation === "history_card_open" ? { historyOutcome: "card_open_failed" } : {}) });
       assert.equal(error.cause, undefined);
       assert.doesNotMatch(JSON.stringify({ message: error.message, ...error }), /private-/);
       return true;

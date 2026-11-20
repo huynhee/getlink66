@@ -119,6 +119,7 @@ test("Getlink resolution failures retain model and bounded admin diagnostics wit
     code: "THREED66_REWRITTEN_FOOTPRINT_FAILED",
     details: {
       stage: "rewritten-footprint", reason: "signed_model_not_found_in_history", operation: "history_match",
+      historyOutcome: "no_matching_card",
       legacyHistoryOtherPath: true, footprintRefreshAttempts: 4, networkCode: "https://fixture.test/private",
       cookie: "private-cookie", signedUrl: sourceUrl, expectedProductIds: ["https://fixture.test/private", productId],
     },
@@ -128,13 +129,27 @@ test("Getlink resolution failures retain model and bounded admin diagnostics wit
   assert.equal(log.productId, productId);
   assert.equal(log.status, 422);
   assert.equal(log.level, "warn");
-  assert.match(log.message, /signed_model_not_found_in_history.*matching_id_other_path/);
+  assert.match(log.message, /signed_model_not_found_in_history.*no_matching_card.*candidate_id_other_path/);
   assert.deepEqual(log.details, {
     stage: "preview", upstreamStage: "rewritten-footprint", code: "THREED66_REWRITTEN_FOOTPRINT_FAILED",
     reason: "signed_model_not_found_in_history", operation: "history_match", legacyHistoryOtherPath: true,
+    historyOutcome: "no_matching_card",
     footprintRefreshAttempts: 4, correlationId, expectedProductIds: [productId],
   });
   assert.doesNotMatch(JSON.stringify(log), /private-|https:\/\//);
+  await assertUncharged();
+});
+
+test("Getlink admin diagnostics do not store arbitrary history outcome strings", async () => {
+  upstream.error = Object.assign(new Error("Fixture validation error"), {
+    status: 422,
+    code: "THREED66_CLEAN_LINK_REQUIRED",
+    details: { reason: "missing_or_duplicate_signature", historyOutcome: "private-sign" },
+  });
+  await assert.rejects(invoke(previewGetlink, request({ url: sourceUrl })), error => error === upstream.error);
+  const log = await SystemLog.findOne({ type: "getlink" }).lean();
+  assert.equal(log.details.historyOutcome, undefined);
+  assert.doesNotMatch(log.message, /private-sign/);
   await assertUncharged();
 });
 
