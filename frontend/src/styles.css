@@ -7570,7 +7570,7 @@ label {
 
 .dashboardHistoryGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   gap: var(--space-16);
   margin-top: var(--space-16);
 }
@@ -7614,6 +7614,59 @@ label {
 
 .historyPanelHeader h2 {
   margin: 0;
+}
+
+.historyModelCell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.getlinkHistoryThumbnail {
+  display: grid;
+  place-items: center;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--surface-raised);
+}
+
+.getlinkHistoryThumbnail img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.getlinkHistoryThumbnail:focus-visible {
+  outline: 2px solid var(--neon-green);
+  outline-offset: 2px;
+}
+
+.getlinkHistoryThumbnailEmpty {
+  color: var(--text-muted);
+}
+
+.historyModelDetails {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.historyModelDetails strong,
+.historyModelDetails small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyModelDetails small {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .historyHeaderActions {
@@ -7715,8 +7768,26 @@ label {
 
 .timelineEventMain {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
+}
+
+.timelineEventCard.getlink {
+  grid-template-columns: 64px minmax(0, 1fr) minmax(150px, auto);
+}
+
+.timelineEventIcon.timelineEventPreview {
+  width: 64px;
+  height: 64px;
+  border: 0;
+  background: transparent;
+  clip-path: none;
+}
+
+.timelineEventPreview .getlinkHistoryThumbnail {
+  width: 100%;
+  height: 100%;
 }
 
 .timelineEventTitle {
@@ -7728,6 +7799,7 @@ label {
 
 .timelineEventTitle strong {
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   color: var(--text-primary);
   text-overflow: ellipsis;
@@ -12589,6 +12661,15 @@ html[data-theme="dark"] .inviteSectionTag {
 
   .timelineEventCard {
     grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .timelineEventCard.getlink {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .timelineEventIcon.timelineEventPreview {
+    width: 56px;
+    height: 56px;
   }
 
   .timelineEventIcon {

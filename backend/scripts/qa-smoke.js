@@ -13,6 +13,7 @@ import { verify3D66SketchUp } from "./qa-3d66-sketchup.js";
 import { verify3D66UnsignedCad } from "./qa-3d66-cad.js";
 import { verifyCompactNavbar } from "./qa-navbar.js";
 import { verifyModelLogin } from "./qa-model-login.js";
+import { verifyGetlinkHistoryPreviews } from "./qa-getlink-history-previews.js";
 
 const backendPort = Number(process.env.QA_BACKEND_PORT || 5511);
 const frontendPort = Number(process.env.QA_FRONTEND_PORT || 5512);
@@ -1469,6 +1470,7 @@ async function main() {
       await verifySubscriptionCatalog(page, context, viewport.name);
       await verifyPaymentProviderRouting(page, context, viewport.name);
       await verifyGetlinkAuditLinks(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
+      await verifyGetlinkHistoryPreviews(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
       await verifyGetlinkFormats(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
       await verifyBilingualGuides(page, context, { origin: frontendOrigin, screenshotRoot, viewport: viewport.name });
       await context.close();

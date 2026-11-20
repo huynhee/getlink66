@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import CoinAmount, { CoinIcon } from "../components/CoinAmount.jsx";
 import GetlinkBox from "../components/GetlinkBox.jsx";
 import RedownloadFormatModal from "../components/RedownloadFormatModal.jsx";
+import GetlinkHistoryThumbnail from "../components/GetlinkHistoryThumbnail.jsx";
 import { FileDown, Download, LifeBuoy, Lock, ArrowRightLeft } from "lucide-react";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
@@ -160,7 +161,13 @@ export default function Home({ user, language = "vi" }) {
           <div className="table compactHistoryTable">
             {getlinkHistory.map((item) => (
               <div className="tableRow" key={item._id}>
-                <span style={{ color: "var(--text-primary)" }}>{item.productId}</span>
+                <div className="historyModelCell">
+                  <GetlinkHistoryThumbnail imageUrl={item.imageUrl} title={item.title || item.productId} language={language} />
+                  <div className="historyModelDetails">
+                    <strong title={item.title || item.productId}>{item.title || item.productId}</strong>
+                    {item.title && <small title={item.productId}>{item.productId}</small>}
+                  </div>
+                </div>
                 <div className="historyDownloadCell">
                   {item.canRedownload ? (
                     <a

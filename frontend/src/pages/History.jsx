@@ -15,6 +15,7 @@ import {
 import CoinAmount from "../components/CoinAmount.jsx";
 import Pagination from "../components/Pagination.jsx";
 import RedownloadFormatModal from "../components/RedownloadFormatModal.jsx";
+import GetlinkHistoryThumbnail from "../components/GetlinkHistoryThumbnail.jsx";
 import { api, buildApiUrl } from "../api.js";
 import { translations } from "../i18n.js";
 import { closeDownloadWindow, openDownloadWindow, triggerBrowserDownload } from "../utils/downloadWindow.js";
@@ -392,8 +393,10 @@ export default function History({ language = "vi" }) {
           const metadata = event.metadata || {};
           return (
             <article className={`timelineEventCard ${event.type}`} key={event.id}>
-              <div className="timelineEventIcon">
-                <Icon size={18} />
+              <div className={`timelineEventIcon${event.type === "getlink" ? " timelineEventPreview" : ""}`}>
+                {event.type === "getlink"
+                  ? <GetlinkHistoryThumbnail imageUrl={metadata.previewImageUrl} title={event.title || metadata.productId} language={language} />
+                  : <Icon size={18} />}
               </div>
               <div className="timelineEventMain">
                 <div className="timelineEventTitle">

@@ -42,6 +42,31 @@ test("timeline reports exact totals beyond the first page and hides upstream URL
   assert.equal("sourceUrl" in getlink.metadata, false);
   assert.equal("resolvedSourceUrl" in getlink.metadata, false);
   assert.equal("imageUrl" in getlink.metadata, false);
+  assert.equal(getlink.metadata.previewImageUrl, "/api/getlink/preview-cache/MODEL123456");
+  assert.equal(JSON.stringify(getlink).includes("https://respic.3d66.com/private.jpg"), false);
+});
+
+test("expired Getlink previews remain visible without exposing another account's history", async () => {
+  const user = await User.create({ email: "preview-owner@example.test", name: "Preview owner" });
+  const other = await User.create({ email: "preview-other@example.test", name: "Other owner" });
+  const expired = await Getlink.create({
+    userId: user._id,
+    productId: "AJI896357714859465",
+    imageUrl: "https://respic.3d66.com/expired-private.jpg",
+    fileUrl: "https://storage.example.test/private-file.zip?token=secret",
+    sourceUrl: "https://3d.3d66.com/private?sign=secret",
+    createdAt: new Date("2020-01-01T00:00:00Z"),
+  });
+  await Getlink.findByIdAndUpdate(expired._id, { $set: { createdAt: new Date("2020-01-01T00:00:00Z") } });
+  await Getlink.create({ userId: other._id, productId: "OTHER123456", imageUrl: "https://respic.3d66.com/other-private.jpg" });
+
+  for (const type of ["all", "getlink", "credit"]) {
+    const timeline = await buildUserTimeline({ userId: user._id, type });
+    assert.equal(timeline.events.length, 1);
+    assert.equal(timeline.events[0].metadata.canRedownload, false);
+    assert.equal(timeline.events[0].metadata.previewImageUrl, "/api/getlink/preview-cache/AJI896357714859465");
+    assert.doesNotMatch(JSON.stringify(timeline), /respic\.3d66|token=secret|sign=secret|OTHER123456/);
+  }
 });
 
 test("approved Pro vouchers appear in the voucher timeline", async () => {
@@ -147,6 +172,7 @@ test("credit timeline combines incoming credit and Getlink spending with the mod
   assert.equal(ledger.events[0].title, "Phone repair shop scene");
   assert.equal(ledger.events[0].amount, -28);
   assert.equal(ledger.events[0].metadata.productId, "CGI157990814327246");
+  assert.equal(ledger.events[0].metadata.previewImageUrl, "");
   assert.equal(ledger.events[1].amount, 28);
 });
 

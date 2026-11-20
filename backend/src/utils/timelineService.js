@@ -129,6 +129,9 @@ function mapGetlink(item) {
     {
       historyId: item._id,
       productId: item.productId || "",
+      previewImageUrl: item.imageUrl && item.productId
+        ? `/api/getlink/preview-cache/${encodeURIComponent(item.productId)}`
+        : "",
       creditUsed: Number(item.creditUsed || 0),
       downloadFormat: item.downloadFormat || null,
       canRedownload: canRedownload(item),
