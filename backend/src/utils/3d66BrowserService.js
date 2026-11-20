@@ -12,7 +12,7 @@ import { create3D66RewrittenFootprintResolver, assert3D66RewrittenFootprintLink,
   assert3D66FootprintPageVerified, is3D66RewrittenFootprintError, get3D66VerificationPage,
   resolveRewrittenFootprintHistory, resolveRewrittenFootprintPage, is3D66FootprintModelPage,
   FOOTPRINT_MODEL_SELECTOR } from "./3d66RewrittenFootprintResolver.js";
-import { validate3D66HybridInput } from "./3d66HybridResolver.js";
+import { validate3D66HybridInput, validate3D66HybridLink } from "./3d66HybridResolver.js";
 import {
   assert3D66BrowserDownloadRequest, assert3D66CleanModelUrl, assert3D66DownloadFields,
   is3D66CleanLinkError, modelIdsShareAssetIdentity, required3D66AccountMarker,
@@ -1372,7 +1372,8 @@ export async function resolve3D66HybridModelWithBrowser(url, cookieValue, { reso
   const sourceSeed = validate3D66HybridInput(url);
   const seed = { ...sourceSeed, mode: "hybrid", hybridSourceUrl: url };
   if (resolvedLink) {
-    seed.productId = assert3D66CleanModelUrl(resolvedLink.url, { expectedProductId: sourceSeed.sourceProductId });
+    seed.productId = validate3D66HybridLink(resolvedLink.url, sourceSeed);
+    if (seed.legacyIds) seed.legacyIds = [seed.productId];
     const parsed = new URL(resolvedLink.url);
     seed.modelPage = parsed.origin + parsed.pathname;
   }
@@ -1382,7 +1383,11 @@ export async function resolve3D66HybridModelWithBrowser(url, cookieValue, { reso
     if (resolvedLink || reuseVerifiedPage) {
       if (!reuseVerifiedPage) await goto3D66Page(page, resolvedLink.url);
       await assert3D66FootprintPageVerified(page);
-      assert3D66CleanModelUrl(page.url(), { expectedProductId: sourceSeed.sourceProductId });
+      const verifiedId = validate3D66HybridLink(page.url(), seed);
+      if (seed.legacyIds) {
+        seed.productId = verifiedId;
+        seed.legacyIds = [verifiedId];
+      }
       const parsed = new URL(page.url());
       seed.modelPage = parsed.origin + parsed.pathname;
       assert3D66RewrittenFootprintLink(page.url(), seed);
@@ -1397,7 +1402,8 @@ export async function resolve3D66HybridModelWithBrowser(url, cookieValue, { reso
     seed.modelPage = result.canonicalModelPage;
     const opened = context.pages().find(target => target.url() === result.url) || page;
     if (opened.url() !== result.url) await goto3D66Page(opened, result.url);
-    const bound = { ...seed, modelPage: result.canonicalModelPage };
+    const bound = { ...seed, productId: result.productId, modelPage: result.canonicalModelPage,
+      ...(seed.legacyIds ? { legacyIds: [result.productId] } : {}) };
     await assert3D66FootprintPageVerified(opened);
     assert3D66RewrittenFootprintLink(opened.url(), bound);
     const formatsAt = Date.now();
@@ -1455,11 +1461,13 @@ export async function resume3D66Verification(entry) {
     if (result.cad && read3D66CadVerification(result.url)) return result;
     await entry.page.waitForLoadState("domcontentloaded", { timeout: 10000 });
     await assert3D66FootprintPageVerified(entry.page);
-    assert3D66RewrittenFootprintLink(entry.page.url(), { ...entry.seed, modelPage: result.canonicalModelPage });
+    const bound = { ...entry.seed, modelPage: result.canonicalModelPage,
+      ...(entry.seed.legacyIds ? { legacyIds: [result.productId] } : {}) };
+    assert3D66RewrittenFootprintLink(entry.page.url(), bound);
     // A signature alone is not proof that the model actually loaded after human verification.
     await entry.page.locator("h1.model-name, #detail_data").first().waitFor({ state: "attached", timeout: 10000 });
     await assert3D66FootprintPageVerified(entry.page);
-    assert3D66RewrittenFootprintLink(entry.page.url(), { ...entry.seed, modelPage: result.canonicalModelPage });
+    assert3D66RewrittenFootprintLink(entry.page.url(), bound);
     return { ...result, url: entry.page.url() };
   } catch (error) {
     const blocked = get3D66VerificationPage(error);

@@ -32,7 +32,7 @@ import logger, { securityEvent } from "../utils/logger.js";
 import { writeSystemLog } from "../utils/systemLog.js";
 import { streamGetlinkFile } from "../utils/getlinkDownloadTransfer.js";
 import { downloadTransferLimiter } from "../utils/downloadTransfer.js";
-import { assert3D66StoredDownload, is3D66CleanLinkError } from "../utils/3d66CleanLink.js";
+import { assert3D66StoredDownload, is3D66CleanLinkError, legacy3D66SourceCandidateIds } from "../utils/3d66CleanLink.js";
 import { is3D66CadModelUrl } from "../utils/3d66CadProof.js";
 import { validate3D66HybridInput } from "../utils/3d66HybridResolver.js";
 
@@ -1111,8 +1111,11 @@ export async function resolveProductCache(productId, url, downloadFormat = null,
           return cached;
         }
 
+        const expectedResolvedSourceUrl = cached?.resolvedSourceUrl && cacheMatchesModelUrl(cached, url)
+          && process.env.THREED66_MOCK === "false" && legacy3D66SourceCandidateIds(url, productId).length
+          ? cached.resolvedSourceUrl : undefined;
         const download = await with3D66Cookie((cookieValue) =>
-          queue3D66Getlink(() => fetchFrom3D66(url, cookieValue, { downloadFormat, expectedCreditCost })),
+          queue3D66Getlink(() => fetchFrom3D66(url, cookieValue, { downloadFormat, expectedCreditCost, expectedResolvedSourceUrl })),
         );
         const fileUrl =
           typeof download === "string" ? download : download.fileUrl;
@@ -1855,6 +1858,7 @@ async function refreshHistoryDownload(history, cookieValue, downloadFormatOverri
       fetchFrom3D66(history.sourceUrl, cookieValue, {
         downloadFormat: requestedFormat,
         sourceUrl: history.sourceUrl,
+        expectedResolvedSourceUrl: history.resolvedSourceUrl,
       }),
     );
   }

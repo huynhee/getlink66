@@ -27,7 +27,7 @@ import { cadVerificationError } from "./3d66CadPage.js";
 import {
   assert3D66AccountProductId, assert3D66CleanModelUrl, assert3D66DownloadFields, is3D66CleanLinkError,
   required3D66AccountMarker,
-  modelIdsShareExactAssetIdentity,
+  legacy3D66SourceCandidateIds, modelIdsShareExactAssetIdentity,
 } from "./3d66CleanLink.js";
 
 const DEFAULT_DOWNLOAD_ENDPOINT = "https://user.3d66.com/api/v1/download/handle";
@@ -550,27 +550,55 @@ async function resolveAccountModelUrl(
   rawUrl,
   cookieValue,
   cookies = null,
-  { stage = "preview", forceCadVerification = false } = {},
+  { stage = "preview", forceCadVerification = false, originalSourceUrl, expectedResolvedSourceUrl } = {},
 ) {
-  const normalized = normalizeModelUrl(rawUrl);
+  let normalized = normalizeModelUrl(rawUrl);
+  let resolvedLogicalProductId = footprintLogicalProductId(normalized.toString());
+  let verifiedLegacyId = "";
+  const mode = modelResolveMode();
+  if (["rewritten_footprint", "hybrid"].includes(mode) && isFootprintResolvedUrl(normalized.toString()) && resolvedLogicalProductId) {
+    const logicalPage = new URL(normalized);
+    logicalPage.search = new URLSearchParams({ sof: resolvedLogicalProductId });
+    if (legacy3D66SourceCandidateIds(logicalPage, resolvedLogicalProductId).length) {
+      if (legacy3D66SourceCandidateIds(originalSourceUrl, resolvedLogicalProductId).length) {
+        verifiedLegacyId = assert3D66CleanModelUrl(normalized.toString(), { expectedProductId: resolvedLogicalProductId,
+          expectedSourceUrl: originalSourceUrl }).toUpperCase();
+        normalized = normalizeModelUrl(originalSourceUrl);
+      }
+      // A client-supplied fragment alone does not bind a legacy logical ID.
+      resolvedLogicalProductId = "";
+    }
+  }
   const productIds = requestedProductIdCandidatesFromUrl(normalized.toString());
-  const resolvedLogicalProductId = footprintLogicalProductId(normalized.toString());
   const productId = resolvedLogicalProductId || productIds[0] || "";
   if (process.env.THREED66_MOCK !== "false") {
     return { productId, url: normalized.toString(), usedAccountSearch: false };
   }
   required3D66AccountMarker();
+  if (expectedResolvedSourceUrl && legacy3D66SourceCandidateIds(originalSourceUrl, productId).length) {
+    verifiedLegacyId = assert3D66CleanModelUrl(expectedResolvedSourceUrl, { expectedProductId: productId,
+      expectedSourceUrl: originalSourceUrl }).toUpperCase();
+  }
+  const assertLegacyRefreshIdentity = result => {
+    if (verifiedLegacyId && result.productId.toUpperCase() !== verifiedLegacyId) {
+      throw Object.assign(new Error("The resolved model changed. Download stopped."), {
+        status: 422, code: "THREED66_CLEAN_LINK_REQUIRED",
+        details: { stage: "clean-link-validation", reason: "asset_identity_mismatch" },
+      });
+    }
+  };
 
-  const mode = modelResolveMode();
   const cadHistory = is3D66CadModelUrl(normalized) && ["footprint", "rewritten_footprint", "hybrid"].includes(mode);
   if (mode === "hybrid" && !cadHistory) {
     await threed66VerificationStore.assertAvailable(cookieValue, get3D66VerificationConfigurationKey());
     const seed = validate3D66HybridInput(normalized.toString());
     const result = await hybridResolver.resolve(normalized.toString(), cookieValue);
+    assertLegacyRefreshIdentity(result);
     return { productId, resolvedProductId: result.productId, url: markFootprintResolvedUrl(result.url, productId),
       usedAccountSearch: false, usedFootprint: true, cookieValue: result.cookieValue || cookieValue, cookies,
       rewrittenFootprintSeed: { ...seed, mode: "hybrid", hybridSourceUrl: seed.inputUrl,
-        productId: result.productId, modelPage: result.canonicalModelPage } };
+        productId: result.productId, modelPage: result.canonicalModelPage,
+        ...(seed.legacyIds ? { legacyIds: [result.productId] } : {}) } };
   }
   if (mode === "rewritten_footprint" || cadHistory) {
     const source = new URL(normalized);
@@ -585,9 +613,11 @@ async function resolveAccountModelUrl(
     if (cached?.cad && !read3D66CadVerification(cached.url, { fresh: true,
       cookieValue: cached.cookieValue || cookieValue, configurationKey: get3D66VerificationConfigurationKey() })) cached = null;
     const result = cached || await resolve3D66ModelUrlFromRewrittenFootprint(source.toString(), cookieValue);
+    assertLegacyRefreshIdentity(result);
     const boundSeed = { ...seed, modelPage: result.canonicalModelPage || seed.modelPage };
     assert3D66RewrittenFootprintLink(result.url, boundSeed);
     boundSeed.productId = result.productId;
+    if (boundSeed.legacyIds) boundSeed.legacyIds = [result.productId];
     if (!cached) {
       for (const page of new Set([seed.modelPage, boundSeed.modelPage])) {
         for (const value of new Set([cookieValue, result.cookieValue || cookieValue])) {
@@ -731,7 +761,8 @@ function enforceRequestedProductId(fields = {}, metadata = {}, requestedProductI
 }
 
 function assertAccountModelUrl(value, accountModel) {
-  assert3D66CleanModelUrl(value, { expectedProductId: accountModel.productId });
+  assert3D66CleanModelUrl(value, { expectedProductId: accountModel.productId,
+    expectedSourceUrl: accountModel.rewrittenFootprintSeed?.legacyIds ? accountModel.rewrittenFootprintSeed.url : undefined });
   if (accountModel.rewrittenFootprintSeed) assert3D66RewrittenFootprintLink(value, accountModel.rewrittenFootprintSeed);
 }
 
@@ -2425,7 +2456,7 @@ async function readHybridApiMetadata(url, cookieValue) {
     const pop = await requestDownloadPop(fields, cookieValue, context, { readOnlyMetadata: true });
     const metadata = mergeDownloadPopMetadata({ productId: seed.sourceProductId, sourceUrl: seed.inputUrl }, pop, seed.inputUrl, fields);
     const choice = hasDownloadFormatChoice(pop);
-    return { ...metadata, verifiedModelUrl: verifiedHybridApiModelUrl(pop, seed.sourceProductId), formatOptionsSource: "api",
+    return { ...metadata, verifiedModelUrl: seed.legacyIds ? "" : verifiedHybridApiModelUrl(pop, seed.sourceProductId), formatOptionsSource: "api",
       formatOptionsComplete: choice === false || (choice === true && metadata.formatOptions.length > 1) };
   } catch (error) {
     if (is3D66CleanLinkError(error) || String(error.code || "").startsWith("THREED66_HYBRID_")) throw error;
@@ -2875,7 +2906,7 @@ export async function fetchFrom3D66(url, cookieValue, options = {}) {
   const initialCookies = requireCookie(cookieValue);
   const originalSourceUrl = options.sourceUrl || url;
   const accountModel = await resolveAccountModelUrl(url, cookieValue, initialCookies, {
-    stage: "download", forceCadVerification: true,
+    stage: "download", forceCadVerification: true, originalSourceUrl, expectedResolvedSourceUrl: options.expectedResolvedSourceUrl,
   });
   if (accountModel.cad) return downloadVerifiedCad(accountModel, cookieValue, { ...options, sourceUrl: originalSourceUrl });
   const normalized = normalizeModelUrl(accountModel.url);

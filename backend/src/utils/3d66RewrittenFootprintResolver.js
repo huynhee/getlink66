@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { assert3D66CleanModelUrl, assert3D66AccountProductId, modelIdsShareExactAssetIdentity,
-  required3D66AccountMarker } from "./3d66CleanLink.js";
+  legacy3D66SourceCandidateIds, matchesLegacy3D66SourcePage, required3D66AccountMarker } from "./3d66CleanLink.js";
 
 const FOOTPRINT_URL = "https://user.3d66.com/newUser/index/index/footprint";
 export const FOOTPRINT_MODEL_SELECTOR = 'a[href*="/items/"][href*="sof="]';
@@ -100,6 +100,13 @@ export function build3D66FootprintSeed(value) {
   }
   const parts = ids[0].match(/^([A-Z]{3})(\d{5,28})$/i);
   if (!parts) throw resolutionError("invalid_source_model_id", 400);
+  source.hash = "";
+  const legacyIds = legacy3D66SourceCandidateIds(source, ids[0]);
+  if (legacyIds.length) {
+    // Keep the input path as evidence; trying an invented st=2 ID can open another asset.
+    return { sourceProductId: ids[0], productId: legacyIds[0], modelPage: source.origin + source.pathname,
+      url: source.href, sourceFirst: true, legacyIds };
+  }
   // Tracked IDs have an eight-digit sender marker; short public IDs contain only the asset suffix.
   const digits = parts[2];
   const marker = required3D66AccountMarker();
@@ -108,7 +115,6 @@ export function build3D66FootprintSeed(value) {
   if (!suffix) throw resolutionError("ambiguous_source_model_id", 400);
   const productId = `A${parts[1].slice(1).toUpperCase()}${marker}${suffix}`;
   const sourceFirst = source.hostname !== "3d.3d66.com";
-  source.hash = "";
   return {
     sourceProductId: ids[0], productId, modelPage: source.origin + source.pathname,
     url: sourceFirst ? source.href : `${source.origin}${source.pathname}?${new URLSearchParams({ sof: productId, st: "2" })}`,
@@ -118,13 +124,25 @@ export function build3D66FootprintSeed(value) {
 
 export function footprintLookupKey(seed, page = seed.modelPage) {
   return JSON.stringify([seed.sourceFirst ? "source-history" : "rewritten-history", page,
-    seed.sourceFirst ? `A${seed.productId.slice(1)}` : seed.productId]);
+    seed.legacyIds || (seed.sourceFirst ? `A${seed.productId.slice(1)}` : seed.productId)]);
+}
+
+export function matches3D66FootprintProduct(value, productId, seed) {
+  const id = String(productId || "").toUpperCase();
+  return seed.legacyIds
+    ? seed.legacyIds.includes(id) && matchesLegacy3D66SourcePage(value, seed.url)
+    : id === seed.productId;
 }
 
 export function assert3D66RewrittenFootprintLink(value, seed) {
   const url = modelPage(value);
   if (url.origin + url.pathname !== seed.modelPage
     || url.origin !== modelPage(seed.url || seed.modelPage).origin) throw resolutionError("model_page_mismatch");
+  if (seed.legacyIds) {
+    const productId = assert3D66CleanModelUrl(value);
+    if (!matches3D66FootprintProduct(value, productId, seed)) throw resolutionError("model_id_mismatch");
+    return productId;
+  }
   const productId = assert3D66CleanModelUrl(value, { expectedProductId: seed.productId });
   if (productId.toUpperCase() !== seed.productId && !(seed.sourceFirst
     && modelIdsShareExactAssetIdentity(productId, seed.productId))) throw resolutionError("model_id_mismatch");
@@ -133,10 +151,12 @@ export function assert3D66RewrittenFootprintLink(value, seed) {
 
 export function selectRewrittenFootprintCard(links, seed) {
   const origin = modelPage(seed.url || seed.modelPage).origin;
+  let selected = null;
   for (const [index, link] of links.entries()) {
     let url;
     try { url = new URL(link); } catch { continue; }
     const matches = id => {
+      if (seed.legacyIds) return matches3D66FootprintProduct(url, id, seed);
       if (!seed.sourceFirst) return id.toUpperCase() === seed.productId;
       try { assert3D66AccountProductId(id); }
       catch { return false; }
@@ -152,14 +172,17 @@ export function selectRewrittenFootprintCard(links, seed) {
     url.hash = "";
     const canonicalModelPage = url.origin + url.pathname;
     if (url.searchParams.has("sign")) assert3D66RewrittenFootprintLink(url.href, { ...seed, productId, modelPage: canonicalModelPage });
-    return { url: url.href, productId, canonicalModelPage, index };
+    const card = { url: url.href, productId, canonicalModelPage, index };
+    if (!seed.legacyIds) return card;
+    if (selected && selected.productId !== productId) throw resolutionError("ambiguous_history_model_id");
+    if (!selected || (!new URL(selected.url).searchParams.has("sign") && url.searchParams.has("sign"))) selected = card;
   }
-  return null;
+  return selected;
 }
 
 export async function resolveRewrittenFootprintPage({ page, seed, navigate, navigateSeed = navigate, openHistoryLink, timeout = 30000,
   refreshAttempts = 4, refreshDelayMs = 1500, settleMs = 1200 }) {
-  await historyOperation("seed_navigation", async () => {
+  const openedModel = await historyOperation("seed_navigation", async () => {
     let navigationError;
     try { await navigateSeed(page, seed.url); }
     catch (error) {
@@ -178,11 +201,13 @@ export async function resolveRewrittenFootprintPage({ page, seed, navigate, navi
         || opened.searchParams.getAll("id").some(id => id !== opened.searchParams.get("sof"))) throw resolutionError("seed_redirected");
       if (opened.searchParams.get("sof") !== visitId) {
         if (!seed.sourceFirst) throw resolutionError("seed_redirected");
-        assert3D66RewrittenFootprintLink(opened.href, { ...seed, modelPage: opened.origin + opened.pathname });
+        const productId = assert3D66RewrittenFootprintLink(opened.href, { ...seed, modelPage: opened.origin + opened.pathname });
+        if (seed.legacyIds) return { url: opened.href, productId, usedFootprint: true,
+          canonicalModelPage: opened.origin + opened.pathname };
       }
     }
   });
-  return resolveRewrittenFootprintHistory({ page, seed, navigate, openHistoryLink, timeout, refreshAttempts, refreshDelayMs });
+  return openedModel || resolveRewrittenFootprintHistory({ page, seed, navigate, openHistoryLink, timeout, refreshAttempts, refreshDelayMs });
 }
 
 export async function resolveRewrittenFootprintHistory({ page, seed, navigate, openHistoryLink, timeout = 30000,
@@ -203,7 +228,8 @@ export async function resolveRewrittenFootprintHistory({ page, seed, navigate, o
     });
     const selected = selectRewrittenFootprintCard(links, seed);
     if (selected) {
-      const boundSeed = { ...seed, productId: selected.productId, modelPage: selected.canonicalModelPage };
+      const boundSeed = { ...seed, productId: selected.productId, modelPage: selected.canonicalModelPage,
+        ...(seed.legacyIds ? { legacyIds: [selected.productId] } : {}) };
       const opened = new URL(selected.url).searchParams.has("sign") ? selected.url
         : openHistoryLink ? await historyOperation("history_card_open", () => openHistoryLink(page, selected, boundSeed)) : "";
       const url = typeof opened === "string" ? opened : opened.url;

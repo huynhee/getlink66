@@ -27,6 +27,34 @@ function modelIdentityParts(value = "") {
   return match ? { family: match[1].slice(1), digits: match[2] } : null;
 }
 
+export function legacy3D66SourceCandidateIds(sourceUrl, sourceProductId) {
+  let source;
+  try { source = new URL(sourceUrl); } catch { return []; }
+  if (source.origin !== "https://3d.3d66.com" || source.username || source.password
+    || !/^\/reshtmla\/model\/items\/[^/]+\/[^/]+\.html$/.test(source.pathname)
+    || source.pathname.endsWith("/items/id/model.html")) return [];
+  const ids = source.searchParams.getAll("sof");
+  const aliases = source.searchParams.getAll("id");
+  if (ids.length !== 1 || ids[0].toUpperCase() !== String(sourceProductId || "").toUpperCase()
+    || source.searchParams.getAll("sign").length > 1 || aliases.length > 1
+    || aliases.some(id => id !== ids[0])) return [];
+  const marker = required3D66AccountMarker();
+  const parsed = modelIdentityParts(ids[0]);
+  if (!parsed || !/^\d{11,14}$/.test(parsed.digits)
+    || (parsed.digits.startsWith(marker) && parsed.digits.length - marker.length >= 5)) return [];
+  const accountId = length => `A${parsed.family}${marker}${parsed.digits.slice(length)}`;
+  return parsed.digits.length >= 13 ? [accountId(8), accountId(6)] : [accountId(6)];
+}
+
+export function matchesLegacy3D66SourcePage(value, sourceUrl) {
+  try {
+    const candidate = new URL(value);
+    const source = new URL(sourceUrl);
+    return candidate.origin === source.origin && candidate.pathname === source.pathname
+      && !candidate.username && !candidate.password;
+  } catch { return false; }
+}
+
 export function modelIdsShareAssetIdentity(left = "", right = "") {
   const normalizedLeft = String(left || "").trim().toUpperCase();
   const normalizedRight = String(right || "").trim().toUpperCase();
@@ -57,7 +85,7 @@ export function modelIdsShareExactAssetIdentity(left = "", right = "") {
   return Boolean(expected && expected === identity(right));
 }
 
-export function assert3D66CleanModelUrl(value, { expectedProductId = "" } = {}) {
+export function assert3D66CleanModelUrl(value, { expectedProductId = "", expectedSourceUrl } = {}) {
   let url;
   try { url = new URL(value); }
   catch { throw validationError("missing_or_invalid_url"); }
@@ -79,9 +107,13 @@ export function assert3D66CleanModelUrl(value, { expectedProductId = "" } = {}) 
     cad = signatures.length === 0 ? read3D66CadVerification(value) : null;
     if (!cad || cad.marker !== required3D66AccountMarker()) throw validationError("missing_or_duplicate_signature");
   }
-  const matchesAsset = cad || exactAssetMode() ? modelIdsShareExactAssetIdentity : modelIdsShareAssetIdentity;
-  if (expectedProductId && !matchesAsset(productId, expectedProductId)) {
-    throw validationError("asset_identity_mismatch");
+  if (expectedProductId) {
+    const legacyIds = legacy3D66SourceCandidateIds(expectedSourceUrl, expectedProductId);
+    const matchesAsset = cad || exactAssetMode() ? modelIdsShareExactAssetIdentity : modelIdsShareAssetIdentity;
+    const matches = legacyIds.length
+      ? legacyIds.includes(productId.toUpperCase()) && matchesLegacy3D66SourcePage(url, expectedSourceUrl)
+      : matchesAsset(productId, expectedProductId);
+    if (!matches) throw validationError("asset_identity_mismatch");
   }
   return productId;
 }
@@ -128,8 +160,10 @@ export function assert3D66BrowserDownloadRequest({ url, method, body, contentTyp
 
 export function assert3D66StoredDownload(record = {}) {
   if (process.env.THREED66_MOCK !== "false") return;
-  const resolvedId = assert3D66CleanModelUrl(record.resolvedSourceUrl, { expectedProductId: record.productId });
-  if (exactAssetMode() && !modelIdsShareExactAssetIdentity(resolvedId, record.productId)) {
+  const legacyIds = legacy3D66SourceCandidateIds(record.sourceUrl, record.productId);
+  const resolvedId = assert3D66CleanModelUrl(record.resolvedSourceUrl, { expectedProductId: record.productId,
+    expectedSourceUrl: record.sourceUrl });
+  if (exactAssetMode() && !legacyIds.length && !modelIdsShareExactAssetIdentity(resolvedId, record.productId)) {
     throw validationError("asset_identity_mismatch");
   }
 }

@@ -39,7 +39,7 @@ async function fixture(t, options = {}) {
   const base = `${origin}/${options.itemPath || `reshtmla/${resource}/items/fixture`}/rewritten-${++sequence}.html`;
   const source = `${base}?sof=${options.inputId || inputId}&sign=old-sign&r_id=old-owner`;
   const seed = () => build3D66FootprintSeed(source);
-  const cleanId = () => options.historyPrefix ? options.historyPrefix + seed().productId.slice(1) : seed().productId;
+  const cleanId = () => options.cleanId || (options.historyPrefix ? options.historyPrefix + seed().productId.slice(1) : seed().productId);
   const clean = () => `${base}?sof=${cleanId()}&st=2${options.cadUnsigned ? "" : "&sign=history-fixture"}`;
   const navigations = [];
   const requests = [];
@@ -537,6 +537,33 @@ test("preview and download use only the exact signed history URL and retain orig
   assert.deepEqual(state.navigations, [state.seed().url, "https://user.3d66.com/newUser/index/index/footprint"]);
   assert.equal(state.requests.filter((value) => value === "/api/v1/download/handle").length, 1);
 });
+
+for (const mode of ["rewritten_footprint", "hybrid"]) {
+  test(`${mode} resolves a six-digit sender and refreshes only the verified model`, async t => {
+    const inputId = "DJI1694334859465";
+    const cleanId = "AJI896357714859465";
+    const state = await fixture(t, { mode, inputId, cleanId, seedHome: "https://www.3d66.com/" });
+    const preview = await fetch3D66Preview(state.source, cookie);
+    assert.equal(preview.productId, inputId);
+    assert.equal(new URL(preview.resolvedSourceUrl).searchParams.get("sof"), cleanId);
+    assert.equal(state.navigations[0], state.source);
+    assert.equal(state.navigations.some(value => value.includes("AJI8963577159465")), false);
+    assert.equal(state.requests.includes("/api/v1/download/handle"), false);
+
+    const wrongPath = preview.resolvedSourceUrl.replace(state.base, state.base.replace("/fixture/", "/wrong/"));
+    assert.throws(() => assert3D66StoredDownload({ ...preview, resolvedSourceUrl: wrongPath }),
+      { code: "THREED66_CLEAN_LINK_REQUIRED" });
+    const otherInterpretation = preview.resolvedSourceUrl.replace(cleanId, "AJI8963577159465");
+    await assert.rejects(fetchFrom3D66(state.source, cookie, { expectedResolvedSourceUrl: otherInterpretation }),
+      error => error.code === "THREED66_CLEAN_LINK_REQUIRED" && error.details.reason === "asset_identity_mismatch");
+    assert.equal(state.requests.includes("/api/v1/download/handle"), false);
+    const download = await fetchFrom3D66(preview.resolvedSourceUrl, cookie, { sourceUrl: state.source });
+    assert.equal(download.productId, inputId);
+    assert3D66StoredDownload(download);
+    assert.equal(state.navigations.filter(value => value === state.source).length, 1);
+    assert.equal(state.requests.filter(value => value === "/api/v1/download/handle").length, 1);
+  });
+}
 
 for (const seedInterrupted of [false, true]) {
   test(`preview follows a source-home seed redirect to signed history without repeating the seed (interrupted: ${seedInterrupted})`, async t => {

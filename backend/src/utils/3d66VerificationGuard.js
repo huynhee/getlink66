@@ -1,12 +1,12 @@
 import { create3D66VerificationDiagnostics } from "./3d66VerificationDiagnostics.js";
-import { is3D66FootprintHome, is3D66FootprintModelPage } from "./3d66RewrittenFootprintResolver.js";
+import { is3D66FootprintHome, is3D66FootprintModelPage, matches3D66FootprintProduct } from "./3d66RewrittenFootprintResolver.js";
 import { assert3D66AccountProductId, modelIdsShareExactAssetIdentity } from "./3d66CleanLink.js";
 
 const VENDOR_DOMAINS = ["alicdn.com", "aliyuncs.com", "aliyun.com"];
 const FOOTPRINT = "https://user.3d66.com/newUser/index/index/footprint";
 
 export function manual3D66RequestAllowed(request, { productId, initialUrl, mode = "rewritten_footprint", modelPage,
-  sourceFirst = false, sourceProductId }) {
+  sourceFirst = false, sourceProductId, legacyIds, sourceUrl }) {
   let url;
   try { url = new URL(request.url()); } catch { return false; }
   if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) return false;
@@ -20,8 +20,8 @@ export function manual3D66RequestAllowed(request, { productId, initialUrl, mode 
   let modelOrigin;
   try { modelOrigin = new URL(modelPage || initialUrl).origin; } catch { return false; }
   const candidateId = url.searchParams.get("sof");
-  let ownModel = candidateId === productId;
-  if (sourceFirst && !ownModel) {
+  let ownModel = legacyIds ? matches3D66FootprintProduct(url, candidateId, { legacyIds, url: sourceUrl }) : candidateId === productId;
+  if (sourceFirst && !legacyIds && !ownModel) {
     try { assert3D66AccountProductId(candidateId); ownModel = modelIdsShareExactAssetIdentity(candidateId, productId); }
     catch { /* A source account ID never authorizes a download. */ }
   }
@@ -54,6 +54,7 @@ export async function install3D66VerificationGuard(entry, diagnosticsOptions) {
     if (manual3D66RequestAllowed(request, {
       productId: entry.seed.productId, initialUrl: entry.initialUrl, mode: entry.seed.mode, modelPage: entry.seed.modelPage,
       sourceFirst: entry.seed.sourceFirst, sourceProductId: entry.seed.sourceProductId,
+      legacyIds: entry.seed.legacyIds, sourceUrl: entry.seed.url,
     })) return route.continue();
     diagnostics.blocked(request);
     return route.abort("blockedbyclient");

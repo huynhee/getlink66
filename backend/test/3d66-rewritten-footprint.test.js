@@ -73,7 +73,7 @@ test("rewrite honors the required marker without depending on the legacy search 
 
 test("short public model IDs gain the configured marker without losing any asset digits", () => {
   assert.equal(build3D66FootprintSeed(`${base}?sof=AJI7972535`).productId, "AJI896357717972535");
-  assert.throws(() => build3D66FootprintSeed(`${base}?sof=AJI12345678901`), { status: 400 });
+  assert.throws(() => build3D66FootprintSeed(`${base}?sof=AJI1234567890`), { status: 400 });
 });
 
 test("seed serializes st=2 and never preserves a malformed st2 flag or caller-supplied navigation parameters", () => {
@@ -89,10 +89,31 @@ test("rewrite rejects ambiguous IDs, missing suffixes, unsafe URLs and synthetic
     source.replace("3d.3d66.com", "3d.3d66.com.evil.test"), source.replace("3d.3d66.com", "user:pass@3d.3d66.com"),
     source.replace("3d.3d66.com", "3d.3d66.com:8443"), source.replace("3d.3d66.com", "cad.3d66.com"),
     `${base}?sof=${sourceId}&sof=${sourceId}`, `${base}?sof=${sourceId}&id=wrong`,
-    `${base}?sof=${sourceId}&id=${sourceId}&id=${sourceId}`, base, `${base}?sof=GCI139810811234`,
+    `${base}?sof=${sourceId}&id=${sourceId}&id=${sourceId}`, base, `${base}?sof=GCI1398108112`,
     "https://3d.3d66.com/reshtmla/model/items/id/model.html?sof=" + sourceId, sourceId]) {
     assert.throws(() => build3D66FootprintSeed(value), { code: "THREED66_REWRITTEN_FOOTPRINT_FAILED", status: 400 });
   }
+});
+
+test("six-digit sender IDs keep the full asset suffix and require the original model path", async () => {
+  const input = `${base}?sof=DJI1694334859465&sign=old-fixture`;
+  const legacySeed = build3D66FootprintSeed(input);
+  const resolved = `${base}?sof=AJI896357714859465&sign=fresh-fixture`;
+  const alternate = resolved.replace("4859465", "59465");
+  assert.equal(legacySeed.url, input);
+  assert.deepEqual(legacySeed.legacyIds, ["AJI8963577159465", "AJI896357714859465"]);
+  assert.deepEqual(build3D66FootprintSeed(`${base}?sof=DJI16943312345`).legacyIds, ["AJI8963577112345"]);
+  assert.equal(build3D66FootprintSeed(`${base}?sof=AJI896357714859465`).legacyIds, undefined);
+  const wrongPath = alternate.replace("FixtureCaseSensitive", "differentModel");
+  const state = fixture({ links: [wrongPath, resolved] });
+  assert.equal((await resolveRewrittenFootprintPage({ ...state, seed: legacySeed })).url, resolved);
+  assert.deepEqual(state.actions, [input, historyUrl]);
+  assert.equal(selectRewrittenFootprintCard([wrongPath, input], legacySeed), null);
+  assert.throws(() => selectRewrittenFootprintCard([alternate, resolved], legacySeed),
+    error => error.details.reason === "ambiguous_history_model_id");
+  const direct = fixture({ redirects: { [input]: resolved }, links: [] });
+  assert.equal((await resolveRewrittenFootprintPage({ ...direct, seed: legacySeed })).url, resolved);
+  assert.deepEqual(direct.actions, [input]);
 });
 
 test("history may supply a canonical path but must match the complete rewritten ID, not a shared suffix", () => {

@@ -1,11 +1,22 @@
 import crypto from "node:crypto";
 import { assert3D66CleanModelUrl, required3D66AccountMarker } from "./3d66CleanLink.js";
-import { build3D66FootprintSeed, is3D66FootprintModelPage } from "./3d66RewrittenFootprintResolver.js";
+import { build3D66FootprintSeed, is3D66FootprintModelPage, matches3D66FootprintProduct } from "./3d66RewrittenFootprintResolver.js";
 
 function inputError(reason) {
   return Object.assign(new Error("Invalid or ambiguous 3D66 model URL."), {
     status: 400, code: "THREED66_HYBRID_INPUT_INVALID", details: { stage: "hybrid-input", reason },
   });
+}
+
+export function validate3D66HybridLink(value, seed) {
+  const productId = assert3D66CleanModelUrl(value, { expectedProductId: seed.sourceProductId, expectedSourceUrl: seed.inputUrl });
+  const parsed = new URL(value);
+  if (!is3D66FootprintModelPage(parsed) || parsed.origin !== new URL(seed.modelPage).origin
+    || !(seed.legacyIds ? matches3D66FootprintProduct(parsed, productId, seed)
+      : productId.slice(1).toUpperCase() === seed.productId.slice(1).toUpperCase())) {
+    throw inputError("resolved_model_mismatch");
+  }
+  return productId;
 }
 
 export function validate3D66HybridInput(value) {
@@ -46,7 +57,7 @@ export function create3D66HybridResolver({ readMetadata, openModel, configuratio
 
   function key(seed, cookie) {
     return crypto.createHash("sha256").update(JSON.stringify([
-      seed.modelPage, seed.productId, cookie, required3D66AccountMarker(), configurationKey(),
+      seed.modelPage, seed.legacyIds || seed.productId, cookie, required3D66AccountMarker(), configurationKey(),
     ])).digest("hex");
   }
 
@@ -63,12 +74,8 @@ export function create3D66HybridResolver({ readMetadata, openModel, configuratio
   }
 
   function validateResult(seed, result) {
-    const productId = assert3D66CleanModelUrl(result?.url, { expectedProductId: seed.sourceProductId });
+    const productId = validate3D66HybridLink(result?.url, seed);
     const parsed = new URL(result.url);
-    if (!is3D66FootprintModelPage(parsed) || parsed.origin !== new URL(seed.modelPage).origin
-      || productId.slice(1).toUpperCase() !== seed.productId.slice(1).toUpperCase()) {
-      throw inputError("resolved_model_mismatch");
-    }
     return { ...result, productId, canonicalModelPage: parsed.origin + parsed.pathname };
   }
 

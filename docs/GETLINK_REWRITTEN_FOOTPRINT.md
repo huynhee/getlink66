@@ -49,17 +49,24 @@ status and the account marker, not the rest of the upstream account profile.
    `tietu.3d66.com`, `xiaoguotu.3d66.com` and `fanganwenben.3d66.com`.
    The host must match the resource path. ID-only inputs and synthetic
    `/items/id/model.html` pages are rejected.
-2. **Only `3d.3d66.com` rewrites the visited URL.** For tracked IDs, split `sof` into three letters, **exactly eight sender ID digits**,
-   and the asset suffix. Short public IDs (5-8 digits) have only the asset suffix.
+2. **Only `3d.3d66.com` rewrites the visited URL.** Standard tracked IDs contain
+   three letters, eight sender digits, and the asset suffix. Short public IDs
+   (5-8 digits) have only the asset suffix.
    Change the first letter to `A` and add the required account marker before the
    entire asset suffix. Keep the remaining letters and original path for the seed.
-3. For `3d.3d66.com`, remove all original query parameters and fragment. Visit
+3. For a standard `3d.3d66.com` seed, remove all original query parameters and fragment. Visit
    `?sof=<rewritten-id>&st=2` using the authenticated browser. `st` must have the
    value `2`; a bare `st2` flag is invalid. Visit the seed once and allow its
    redirects to settle. A blank page or a redirect to an allowlisted HTTPS source
    homepage can have registered the view; neither is a successful signed result.
    Interrupted navigation is accepted only for the narrowly validated homepage
    landing, not for arbitrary network errors or redirects.
+   A foreign 3ds Max ID that may contain a six-digit legacy sender and a 5-8
+   digit asset suffix instead takes a read-only visit to the original link.
+   Only a signed redirect or a history match with the original model path,
+   configured account marker and full candidate ID can resolve it. If history
+   has both possible IDs for the same path, stop. Hybrid can show metadata early,
+   but does not use the metadata response to resolve this ambiguous ID.
    For the other five hosts, visit the supplied URL unchanged except for its
    fragment, then read history. Do not replace its SOF, signature or tracking
    parameters and do not construct an `st=2` URL for those hosts. The source visit
