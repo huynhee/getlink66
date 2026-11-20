@@ -428,31 +428,66 @@ function shouldWriteSystemError(error) {
   return !error.status || Number(error.status) >= 500;
 }
 
+function isModelResolutionDiagnostic(error) {
+  return ["THREED66_REWRITTEN_FOOTPRINT_FAILED", "THREED66_CLEAN_LINK_REQUIRED"].includes(error.code);
+}
+
 function diagnosticSystemLogDetails(error, controllerStage) {
   const source = error?.details && typeof error.details === "object"
     ? error.details
     : {};
   const details = { stage: controllerStage };
+  const safeId = value => typeof value === "string" && /^[a-z0-9_-]{1,64}$/i.test(value);
   const copyIdList = (field) => {
     if (!Array.isArray(source[field])) return;
     details[field] = source[field]
-      .map((value) => String(value || "").trim().slice(0, 64))
-      .filter(Boolean)
+      .filter(safeId)
       .slice(0, 10);
   };
 
   copyIdList("expectedProductIds");
   copyIdList("footprintProductIds");
   ["selectedProductId", "resolvedProductId"].forEach((field) => {
-    if (source[field] !== undefined && source[field] !== null) {
-      details[field] = String(source[field]).slice(0, 100);
-    }
+    if (safeId(source[field])) details[field] = source[field];
   });
   if (Number.isFinite(Number(source.footprintRefreshAttempts))) {
     details.footprintRefreshAttempts = Number(source.footprintRefreshAttempts);
   }
-  if (source.stage) details.upstreamStage = String(source.stage).slice(0, 100);
+  const safeLabel = value => typeof value === "string" && /^[a-z][a-z0-9_-]{0,79}$/i.test(value);
+  if (safeLabel(source.stage)) details.upstreamStage = source.stage;
+  if (isModelResolutionDiagnostic(error)) {
+    details.code = error.code;
+    for (const key of ["reason", "operation", "failure", "networkCode"]) {
+      if (safeLabel(source[key])) details[key] = source[key];
+    }
+    for (const key of ["legacyHistoryOtherPath", "legacyHistoryOtherId"]) {
+      if (source[key] === true) details[key] = true;
+    }
+  }
   return details;
+}
+
+async function logGetlinkError(error, req, stage, productId) {
+  const diagnostic = isModelResolutionDiagnostic(error);
+  const status = Number(error.status || 500);
+  if (!shouldWriteSystemError(error) && (status !== 422 || !diagnostic)) return;
+
+  const details = diagnosticSystemLogDetails(error, stage);
+  if (typeof req.correlationId === "string" && /^[a-z0-9-]{1,64}$/i.test(req.correlationId)) {
+    details.correlationId = req.correlationId;
+  }
+  const labels = [details.reason, details.operation, details.failure, details.networkCode,
+    details.legacyHistoryOtherPath && "matching_id_other_path",
+    details.legacyHistoryOtherId && "same_path_other_id"].filter(Boolean);
+  // The existing Admin table displays message even when it has no dedicated diagnostics columns.
+  const message = diagnostic
+    ? `Getlink model verification failed: ${labels.join(" / ") || error.code}`
+    : error.message;
+  await writeSystemLog({
+    type: "getlink", level: status >= 500 ? "error" : "warn", message,
+    userId: req.user?._id, productId: /^[a-z]{3}\d{5,28}$/i.test(productId || "") ? productId : undefined,
+    ip: req.ip, path: req.path, status: error.status, details,
+  });
 }
 
 function isClientDownloadAbort(error, signal) {
@@ -1213,6 +1248,7 @@ export function prepareGetlinkPreview(req, res, next) {
 }
 
 async function handlePreviewGetlink(req, res, next, { allowProgressive = false } = {}) {
+  let productId;
   try {
     if (allowProgressive && Object.hasOwn(req.body || {}, "progressive")
       && typeof req.body.progressive !== "boolean") {
@@ -1223,7 +1259,7 @@ async function handlePreviewGetlink(req, res, next, { allowProgressive = false }
 
     const hybrid = String(process.env.THREED66_MODEL_RESOLVE_MODE || "").trim().toLowerCase() === "hybrid";
     const progressive = hybrid && allowProgressive && req.body.progressive === true && !is3D66CadModelUrl(url);
-    const productId = extractProductId(url);
+    productId = extractProductId(url);
     const previewProductId = lockedProductId(url, productId, productId);
     const cache = progressive ? null : await ProductCache.findOne({ productId });
     const cacheMatchesCurrentUrl = cacheMatchesModelUrl(cache, url);
@@ -1339,44 +1375,24 @@ async function handlePreviewGetlink(req, res, next, { allowProgressive = false }
       metadataIncomplete,
     });
   } catch (error) {
-    if (shouldWriteSystemError(error)) {
-      await writeSystemLog({
-        type: "getlink",
-        level: "error",
-        message: error.message,
-        userId: req.user?._id,
-        ip: req.ip,
-        path: req.path,
-        status: error.status,
-        details: diagnosticSystemLogDetails(error, "preview"),
-      });
-    }
+    await logGetlinkError(error, req, "preview", productId);
     next(error);
   }
 }
 
 export async function inspectGetlink(req, res, next) {
+  let productId;
   try {
     const url = readUrlRequest(req, res);
     if (!url) return;
+    productId = extractProductId(url);
 
     const inspection = await with3D66Cookie((cookieValue) =>
       queue3D66Getlink(() => inspect3D66Page(url, cookieValue)),
     );
     res.json(inspection);
   } catch (error) {
-    if (shouldWriteSystemError(error)) {
-      await writeSystemLog({
-        type: "getlink",
-        level: "error",
-        message: error.message,
-        userId: req.user?._id,
-        ip: req.ip,
-        path: req.path,
-        status: error.status,
-        details: diagnosticSystemLogDetails(error, "inspect"),
-      });
-    }
+    await logGetlinkError(error, req, "inspect", productId);
     next(error);
   }
 }
@@ -1755,19 +1771,7 @@ export async function getLink(req, res, next) {
       creditUsed: creditCost,
     });
   } catch (error) {
-    if (shouldWriteSystemError(error)) {
-      await writeSystemLog({
-        type: "getlink",
-        level: "error",
-        message: error.message,
-        userId: req.user?._id,
-        productId: logProductId,
-        ip: req.ip,
-        path: req.path,
-        status: error.status,
-        details: diagnosticSystemLogDetails(error, "create"),
-      });
-    }
+    await logGetlinkError(error, req, "create", logProductId);
     next(error);
   } finally {
     if (acquiredLockKey) userProductLocks.delete(acquiredLockKey);

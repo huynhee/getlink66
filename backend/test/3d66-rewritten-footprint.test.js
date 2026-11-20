@@ -109,6 +109,12 @@ test("six-digit sender IDs keep the full asset suffix and require the original m
   assert.equal((await resolveRewrittenFootprintPage({ ...state, seed: legacySeed })).url, resolved);
   assert.deepEqual(state.actions, [input, historyUrl]);
   assert.equal(selectRewrittenFootprintCard([wrongPath, input], legacySeed), null);
+  await assert.rejects(resolveRewrittenFootprintPage({
+    ...fixture({ links: [wrongPath, input] }), seed: legacySeed, refreshAttempts: 1,
+  }), error => error.status === 422 && error.details.reason === "signed_model_not_found_in_history"
+    && error.details.operation === "history_match" && error.details.footprintRefreshAttempts === 1
+    && error.details.legacyHistoryOtherPath === true && error.details.legacyHistoryOtherId === true
+    && !JSON.stringify(error.details).includes(base));
   assert.throws(() => selectRewrittenFootprintCard([alternate, resolved], legacySeed),
     error => error.details.reason === "ambiguous_history_model_id");
   const direct = fixture({ redirects: { [input]: resolved }, links: [] });

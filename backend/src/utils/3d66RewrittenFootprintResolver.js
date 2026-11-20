@@ -149,12 +149,19 @@ export function assert3D66RewrittenFootprintLink(value, seed) {
   return productId;
 }
 
-export function selectRewrittenFootprintCard(links, seed) {
+export function selectRewrittenFootprintCard(links, seed, observed = {}) {
   const origin = modelPage(seed.url || seed.modelPage).origin;
   let selected = null;
   for (const [index, link] of links.entries()) {
     let url;
     try { url = new URL(link); } catch { continue; }
+    const ids = url.searchParams.getAll("sof");
+    if (seed.legacyIds && url.origin === origin && is3D66FootprintModelPage(url)) {
+      const candidateId = ids.some(id => seed.legacyIds.includes(id.toUpperCase()));
+      const samePage = matchesLegacy3D66SourcePage(url, seed.url);
+      if (candidateId && !samePage) observed.legacyHistoryOtherPath = true;
+      if (samePage && !candidateId) observed.legacyHistoryOtherId = true;
+    }
     const matches = id => {
       if (seed.legacyIds) return matches3D66FootprintProduct(url, id, seed);
       if (!seed.sourceFirst) return id.toUpperCase() === seed.productId;
@@ -162,11 +169,11 @@ export function selectRewrittenFootprintCard(links, seed) {
       catch { return false; }
       return modelIdsShareExactAssetIdentity(id, seed.productId);
     };
-    if (!url.searchParams.getAll("sof").some(matches)) continue;
+    if (!ids.some(matches)) continue;
     modelPage(link);
     if (url.origin !== origin) continue;
     const productId = url.searchParams.get("sof").toUpperCase();
-    if (url.searchParams.getAll("sof").length !== 1 || url.searchParams.getAll("id").some((id) => id.toUpperCase() !== productId)) {
+    if (ids.length !== 1 || url.searchParams.getAll("id").some((id) => id.toUpperCase() !== productId)) {
       throw resolutionError("ambiguous_history_model_id");
     }
     url.hash = "";
@@ -213,6 +220,7 @@ export async function resolveRewrittenFootprintPage({ page, seed, navigate, navi
 export async function resolveRewrittenFootprintHistory({ page, seed, navigate, openHistoryLink, timeout = 30000,
   refreshAttempts = 4, refreshDelayMs = 1500 }) {
   const attempts = Math.min(8, Math.max(1, Math.floor(Number(refreshAttempts) || 4)));
+  const observed = {};
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (attempt) await page.waitForTimeout(Math.min(5000, Math.max(250, Number(refreshDelayMs) || 1500)));
     const links = await historyOperation("history_read", async () => {
@@ -226,7 +234,7 @@ export async function resolveRewrittenFootprintHistory({ page, seed, navigate, o
       await assert3D66FootprintPageVerified(page);
       return page.locator(FOOTPRINT_MODEL_SELECTOR).evaluateAll((anchors) => anchors.slice(0, 500).map((anchor) => anchor.href));
     });
-    const selected = selectRewrittenFootprintCard(links, seed);
+    const selected = selectRewrittenFootprintCard(links, seed, observed);
     if (selected) {
       const boundSeed = { ...seed, productId: selected.productId, modelPage: selected.canonicalModelPage,
         ...(seed.legacyIds ? { legacyIds: [selected.productId] } : {}) };
@@ -239,7 +247,9 @@ export async function resolveRewrittenFootprintHistory({ page, seed, navigate, o
         ...(typeof opened === "object" && opened.cad ? { cad: opened.cad } : {}) };
     }
   }
-  throw resolutionError("signed_model_not_found_in_history");
+  throw resolutionError("signed_model_not_found_in_history", 422, {
+    operation: "history_match", footprintRefreshAttempts: attempts, ...observed,
+  });
 }
 
 export function create3D66RewrittenFootprintResolver({ withBrowserContext, navigate, navigateSeed = navigate, serializeCookies, openHistoryLink,

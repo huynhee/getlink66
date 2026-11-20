@@ -46,6 +46,7 @@ const { default: ProductCache } = await import("../src/models/ProductCache.js");
 const { default: Getlink } = await import("../src/models/Getlink.js");
 const { default: User } = await import("../src/models/User.js");
 const { default: SiteSetting } = await import("../src/models/SiteSetting.js");
+const { default: SystemLog } = await import("../src/models/SystemLog.js");
 const { updateSettings, initializeSettings, getSettings } = await import("../src/controllers/settingsController.js");
 const { productionReadinessIssues } = await import("../src/config/productionReadiness.js");
 const { csrfProtection, issueCsrfToken } = await import("../src/middleware/csrf.js");
@@ -65,7 +66,7 @@ beforeEach(async (t) => {
     NODE_ENV: "test", THREED66_MODEL_RESOLVE_MODE: "hybrid", THREED66_MOCK: "false",
     THREED66_REQUIRED_ACCOUNT_MARKER: "89635771", ADMIN_EMAILS: "admin@example.test",
   });
-  for (const model of [ProductCache, Getlink, User, SiteSetting]) await model.deleteMany({});
+  for (const model of [ProductCache, Getlink, User, SiteSetting, SystemLog]) await model.deleteMany({});
   user = await User.create({ email: `preview-${++sequence}@example.test`, credit: 100 });
   Object.assign(upstream, {
     calls: [], cookieValue: "fixture-cookie", error: null,
@@ -110,6 +111,32 @@ async function assertUncharged() {
   assert.equal((await User.findById(user._id)).credit, 100);
   assert.equal(await Getlink.countDocuments({}), 0);
 }
+
+test("Getlink resolution failures retain model and bounded admin diagnostics without leaking upstream URLs", async () => {
+  const correlationId = "preview-fixture-request";
+  upstream.error = Object.assign(new Error("Private URL https://fixture.test/?sign=private-sign"), {
+    status: 422,
+    code: "THREED66_REWRITTEN_FOOTPRINT_FAILED",
+    details: {
+      stage: "rewritten-footprint", reason: "signed_model_not_found_in_history", operation: "history_match",
+      legacyHistoryOtherPath: true, footprintRefreshAttempts: 4, networkCode: "https://fixture.test/private",
+      cookie: "private-cookie", signedUrl: sourceUrl, expectedProductIds: ["https://fixture.test/private", productId],
+    },
+  });
+  await assert.rejects(invoke(previewGetlink, request({ url: sourceUrl }, { correlationId })), error => error === upstream.error);
+  const log = await SystemLog.findOne({ type: "getlink" }).lean();
+  assert.equal(log.productId, productId);
+  assert.equal(log.status, 422);
+  assert.equal(log.level, "warn");
+  assert.match(log.message, /signed_model_not_found_in_history.*matching_id_other_path/);
+  assert.deepEqual(log.details, {
+    stage: "preview", upstreamStage: "rewritten-footprint", code: "THREED66_REWRITTEN_FOOTPRINT_FAILED",
+    reason: "signed_model_not_found_in_history", operation: "history_match", legacyHistoryOtherPath: true,
+    footprintRefreshAttempts: 4, correlationId, expectedProductIds: [productId],
+  });
+  assert.doesNotMatch(JSON.stringify(log), /private-|https:\/\//);
+  await assertUncharged();
+});
 
 test("plugin HTTP preview and preparation share the new contract without bypassing device auth or creating a purchase", async (t) => {
   const app = express();
