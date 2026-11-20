@@ -618,6 +618,10 @@ async function resolveAccountModelUrl(
     assert3D66RewrittenFootprintLink(result.url, boundSeed);
     boundSeed.productId = result.productId;
     if (boundSeed.legacyIds) boundSeed.legacyIds = [result.productId];
+    if (!cached && result.route === "verified_legacy_cache_history") {
+      logger.info({ event: "GETLINK_LEGACY_CACHE_VERIFIED", modelId: seed.sourceProductId, stage },
+        "Getlink verified a cached legacy model and resolved its history link");
+    }
     if (!cached) {
       for (const page of new Set([seed.modelPage, boundSeed.modelPage])) {
         for (const value of new Set([cookieValue, result.cookieValue || cookieValue])) {
@@ -2459,6 +2463,7 @@ async function readHybridApiMetadata(url, cookieValue) {
     return { ...metadata, verifiedModelUrl: seed.legacyIds ? "" : verifiedHybridApiModelUrl(pop, seed.sourceProductId), formatOptionsSource: "api",
       formatOptionsComplete: choice === false || (choice === true && metadata.formatOptions.length > 1) };
   } catch (error) {
+    if (seed.legacyIds && is3D66CleanLinkError(error) && error.details?.reason === "pop_model_mismatch") return null;
     if (is3D66CleanLinkError(error) || String(error.code || "").startsWith("THREED66_HYBRID_")) throw error;
     return null;
   }

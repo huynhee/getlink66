@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { isMemoryDb } from "../config/memoryStore.js";
 import { notify3D66ProxyFallback } from "./telegramNotifier.js";
 import { threed66VerificationStore } from "./3d66VerificationStore.js";
 import { install3D66VerificationGuard } from "./3d66VerificationGuard.js";
@@ -11,7 +12,7 @@ import { create3D66CollectionResolver } from "./3d66CollectionResolver.js";
 import { create3D66RewrittenFootprintResolver, assert3D66RewrittenFootprintLink,
   assert3D66FootprintPageVerified, is3D66RewrittenFootprintError, get3D66VerificationPage,
   resolveRewrittenFootprintHistory, resolveRewrittenFootprintPage, is3D66FootprintModelPage,
-  FOOTPRINT_MODEL_SELECTOR } from "./3d66RewrittenFootprintResolver.js";
+  FOOTPRINT_MODEL_SELECTOR, legacyFootprintRewriteSeed } from "./3d66RewrittenFootprintResolver.js";
 import { validate3D66HybridInput, validate3D66HybridLink } from "./3d66HybridResolver.js";
 import {
   assert3D66BrowserDownloadRequest, assert3D66CleanModelUrl, assert3D66DownloadFields,
@@ -840,6 +841,7 @@ function evaluateMetadata() {
     "";
 
   return {
+    detailProductId: detailLlId,
     productId:
       requestedSof ||
       (detailMatchesRequested ? res.ll_id : "") ||
@@ -1360,10 +1362,62 @@ export async function open3D66RewrittenFootprintCard(page, card, seed, context) 
   }
 }
 
+async function matchesLoadedLegacyModel(page, seed, productId) {
+  const bound = { ...seed, productId, legacyIds: [productId] };
+  await assert3D66FootprintPageVerified(page);
+  try { assert3D66RewrittenFootprintLink(page.url(), bound); }
+  catch { return false; }
+  const metadata = await evaluateMetadataWithRetry(page);
+  await assert3D66FootprintPageVerified(page);
+  try { assert3D66RewrittenFootprintLink(page.url(), bound); }
+  catch { return false; }
+  // The URL can echo the requested SOF even when a different model is loaded.
+  return metadata.detailProductId?.toUpperCase() === productId;
+}
+
+async function verifyLegacyCachedModel(page, seed) {
+  if (!seed.legacyIds?.length) return null;
+  let rows;
+  try {
+    const { default: ProductCache } = await import("../models/ProductCache.js");
+    const query = ProductCache.find({ productId: { $in: seed.legacyIds } })
+      .select("productId resolvedSourceUrl").limit(seed.legacyIds.length);
+    if (!isMemoryDb()) query.maxTimeMS(1000);
+    rows = await query.lean();
+  } catch {
+    return null;
+  }
+
+  const valid = [];
+  for (const row of rows) {
+    try {
+      const productId = assert3D66RewrittenFootprintLink(row.resolvedSourceUrl, seed).toUpperCase();
+      if (productId !== row.productId) continue;
+      const url = new URL(row.resolvedSourceUrl);
+      url.hash = "";
+      valid.push({ url: url.href, productId });
+    } catch { /* Cache records without an exact, signed model URL cannot be reused. */ }
+  }
+  if (valid.length !== 1) return null;
+
+  const { url, productId } = valid[0];
+  await goto3D66Page(page, url);
+  try {
+    return await matchesLoadedLegacyModel(page, seed, productId) ? productId : null;
+  } catch (error) {
+    if (get3D66VerificationPage(error)) seed.legacyCacheProbeId = productId;
+    throw error;
+  }
+}
+
+const navigateRewrittenSeed = (page, url) => page.goto(stripInternalUrlHash(url),
+  { waitUntil: navigationWaitUntil(), timeout: timeoutMs() });
+
 export const resolve3D66ModelUrlFromRewrittenFootprint = create3D66RewrittenFootprintResolver({
   withBrowserContext, navigate: goto3D66Page, serializeCookies, timeoutMs, settleMs: postCommitWaitMs,
+  verifyCachedLink: verifyLegacyCachedModel,
   // A seed is visited once; a source-home redirect records the view even if it interrupts navigation.
-  navigateSeed: (page, url) => page.goto(stripInternalUrlHash(url), { waitUntil: navigationWaitUntil(), timeout: timeoutMs() }),
+  navigateSeed: navigateRewrittenSeed,
   openHistoryLink: open3D66RewrittenFootprintCard,
 });
 
@@ -1394,10 +1448,10 @@ export async function resolve3D66HybridModelWithBrowser(url, cookieValue, { reso
       result = { url: page.url(), productId: seed.productId, canonicalModelPage: seed.modelPage, route: "signed_link" };
     } else {
       result = await resolveRewrittenFootprintPage({ page, seed, navigate: goto3D66Page,
-        navigateSeed: (target, value) => target.goto(stripInternalUrlHash(value), { waitUntil: navigationWaitUntil(), timeout: timeoutMs() }),
+        navigateSeed: navigateRewrittenSeed, verifyCachedLink: verifyLegacyCachedModel,
         openHistoryLink: (target, card, boundSeed) => open3D66RewrittenFootprintCard(target, card, boundSeed, context),
         timeout: timeoutMs(), settleMs: postCommitWaitMs(), refreshAttempts: footprintRefreshAttempts(), refreshDelayMs: footprintRefreshDelayMs() });
-      result.route = "rewritten_history";
+      result.route ||= "rewritten_history";
     }
     seed.modelPage = result.canonicalModelPage;
     const opened = context.pages().find(target => target.url() === result.url) || page;
@@ -1436,7 +1490,28 @@ export async function resume3D66Verification(entry) {
       return await verifyOpenedCadPage(entry.page, entry.seed, entry.context);
     }
     let result;
-    if (entry.seed.mode === "direct") {
+    if (entry.seed.legacyCacheProbeId || entry.seed.legacyVerifiedProductId) {
+      const lookup = {
+        page: entry.page, navigate: goto3D66Page, timeout: timeoutMs(), refreshAttempts: 1,
+        openHistoryLink: (page, card, seed) => open3D66RewrittenFootprintCard(page, card, seed, entry.context),
+      };
+      if (entry.seed.legacyCacheProbeId) {
+        const productId = entry.seed.legacyCacheProbeId;
+        if (!(await matchesLoadedLegacyModel(entry.page, entry.seed, productId))) {
+          throw browserHttpError("The verified page did not load the cached model.", 422,
+            { stage: "rewritten-footprint", reason: "cached_model_mismatch" }, "THREED66_REWRITTEN_FOOTPRINT_FAILED");
+        }
+        delete entry.seed.legacyCacheProbeId;
+        const seed = legacyFootprintRewriteSeed(entry.seed, productId);
+        result = await resolveRewrittenFootprintPage({ ...lookup, seed, navigateSeed: navigateRewrittenSeed, settleMs: postCommitWaitMs() });
+      } else {
+        const seed = legacyFootprintRewriteSeed(entry.seed, entry.seed.legacyVerifiedProductId);
+        result = await resolveRewrittenFootprintHistory({ ...lookup, seed });
+      }
+      const opened = entry.context.pages().find(page => page.url() === result.url);
+      if (opened) entry.page = opened;
+      else await goto3D66Page(entry.page, result.url);
+    } else if (entry.seed.mode === "direct") {
       assert3D66RewrittenFootprintLink(entry.page.url(), entry.seed);
       result = { url: entry.page.url(), productId: entry.seed.productId,
         canonicalModelPage: entry.seed.modelPage, usedFootprint: false };

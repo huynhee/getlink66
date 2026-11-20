@@ -130,8 +130,17 @@ export function footprintLookupKey(seed, page = seed.modelPage) {
 export function matches3D66FootprintProduct(value, productId, seed) {
   const id = String(productId || "").toUpperCase();
   return seed.legacyIds
-    ? seed.legacyIds.includes(id) && matchesLegacy3D66SourcePage(value, seed.url)
+    ? seed.legacyIds.includes(id) && (!seed.legacyVerifiedProductId || id === seed.legacyVerifiedProductId)
+      && matchesLegacy3D66SourcePage(value, seed.url)
     : id === seed.productId;
+}
+
+export function legacyFootprintRewriteSeed(seed, productId) {
+  if (!seed.legacyIds?.includes(productId)) throw resolutionError("model_id_mismatch");
+  const source = modelPage(seed.url);
+  seed.legacyVerifiedProductId = productId;
+  return { ...seed, productId, legacyIds: [productId], sourceFirst: false,
+    url: `${source.origin}${source.pathname}?${new URLSearchParams({ sof: productId, st: "2" })}` };
 }
 
 export function assert3D66RewrittenFootprintLink(value, seed) {
@@ -188,7 +197,10 @@ export function selectRewrittenFootprintCard(links, seed, observed = {}) {
 }
 
 export async function resolveRewrittenFootprintPage({ page, seed, navigate, navigateSeed = navigate, openHistoryLink, timeout = 30000,
-  refreshAttempts = 4, refreshDelayMs = 1500, settleMs = 1200 }) {
+  refreshAttempts = 4, refreshDelayMs = 1500, settleMs = 1200, verifyCachedLink }) {
+  const cachedProductId = seed.legacyIds && verifyCachedLink
+    ? await historyOperation("cached_model_read", () => verifyCachedLink(page, seed)) : null;
+  if (cachedProductId) seed = legacyFootprintRewriteSeed(seed, cachedProductId);
   const openedModel = await historyOperation("seed_navigation", async () => {
     let navigationError;
     try { await navigateSeed(page, seed.url); }
@@ -214,7 +226,9 @@ export async function resolveRewrittenFootprintPage({ page, seed, navigate, navi
       }
     }
   });
-  return openedModel || resolveRewrittenFootprintHistory({ page, seed, navigate, openHistoryLink, timeout, refreshAttempts, refreshDelayMs });
+  if (openedModel) return openedModel;
+  const result = await resolveRewrittenFootprintHistory({ page, seed, navigate, openHistoryLink, timeout, refreshAttempts, refreshDelayMs });
+  return cachedProductId ? { ...result, route: "verified_legacy_cache_history" } : result;
 }
 
 export async function resolveRewrittenFootprintHistory({ page, seed, navigate, openHistoryLink, timeout = 30000,
@@ -253,7 +267,7 @@ export async function resolveRewrittenFootprintHistory({ page, seed, navigate, o
 }
 
 export function create3D66RewrittenFootprintResolver({ withBrowserContext, navigate, navigateSeed = navigate, serializeCookies, openHistoryLink,
-  timeoutMs = () => 30000, settleMs = () => 1200 }) {
+  verifyCachedLink, timeoutMs = () => 30000, settleMs = () => 1200 }) {
   const pending = new Map();
   return async (url, cookieValue) => {
     const seed = build3D66FootprintSeed(url);
@@ -262,7 +276,7 @@ export function create3D66RewrittenFootprintResolver({ withBrowserContext, navig
     const task = (async () => {
       return historyOperation("browser_context", async () => {
         return await withBrowserContext(seed.url, cookieValue, async ({ page, context }) => {
-          const result = await resolveRewrittenFootprintPage({ page, seed, navigate, navigateSeed,
+          const result = await resolveRewrittenFootprintPage({ page, seed, navigate, navigateSeed, verifyCachedLink,
             openHistoryLink: openHistoryLink ? (page, card, boundSeed) => openHistoryLink(page, card, boundSeed, context) : undefined,
             timeout: timeoutMs(), settleMs: settleMs(),
             refreshAttempts: process.env.THREED66_FOOTPRINT_REFRESH_ATTEMPTS,

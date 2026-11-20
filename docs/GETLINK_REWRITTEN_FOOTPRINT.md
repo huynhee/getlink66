@@ -62,7 +62,12 @@ status and the account marker, not the rest of the upstream account profile.
    Interrupted navigation is accepted only for the narrowly validated homepage
    landing, not for arbitrary network errors or redirects.
    A foreign 3ds Max ID that may contain a six-digit legacy sender and a 5-8
-   digit asset suffix instead takes a read-only visit to the original link.
+   digit asset suffix first checks for a single previously resolved URL with
+   the same source path and exact account model ID. Only the signed URL is
+   read from the cache, and the live model page must attest the same full ID.
+   Then visit the unsigned `st=2` URL for that exact ID and obtain the signed
+   link from history. The cached signature is not used for download. Without
+   identity confirmation, visit the original link and inspect history.
    Only a signed redirect or a history match with the original model path,
    configured account marker and full candidate ID can resolve it. If history
    has both possible IDs for the same path, stop. Hybrid can show metadata early,

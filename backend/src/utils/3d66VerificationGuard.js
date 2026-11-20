@@ -54,7 +54,9 @@ export async function install3D66VerificationGuard(entry, diagnosticsOptions) {
     if (manual3D66RequestAllowed(request, {
       productId: entry.seed.productId, initialUrl: entry.initialUrl, mode: entry.seed.mode, modelPage: entry.seed.modelPage,
       sourceFirst: entry.seed.sourceFirst, sourceProductId: entry.seed.sourceProductId,
-      legacyIds: entry.seed.legacyIds, sourceUrl: entry.seed.url,
+      legacyIds: entry.seed.legacyVerifiedProductId || entry.seed.legacyCacheProbeId
+        ? [entry.seed.legacyVerifiedProductId || entry.seed.legacyCacheProbeId] : entry.seed.legacyIds,
+      sourceUrl: entry.seed.url,
     })) return route.continue();
     diagnostics.blocked(request);
     return route.abort("blockedbyclient");

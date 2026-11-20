@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
+import ProductCache from "../src/models/ProductCache.js";
 import { fetch3D66Preview, fetchFrom3D66, request3D66File, inspect3D66DownloadChoice } from "../src/utils/3d66Service.js";
 import { read3D66CadVerification } from "../src/utils/3d66CadProof.js";
 import { assert3D66StoredDownload } from "../src/utils/3d66CleanLink.js";
@@ -41,6 +42,19 @@ async function fixture(t, options = {}) {
   const seed = () => build3D66FootprintSeed(source);
   const cleanId = () => options.cleanId || (options.historyPrefix ? options.historyPrefix + seed().productId.slice(1) : seed().productId);
   const clean = () => `${base}?sof=${cleanId()}&st=2${options.cadUnsigned ? "" : "&sign=history-fixture"}`;
+  t.mock.method(ProductCache, "find", filter => {
+    assert.deepEqual(filter, { productId: { $in: seed().legacyIds } });
+    const query = {
+      select(fields) {
+        assert.equal(fields, "productId resolvedSourceUrl");
+        return this;
+      },
+      limit(count) { assert.equal(count, seed().legacyIds.length); return this; },
+      maxTimeMS() { return this; },
+      async lean() { return options.cachedLinks?.(clean(), seed()) || []; },
+    };
+    return query;
+  });
   const navigations = [];
   const requests = [];
   const payloads = [];
@@ -115,7 +129,8 @@ async function fixture(t, options = {}) {
             async evaluate(read) {
               if (read.name === "evaluateFormatOptions") return formatReady ? options.inlineFormats || [] : [];
               const id = new URL(current).searchParams.get("sof");
-              return { productId: id, title: "Fixture", creditCost: 28, dynamicFields: { llId: id } };
+              return { productId: id, detailProductId: options.cachedPageId?.(current, id) ?? id,
+                title: "Fixture", creditCost: 28, dynamicFields: { llId: id } };
             },
             locator() { return {
               first: () => ({ async waitFor() {} }),
@@ -564,6 +579,112 @@ for (const mode of ["rewritten_footprint", "hybrid"]) {
     assert.equal(state.requests.filter(value => value === "/api/v1/download/handle").length, 1);
   });
 }
+
+const legacyInputId = "DJI1694334859465";
+const legacyCleanId = "AJI896357714859465";
+const legacyCandidateId = "AJI8963577159465";
+const cachedLegacyModel = url => ({ productId: legacyCleanId, resolvedSourceUrl: url });
+const legacyProbeUrl = url => url.replace("sign=history-fixture", "sign=cache-fixture");
+const legacyRewriteUrl = state => `${state.base}?sof=${legacyCleanId}&st=2`;
+const accountHistoryUrl = "https://user.3d66.com/newUser/index/index/footprint";
+
+for (const mode of ["rewritten_footprint", "hybrid"]) {
+  test(`${mode} confirms a six-digit sender model before st=2 and uses the history signature, not the cache signature`, async t => {
+    const state = await fixture(t, {
+      mode, inputId: legacyInputId, cleanId: legacyCleanId,
+      cachedLinks: url => [cachedLegacyModel(legacyProbeUrl(url) + "#resolved=footprint")],
+    });
+    const preview = await fetch3D66Preview(state.source, cookie);
+    assert.equal(preview.productId, legacyInputId);
+    assert.equal(new URL(preview.resolvedSourceUrl).searchParams.get("sof"), legacyCleanId);
+    assert.equal(new URL(preview.resolvedSourceUrl).searchParams.get("sign"), "history-fixture");
+    const expected = [legacyProbeUrl(state.clean()), legacyRewriteUrl(state), accountHistoryUrl];
+    if (mode === "hybrid") {
+      assert.equal(preview.resolutionRoute, "verified_legacy_cache_history");
+      expected.push(state.clean());
+    }
+    assert.deepEqual(state.navigations, expected);
+    assert.equal(state.requests.some(path => path.endsWith("/handle")), false);
+    assert.equal(state.contexts(), 1);
+    const download = await fetchFrom3D66(preview.resolvedSourceUrl, cookie, { sourceUrl: state.source });
+    assert.equal(download.productId, legacyInputId);
+    assert3D66StoredDownload(download);
+    assert.deepEqual(state.navigations, expected);
+    assert.equal(state.requests.filter(path => path.endsWith("/handle")).length, 1);
+  });
+}
+
+test("a verified cached model cannot authorize a preview without its exact signed history card", async t => {
+  const state = await fixture(t, {
+    inputId: legacyInputId, cleanId: legacyCleanId,
+    cachedLinks: url => [cachedLegacyModel(legacyProbeUrl(url))],
+    links: url => [url.replace(legacyCleanId, legacyCandidateId)],
+  });
+  await assert.rejects(fetch3D66Preview(state.source, cookie),
+    error => error.details?.reason === "signed_model_not_found_in_history");
+  assert.deepEqual(state.navigations, [legacyProbeUrl(state.clean()), legacyRewriteUrl(state), accountHistoryUrl]);
+  assert.deepEqual(state.requests, []);
+});
+
+test("legacy cache ignores invalid, wrong-path, duplicate or conflicting candidate links", async t => {
+  for (const links of [
+    url => [cachedLegacyModel(url.replace("/fixture/", "/different/"))],
+    url => [cachedLegacyModel(url + "&sign=another")],
+    url => [{ productId: legacyCandidateId, resolvedSourceUrl: url }],
+    url => [cachedLegacyModel(url), { productId: legacyCandidateId, resolvedSourceUrl: url.replace(legacyCleanId, legacyCandidateId) }],
+  ]) {
+    await t.test("invalid cache entry", async t => {
+      const state = await fixture(t, { inputId: legacyInputId, cleanId: legacyCleanId, links: () => [], cachedLinks: links });
+      await assert.rejects(fetch3D66Preview(state.source, cookie),
+        error => error.details?.reason === "signed_model_not_found_in_history");
+      assert.equal(state.navigations[0], state.source);
+      assert.deepEqual(state.requests, []);
+    });
+  }
+});
+
+test("a cached signed URL with the wrong model in source metadata falls back to the original history flow", async t => {
+  const state = await fixture(t, {
+    inputId: legacyInputId, cleanId: legacyCleanId, cachedLinks: url => [cachedLegacyModel(url)],
+    cachedPageId: (_url, id) => id === legacyCleanId ? legacyCandidateId : id,
+  });
+  const preview = await fetch3D66Preview(state.source, cookie);
+  assert.equal(new URL(preview.resolvedSourceUrl).searchParams.get("sof"), legacyCleanId);
+  assert.deepEqual(state.navigations, [state.clean(), state.source, "https://user.3d66.com/newUser/index/index/footprint"]);
+  assert.equal(state.requests.some(path => path.endsWith("/handle")), false);
+});
+
+test("a cached legacy link still honors an upstream verification challenge", async t => {
+  let blocked = true;
+  const state = await fixture(t, {
+    inputId: legacyInputId, cleanId: legacyCleanId, cachedLinks: url => [cachedLegacyModel(legacyProbeUrl(url))],
+    challenge: url => blocked && url?.includes("sign=cache-fixture"),
+  });
+  await assert.rejects(fetch3D66Preview(state.source, cookie),
+    error => error.status === 403 && error.details?.reason === "upstream_verification_required");
+  assert.deepEqual(state.navigations, [legacyProbeUrl(state.clean())]);
+  assert.deepEqual(state.requests, []);
+  const [pending] = await threed66VerificationStore.list();
+  assert.ok(pending);
+  blocked = false;
+  const result = await resume3D66Verification(threed66VerificationStore.get(pending.id));
+  assert.equal(new URL(result.url).searchParams.get("sign"), "history-fixture");
+  assert.deepEqual(state.navigations, [legacyProbeUrl(state.clean()), legacyRewriteUrl(state), accountHistoryUrl, state.clean()]);
+  assert.deepEqual(state.requests, []);
+});
+
+test("hybrid ignores a mismatched read-only metadata ID and verifies the cached model independently", async t => {
+  const state = await fixture(t, {
+    mode: "hybrid", inputId: legacyInputId, cleanId: legacyCleanId, cachedLinks: url => [cachedLegacyModel(legacyProbeUrl(url))],
+    popData: () => ({ resInfo: { sof: legacyCandidateId, res_name: "Incorrect fixture", res_price: 99 } }),
+  });
+  const preview = await fetch3D66Preview(state.source, cookie);
+  assert.equal(preview.resolutionRoute, "verified_legacy_cache_history");
+  assert.equal(preview.title, "Fixture");
+  assert.equal(preview.creditCost, 28);
+  assert.deepEqual(state.navigations, [legacyProbeUrl(state.clean()), legacyRewriteUrl(state), accountHistoryUrl, state.clean()]);
+  assert.deepEqual(state.requests, ["/api/v1/download/pop"]);
+});
 
 for (const seedInterrupted of [false, true]) {
   test(`preview follows a source-home seed redirect to signed history without repeating the seed (interrupted: ${seedInterrupted})`, async t => {
