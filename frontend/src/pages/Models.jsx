@@ -16,7 +16,7 @@ const EMPTY_FILTERS = {
   material: [],
   platform: [],
 };
-const IMAGE_SEARCH_ENABLED = String(import.meta.env.VITE_MARKETPLACE_IMAGE_SEARCH_ENABLED || "false").toLowerCase() === "true";
+export const IMAGE_SEARCH_ENABLED = String(import.meta.env.VITE_MARKETPLACE_IMAGE_SEARCH_ENABLED || "false").toLowerCase() === "true";
 
 function marketplaceRecentSearches(assetType) {
   if (typeof window === "undefined") return [];
@@ -1156,6 +1156,12 @@ function ModelListPage({ user, language, path, onNavigate, assetType = "model" }
   const initializedCatalogRef = useRef("");
   const searchActiveRef = useRef(Boolean(search.trim()));
   const sortAssetTypeRef = useRef(assetType);
+
+  useEffect(() => {
+    if (IMAGE_SEARCH_ENABLED && new URL(path, window.location.origin).searchParams.get("imageSearch") === "1") {
+      setImageSearchOpen(true);
+    }
+  }, [path]);
 
   const loadCategories = useCallback(async () => {
     const data = await apiCached(assetType === "scene" ? "/api/marketplace/scenes/categories" : "/api/marketplace/categories");

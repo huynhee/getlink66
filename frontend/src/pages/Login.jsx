@@ -1,10 +1,10 @@
 import React, { useState } from "react";
-import { AlertCircle, ArrowRight, BookOpen, ChevronRight, Chrome, ClipboardPaste, Search, ShieldCheck, UserPlus } from "lucide-react";
+import { AlertCircle, ArrowRight, BookOpen, ChevronRight, Chrome, ClipboardPaste, ImagePlus, Search, ShieldCheck, UserPlus } from "lucide-react";
 import { API_URL, api } from "../api.js";
 import GuideContent from "../components/GuideContent.jsx";
 import SiteFooter from "../components/SiteFooter.jsx";
 import PluginHero from "../components/PluginHero.jsx";
-import { ModelCard } from "./Models.jsx";
+import { IMAGE_SEARCH_ENABLED, ModelCard } from "./Models.jsx";
 import { translations } from "../i18n.js";
 import { referralInviteTitle } from "../utils/referralPresentation.js";
 
@@ -368,7 +368,7 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
   return (
     <div className="landing">
       {!adminMode && (
-        <form className="homeCatalogSearch" onSubmit={submitCatalogSearch} role="search">
+        <form className={`homeCatalogSearch${IMAGE_SEARCH_ENABLED ? " homeCatalogSearchWithImage" : ""}`} onSubmit={submitCatalogSearch} role="search">
           <div className="homeCatalogSearchTypes" role="tablist" aria-label={language === "vi" ? "Loại thư viện" : "Library type"}>
             <button
               type="button"
@@ -400,6 +400,16 @@ export default function Login({ user = null, adminMode = false, returnTo = "/", 
                 : (language === "vi" ? "Tìm kiếm 200.000+ model, vật liệu..." : "Search 200,000+ models, materials...")}
             />
           </label>
+          {IMAGE_SEARCH_ENABLED && (
+            <a
+              className="homeCatalogSearchImage"
+              href={authAwareHref(`/${catalogSearchType === "scene" ? "scenes" : "models"}?imageSearch=1`)}
+              aria-label={language === "vi" ? "Tìm bằng hình ảnh" : "Search by image"}
+              title={language === "vi" ? "Tìm bằng hình ảnh" : "Search by image"}
+            >
+              <ImagePlus size={18} aria-hidden="true" />
+            </a>
+          )}
           <button className="homeCatalogSearchSubmit" type="submit" aria-label={language === "vi" ? "Tìm kiếm" : "Search"}>
             <Search size={18} />
           </button>

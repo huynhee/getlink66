@@ -5500,6 +5500,10 @@ label {
   border-right: 1px solid var(--border-warm);
 }
 
+.homeCatalogSearchWithImage {
+  grid-template-columns: auto minmax(0, 1fr) 42px 42px;
+}
+
 .homeCatalogSearchTypes button {
   height: 26px;
   padding: 0 12px;
@@ -5538,7 +5542,8 @@ label {
   color: var(--text-muted);
 }
 
-.homeCatalogSearchSubmit {
+.homeCatalogSearchSubmit,
+.homeCatalogSearchImage {
   width: 36px;
   height: 30px;
   display: grid;
@@ -5551,8 +5556,16 @@ label {
 }
 
 .homeCatalogSearchSubmit:hover,
-.homeCatalogSearchSubmit:focus-visible {
+.homeCatalogSearchSubmit:focus-visible,
+.homeCatalogSearchImage:hover,
+.homeCatalogSearchImage:focus-visible {
   color: var(--neon-green);
+}
+
+.homeCatalogSearchImage:focus-visible,
+.homeCatalogSearchSubmit:focus-visible {
+  outline: 2px solid var(--neon-green);
+  outline-offset: -2px;
 }
 
 .srOnly {
@@ -5570,6 +5583,10 @@ label {
 @media (max-width: 640px) {
   .homeCatalogSearch {
     grid-template-columns: 1fr 44px;
+  }
+
+  .homeCatalogSearchWithImage {
+    grid-template-columns: minmax(0, 1fr) 42px 42px;
   }
 
   .homeCatalogSearchTypes {
